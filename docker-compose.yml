@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: cms_pricing
+      POSTGRES_USER: cms_user
+      POSTGRES_PASSWORD: cms_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cms_user -d cms_pricing"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      target: development
+    environment:
+      DATABASE_URL: postgresql://cms_user:cms_password@db:5432/cms_pricing
+      REDIS_URL: redis://redis:6379/0
+      API_KEYS: "dev-key-123,admin-key-456"
+      MAX_PROVIDERS: 100
+      MAX_RADIUS_MILES: 25
+      DEFAULT_FALLBACK_MULTIPLIER: 1.0
+      RETENTION_MONTHS: 13
+      LOG_LEVEL: INFO
+      TRACE_VERBOSE: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["uvicorn", "cms_pricing.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  worker:
+    build:
+      context: .
+      target: development
+    environment:
+      DATABASE_URL: postgresql://cms_user:cms_password@db:5432/cms_pricing
+      REDIS_URL: redis://redis:6379/0
+      API_KEYS: "worker-key-789"
+      LOG_LEVEL: INFO
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "cms_pricing.worker"]
+
+volumes:
+  postgres_data:
+  redis_data:
