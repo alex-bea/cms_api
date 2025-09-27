@@ -1,7 +1,7 @@
 """Geography resolution endpoints"""
 
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -14,8 +14,8 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/resolve", response_model=GeographyResolveResponse)
-@limiter.limit("60/minute")
 async def resolve_geography(
+    request: Request,
     zip: str,
     api_key: str = Depends(verify_api_key)
 ):

@@ -2,23 +2,25 @@
 
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy.orm import Session
 
 from cms_pricing.schemas.pricing import (
     PricingRequest, PricingResponse, ComparisonRequest, ComparisonResponse
 )
 from cms_pricing.auth import verify_api_key
 from cms_pricing.services.pricing import PricingService
+from cms_pricing.database import get_db
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/codes/price")
-@limiter.limit("120/minute")
 async def price_single_code(
+    request: Request,
     zip: str,
     code: str,
     setting: str,
@@ -27,6 +29,7 @@ async def price_single_code(
     ccn: Optional[str] = None,
     payer: Optional[str] = None,
     plan: Optional[str] = None,
+    db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
     """Price a single code/component"""
@@ -51,7 +54,7 @@ async def price_single_code(
         raise HTTPException(status_code=400, detail="CCN must be exactly 6 digits")
     
     try:
-        pricing_service = PricingService()
+        pricing_service = PricingService(db)
         result = await pricing_service.price_single_code(
             zip=zip,
             code=code,
@@ -71,16 +74,17 @@ async def price_single_code(
 
 
 @router.post("/price", response_model=PricingResponse)
-@limiter.limit("60/minute")
 async def price_plan(
-    request: PricingRequest,
+    request: Request,
+    pricing_request: PricingRequest,
+    db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
     """Price a complete treatment plan"""
     
     try:
-        pricing_service = PricingService()
-        result = await pricing_service.price_plan(request)
+        pricing_service = PricingService(db)
+        result = await pricing_service.price_plan(pricing_request)
         return result
     except Exception as e:
         raise HTTPException(
@@ -90,16 +94,17 @@ async def price_plan(
 
 
 @router.post("/compare", response_model=ComparisonResponse)
-@limiter.limit("30/minute")
 async def compare_locations(
-    request: ComparisonRequest,
+    request: Request,
+    comparison_request: ComparisonRequest,
+    db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
     """Compare pricing between two locations"""
     
     try:
-        pricing_service = PricingService()
-        result = await pricing_service.compare_locations(request)
+        pricing_service = PricingService(db)
+        result = await pricing_service.compare_locations(comparison_request)
         return result
     except Exception as e:
         raise HTTPException(

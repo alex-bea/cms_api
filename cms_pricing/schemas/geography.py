@@ -1,7 +1,7 @@
 """Geography-related Pydantic schemas"""
 
 from typing import List, Optional
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class GeographyCandidate(BaseModel):
@@ -13,11 +13,12 @@ class GeographyCandidate(BaseModel):
     cbsa_name: Optional[str] = Field(None, description="CBSA name")
     county_fips: Optional[str] = Field(None, description="County FIPS code")
     state_code: Optional[str] = Field(None, description="State code")
-    population_share: float = Field(..., description="Population share for this mapping")
-    is_rural_dmepos: bool = Field(default=False, description="Rural status for DMEPOS")
+    population_share: Optional[float] = Field(None, description="Population share for this mapping")
+    is_rural_dmepos: Optional[bool] = Field(None, description="Rural status for DMEPOS")
     used: bool = Field(default=False, description="Whether this candidate was selected")
     
-    @validator('zip5')
+    @field_validator('zip5')
+    @classmethod
     def validate_zip5(cls, v):
         if not v.isdigit() or len(v) != 5:
             raise ValueError('ZIP5 must be exactly 5 digits')
@@ -28,7 +29,8 @@ class GeographyResolveRequest(BaseModel):
     """Request schema for geography resolution"""
     zip: str = Field(..., min_length=5, max_length=5, description="5-digit ZIP code")
     
-    @validator('zip')
+    @field_validator('zip')
+    @classmethod
     def validate_zip(cls, v):
         if not v.isdigit():
             raise ValueError('ZIP must contain only digits')

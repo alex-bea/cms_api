@@ -11,6 +11,7 @@ from cms_pricing.schemas.pricing import (
 from cms_pricing.schemas.geography import GeographyCandidate
 from cms_pricing.services.geography import GeographyService
 from cms_pricing.services.trace import TraceService
+from sqlalchemy.orm import Session
 from cms_pricing.engines.mpfs import MPSFEngine
 from cms_pricing.engines.opps import OPPSEngine
 from cms_pricing.engines.asc import ASCEngine
@@ -26,9 +27,9 @@ logger = structlog.get_logger()
 class PricingService:
     """Main pricing service"""
     
-    def __init__(self):
-        self.geography_service = GeographyService()
-        self.trace_service = TraceService()
+    def __init__(self, db: Session = None):
+        self.geography_service = GeographyService(db)
+        self.trace_service = TraceService(db)
         self.engines = {
             'MPFS': MPSFEngine(),
             'OPPS': OPPSEngine(),

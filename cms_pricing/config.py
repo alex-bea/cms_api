@@ -2,18 +2,24 @@
 
 import os
 from typing import List, Optional
-from pydantic import BaseSettings, Field
+try:
+    # pydantic v2+ moved BaseSettings to pydantic-settings package
+    from pydantic_settings import BaseSettings
+    from pydantic import Field
+except Exception:
+    # Fallback for older installations where BaseSettings is in pydantic
+    from pydantic import BaseSettings, Field
 
 
 class Settings(BaseSettings):
     """Application settings"""
     
     # Database
-    database_url: str = Field(..., env="DATABASE_URL")
+    database_url: str = Field(default="postgresql://cms_user:cms_password@localhost:5432/cms_pricing", env="DATABASE_URL")
     redis_url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
     
-    # API Configuration
-    api_keys: List[str] = Field(default_factory=lambda: ["dev-key-123"], env="API_KEYS")
+    # API Configuration - using simple string field
+    api_keys_str: str = Field(default="dev-key-123,admin-key-456,worker-key-789", env="API_KEYS")
     rate_limit_per_minute: int = Field(default=120, env="RATE_LIMIT_PER_MINUTE")
     
     # Data Configuration
@@ -61,9 +67,7 @@ class Settings(BaseSettings):
         
     def get_api_keys(self) -> List[str]:
         """Parse comma-separated API keys"""
-        if isinstance(self.api_keys, str):
-            return [key.strip() for key in self.api_keys.split(",")]
-        return self.api_keys
+        return [key.strip() for key in self.api_keys_str.split(",")]
     
     def get_warm_slices(self) -> dict:
         """Parse warm slices configuration"""

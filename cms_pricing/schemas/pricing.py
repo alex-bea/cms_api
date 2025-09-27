@@ -2,7 +2,7 @@
 
 from typing import List, Optional, Dict, Any
 from datetime import date
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from uuid import UUID
 from .common import MoneyResponse
 from .geography import GeographyCandidate
@@ -13,7 +13,7 @@ class PricingRequest(BaseModel):
     zip: str = Field(..., min_length=5, max_length=5, description="5-digit ZIP code")
     plan_id: Optional[UUID] = Field(None, description="Plan ID (if using stored plan)")
     year: int = Field(..., ge=2020, le=2030, description="Valuation year")
-    quarter: Optional[str] = Field(None, regex=r'^[1-4]$', description="Quarter (1-4)")
+    quarter: Optional[str] = Field(None, pattern=r'^[1-4]$', description="Quarter (1-4)")
     ccn: Optional[str] = Field(None, max_length=6, description="CMS Certification Number")
     payer: Optional[str] = Field(None, description="Payer name filter")
     plan: Optional[str] = Field(None, description="Plan name filter")
@@ -21,18 +21,20 @@ class PricingRequest(BaseModel):
     include_snf: bool = Field(default=False, description="Include SNF")
     apply_sequestration: bool = Field(default=False, description="Apply sequestration")
     sequestration_rate: float = Field(default=0.02, ge=0, le=0.1, description="Sequestration rate")
-    format: str = Field(default="cents", regex=r'^(cents|decimal)$', description="Money format")
+    format: str = Field(default="cents", pattern=r'^(cents|decimal)$', description="Money format")
     
     # Ad-hoc plan (alternative to plan_id)
     ad_hoc_plan: Optional[Dict[str, Any]] = Field(None, description="Ad-hoc plan definition")
     
-    @validator('zip')
+    @field_validator('zip')
+    @classmethod
     def validate_zip(cls, v):
         if not v.isdigit():
             raise ValueError('ZIP must contain only digits')
         return v
     
-    @validator('ccn')
+    @field_validator('ccn')
+    @classmethod
     def validate_ccn(cls, v):
         if v is not None and (not v.isdigit() or len(v) != 6):
             raise ValueError('CCN must be exactly 6 digits')
@@ -123,7 +125,7 @@ class ComparisonRequest(BaseModel):
     zip_b: str = Field(..., min_length=5, max_length=5, description="Location B ZIP code")
     plan_id: Optional[UUID] = Field(None, description="Plan ID")
     year: int = Field(..., ge=2020, le=2030, description="Valuation year")
-    quarter: Optional[str] = Field(None, regex=r'^[1-4]$', description="Quarter")
+    quarter: Optional[str] = Field(None, pattern=r'^[1-4]$', description="Quarter")
     ccn_a: Optional[str] = Field(None, max_length=6, description="Location A CCN")
     ccn_b: Optional[str] = Field(None, max_length=6, description="Location B CCN")
     payer: Optional[str] = Field(None, description="Payer name filter")
@@ -132,18 +134,20 @@ class ComparisonRequest(BaseModel):
     include_snf: bool = Field(default=False, description="Include SNF")
     apply_sequestration: bool = Field(default=False, description="Apply sequestration")
     sequestration_rate: float = Field(default=0.02, ge=0, le=0.1, description="Sequestration rate")
-    format: str = Field(default="cents", regex=r'^(cents|decimal)$', description="Money format")
+    format: str = Field(default="cents", pattern=r'^(cents|decimal)$', description="Money format")
     
     # Ad-hoc plan (alternative to plan_id)
     ad_hoc_plan: Optional[Dict[str, Any]] = Field(None, description="Ad-hoc plan definition")
     
-    @validator('zip_a', 'zip_b')
+    @field_validator('zip_a', 'zip_b')
+    @classmethod
     def validate_zip(cls, v):
         if not v.isdigit():
             raise ValueError('ZIP must contain only digits')
         return v
     
-    @validator('ccn_a', 'ccn_b')
+    @field_validator('ccn_a', 'ccn_b')
+    @classmethod
     def validate_ccn(cls, v):
         if v is not None and (not v.isdigit() or len(v) != 6):
             raise ValueError('CCN must be exactly 6 digits')

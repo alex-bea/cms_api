@@ -4,7 +4,7 @@ from typing import List, Optional
 from uuid import UUID
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -21,8 +21,8 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post("/", response_model=PlanResponse)
-@limiter.limit("10/minute")
 async def create_plan(
+    request: Request,
     plan_data: PlanCreate,
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
@@ -33,7 +33,7 @@ async def create_plan(
     plan = Plan(
         name=plan_data.name,
         description=plan_data.description,
-        metadata=plan_data.metadata,
+        metadata_json=plan_data.metadata,
         created_by=plan_data.created_by,
         created_at=date.today()
     )
@@ -62,13 +62,38 @@ async def create_plan(
     
     db.commit()
     db.refresh(plan)
-    
-    return plan
+
+    return PlanResponse(
+        id=plan.id,
+        name=plan.name,
+        description=plan.description,
+        metadata=plan.metadata_json,
+        created_by=plan.created_by,
+        created_at=plan.created_at,
+        updated_at=plan.updated_at,
+        components=[
+            PlanComponentResponse(
+                id=c.id,
+                code=c.code,
+                setting=c.setting,
+                units=c.units,
+                utilization_weight=c.utilization_weight,
+                professional_component=c.professional_component,
+                facility_component=c.facility_component,
+                modifiers=c.modifiers,
+                pos=c.pos,
+                ndc11=c.ndc11,
+                wastage_units=c.wastage_units,
+                sequence=c.sequence,
+                created_at=c.created_at,
+            ) for c in plan.components
+        ]
+    )
 
 
 @router.get("/", response_model=List[PlanSummary])
-@limiter.limit("30/minute")
 async def list_plans(
+    request: Request,
     skip: int = Query(0, ge=0, description="Number of plans to skip"),
     limit: int = Query(20, ge=1, le=200, description="Number of plans to return"),
     search: Optional[str] = Query(None, description="Search by name or description"),
@@ -111,8 +136,8 @@ async def list_plans(
 
 
 @router.get("/{plan_id}", response_model=PlanResponse)
-@limiter.limit("30/minute")
 async def get_plan(
+    request: Request,
     plan_id: UUID,
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
@@ -123,12 +148,38 @@ async def get_plan(
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
     
-    return plan
+    # Return PlanResponse mapping metadata_json -> metadata
+    return PlanResponse(
+        id=plan.id,
+        name=plan.name,
+        description=plan.description,
+        metadata=plan.metadata_json,
+        created_by=plan.created_by,
+        created_at=plan.created_at,
+        updated_at=plan.updated_at,
+        components=[
+            PlanComponentResponse(
+                id=c.id,
+                code=c.code,
+                setting=c.setting,
+                units=c.units,
+                utilization_weight=c.utilization_weight,
+                professional_component=c.professional_component,
+                facility_component=c.facility_component,
+                modifiers=c.modifiers,
+                pos=c.pos,
+                ndc11=c.ndc11,
+                wastage_units=c.wastage_units,
+                sequence=c.sequence,
+                created_at=c.created_at,
+            ) for c in plan.components
+        ]
+    )
 
 
 @router.put("/{plan_id}", response_model=PlanResponse)
-@limiter.limit("10/minute")
 async def update_plan(
+    request: Request,
     plan_id: UUID,
     plan_data: PlanUpdate,
     db: Session = Depends(get_db),
@@ -146,7 +197,7 @@ async def update_plan(
     if plan_data.description is not None:
         plan.description = plan_data.description
     if plan_data.metadata is not None:
-        plan.metadata = plan_data.metadata
+        plan.metadata_json = plan_data.metadata
     
     plan.updated_at = date.today()
     
@@ -176,13 +227,39 @@ async def update_plan(
     
     db.commit()
     db.refresh(plan)
-    
-    return plan
+
+    # Build response mapping metadata_json -> metadata for API compatibility
+    return PlanResponse(
+        id=plan.id,
+        name=plan.name,
+        description=plan.description,
+        metadata=plan.metadata_json,
+        created_by=plan.created_by,
+        created_at=plan.created_at,
+        updated_at=plan.updated_at,
+        components=[
+            PlanComponentResponse(
+                id=c.id,
+                code=c.code,
+                setting=c.setting,
+                units=c.units,
+                utilization_weight=c.utilization_weight,
+                professional_component=c.professional_component,
+                facility_component=c.facility_component,
+                modifiers=c.modifiers,
+                pos=c.pos,
+                ndc11=c.ndc11,
+                wastage_units=c.wastage_units,
+                sequence=c.sequence,
+                created_at=c.created_at,
+            ) for c in plan.components
+        ]
+    )
 
 
 @router.delete("/{plan_id}")
-@limiter.limit("10/minute")
 async def delete_plan(
+    request: Request,
     plan_id: UUID,
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)

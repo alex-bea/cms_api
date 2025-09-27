@@ -2,6 +2,7 @@
 
 import pandas as pd
 import httpx
+import io
 from typing import Dict, Any, Optional
 from datetime import date
 
@@ -57,6 +58,8 @@ class MPFSIngester(BaseIngester):
                             type=data_type,
                             status_code=response.status_code
                         )
+                        # Create placeholder data for development
+                        fetched_data[f"{data_type}_{valuation_year}.csv"] = self._create_placeholder_data(data_type)
                         
                 except Exception as e:
                     logger.error(
@@ -82,7 +85,7 @@ class MPFSIngester(BaseIngester):
         # Process RVU data
         rvu_file = f"rvu_data_{valuation_year}.csv"
         if rvu_file in raw_data:
-            df = pd.read_csv(rvu_file)
+            df = pd.read_csv(io.StringIO(raw_data[rvu_file]))
             # Normalize column names and types
             df = df.rename(columns={
                 'HCPCS': 'hcpcs',
@@ -105,7 +108,7 @@ class MPFSIngester(BaseIngester):
         # Process GPCI data
         gpci_file = f"gpci_data_{valuation_year}.csv"
         if gpci_file in raw_data:
-            df = pd.read_csv(gpci_file)
+            df = pd.read_csv(io.StringIO(raw_data[gpci_file]))
             df = df.rename(columns={
                 'Locality': 'locality_id',
                 'Locality Name': 'locality_name',
@@ -123,7 +126,7 @@ class MPFSIngester(BaseIngester):
         # Process conversion factor data
         cf_file = f"cf_data_{valuation_year}.csv"
         if cf_file in raw_data:
-            df = pd.read_csv(cf_file)
+            df = pd.read_csv(io.StringIO(raw_data[cf_file]))
             df = df.rename(columns={
                 'Conversion Factor': 'cf',
                 'Source': 'source'

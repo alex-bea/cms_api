@@ -1,6 +1,7 @@
 """Geography resolution service"""
 
 from typing import List, Optional
+from datetime import date
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
@@ -18,20 +19,21 @@ logger = structlog.get_logger()
 class GeographyService:
     """Service for resolving ZIP codes to localities and CBSAs"""
     
-    def __init__(self):
-        self.db = SessionLocal()
+    def __init__(self, db: Session = None):
+        self.db = db or SessionLocal()
     
     async def resolve_zip(self, zip5: str) -> GeographyResolveResponse:
         """Resolve ZIP code to locality/CBSA with ambiguity handling"""
         
         # Get all geography mappings for this ZIP
+        current_date = date.today()
         geography_records = self.db.query(Geography).filter(
             and_(
                 Geography.zip5 == zip5,
-                Geography.effective_from <= settings.app_version,  # Use current date
+                Geography.effective_from <= current_date,
                 or_(
                     Geography.effective_to.is_(None),
-                    Geography.effective_to >= settings.app_version
+                    Geography.effective_to >= current_date
                 )
             )
         ).all()
@@ -47,12 +49,12 @@ class GeographyService:
                 zip5=record.zip5,
                 locality_id=record.locality_id,
                 locality_name=record.locality_name,
-                cbsa=record.cbsa,
-                cbsa_name=record.cbsa_name,
-                county_fips=record.county_fips,
-                state_code=record.state_code,
-                population_share=record.population_share,
-                is_rural_dmepos=record.is_rural_dmepos,
+                cbsa=None,  # Not available in our model
+                cbsa_name=None,  # Not available in our model
+                county_fips=None,  # Not available in our model
+                state_code=record.state,  # Use 'state' field
+                population_share=None,  # Not available in our model
+                is_rural_dmepos=record.rural_flag,  # Use 'rural_flag' field
                 used=False
             )
             candidates.append(candidate)
@@ -66,7 +68,7 @@ class GeographyService:
             selected_candidate.used = True
         
         # Determine resolution method
-        resolution_method = "highest_population_share"
+        resolution_method = "first_match"  # Since we don't have population_share data
         if len(candidates) == 1:
             resolution_method = "single_candidate"
         elif requires_resolution:
@@ -91,9 +93,9 @@ class GeographyService:
         if len(candidates) <= 1:
             return False
         
-        # Check if any candidate has < 80% population share
-        max_share = max(candidate.population_share for candidate in candidates)
-        return max_share < 0.8
+        # Check if we have multiple different localities for the same ZIP
+        unique_localities = set(c.locality_id for c in candidates)
+        return len(unique_localities) > 1
     
     def _select_default_candidate(self, candidates: List[GeographyCandidate]) -> Optional[GeographyCandidate]:
         """Select default candidate using deterministic rules"""
@@ -103,10 +105,10 @@ class GeographyService:
         if len(candidates) == 1:
             return candidates[0]
         
-        # Sort by population share (descending), then by locality_id (ascending)
+        # Sort by locality_id (ascending) for deterministic selection
         sorted_candidates = sorted(
             candidates,
-            key=lambda c: (-c.population_share, c.locality_id or "")
+            key=lambda c: c.locality_id or ""
         )
         
         return sorted_candidates[0]

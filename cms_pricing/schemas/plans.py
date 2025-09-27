@@ -2,7 +2,7 @@
 
 from typing import List, Optional, Dict, Any
 from datetime import date
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from uuid import UUID
 
 
@@ -20,14 +20,16 @@ class PlanComponentCreate(BaseModel):
     wastage_units: float = Field(default=0.0, ge=0, description="Wastage units (future use)")
     sequence: int = Field(default=1, gt=0, description="Order within plan")
     
-    @validator('setting')
+    @field_validator('setting')
+    @classmethod
     def validate_setting(cls, v):
         allowed_settings = {'MPFS', 'OPPS', 'ASC', 'IPPS', 'CLFS', 'DMEPOS'}
         if v.upper() not in allowed_settings:
             raise ValueError(f'Setting must be one of: {", ".join(allowed_settings)}')
         return v.upper()
     
-    @validator('modifiers')
+    @field_validator('modifiers')
+    @classmethod
     def validate_modifiers(cls, v):
         if v is None:
             return v

@@ -46,7 +46,7 @@ class BaseIngester(ABC):
         valuation_year: int,
         quarter: Optional[str] = None
     ) -> Dict[str, pd.DataFrame]:
-    """Normalize raw data into DataFrames"""
+        """Normalize raw data into DataFrames"""
         pass
     
     @abstractmethod

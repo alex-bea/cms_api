@@ -1,8 +1,11 @@
 """Trace and audit service"""
 
 import uuid
+import json
 from typing import Dict, Any, Optional, List
 from datetime import datetime
+from sqlalchemy.orm import Session
+from uuid import UUID
 
 from cms_pricing.schemas.trace import TraceResponse, TraceData
 from cms_pricing.database import SessionLocal
@@ -12,11 +15,23 @@ import structlog
 logger = structlog.get_logger()
 
 
+def convert_uuids_to_strings(obj: Any) -> Any:
+    """Recursively convert UUID objects to strings for JSON serialization"""
+    if isinstance(obj, UUID):
+        return str(obj)
+    elif isinstance(obj, dict):
+        return {key: convert_uuids_to_strings(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_uuids_to_strings(item) for item in obj]
+    else:
+        return obj
+
+
 class TraceService:
     """Service for managing run traces and auditability"""
     
-    def __init__(self):
-        self.db = SessionLocal()
+    def __init__(self, db: Session = None):
+        self.db = db or SessionLocal()
     
     async def store_run(
         self,
@@ -31,12 +46,16 @@ class TraceService:
         """Store a pricing run with full trace information"""
         
         try:
+            # Convert UUIDs to strings for JSON serialization
+            request_json = convert_uuids_to_strings(request_data)
+            response_json = convert_uuids_to_strings(response_data) if response_data else None
+            
             # Create run record
             run = Run(
                 run_id=run_id,
                 endpoint=endpoint,
-                request_json=request_data,
-                response_json=response_data,
+                request_json=request_json,
+                response_json=response_json,
                 status=status,
                 created_at=datetime.utcnow(),
                 duration_ms=duration_ms
@@ -89,8 +108,7 @@ class TraceService:
             trace_record = RunTrace(
                 run_id=run.id,
                 trace_type=trace_data.trace_type,
-                trace_data=trace_data.trace_data,
-                timestamp=trace_data.timestamp
+                trace_data=trace_data.trace_data
             )
             self.db.add(trace_record)
             
@@ -134,7 +152,7 @@ class TraceService:
                     trace_type=trace.trace_type,
                     trace_data=trace.trace_data,
                     line_sequence=trace.line_sequence,
-                    timestamp=trace.timestamp
+                    timestamp=datetime.utcnow()  # Use current time since model doesn't store timestamp
                 ))
             
             # Create response

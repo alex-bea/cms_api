@@ -11,6 +11,7 @@ from typing import List, Tuple
 # Add the project root to Python path
 sys.path.append(str(Path(__file__).parent.parent))
 
+from cms_pricing.ingestion.geography import GeographyIngester
 from cms_pricing.ingestion.mpfs import MPFSIngester
 from cms_pricing.ingestion.opps import OPPSIngester
 from cms_pricing.ingestion.scheduler import scheduler
@@ -25,6 +26,7 @@ class DataIngestionManager:
     def __init__(self, data_dir: str = "./data"):
         self.data_dir = data_dir
         self.ingesters = {
+            'GEOGRAPHY': GeographyIngester,
             'MPFS': MPFSIngester,
             'OPPS': OPPSIngester,
             # Add more ingesters as they're created
@@ -41,6 +43,9 @@ class DataIngestionManager:
         
         # Define ingestion tasks
         tasks = [
+            # Geography data (must be first)
+            ('GEOGRAPHY', year, None),
+            
             # Annual datasets
             ('MPFS', year, None),
             

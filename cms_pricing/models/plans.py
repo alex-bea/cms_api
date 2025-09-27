@@ -15,7 +15,7 @@ class Plan(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
-    metadata = Column(Text, nullable=True)  # JSON metadata
+    metadata_json = Column("metadata", Text, nullable=True)  # JSON metadata stored in DB column 'metadata'
     created_by = Column(String(100), nullable=True)
     created_at = Column(Date, nullable=False)
     updated_at = Column(Date, nullable=True)
@@ -28,6 +28,10 @@ class Plan(Base):
         Index("idx_plans_name", "name"),
         Index("idx_plans_created_at", "created_at"),
     )
+
+    # Note: avoid defining an attribute named `metadata` on the class since
+    # SQLAlchemy uses that name for the MetaData object at the class level.
+    # Use `metadata_json` to store JSON metadata from the application.
 
 
 class PlanComponent(Base):

@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from cms_pricing.database import get_db
 from cms_pricing.cache import CacheManager
 
@@ -22,7 +23,7 @@ async def readiness_check(
     """Readiness check with dependencies"""
     try:
         # Check database connection
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         
         # Check cache directory
         cache_manager.disk_cache.cache_dir

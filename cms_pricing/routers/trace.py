@@ -1,27 +1,30 @@
 """Trace and audit endpoints"""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy.orm import Session
 
 from cms_pricing.schemas.trace import TraceResponse
 from cms_pricing.auth import verify_api_key, is_admin_key
 from cms_pricing.services.trace import TraceService
+from cms_pricing.database import get_db
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/{run_id}", response_model=TraceResponse)
-@limiter.limit("60/minute")
 async def get_trace(
+    request: Request,
     run_id: str,
+    db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
     """Get full trace information for a pricing run"""
     
     try:
-        trace_service = TraceService()
+        trace_service = TraceService(db)
         result = await trace_service.get_trace(run_id)
         
         if not result:
@@ -41,9 +44,10 @@ async def get_trace(
 
 
 @router.get("/{run_id}/replay")
-@limiter.limit("10/minute")
 async def replay_run(
+    request: Request,
     run_id: str,
+    db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
     """Replay a pricing run with identical parameters"""

@@ -7,14 +7,13 @@ import uuid
 
 
 class FeeMPFS(Base):
-    """Medicare Physician Fee Schedule RVUs and rates"""
+    """Medicare Physician Fee Schedule RVUs - base values (no locality)"""
     
     __tablename__ = "fee_mpfs"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     year = Column(Integer, nullable=False, index=True)
     revision = Column(String(1), nullable=False, default="A")  # A, B, C revisions
-    locality_id = Column(String(10), nullable=False, index=True)
     hcpcs = Column(String(5), nullable=False, index=True)
     work_rvu = Column(Float, nullable=True)
     pe_nf_rvu = Column(Float, nullable=True)  # Non-facility PE RVU
@@ -27,7 +26,7 @@ class FeeMPFS(Base):
     
     # Indexes
     __table_args__ = (
-        Index("idx_mpfs_year_locality_hcpcs", "year", "locality_id", "hcpcs"),
+        Index("idx_mpfs_year_hcpcs", "year", "hcpcs"),
         Index("idx_mpfs_effective", "effective_from", "effective_to"),
     )
 
