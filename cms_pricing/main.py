@@ -19,7 +19,8 @@ from starlette.responses import Response as StarletteResponse
 from cms_pricing.config import settings
 from cms_pricing.database import engine, Base
 from cms_pricing.middleware import LoggingMiddleware, SecurityMiddleware
-from cms_pricing.routers import plans, pricing, geography, trace, health
+from cms_pricing.routers import plans, pricing, geography, trace, health, rvu, nearest_zip
+from cms_pricing.services.geography_health import router as geography_health_router
 from cms_pricing.cache import CacheManager
 from cms_pricing.auth import verify_api_key
 
@@ -137,8 +138,11 @@ app.add_middleware(SecurityMiddleware)
 app.include_router(plans.router, prefix="/plans", tags=["plans"])
 app.include_router(pricing.router, prefix="/pricing", tags=["pricing"])
 app.include_router(geography.router, prefix="/geography", tags=["geography"])
+app.include_router(geography_health_router, tags=["geography-health"])
 app.include_router(trace.router, prefix="/trace", tags=["trace"])
 app.include_router(health.router, prefix="", tags=["health"])
+app.include_router(rvu.router, tags=["rvu"])
+app.include_router(nearest_zip.router, prefix="/nearest-zip", tags=["nearest-zip"])
 
 
 @app.middleware("http")
