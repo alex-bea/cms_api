@@ -116,6 +116,7 @@ Define how we ingest and use CMS geography mapping to resolve a service **ZIP(+4
 6. **Register snapshot**: Insert `(dataset_id, effective_from, effective_to, digest, source_url)` into `snapshots`.
 
 ## 9) Resolver Behavior
+API contracts implementing this behavior must comply with the **Global API Program PRDs (v1.0)**.
 Input: `{ zip5: str, plus4: Optional[str], valuation_year: int, quarter: Optional[int], strict: bool=false, max_radius_miles?: int, initial_radius_miles?: int, expand_step_miles?: int, expose_carrier?: bool }`
 Algorithm:
 1. Select **dataset version** by valuation (year/quarter or snapshot pin); trace `dataset_selection`.
@@ -233,6 +234,17 @@ Rationale for nearest ZIP choice: pick the **geodesically closest ZIP5 within th
 6. **ZIP+4 parsing**: Will callers ever provide full 9-digit string without a dash (e.g., `941101234`)? Should the API accept both `94110-1234` and `941101234`?
 7. **Stateful resolver cache TTL**: Any constraints on cache invalidation (e.g., rotate when snapshot digest changes only)?
 
+## QA Summary (per QA & Testing Standard v1.0)
+| Item | Details |
+| --- | --- |
+| **Scope & Ownership** | CMS ZIP→Locality ingestion and resolver mandates (ZIP+4-first); owned by Geography squad with Quality Engineering partner; key consumers: pricing engines, analytics pipelines, operator tooling. |
+| **Test Tiers & Coverage** | Unit/component: normalization and effective dating in `tests/test_geography_ingestion.py`; Resolver behavior + strict/non-strict policies covered in `tests/test_geography_resolver.py`; Integration: pipeline + CLI automation in `tests/test_geography_integration.py` and `tests/test_geography_automation.py`; Scenario: gap report + state boundary suites (`tests/test_geography_gaps.py`, `tests/test_state_boundary_enforcement.py`). Coverage ~83% (target 90%). |
+| **Fixtures & Baselines** | CMS ZIP5/ZIP9 packs + layouts in `sample_data/zplc_oct2025/`; golden resolution scenarios captured in `tests/golden/test_scenarios.jsonl`; daily gap baselines tracked via geography observability dashboards with run digests logged in Ops notes. |
+| **Quality Gates** | Merge: geography suites run in `ci-unit.yaml` with schema drift blockers; `ci-integration.yaml` provisions Postgres + executes resolver automation; nightly pipeline replays ingestion + gap analytics before release. |
+| **Production Monitors** | Coverage + fallback dashboards from §17; digest mismatch and stale snapshot alerts; resolver latency SLO monitors align with §G Performance. |
+| **Manual QA** | Operators execute ingestion smoke and review ZIP+4 coverage prior to releasing new CMS files; manual validation of strict-mode responses for top 10 ZIPs per state. |
+| **Outstanding Risks / TODO** | Address open questions above (strict-mode default, carrier exposure); extend fixtures for territories; automate duplicate detection reporting. |
+
 ## 16) Acceptance Criteria
 - ZIP+4-first resolution enforced; fallbacks per policy and traced.
 - Datasets effective-dated and selectable by valuation (year/quarter) and snapshot digest.
@@ -256,4 +268,3 @@ Rationale for nearest ZIP choice: pick the **geodesically closest ZIP5 within th
 - **Territories**: For PR/VI/GU/AS/MP, confirm presence in CMS mapping; if missing, return friendly error with guidance.
 - **Multiple matches**: If CMS provides overlapping effective windows or duplicates, ingestion must collapse to a single active record per valuation instant.
 - **Formatting noise**: Trim spaces/dashes/extra characters; store normalized `(zip5, plus4)`.
-

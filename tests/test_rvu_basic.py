@@ -1,4 +1,15 @@
-"""Basic RVU tests - Test-First Implementation per PRD Section 10"""
+"""
+Basic RVU tests - Test-First Implementation per PRD Section 10
+
+QTS Compliance Header:
+Test ID: QA-RVU-UNIT-0001
+Owner: Data Engineering
+Tier: unit
+Environments: dev, ci, staging, production
+Dependencies: cms_pricing.ingestion.ingestors.rvu_ingestor
+Quality Gates: merge, pre-deploy, release
+SLOs: completion ≤ 5 min, pass rate ≥95%, flake rate <1%
+"""
 
 import pytest
 from decimal import Decimal

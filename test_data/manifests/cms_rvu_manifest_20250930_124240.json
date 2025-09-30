@@ -1,0 +1,103 @@
+{
+  "source": "cms_rvu",
+  "discovered_at": "2025-09-30T12:42:39.473629",
+  "start_year": 2025,
+  "end_year": 2025,
+  "latest_only": true,
+  "files": [
+    {
+      "name": "RVU25A",
+      "filename": "RVU25A",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25a",
+      "year": 2025,
+      "quarter": "A",
+      "file_type": "txt",
+      "size_bytes": null,
+      "last_modified": null,
+      "checksum": null
+    },
+    {
+      "name": "RVU25B",
+      "filename": "RVU25B",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25b",
+      "year": 2025,
+      "quarter": "B",
+      "file_type": "txt",
+      "size_bytes": null,
+      "last_modified": null,
+      "checksum": null
+    },
+    {
+      "name": "RVU25C",
+      "filename": "RVU25C",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25c",
+      "year": 2025,
+      "quarter": "C",
+      "file_type": "txt",
+      "size_bytes": null,
+      "last_modified": null,
+      "checksum": null
+    },
+    {
+      "name": "RVU25D",
+      "filename": "RVU25D",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25d-0",
+      "year": 2025,
+      "quarter": "D",
+      "file_type": "txt",
+      "size_bytes": null,
+      "last_modified": null,
+      "checksum": null
+    }
+  ],
+  "metadata": {
+    "scraper_version": "1.0.0",
+    "discovery_method": "scraper",
+    "total_files": 4
+  },
+  "download_completed_at": "2025-09-30T12:42:40.213903",
+  "download_result": {
+    "files_downloaded": 4,
+    "files_failed": 0,
+    "total_size_bytes": 753266,
+    "download_errors": [],
+    "downloaded_files": [
+      {
+        "success": true,
+        "filename": "RVU25A",
+        "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25a",
+        "file_path": "test_data/scraper_output/scraped_data/RVU25A",
+        "size_bytes": 188316,
+        "checksum": "c00c67f696fad6f6c36644ae5210ea549e716f81bbed3f1f8d699fc653b539ee",
+        "downloaded_at": "2025-09-30T12:42:39.569148"
+      },
+      {
+        "success": true,
+        "filename": "RVU25B",
+        "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25b",
+        "file_path": "test_data/scraper_output/scraped_data/RVU25B",
+        "size_bytes": 188316,
+        "checksum": "3efae9035fe972657c388c7dbeae1ad65ae7b19a742b4fca396fc53ee1bd0375",
+        "downloaded_at": "2025-09-30T12:42:39.906820"
+      },
+      {
+        "success": true,
+        "filename": "RVU25C",
+        "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25c",
+        "file_path": "test_data/scraper_output/scraped_data/RVU25C",
+        "size_bytes": 188316,
+        "checksum": "ec1337bdc996857549d7bedfb6fa3331511d964400e58d4820ec94f6676252a5",
+        "downloaded_at": "2025-09-30T12:42:40.114421"
+      },
+      {
+        "success": true,
+        "filename": "RVU25D",
+        "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25d-0",
+        "file_path": "test_data/scraper_output/scraped_data/RVU25D",
+        "size_bytes": 188318,
+        "checksum": "e83a3c1fbc924601874793a37339a08c4f52fd6b12e22693639b9bd6268b0c97",
+        "downloaded_at": "2025-09-30T12:42:40.213697"
+      }
+    ]
+  }
+}

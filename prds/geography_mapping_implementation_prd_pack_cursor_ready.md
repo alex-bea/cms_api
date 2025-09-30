@@ -64,13 +64,14 @@ SLOs are enforced by CI and monitored in production dashboards; **CI gates** (se
 **Resolver API** `POST /geo/resolve`
 - **Request**
   - Minimal: `{ zip }` → defaults to **current year (annual)** selection.
-  - Date‑specific: `{ zip, valuation_date: 'YYYY-MM-DD' }`.
-  - Quarter‑specific: `{ zip, valuation_year: YYYY, quarter: 1|2|3|4 }`.
+  - Date-specific: `{ zip, valuation_date: 'YYYY-MM-DD' }`.
+  - Quarter-specific: `{ zip, valuation_year: YYYY, quarter: 1|2|3|4 }`.
   - Annual: `{ zip, valuation_year: YYYY }`.
   - Common options: `strict=false`, `radius={initial, step, max}`, `expose_carrier=false`.
 - **Precedence**: `valuation_date` **overrides** `{valuation_year, quarter}` which **overrides** `valuation_year`.
 - **Response**: `{ locality_id, state, rural_flag, carrier?, match_level, candidate_zip?, candidate_distance_miles?, snapshot_digest, source:'ZIP_LOCALITY' }`
-- **Contract**: OpenAPI stub committed **before code**; contract tests enforce shapes, codes, and latency budgets. **Rate limiting (429)** is in scope for GA. **Caching/ETag** behavior is **post‑GA** (documented later).
+- **Contract**: OpenAPI stub committed **before code**; contract tests enforce shapes, codes, and latency budgets. **Rate limiting (429)** is in scope for GA. **Caching/ETag** behavior is **post-GA** (documented later).
+- **Standards**: API contract and lifecycle must conform to the **Global API Program PRDs (v1.0)**.
 
 **Healthcheck Endpoint** `GET /geo/healthz` … *(unchanged spec above)*
 
@@ -375,6 +376,17 @@ A **CI gate** is an automated check in Continuous Integration that **must pass**
 
 ---
 
+## 16.1) QA Summary (per QA & Testing Standard v1.0)
+| Item | Details |
+| --- | --- |
+| **Scope & Ownership** | Geography locality mapping resolver + ingestion pack; engineering owner the Geography/Locality squad with QA partner from the Quality Engineering guild; consumers include pricing, analytics, and downstream resolvers. |
+| **Test Tiers & Coverage** | Unit/component: `tests/test_geography_ingestion.py`, `tests/test_geography_resolver.py`, `tests/test_geometry_nearest_logic.py`; Integration: `tests/test_geography_integration.py`, `tests/test_geography_automation.py` exercising CLI + scheduler; Scenario/E2E: `tests/test_state_boundary_enforcement.py`, `tests/test_state_boundary_simple.py`, gap-report assertions. Coverage currently ~82% for geography modules (target 90%; tracked via coverage dashboard). |
+| **Fixtures & Baselines** | CMS ZIP5/ZIP9 and layout fixtures under `sample_data/zplc_oct2025/`; golden gap-report snapshots archived in `tests/golden/test_scenarios.jsonl`; nearest-distance baselines derived from `sample_data/nber_sample_1000.csv` with digests tracked in QA monitoring dashboards. |
+| **Quality Gates** | Merge pipeline (`ci-unit.yaml`) blocks on geography unit/component suites and schema diffs; `ci-integration.yaml` provisions Postgres + runs resolver integration tests; nightly `ci-nightly.yaml` replays ingest + nearest scenarios with drift alerts blocking release. |
+| **Production Monitors** | Automated scheduler exports snapshot digest + coverage metrics; gap report + match-mix dashboards alert when coverage or nearest fallbacks exceed thresholds; latency SLO monitors watch resolver p95 per §2. |
+| **Manual QA** | Operator CLI (`python -m cms_pricing.cli.geography …`) used for pre-cutover smoke; manual review of coverage dashboard + change notifications before enabling new snapshots. |
+| **Outstanding Risks / TODO** | Close open TODOs in §16 (effective dating API, geometry policy); expand automated rural flag validation; backfill historical digest comparison for new states. |
+
 ## 17) Appendices
 ### 17.1 Tables (field‑level dictionary)
 **snapshots**: `dataset_id`, `effective_from`, `effective_to`, `dataset_digest`, `source_url`, `published_at`, `created_at`
@@ -385,4 +397,3 @@ A **CI gate** is an automated check in Continuous Integration that **must pass**
 
 ### 17.2 Error Codes (authoritative)
 `GEO_NEEDS_PLUS4`, `GEO_NOT_FOUND_IN_STATE`, `GEO_NO_COVERAGE_FOR_PERIOD` — messages must include remediation and policy summary.
-

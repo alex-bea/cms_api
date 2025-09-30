@@ -1,0 +1,254 @@
+openapi: 3.0.3
+info:
+  title: CMS Pricing RVU API
+  description: API for accessing CMS RVU (Resource-Based Relative Value Units) data
+  version: 1.0.0
+  contact:
+    name: Data Engineering Team
+    email: data-engineering@company.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.cms-pricing.com/v1
+    description: Production server
+  - url: https://staging-api.cms-pricing.com/v1
+    description: Staging server
+  - url: http://localhost:8000/api/v1
+    description: Development server
+
+paths:
+  /rvu/healthz:
+    get:
+      summary: Health Check
+      description: Check if the service is healthy
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2025-09-30T11:00:00Z"
+
+  /rvu/readyz:
+    get:
+      summary: Readiness Check
+      description: Check if the service is ready to serve requests
+      operationId: readinessCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2025-09-30T11:00:00Z"
+        '503':
+          description: Service not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /rvu/releases:
+    get:
+      summary: Get RVU Releases
+      description: Retrieve a list of RVU data releases
+      operationId: getReleases
+      tags:
+        - Releases
+      parameters:
+        - name: limit
+          in: query
+          description: Number of releases to return
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: offset
+          in: query
+          description: Number of releases to skip
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: source_version
+          in: query
+          description: Filter by source version
+          required: false
+          schema:
+            type: string
+        - name: X-Correlation-Id
+          in: header
+          description: Correlation ID for request tracing
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of releases retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleasesResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    Release:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the release
+        type:
+          type: string
+          description: Type of RVU data release
+          example: "PPRRVU"
+        source_version:
+          type: string
+          description: Version of the source data
+          example: "2025Q1"
+        source_url:
+          type: string
+          format: uri
+          description: URL of the source data
+        imported_at:
+          type: string
+          format: date-time
+          description: When the data was imported
+        published_at:
+          type: string
+          format: date-time
+          description: When the data was published
+        notes:
+          type: string
+          description: Additional notes about the release
+          nullable: true
+
+    ReleasesResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Release'
+        meta:
+          type: object
+          properties:
+            pagination:
+              type: object
+              properties:
+                limit:
+                  type: integer
+                offset:
+                  type: integer
+                total:
+                  type: integer
+            filters:
+              type: object
+              properties:
+                source_version:
+                  type: string
+                  nullable: true
+        trace:
+          type: object
+          properties:
+            correlation_id:
+              type: string
+              format: uuid
+            vintage:
+              type: string
+              description: Active data vintage
+            hash:
+              type: string
+              description: Hash of the response data
+            latency_ms:
+              type: number
+              description: Response latency in milliseconds
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Error code
+              example: "RELEASES_FETCH_ERROR"
+            message:
+              type: string
+              description: Human-readable error message
+              example: "Failed to fetch releases"
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: Field that caused the error
+                  issue:
+                    type: string
+                    description: Description of the issue
+        trace:
+          type: object
+          properties:
+            correlation_id:
+              type: string
+              format: uuid
+              description: Correlation ID for request tracing
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Health
+    description: Health and readiness checks
+  - name: Releases
+    description: RVU data releases

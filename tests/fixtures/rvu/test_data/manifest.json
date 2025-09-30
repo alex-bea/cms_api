@@ -1,0 +1,64 @@
+{
+  "source": "cms_rvu_test",
+  "discovered_at": "2025-09-30T13:15:34.434730",
+  "files": [
+    {
+      "filename": "PPRRVU2025_Oct_test.txt",
+      "url": "file://tests/fixtures/rvu/test_data/PPRRVU2025_Oct_test.txt",
+      "sha256": "e7a259532c8c5175bcb00c18318b14b006add78936544944ad92421b68570ac1",
+      "size_bytes": 129000,
+      "content_type": "text/plain",
+      "last_modified": "2025-09-30T13:15:34.434917"
+    },
+    {
+      "filename": "GPCI2025_test.txt",
+      "url": "file://tests/fixtures/rvu/test_data/GPCI2025_test.txt",
+      "sha256": "d2ea20ffa0fcd4e2f6f1aead3d695ab8eaf2da1eead52f95d32345326d7ab004",
+      "size_bytes": 4200,
+      "content_type": "text/plain",
+      "last_modified": "2025-09-30T13:15:34.434958"
+    },
+    {
+      "filename": "OPPSCAP_Oct_test.txt",
+      "url": "file://tests/fixtures/rvu/test_data/OPPSCAP_Oct_test.txt",
+      "sha256": "d53bd8031ad33cceb764d222a53bf903f0f23d61c889c83870987e93e3737554",
+      "size_bytes": 6400,
+      "content_type": "text/plain",
+      "last_modified": "2025-09-30T13:15:34.434998"
+    },
+    {
+      "filename": "ANES2025_test.txt",
+      "url": "file://tests/fixtures/rvu/test_data/ANES2025_test.txt",
+      "sha256": "057c17d9576b61f5081f5760743b121cb4b6da3822e4eb1e934be5c10e3766d3",
+      "size_bytes": 1860,
+      "content_type": "text/plain",
+      "last_modified": "2025-09-30T13:15:34.435029"
+    },
+    {
+      "filename": "25LOCCO_test.txt",
+      "url": "file://tests/fixtures/rvu/test_data/25LOCCO_test.txt",
+      "sha256": "d6bebe798f9aaa1921d1256652ba3606469a9e0a0cc17a2c48e0d5a8c9b18a5f",
+      "size_bytes": 4320,
+      "content_type": "text/plain",
+      "last_modified": "2025-09-30T13:15:34.435063"
+    }
+  ],
+  "metadata": {
+    "test_dataset": true,
+    "record_counts": {
+      "pprrvu": 1000,
+      "gpci": 50,
+      "oppscap": 200,
+      "anes": 30,
+      "locco": 40
+    },
+    "total_records": 1320,
+    "created_at": "2025-09-30T13:15:34.435066",
+    "version": "1.0.0"
+  },
+  "license": {
+    "name": "Test Data License",
+    "url": "https://example.com/test-license",
+    "attribution_required": false
+  }
+}

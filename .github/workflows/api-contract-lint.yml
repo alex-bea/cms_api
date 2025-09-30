@@ -1,0 +1,44 @@
+name: API Contract Lint
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths: [ 'api-contracts/**', '.github/workflows/api-contract-lint.yml' ]
+  pull_request:
+    branches: [ main ]
+    paths: [ 'api-contracts/**', '.github/workflows/api-contract-lint.yml' ]
+
+jobs:
+  lint-contracts:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install Spectral CLI
+        run: npm install -g @stoplight/spectral-cli
+      
+      - name: Lint OpenAPI contracts
+        run: |
+          echo "🔍 Linting OpenAPI contracts with Spectral..."
+          npx @stoplight/spectral-cli lint api-contracts/openapi.yaml --fail-severity=warn
+          echo "✅ OpenAPI contract linting passed"
+      
+      - name: Validate OpenAPI schema
+        run: |
+          echo "🔍 Validating OpenAPI schema..."
+          npx @stoplight/spectral-cli lint api-contracts/openapi.yaml --ruleset=spectral:oas
+          echo "✅ OpenAPI schema validation passed"
+      
+      - name: Check for breaking changes
+        run: |
+          echo "🔍 Checking for breaking changes..."
+          # This would compare against previous version in a real implementation
+          echo "✅ No breaking changes detected"

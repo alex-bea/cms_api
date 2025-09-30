@@ -176,3 +176,5 @@ Each PRD must append a QA Summary table covering:
 
 ### Appendix E — Deviation Request Form (abridged)
 Fields: `requester`, `suite_id`, `deviation_type`, `justification`, `mitigation`, `expiry`, `approver`.
+
+always check to see if you've already written tests before writing new ones

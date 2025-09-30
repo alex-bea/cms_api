@@ -1,0 +1,52 @@
+{
+  "release_id": "scraper-20250930-124242",
+  "batch_id": "7018d284-7fcd-46e5-a674-65b637cda9b1",
+  "source": "cms_rvu",
+  "files": [
+    {
+      "path": "files/rvu25a.zip",
+      "sha256": "3fe3d0d9e27a0bc13292183543f2b4683d5a191e70addcbc02e78ab3672b4c1d",
+      "size_bytes": 482,
+      "content_type": "application/zip",
+      "url": "https://www.cms.gov/files/zip/rvu25a.zip",
+      "last_modified": "Tue, 30 Sep 2025 19:42:33 GMT",
+      "etag": "\"1759261353\""
+    },
+    {
+      "path": "files/rvu25b.zip",
+      "sha256": "500dc65104e587f6c8716947e0aa525df7e33bd6c48873c8ca30894197349cdf",
+      "size_bytes": 482,
+      "content_type": "application/zip",
+      "url": "https://www.cms.gov/files/zip/rvu25b.zip",
+      "last_modified": "Tue, 30 Sep 2025 19:42:34 GMT",
+      "etag": "\"1759261354\""
+    },
+    {
+      "path": "files/rvu25c.zip",
+      "sha256": "1be1d79627b9c44dd2e1b04a944983f0844265119dd94bca7bb5c1805230d435",
+      "size_bytes": 482,
+      "content_type": "application/zip",
+      "url": "https://www.cms.gov/files/zip/rvu25c.zip",
+      "last_modified": "Tue, 30 Sep 2025 19:42:34 GMT",
+      "etag": "\"1759261354\""
+    },
+    {
+      "path": "files/rvu25d.zip",
+      "sha256": "16377d59e00bd1f1176a7f260b79b9c780b5acc0881e5427f5d6f653f8d8728d",
+      "size_bytes": 482,
+      "content_type": "application/zip",
+      "url": "https://www.cms.gov/files/zip/rvu25d.zip",
+      "last_modified": "Tue, 30 Sep 2025 19:42:34 GMT",
+      "etag": "\"1759261354\""
+    }
+  ],
+  "fetched_at": "2025-09-30T12:42:42.314191",
+  "discovered_from": "https://www.cms.gov/medicare/payment/fee-schedules",
+  "source_url": "https://www.cms.gov/medicare/payment/fee-schedules",
+  "license": {
+    "name": "CMS Public Domain",
+    "url": "https://www.cms.gov/About-CMS/Agency-Information/Aboutwebsite/Privacy-Policy",
+    "attribution_required": false
+  },
+  "notes_url": "https://www.cms.gov/medicare/payment/fee-schedules"
+}

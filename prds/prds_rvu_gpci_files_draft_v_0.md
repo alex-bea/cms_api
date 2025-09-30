@@ -174,6 +174,7 @@ We ingest these artifacts each cycle (A/B/C/D + potential AR corrections). This 
 ---
 
 ## 9) Interfaces
+API contracts exposed from this pack must follow the **Global API Program PRDs (v1.0)** for versioning and lifecycle.
 ### 9.1 Warehouse Views
 - `vw_rvu_current(date)` → latest RVUs (by HCPCS/modifier) effective on `date`.
 - `vw_gpci_current(date)` → locality GPCIs effective on `date`.
@@ -581,6 +582,17 @@ Automatically discover, download, validate, and ingest CMS RVU artifacts for the
 
 ---
 
+## 21) QA Summary (per QA & Testing Standard v1.0)
+| Item | Details |
+| --- | --- |
+| **Scope & Ownership** | RVU/GPCI/OPPSCAP/ANES/Locality ingestion pack; owned by RVU Data squad with Quality Engineering partnership; downstream consumers include pricing APIs, analytics, compliance. |
+| **Test Tiers & Coverage** | Unit/component: parser & normalization suites in `tests/test_rvu_parsers.py` and `tests/test_rvu_basic.py`; Validation: business rules in `tests/test_rvu_validations.py`; Contract/API: `tests/test_rvu_api_contracts.py` for read-only endpoints; Scenario: ingestion replay + schema enforcement in `tests/test_ingestion_pipeline.py`. Coverage currently 88% (target ≥92%). |
+| **Fixtures & Baselines** | Authoritative TXT/CSV samples + layout YAML stored under `tests/fixtures/rvu/`; golden outputs appended to `tests/golden/test_scenarios.jsonl`; baseline metrics tracked in QA data warehouse (freshness, row deltas) with release digests captured in PRD changelog. |
+| **Quality Gates** | Merge: `ci-unit.yaml` runs parser, validation, and contract suites with coverage delta guard; `ci-integration.yaml` loads fixtures into Postgres + verifies bitemporal invariants; nightly replay ensures no schema drift and checks delta tolerances. |
+| **Production Monitors** | Freshness and row-count drift alerts from ingestion scheduler; schema/layout audit job blocks runs missing authoritative layouts (§22); API latency + error monitors cover consumer endpoints. |
+| **Manual QA** | Layout audit checklist prior to accepting new CMS cycles; manual parity spot-checks for top HCPCS codes vs CMS calculators; operator verification of anomaly reports before GA promotions. |
+| **Outstanding Risks / TODO** | Close tasks in §19 (layout registry YAML, scraper backfill); extend golden fixtures to prior cycles; finalize automated payability + anesthesia validations. |
+
 ## 22) Authoritative Layout Policy (Global Rule)
 **Principle:** *Every ingestor must rely on an authoritative layout/specification.* Examples include CMS cycle PDFs (e.g., RVUyyA/B/C/D*.pdf) or versioned schema YAML files maintained in‑repo.
 
@@ -601,4 +613,3 @@ Automatically discover, download, validate, and ingest CMS RVU artifacts for the
 | Date       | Version | Author | Summary                                     | Details |
 |------------|---------|--------|---------------------------------------------|---------|
 | 2025-09-27 | v1.0    | Team   | **GA-ready: Validations, Scraper, API live** | Hybrid parser complete; business validations implemented; web scraper & CLI; read-only API endpoints with contract tests; performance SLOs & observability met. |
-

@@ -2,6 +2,15 @@
 RVU API Contract Tests
 
 Tests to verify API behavior and latency SLOs
+
+QTS Compliance Header:
+Test ID: QA-RVU-CONTRACT-0001
+Owner: Data Engineering
+Tier: contract
+Environments: dev, ci, staging, production
+Dependencies: cms_pricing.routers.rvu, cms_pricing.schemas.rvu
+Quality Gates: merge, pre-deploy, release
+SLOs: completion ≤ 10 min, pass rate ≥95%, flake rate <1%
 """
 
 import pytest

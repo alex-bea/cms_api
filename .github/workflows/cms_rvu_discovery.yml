@@ -1,0 +1,242 @@
+name: CMS RVU Weekly Discovery
+
+on:
+  schedule:
+    - cron: '0 9 * * 1' # 09:00 PT, every Monday
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Discovery mode'
+        required: true
+        default: 'discovery'
+        type: choice
+        options:
+          - discovery
+          - download
+          - full_ingestion
+      start_year:
+        description: 'Start year for historical data'
+        required: false
+        default: '2025'
+        type: string
+      end_year:
+        description: 'End year for historical data'
+        required: false
+        default: '2025'
+        type: string
+      latest_only:
+        description: 'Only process latest files'
+        required: false
+        default: 'true'
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.11'
+  SCRAPER_OUTPUT_DIR: './data/scraper_output'
+  MANIFEST_DIR: './data/manifests'
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      files_changed: ${{ steps.discovery.outputs.files_changed }}
+      manifest_path: ${{ steps.discovery.outputs.manifest_path }}
+      snapshot_digest: ${{ steps.discovery.outputs.snapshot_digest }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Create output directories
+        run: |
+          mkdir -p ${{ env.SCRAPER_OUTPUT_DIR }}
+          mkdir -p ${{ env.MANIFEST_DIR }}
+      
+      - name: Run discovery
+        id: discovery
+        run: |
+          python -m cms_pricing.ingestion.scrapers.cms_rvu_scraper \
+            --mode discovery \
+            --output-dir ${{ env.SCRAPER_OUTPUT_DIR }} \
+            --manifest-dir ${{ env.MANIFEST_DIR }} \
+            --start-year ${{ inputs.start_year || '2025' }} \
+            --end-year ${{ inputs.end_year || '2025' }} \
+            --latest-only ${{ inputs.latest_only || 'true' }}
+        env:
+          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
+      
+      - name: Check for changes
+        id: check_changes
+        run: |
+          if [ "${{ steps.discovery.outputs.files_changed }}" = "true" ]; then
+            echo "Files have changed, approval required"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "No changes detected, skipping download"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Upload discovery artifacts
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: discovery-artifacts-${{ github.run_id }}
+          path: |
+            ${{ env.SCRAPER_OUTPUT_DIR }}
+            ${{ env.MANIFEST_DIR }}
+          retention-days: 30
+      
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request' && steps.check_changes.outputs.changed == 'true'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🔍 **RVU Discovery Results**\n\n' +
+                    'Files have changed and require approval for download:\n' +
+                    '- Manifest: `${{ steps.discovery.outputs.manifest_path }}`\n' +
+                    '- Snapshot Digest: `${{ steps.discovery.outputs.snapshot_digest }}`\n' +
+                    '- Files Changed: `${{ steps.discovery.outputs.files_changed }}`\n\n' +
+                    'Please review and approve the download if changes are expected.'
+            })
+
+  download:
+    needs: discover
+    if: needs.discover.outputs.files_changed == 'true' && (github.event_name == 'workflow_dispatch' || github.event.inputs.mode == 'download' || github.event.inputs.mode == 'full_ingestion')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download discovery artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: discovery-artifacts-${{ github.run_id }}
+          path: ${{ env.SCRAPER_OUTPUT_DIR }}
+      
+      - name: Run download
+        run: |
+          python -m cms_pricing.ingestion.scrapers.cms_rvu_scraper \
+            --mode download \
+            --output-dir ${{ env.SCRAPER_OUTPUT_DIR }} \
+            --manifest-dir ${{ env.MANIFEST_DIR }} \
+            --start-year ${{ inputs.start_year || '2025' }} \
+            --end-year ${{ inputs.end_year || '2025' }} \
+            --latest-only ${{ inputs.latest_only || 'true' }}
+        env:
+          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
+      
+      - name: Upload download artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: download-artifacts-${{ github.run_id }}
+          path: |
+            ${{ env.SCRAPER_OUTPUT_DIR }}
+            ${{ env.MANIFEST_DIR }}
+          retention-days: 30
+
+  ingest:
+    needs: [discover, download]
+    if: always() && (needs.download.result == 'success' || github.event.inputs.mode == 'full_ingestion')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: download-artifacts-${{ github.run_id }}
+          path: ${{ env.SCRAPER_OUTPUT_DIR }}
+      
+      - name: Run ingestion
+        run: |
+          python -m cms_pricing.ingestion.ingestors.rvu_ingestor \
+            --mode ingest \
+            --input-dir ${{ env.SCRAPER_OUTPUT_DIR }} \
+            --output-dir ${{ env.SCRAPER_OUTPUT_DIR }}/processed \
+            --start-year ${{ inputs.start_year || '2025' }} \
+            --end-year ${{ inputs.end_year || '2025' }} \
+            --latest-only ${{ inputs.latest_only || 'true' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
+      
+      - name: Upload final artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: final-artifacts-${{ github.run_id }}
+          path: |
+            ${{ env.SCRAPER_OUTPUT_DIR }}
+          retention-days: 30
+      
+      - name: Create summary
+        run: |
+          echo "## 🎯 RVU Scraper Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Discovery:** ${{ needs.discover.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Download:** ${{ needs.download.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Ingestion:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Files Changed:** ${{ needs.discover.outputs.files_changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Manifest Path:** ${{ needs.discover.outputs.manifest_path }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Snapshot Digest:** ${{ needs.discover.outputs.snapshot_digest }}" >> $GITHUB_STEP_SUMMARY

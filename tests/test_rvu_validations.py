@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Test suite for RVU validation engine"""
+"""
+Test suite for RVU validation engine
+
+QTS Compliance Header:
+Test ID: QA-RVU-UNIT-0002
+Owner: Data Engineering
+Tier: unit
+Environments: dev, ci, staging, production
+Dependencies: cms_pricing.ingestion.ingestors.rvu_ingestor, cms_pricing.validation.rvu_validators
+Quality Gates: merge, pre-deploy, release
+SLOs: completion ≤ 5 min, pass rate ≥95%, flake rate <1%
+"""
 
 import unittest
 import sys

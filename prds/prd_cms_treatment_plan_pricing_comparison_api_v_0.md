@@ -158,6 +158,7 @@ Build a Python-based API that produces **ZIP-level, episode-based** treatment pl
 - `run_trace(run_id, datasets_jsonb, notes_jsonb)`
 
 ## 9) API Endpoints (MVP) (MVP)
+All endpoints and change management must align with the **Global API Program PRDs (v1.0)**.
 - `POST /plans` — create/update plan definition.  
 - `GET /plans` — list plan summaries (cursor pagination: **default limit=20**, **max=200**, `next_page_token`).
 - `GET /geography/resolve?zip=` — return locality/CBSA candidates, `requires_resolution` flag.
@@ -463,3 +464,13 @@ Content-Type: application/json
 - **Metrics:** Prometheus `/metrics` exposing request counts/latency histograms, cache hits, dataset selection, packaging counters, modifier counters.
 - **Health:** `/healthz` (liveness) and `/readyz` (DB + required snapshots present + cache writable).
 
+### QA Summary (per QA & Testing Standard v1.0)
+| Item | Details |
+| --- | --- |
+| **Scope & Ownership** | CMS treatment plan pricing & comparison API; owned by Pricing Apps squad with QA partner from Quality Engineering; stakeholders include Product Strategy, Provider Ops, and external clients. |
+| **Test Tiers & Coverage** | Unit/component: `tests/test_plans.py` (pricing math, modifiers, beneficiary cost sharing); Contract/API: `tests/test_rvu_api_contracts.py` verifies payload + schema; Integration: `tests/test_geography_resolver.py` + `tests/test_nearest_zip_resolver.py` exercised via API harness; Scenario/E2E: golden run comparisons in `tests/test_plans.py::test_golden_pricing`. Coverage currently 78% (target ≥85% for API layer) tracked in CI coverage report. |
+| **Fixtures & Baselines** | Golden treatment plans + expected outputs stored in `tests/golden/test_scenarios.jsonl`; RVU/GPCI fixtures under `tests/fixtures/rvu/`; API response baselines tracked in QA dashboards with digests logged alongside release notes. |
+| **Quality Gates** | Merge pipeline executes unit + contract tests (fails on coverage regression >0.5%); `ci-integration.yaml` runs API end-to-end suites against docker-compose; release gating requires passing load harness + acceptance checklist in §16. |
+| **Production Monitors** | Synthetic `/price` + `/compare` probes every 5 min; Prometheus latency/error alerts aligned with SLOs above; dataset freshness monitor ensures backing snapshots ≤ 10 days old. |
+| **Manual QA** | Pre-release review of multi-provider matrix outputs; manual validation of trace payloads for new modifiers; compliance check for licensing toggles before external enablement. |
+| **Outstanding Risks / TODO** | Expand load/SLO automation (per Test strategy); backfill Medicaid comparators coverage; finalize RBAC smoke for `/admin/datasets` before GA. |

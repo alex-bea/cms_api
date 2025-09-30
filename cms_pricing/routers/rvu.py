@@ -6,7 +6,8 @@ Provides read-only endpoints for RVU data with latency SLOs
 
 from typing import List, Optional, Dict, Any
 from datetime import date, datetime
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Request, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from cms_pricing.database import SessionLocal
 from cms_pricing.models.rvu import Release, RVUItem, GPCIIndex, OPPSCap, AnesCF, LocalityCounty
@@ -15,11 +16,50 @@ from cms_pricing.schemas.rvu import (
     OPPSCapResponse, AnesCFResponse, LocalityCountyResponse,
     RVUSearchRequest, RVUSearchResponse
 )
+from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor
 import logging
+import uuid
+import time
+import hashlib
+import structlog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/v1/rvu", tags=["RVU Data"])
+
+
+def get_correlation_id(request: Request) -> str:
+    """Get or generate correlation ID per Global API Program standards"""
+    correlation_id = request.headers.get("X-Correlation-Id")
+    if not correlation_id:
+        correlation_id = str(uuid.uuid4())
+    return correlation_id
+
+
+def create_api_response(data: Any, meta: Dict[str, Any] = None, trace: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Create standardized API response per Global API Program standards"""
+    response = {
+        "data": data,
+        "meta": meta or {},
+        "trace": trace or {}
+    }
+    return response
+
+
+def create_error_response(error_code: str, message: str, details: List[Dict[str, str]] = None, 
+                        correlation_id: str = None) -> JSONResponse:
+    """Create standardized error response per Global API Program standards"""
+    error_response = {
+        "error": {
+            "code": error_code,
+            "message": message,
+            "details": details or []
+        },
+        "trace": {
+            "correlation_id": correlation_id or str(uuid.uuid4())
+        }
+    }
+    return JSONResponse(status_code=400, content=error_response)
 
 
 def get_db():
@@ -31,14 +71,37 @@ def get_db():
         db.close()
 
 
-@router.get("/releases", response_model=List[ReleaseResponse])
+@router.get("/healthz")
+async def health_check():
+    """Health check endpoint per Global API Program standards"""
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+
+@router.get("/readyz")
+async def readiness_check(db: Session = Depends(get_db)):
+    """Readiness check endpoint per Global API Program standards"""
+    try:
+        # Check database connectivity
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+        return {"status": "ready", "timestamp": datetime.now().isoformat()}
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+        raise HTTPException(status_code=503, detail="Service not ready")
+
+
+@router.get("/releases")
 async def get_releases(
+    request: Request,
     limit: int = Query(10, ge=1, le=100, description="Number of releases to return"),
     offset: int = Query(0, ge=0, description="Number of releases to skip"),
     source_version: Optional[str] = Query(None, description="Filter by source version"),
     db: Session = Depends(get_db)
 ):
     """Get list of RVU releases"""
+    
+    start_time = time.time()
+    correlation_id = get_correlation_id(request)
     
     try:
         query = db.query(Release)
@@ -48,7 +111,8 @@ async def get_releases(
         
         releases = query.order_by(Release.imported_at.desc()).offset(offset).limit(limit).all()
         
-        return [
+        # Create response data
+        data = [
             ReleaseResponse(
                 id=str(release.id),
                 type=release.type,
@@ -60,10 +124,238 @@ async def get_releases(
             )
             for release in releases
         ]
+        
+        # Create metadata
+        meta = {
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "total": len(data)
+            },
+            "filters": {
+                "source_version": source_version
+            }
+        }
+        
+        # Create trace information
+        trace = {
+            "correlation_id": correlation_id,
+            "vintage": "2025-Q1",  # This would come from active vintage
+            "hash": hashlib.sha256(str(data).encode()).hexdigest()[:16],
+            "latency_ms": round((time.time() - start_time) * 1000, 2)
+        }
+        
+        return create_api_response(data, meta, trace)
     
     except Exception as e:
-        logger.error(f"Failed to get releases: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error(f"Failed to get releases: {e}", correlation_id=correlation_id)
+        return create_error_response(
+            "RELEASES_FETCH_ERROR", 
+            "Failed to fetch releases", 
+            [{"field": "releases", "issue": str(e)}],
+            correlation_id
+        )
+
+
+@router.get("/scraper/files")
+async def get_available_files(
+    request: Request,
+    start_year: int = Query(None, ge=2003, le=2025, description="Starting year for file discovery (defaults to current year if latest_only=True)"),
+    end_year: int = Query(None, ge=2003, le=2025, description="Ending year for file discovery (defaults to current year if latest_only=True)"),
+    use_scraper: bool = Query(True, description="Whether to use scraper for discovery"),
+    latest_only: bool = Query(True, description="Whether to only get the latest available files (default: True)")
+):
+    """Get available RVU files using the scraper"""
+    
+    start_time = time.time()
+    correlation_id = get_correlation_id(request)
+    
+    try:
+        # Initialize RVU ingestor
+        ingestor = RVUIngestor("./data/rvu_scraper")
+        
+        # Discover files
+        source_files = await ingestor.discover_and_download_files(
+            start_year=start_year,
+            end_year=end_year,
+            use_scraper=use_scraper,
+            latest_only=latest_only
+        )
+        
+        # Convert to response format
+        data = []
+        for sf in source_files:
+            data.append({
+                "filename": sf.filename,
+                "url": sf.url,
+                "content_type": sf.content_type,
+                "expected_size_bytes": sf.expected_size_bytes,
+                "last_modified": sf.last_modified.isoformat() if sf.last_modified else None,
+                "checksum": sf.checksum
+            })
+        
+        # Implement cursor-based pagination per Global API Program PRD §1.3
+        page_size = min(100, len(data))  # Default page size
+        next_cursor = None
+        
+        if len(data) > page_size:
+            # Simple cursor implementation - in production would use actual cursor
+            next_cursor = f"page_{1}_{page_size}"
+        
+        # Create metadata
+        meta = {
+            "discovery_method": "scraper" if use_scraper else "hardcoded",
+            "latest_only": latest_only,
+            "year_range": {
+                "start": start_year,
+                "end": end_year
+            } if start_year and end_year else "latest",
+            "pagination": {
+                "page_size": page_size,
+                "next_cursor": next_cursor,
+                "total_count": len(data)
+            }
+        }
+        
+        # Create trace information
+        trace = {
+            "correlation_id": correlation_id,
+            "latency_ms": round((time.time() - start_time) * 1000, 2)
+        }
+        
+        return create_api_response(data, meta, trace)
+        
+    except Exception as e:
+        logger.error("Failed to get available files", error=str(e), correlation_id=correlation_id)
+        return create_error_response(
+            "FILES_DISCOVERY_ERROR",
+            "Failed to discover files",
+            [{"field": "files", "issue": str(e)}],
+            correlation_id
+        )
+
+
+@router.post("/scraper/download-historical")
+async def download_historical_data(
+    request: Request,
+    start_year: int = Query(2003, ge=2003, le=2025, description="Starting year for historical data"),
+    end_year: int = Query(2025, ge=2003, le=2025, description="Ending year for historical data")
+):
+    """Download historical RVU data using the scraper"""
+    
+    start_time = time.time()
+    correlation_id = get_correlation_id(request)
+    
+    try:
+        # Initialize RVU ingestor
+        ingestor = RVUIngestor("./data/rvu_scraper")
+        
+        # Download historical data
+        result = await ingestor.download_historical_data(
+            start_year=start_year,
+            end_year=end_year
+        )
+        
+        # Create response data
+        data = {
+            "status": result.get("status"),
+            "files_found": result.get("files_found", 0),
+            "downloads_completed": result.get("downloads_completed", 0),
+            "downloads_failed": result.get("downloads_failed", 0),
+            "manifest_path": result.get("manifest_path"),
+            "data_directory": result.get("data_directory")
+        }
+        
+        # Create metadata
+        meta = {
+            "year_range": {
+                "start": start_year,
+                "end": end_year
+            },
+            "operation": "historical_download"
+        }
+        
+        # Create trace information
+        trace = {
+            "correlation_id": correlation_id,
+            "latency_ms": round((time.time() - start_time) * 1000, 2)
+        }
+        
+        return create_api_response(data, meta, trace)
+        
+    except Exception as e:
+        logger.error("Failed to download historical data", error=str(e), correlation_id=correlation_id)
+        return create_error_response(
+            "HISTORICAL_DOWNLOAD_ERROR",
+            "Failed to download historical data",
+            [{"field": "historical_data", "issue": str(e)}],
+            correlation_id
+        )
+
+
+@router.post("/scraper/ingest-from-scraped")
+async def ingest_from_scraped_data(
+    request: Request,
+    release_id: str = Query(..., description="Release identifier"),
+    batch_id: str = Query(..., description="Batch identifier"),
+    start_year: int = Query(None, ge=2003, le=2025, description="Starting year for file discovery (defaults to current year if latest_only=True)"),
+    end_year: int = Query(None, ge=2003, le=2025, description="Ending year for file discovery (defaults to current year if latest_only=True)"),
+    latest_only: bool = Query(True, description="Whether to only ingest the latest available files (default: True)")
+):
+    """Ingest data using files discovered by the scraper"""
+    
+    start_time = time.time()
+    correlation_id = get_correlation_id(request)
+    
+    try:
+        # Initialize RVU ingestor
+        ingestor = RVUIngestor("./data/rvu_scraper")
+        
+        # Ingest from scraped data
+        result = await ingestor.ingest_from_scraped_data(
+            release_id=release_id,
+            batch_id=batch_id,
+            start_year=start_year,
+            end_year=end_year,
+            latest_only=latest_only
+        )
+        
+        # Create response data
+        data = {
+            "status": result.get("status"),
+            "release_id": result.get("release_id"),
+            "batch_id": result.get("batch_id"),
+            "record_count": result.get("record_count", 0),
+            "quality_score": result.get("quality_score", 0),
+            "scraper_metadata": result.get("scraper_metadata", {})
+        }
+        
+        # Create metadata
+        meta = {
+            "latest_only": latest_only,
+            "year_range": {
+                "start": start_year,
+                "end": end_year
+            } if start_year and end_year else "latest",
+            "operation": "scraped_ingestion"
+        }
+        
+        # Create trace information
+        trace = {
+            "correlation_id": correlation_id,
+            "latency_ms": round((time.time() - start_time) * 1000, 2)
+        }
+        
+        return create_api_response(data, meta, trace)
+        
+    except Exception as e:
+        logger.error("Failed to ingest from scraped data", error=str(e), correlation_id=correlation_id)
+        return create_error_response(
+            "SCRAPED_INGESTION_ERROR",
+            "Failed to ingest from scraped data",
+            [{"field": "ingestion", "issue": str(e)}],
+            correlation_id
+        )
 
 
 @router.get("/releases/{release_id}", response_model=ReleaseResponse)

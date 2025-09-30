@@ -1,0 +1,72 @@
+{
+  "source": "cms_rvu",
+  "discovered_at": "2025-09-30T13:08:02.194129",
+  "fetched_at": "2025-09-30T13:08:02.194138",
+  "start_year": 2025,
+  "end_year": 2025,
+  "latest_only": true,
+  "source_url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files",
+  "discovered_from": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files",
+  "license": {
+    "name": "CMS Open Data",
+    "url": "https://www.cms.gov/About-CMS/Agency-Information/Aboutwebsite/Privacy-Policy",
+    "attribution_required": true
+  },
+  "files": [
+    {
+      "path": "RVU25A",
+      "filename": "RVU25A",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25a",
+      "sha256": null,
+      "size_bytes": null,
+      "content_type": "application/zip",
+      "year": 2025,
+      "quarter": "A",
+      "file_type": "txt",
+      "last_modified": null
+    },
+    {
+      "path": "RVU25B",
+      "filename": "RVU25B",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25b",
+      "sha256": null,
+      "size_bytes": null,
+      "content_type": "application/zip",
+      "year": 2025,
+      "quarter": "B",
+      "file_type": "txt",
+      "last_modified": null
+    },
+    {
+      "path": "RVU25C",
+      "filename": "RVU25C",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25c",
+      "sha256": null,
+      "size_bytes": null,
+      "content_type": "application/zip",
+      "year": 2025,
+      "quarter": "C",
+      "file_type": "txt",
+      "last_modified": null
+    },
+    {
+      "path": "RVU25D",
+      "filename": "RVU25D",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25d-0",
+      "sha256": null,
+      "size_bytes": null,
+      "content_type": "application/zip",
+      "year": 2025,
+      "quarter": "D",
+      "file_type": "txt",
+      "last_modified": null
+    }
+  ],
+  "metadata": {
+    "scraper_version": "1.0.0",
+    "discovery_method": "scraper",
+    "total_files": 4,
+    "robots_compliant": true,
+    "user_agent": "CMS-Pricing-Scraper/1.0.0 (contact@example.com)"
+  }
+}

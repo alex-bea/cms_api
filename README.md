@@ -340,3 +340,7 @@ This project is licensed under the MIT License. See LICENSE file for details.
 ---
 
 **Note**: This API is designed for healthcare pricing analysis and should not be used for actual claims processing without proper validation and compliance review.
+- **PRD Catalog**
+  - [`prds/global_api_program_prds_v_1.md`](prds/global_api_program_prds_v_1.md): global API standards (contracts, architecture, security, QA).
+  - [`prds/data_ingestion_standard_prd_v_1.md`](prds/data_ingestion_standard_prd_v_1.md): ingestion lifecycle and dataset contract requirements.
+  - [`prds/qa_testing_standard_prd_v_1.md`](prds/qa_testing_standard_prd_v_1.md): shared QA/testing expectations and summary template.

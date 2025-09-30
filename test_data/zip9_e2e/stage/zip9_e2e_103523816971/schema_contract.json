@@ -1,0 +1,65 @@
+{
+  "name": "cms_zip9_overrides",
+  "version": "1.0",
+  "description": "CMS ZIP9 overrides for precise locality mapping",
+  "source": "CMS.gov - Zip Codes Requiring 4 Extension files",
+  "classification": "public",
+  "license": "CMS Public Domain",
+  "attribution_required": false,
+  "schema_version": "1.0.0",
+  "created_at": "2025-09-30T10:35:29.222813",
+  "columns": {
+    "zip9_low": {
+      "name": "zip9_low",
+      "type": "string",
+      "nullable": false,
+      "description": "Low end of ZIP9 range (9 digits)",
+      "pattern": "^[0-9]{9}$"
+    },
+    "zip9_high": {
+      "name": "zip9_high",
+      "type": "string",
+      "nullable": false,
+      "description": "High end of ZIP9 range (9 digits)",
+      "pattern": "^[0-9]{9}$"
+    },
+    "state": {
+      "name": "state",
+      "type": "string",
+      "nullable": false,
+      "description": "Two-letter state code",
+      "pattern": "^[A-Z]{2}$"
+    },
+    "locality": {
+      "name": "locality",
+      "type": "string",
+      "nullable": false,
+      "description": "CMS locality code (2 digits)",
+      "pattern": "^[0-9]{2}$"
+    },
+    "rural_flag": {
+      "name": "rural_flag",
+      "type": "boolean",
+      "nullable": true,
+      "description": "Rural flag (A, B, or null)"
+    },
+    "effective_from": {
+      "name": "effective_from",
+      "type": "date",
+      "nullable": false,
+      "description": "Effective start date"
+    },
+    "effective_to": {
+      "name": "effective_to",
+      "type": "date",
+      "nullable": true,
+      "description": "Effective end date (null for ongoing)"
+    },
+    "vintage": {
+      "name": "vintage",
+      "type": "string",
+      "nullable": false,
+      "description": "Data vintage (YYYY-MM-DD)"
+    }
+  }
+}

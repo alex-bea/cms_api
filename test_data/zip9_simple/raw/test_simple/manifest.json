@@ -1,0 +1,11 @@
+{
+  "release_id": "test_simple",
+  "source_url": "https://www.cms.gov/files/zip/zip-code-carrier-locality-file-revised-08/14/2025.zip",
+  "license": "CMS Public Domain",
+  "attribution_required": false,
+  "fetched_at": "2025-09-30T10:29:04.770522",
+  "sha256": "b14c414de73256ac9594d7cb0a58a75214ba04f4fe043468ffda507c3dd75c2e",
+  "size_bytes": 4442716,
+  "content_type": "application/zip",
+  "discovered_from": "CMS.gov"
+}
