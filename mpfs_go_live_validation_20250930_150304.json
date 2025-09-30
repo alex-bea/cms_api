@@ -1,0 +1,112 @@
+{
+  "test_id": "QA-MPFS-GO-LIVE-0001",
+  "timestamp": "2025-09-30T15:03:04.094962",
+  "environment": "test",
+  "validation_results": {
+    "source_parity": {
+      "RVU25A": {
+        "status": "FAILED",
+        "error": "No data available",
+        "sample_size": 0
+      },
+      "RVU25B": {
+        "status": "FAILED",
+        "error": "No data available",
+        "sample_size": 0
+      },
+      "RVU25C": {
+        "status": "FAILED",
+        "error": "No data available",
+        "sample_size": 0
+      },
+      "RVU25D": {
+        "status": "FAILED",
+        "error": "No data available",
+        "sample_size": 0
+      }
+    },
+    "locality_gpci": {
+      "status": "FAILED",
+      "locality_validation": {
+        "valid": true,
+        "issues": [],
+        "checks": {
+          "total_localities": 0,
+          "issues_found": 0
+        }
+      },
+      "california_validation": {
+        "valid": false,
+        "error": "No California localities found"
+      },
+      "sample_size": 0
+    },
+    "conversion_factors": {
+      "status": "FAILED",
+      "cf_validation": {
+        "valid": false,
+        "issues": [
+          "CY 2025 conversion factor not found"
+        ],
+        "checks": {}
+      },
+      "anesthesia_validation": {
+        "valid": true,
+        "message": "Anesthesia CF validation not implemented in test data"
+      }
+    },
+    "api_functionality": {
+      "status": "FAILED",
+      "tests": {
+        "single_code": {
+          "status": "FAILED",
+          "status_code": 401,
+          "has_data": false,
+          "has_correlation_id": false
+        },
+        "pagination": {
+          "status": "FAILED",
+          "status_code": 401,
+          "has_pagination": false,
+          "pagination_metadata": {}
+        },
+        "filtering": {
+          "status": "FAILED",
+          "status_code": 401,
+          "filtered_count": 0,
+          "all_have_modifier": true
+        },
+        "stats_health": {
+          "status": "FAILED",
+          "health_status": 401,
+          "stats_status": 401,
+          "health_data": null,
+          "stats_data": null
+        }
+      }
+    },
+    "quarterly_diffs": {
+      "status": "FAILED",
+      "diff_summary": {
+        "valid": false,
+        "error": "Insufficient data for comparison"
+      },
+      "notable_changes": []
+    }
+  },
+  "summary": {
+    "overall_status": "FAILED",
+    "total_phases": 5,
+    "passed_phases": 0,
+    "failed_phases": 4,
+    "error_phases": 0,
+    "pass_rate": 0.0
+  },
+  "recommendations": [
+    "Address failed validation phases before go-live",
+    "Fix issues in locality_gpci phase",
+    "Fix issues in conversion_factors phase",
+    "Fix issues in api_functionality phase",
+    "Fix issues in quarterly_diffs phase"
+  ]
+}

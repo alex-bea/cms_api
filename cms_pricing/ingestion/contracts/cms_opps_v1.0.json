@@ -1,0 +1,420 @@
+{
+  "schema_id": "cms_opps_v1.0",
+  "dataset_name": "cms_opps",
+  "version": "1.0.0",
+  "description": "CMS OPPS (Hospital Outpatient Prospective Payment System) quarterly releases including APC payment rates and HCPCS crosswalks",
+  "dis_compliance": "v1.0",
+  "qts_compliance": "v1.0",
+  "tables": {
+    "opps_apc_payment": {
+      "description": "OPPS APC payment rates (Addendum A)",
+      "source": "CMS OPPS Quarterly Addenda - Addendum A",
+      "columns": {
+        "year": {
+          "type": "integer",
+          "nullable": false,
+          "description": "Calendar year",
+          "domain": "year_range",
+          "validation": {
+            "min_value": 2020,
+            "max_value": 2030
+          }
+        },
+        "quarter": {
+          "type": "integer",
+          "nullable": false,
+          "description": "Quarter (1-4)",
+          "domain": "quarter_enum",
+          "validation": {
+            "enum": [1, 2, 3, 4]
+          }
+        },
+        "apc_code": {
+          "type": "string",
+          "nullable": false,
+          "description": "APC code (4 digits)",
+          "domain": "apc_code",
+          "validation": {
+            "pattern": "^[0-9]{4}$",
+            "min_length": 4,
+            "max_length": 4
+          }
+        },
+        "apc_description": {
+          "type": "string",
+          "nullable": true,
+          "description": "APC description",
+          "domain": "free_text",
+          "validation": {
+            "max_length": 500
+          }
+        },
+        "payment_rate_usd": {
+          "type": "decimal",
+          "precision": 10,
+          "scale": 2,
+          "nullable": false,
+          "description": "Payment rate in USD",
+          "domain": "currency_usd",
+          "validation": {
+            "min_value": 0,
+            "max_value": 100000
+          }
+        },
+        "relative_weight": {
+          "type": "decimal",
+          "precision": 8,
+          "scale": 4,
+          "nullable": false,
+          "description": "Relative weight",
+          "domain": "decimal_weight",
+          "validation": {
+            "min_value": 0,
+            "max_value": 1000
+          }
+        },
+        "packaging_flag": {
+          "type": "string",
+          "nullable": true,
+          "description": "Packaging flag",
+          "domain": "packaging_flag",
+          "validation": {
+            "max_length": 1,
+            "enum": ["Y", "N", null]
+          }
+        },
+        "effective_from": {
+          "type": "date",
+          "nullable": false,
+          "description": "Effective start date",
+          "domain": "date_effective"
+        },
+        "effective_to": {
+          "type": "date",
+          "nullable": true,
+          "description": "Effective end date",
+          "domain": "date_effective"
+        },
+        "release_id": {
+          "type": "string",
+          "nullable": false,
+          "description": "Release identifier",
+          "domain": "release_id",
+          "validation": {
+            "pattern": "^opps_[0-9]{4}q[1-4]_r[0-9]+$"
+          }
+        },
+        "batch_id": {
+          "type": "string",
+          "nullable": false,
+          "description": "Batch identifier",
+          "domain": "batch_id"
+        }
+      },
+      "primary_key": ["year", "quarter", "apc_code", "effective_from"],
+      "natural_key": ["apc_code", "effective_from"],
+      "business_rules": {
+        "payment_rate_usd": {
+          "description": "Payment rates must be non-negative",
+          "rule": "payment_rate_usd >= 0"
+        },
+        "relative_weight": {
+          "description": "Relative weights must be non-negative",
+          "rule": "relative_weight >= 0"
+        },
+        "effective_dates": {
+          "description": "Effective from must be before effective to",
+          "rule": "effective_from < effective_to OR effective_to IS NULL"
+        }
+      }
+    },
+    "opps_hcpcs_crosswalk": {
+      "description": "HCPCS to APC crosswalk with Status Indicators (Addendum B)",
+      "source": "CMS OPPS Quarterly Addenda - Addendum B",
+      "columns": {
+        "year": {
+          "type": "integer",
+          "nullable": false,
+          "description": "Calendar year",
+          "domain": "year_range",
+          "validation": {
+            "min_value": 2020,
+            "max_value": 2030
+          }
+        },
+        "quarter": {
+          "type": "integer",
+          "nullable": false,
+          "description": "Quarter (1-4)",
+          "domain": "quarter_enum",
+          "validation": {
+            "enum": [1, 2, 3, 4]
+          }
+        },
+        "hcpcs_code": {
+          "type": "string",
+          "nullable": false,
+          "description": "HCPCS code (5 characters)",
+          "domain": "hcpcs_code",
+          "validation": {
+            "pattern": "^[A-Z0-9]{5}$",
+            "min_length": 5,
+            "max_length": 5
+          }
+        },
+        "modifier": {
+          "type": "string",
+          "nullable": true,
+          "description": "Modifier code",
+          "domain": "modifier_code",
+          "validation": {
+            "max_length": 2,
+            "pattern": "^[A-Z0-9]{0,2}$"
+          }
+        },
+        "status_indicator": {
+          "type": "string",
+          "nullable": false,
+          "description": "Status indicator",
+          "domain": "status_indicator",
+          "validation": {
+            "enum": ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
+          }
+        },
+        "apc_code": {
+          "type": "string",
+          "nullable": true,
+          "description": "APC code (4 digits)",
+          "domain": "apc_code",
+          "validation": {
+            "pattern": "^[0-9]{4}$",
+            "min_length": 4,
+            "max_length": 4
+          }
+        },
+        "payment_context": {
+          "type": "string",
+          "nullable": true,
+          "description": "Payment context",
+          "domain": "free_text",
+          "validation": {
+            "max_length": 100
+          }
+        },
+        "effective_from": {
+          "type": "date",
+          "nullable": false,
+          "description": "Effective start date",
+          "domain": "date_effective"
+        },
+        "effective_to": {
+          "type": "date",
+          "nullable": true,
+          "description": "Effective end date",
+          "domain": "date_effective"
+        },
+        "release_id": {
+          "type": "string",
+          "nullable": false,
+          "description": "Release identifier",
+          "domain": "release_id",
+          "validation": {
+            "pattern": "^opps_[0-9]{4}q[1-4]_r[0-9]+$"
+          }
+        },
+        "batch_id": {
+          "type": "string",
+          "nullable": false,
+          "description": "Batch identifier",
+          "domain": "batch_id"
+        }
+      },
+      "primary_key": ["year", "quarter", "hcpcs_code", "modifier", "effective_from"],
+      "natural_key": ["hcpcs_code", "modifier", "effective_from"],
+      "business_rules": {
+        "apc_reference": {
+          "description": "APC codes referenced must exist in Addendum A",
+          "rule": "apc_code IS NULL OR apc_code IN (SELECT apc_code FROM opps_apc_payment WHERE year = opps_hcpcs_crosswalk.year AND quarter = opps_hcpcs_crosswalk.quarter)"
+        },
+        "effective_dates": {
+          "description": "Effective from must be before effective to",
+          "rule": "effective_from < effective_to OR effective_to IS NULL"
+        }
+      }
+    },
+    "opps_rates_enriched": {
+      "description": "Enriched OPPS rates with wage index data",
+      "source": "CMS OPPS APC rates enriched with wage index data",
+      "columns": {
+        "year": {
+          "type": "integer",
+          "nullable": false,
+          "description": "Calendar year",
+          "domain": "year_range",
+          "validation": {
+            "min_value": 2020,
+            "max_value": 2030
+          }
+        },
+        "quarter": {
+          "type": "integer",
+          "nullable": false,
+          "description": "Quarter (1-4)",
+          "domain": "quarter_enum",
+          "validation": {
+            "enum": [1, 2, 3, 4]
+          }
+        },
+        "apc_code": {
+          "type": "string",
+          "nullable": false,
+          "description": "APC code (4 digits)",
+          "domain": "apc_code",
+          "validation": {
+            "pattern": "^[0-9]{4}$",
+            "min_length": 4,
+            "max_length": 4
+          }
+        },
+        "ccn": {
+          "type": "string",
+          "nullable": true,
+          "description": "CMS Certification Number",
+          "domain": "ccn_code",
+          "validation": {
+            "pattern": "^[0-9]{6}$",
+            "min_length": 6,
+            "max_length": 6
+          }
+        },
+        "cbsa_code": {
+          "type": "string",
+          "nullable": true,
+          "description": "CBSA code",
+          "domain": "cbsa_code",
+          "validation": {
+            "pattern": "^[0-9]{5}$",
+            "min_length": 5,
+            "max_length": 5
+          }
+        },
+        "wage_index": {
+          "type": "decimal",
+          "precision": 6,
+          "scale": 3,
+          "nullable": true,
+          "description": "Wage index for facility",
+          "domain": "wage_index",
+          "validation": {
+            "min_value": 0.3,
+            "max_value": 2.0
+          }
+        },
+        "payment_rate_usd": {
+          "type": "decimal",
+          "precision": 10,
+          "scale": 2,
+          "nullable": false,
+          "description": "Base payment rate in USD",
+          "domain": "currency_usd",
+          "validation": {
+            "min_value": 0,
+            "max_value": 100000
+          }
+        },
+        "wage_adjusted_rate_usd": {
+          "type": "decimal",
+          "precision": 10,
+          "scale": 2,
+          "nullable": true,
+          "description": "Wage-adjusted payment rate in USD",
+          "domain": "currency_usd",
+          "validation": {
+            "min_value": 0,
+            "max_value": 100000
+          }
+        },
+        "effective_from": {
+          "type": "date",
+          "nullable": false,
+          "description": "Effective start date",
+          "domain": "date_effective"
+        },
+        "effective_to": {
+          "type": "date",
+          "nullable": true,
+          "description": "Effective end date",
+          "domain": "date_effective"
+        },
+        "release_id": {
+          "type": "string",
+          "nullable": false,
+          "description": "Release identifier",
+          "domain": "release_id",
+          "validation": {
+            "pattern": "^opps_[0-9]{4}q[1-4]_r[0-9]+$"
+          }
+        },
+        "batch_id": {
+          "type": "string",
+          "nullable": false,
+          "description": "Batch identifier",
+          "domain": "batch_id"
+        }
+      },
+      "primary_key": ["year", "quarter", "apc_code", "ccn", "effective_from"],
+      "natural_key": ["apc_code", "ccn", "effective_from"],
+      "business_rules": {
+        "wage_adjustment": {
+          "description": "Wage-adjusted rate should be calculated when wage index is present",
+          "rule": "wage_adjusted_rate_usd IS NOT NULL OR wage_index IS NULL"
+        },
+        "effective_dates": {
+          "description": "Effective from must be before effective to",
+          "rule": "effective_from < effective_to OR effective_to IS NULL"
+        }
+      }
+    }
+  },
+  "business_rules": {
+    "cross_table_validation": {
+      "apc_reference_integrity": {
+        "description": "APC codes in crosswalk must exist in payment table",
+        "rule": "All apc_code values in opps_hcpcs_crosswalk must exist in opps_apc_payment for the same year/quarter"
+      },
+      "temporal_consistency": {
+        "description": "Effective dates must be consistent across related records",
+        "rule": "Effective dates should align with quarterly release periods"
+      }
+    },
+    "data_quality": {
+      "completeness": {
+        "description": "Critical columns must have high completeness",
+        "thresholds": {
+          "hcpcs_code": 0.999,
+          "apc_code": 0.95,
+          "payment_rate_usd": 0.999,
+          "status_indicator": 0.999
+        }
+      },
+      "accuracy": {
+        "description": "Data must pass domain validation rules",
+        "thresholds": {
+          "hcpcs_format": 0.999,
+          "apc_format": 0.999,
+          "status_indicator_valid": 0.999,
+          "payment_rates_positive": 0.999
+        }
+      }
+    }
+  },
+  "metadata": {
+    "source_url": "https://www.cms.gov/medicare/medicare-fee-for-service-payment/hospitaloutpatientpps/addendum",
+    "license": "CMS Open Data",
+    "attribution_required": true,
+    "update_frequency": "quarterly",
+    "data_classification": "public",
+    "pii_handling": "none",
+    "retention_policy": "7_years"
+  }
+}

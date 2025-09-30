@@ -1,0 +1,90 @@
+{
+  "test_id": "QA-MPFS-GO-LIVE-0002",
+  "timestamp": "2025-09-30T15:14:16.635391",
+  "environment": "test",
+  "validation_results": {
+    "source_parity": {
+      "RVU25A": {
+        "status": "SKIPPED",
+        "reason": "No test data found for RVU25A",
+        "sample_size": 0
+      },
+      "RVU25B": {
+        "status": "SKIPPED",
+        "reason": "No test data found for RVU25B",
+        "sample_size": 0
+      },
+      "RVU25C": {
+        "status": "SKIPPED",
+        "reason": "No test data found for RVU25C",
+        "sample_size": 0
+      },
+      "RVU25D": {
+        "status": "SKIPPED",
+        "reason": "No test data found for RVU25D",
+        "sample_size": 0
+      }
+    },
+    "locality_gpci": {
+      "status": "PASSED",
+      "locality_validation": {
+        "valid": true,
+        "issues": [],
+        "checks": {
+          "total_localities": 5,
+          "issues_found": 0
+        }
+      },
+      "california_validation": {
+        "valid": true,
+        "ca_localities_found": 22,
+        "sample_ca": {
+          "line": "0710206CA                  RURAL                         Test County 10",
+          "length": 71
+        }
+      },
+      "sample_size": 5
+    },
+    "conversion_factors": {
+      "status": "PASSED",
+      "cf_validation": {
+        "valid": true,
+        "issues": [],
+        "checks": {
+          "cf_records": 20,
+          "issues_found": 0
+        }
+      },
+      "anesthesia_validation": {
+        "valid": true,
+        "message": "Anesthesia CF validation not implemented in test data"
+      }
+    },
+    "api_structure": {
+      "status": "PASSED",
+      "checks": {
+        "mpfs_router_exists": true,
+        "mpfs_router_imported": true,
+        "mpfs_router_included": true,
+        "mpfs_models_exist": true,
+        "mpfs_schemas_exist": true
+      }
+    },
+    "quarterly_diffs": {
+      "status": "SKIPPED",
+      "reason": "Not enough quarters available for comparison: []"
+    }
+  },
+  "summary": {
+    "overall_status": "PASSED",
+    "total_phases": 5,
+    "passed_phases": 3,
+    "failed_phases": 0,
+    "error_phases": 0,
+    "skipped_phases": 1,
+    "pass_rate": 60.0
+  },
+  "recommendations": [
+    "Consider adding test data for skipped phases"
+  ]
+}

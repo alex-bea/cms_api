@@ -1,0 +1,198 @@
+{
+  "schema_id": "cms_opps_si_lookup_v1.0",
+  "dataset_name": "cms_opps_si_lookup",
+  "version": "1.0.0",
+  "description": "Status Indicator lookup reference data for OPPS HCPCS crosswalks",
+  "dis_compliance": "v1.0",
+  "qts_compliance": "v1.0",
+  "tables": {
+    "ref_si_lookup": {
+      "description": "Status Indicator lookup table",
+      "source": "CMS OPPS I/OCE documentation and rule appendices",
+      "columns": {
+        "status_indicator": {
+          "type": "string",
+          "nullable": false,
+          "description": "Status indicator code",
+          "domain": "status_indicator",
+          "validation": {
+            "enum": ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"],
+            "min_length": 1,
+            "max_length": 1
+          }
+        },
+        "description": {
+          "type": "string",
+          "nullable": false,
+          "description": "Status indicator description",
+          "domain": "free_text",
+          "validation": {
+            "min_length": 10,
+            "max_length": 500
+          }
+        },
+        "payment_category": {
+          "type": "string",
+          "nullable": true,
+          "description": "Payment category",
+          "domain": "payment_category",
+          "validation": {
+            "max_length": 100,
+            "enum": ["Separately Payable", "Packaged", "Not Payable", "Special Payment", "Device Pass-Through", "Drug Pass-Through", "Biosimilar Pass-Through", "New Technology", "Clinical Trial", "Other"]
+          }
+        },
+        "effective_from": {
+          "type": "date",
+          "nullable": false,
+          "description": "Effective start date",
+          "domain": "date_effective"
+        },
+        "effective_to": {
+          "type": "date",
+          "nullable": true,
+          "description": "Effective end date",
+          "domain": "date_effective"
+        }
+      },
+      "primary_key": ["status_indicator", "effective_from"],
+      "natural_key": ["status_indicator", "effective_from"],
+      "business_rules": {
+        "effective_dates": {
+          "description": "Effective from must be before effective to",
+          "rule": "effective_from < effective_to OR effective_to IS NULL"
+        },
+        "description_required": {
+          "description": "Description must be meaningful",
+          "rule": "LENGTH(description) >= 10"
+        }
+      }
+    }
+  },
+  "business_rules": {
+    "data_quality": {
+      "completeness": {
+        "description": "All status indicators must have descriptions",
+        "thresholds": {
+          "status_indicator": 1.0,
+          "description": 1.0
+        }
+      },
+      "accuracy": {
+        "description": "Status indicators must be valid and descriptions must be meaningful",
+        "thresholds": {
+          "status_indicator_valid": 1.0,
+          "description_meaningful": 0.95
+        }
+      }
+    }
+  },
+  "reference_data": {
+    "status_indicators": {
+      "A": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS",
+        "payment_category": "Separately Payable"
+      },
+      "B": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "C": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "D": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "E": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "F": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "G": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "H": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "J": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "K": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "L": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "M": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "N": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "P": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "Q": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "R": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "S": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "T": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "U": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "V": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "W": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "X": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "Y": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      },
+      "Z": {
+        "description": "Services furnished to hospital outpatients that are paid under the OPPS and are subject to the OPPS packaging rules",
+        "payment_category": "Packaged"
+      }
+    }
+  },
+  "metadata": {
+    "source_url": "https://www.cms.gov/medicare/medicare-fee-for-service-payment/hospitaloutpatientpps",
+    "license": "CMS Open Data",
+    "attribution_required": true,
+    "update_frequency": "as_needed",
+    "data_classification": "public",
+    "pii_handling": "none",
+    "retention_policy": "indefinite"
+  }
+}

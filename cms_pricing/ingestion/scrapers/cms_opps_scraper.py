@@ -1,0 +1,478 @@
+#!/usr/bin/env python3
+"""
+CMS OPPS Scraper
+================
+
+Discovers and downloads OPPS quarterly addenda files from CMS.gov.
+Follows the same pattern as the RVU scraper with discovery, checksum, and manifest generation.
+
+Author: CMS Pricing Platform Team
+Version: 1.0.0
+"""
+
+import asyncio
+import hashlib
+import json
+import logging
+import re
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple
+from urllib.parse import urljoin, urlparse
+
+import httpx
+from bs4 import BeautifulSoup
+from structlog import get_logger
+
+from .base_scraper import BaseScraper, ScrapedFileInfo
+
+logger = get_logger()
+
+
+class CMSOPPSScraper(BaseScraper):
+    """
+    CMS OPPS Scraper for quarterly addenda discovery and download.
+    
+    Discovers OPPS Addendum A/B files from the CMS Quarterly Addenda page,
+    follows links to specific quarterly releases, and downloads files with
+    checksum validation and manifest generation.
+    """
+    
+    def __init__(self, base_url: str = "https://www.cms.gov", output_dir: Path = None):
+        super().__init__(base_url, output_dir)
+        self.opps_base_url = "https://www.cms.gov/medicare/medicare-fee-for-service-payment/hospitaloutpatientpps"
+        self.quarterly_addenda_url = "https://www.cms.gov/medicare/medicare-fee-for-service-payment/hospitaloutpatientpps/addendum"
+        
+        # OPPS-specific patterns
+        self.quarterly_pattern = re.compile(r'(\d{4})\s*[Qq](\d)', re.IGNORECASE)
+        self.addendum_pattern = re.compile(r'addendum\s*([AB])', re.IGNORECASE)
+        self.file_patterns = {
+            'addendum_a': re.compile(r'addendum\s*a.*\.(csv|xls|xlsx|txt)', re.IGNORECASE),
+            'addendum_b': re.compile(r'addendum\s*b.*\.(csv|xls|xlsx|txt)', re.IGNORECASE),
+            'zip_files': re.compile(r'\.(zip|gz)$', re.IGNORECASE)
+        }
+        
+        # Quarterly release patterns
+        self.quarterly_release_patterns = {
+            'q1': re.compile(r'january|jan|q1|first\s*quarter', re.IGNORECASE),
+            'q2': re.compile(r'april|apr|q2|second\s*quarter', re.IGNORECASE),
+            'q3': re.compile(r'july|jul|q3|third\s*quarter', re.IGNORECASE),
+            'q4': re.compile(r'october|oct|q4|fourth\s*quarter', re.IGNORECASE)
+        }
+    
+    async def discover_files(self, max_quarters: int = 8) -> List[ScrapedFileInfo]:
+        """
+        Discover OPPS quarterly addenda files.
+        
+        Args:
+            max_quarters: Maximum number of quarters to discover (default: 8)
+            
+        Returns:
+            List of discovered file information
+        """
+        logger.info("Starting OPPS file discovery", max_quarters=max_quarters)
+        
+        try:
+            # Get the main quarterly addenda page
+            addenda_links = await self._get_quarterly_addenda_links()
+            
+            discovered_files = []
+            quarters_found = 0
+            
+            for link_info in addenda_links:
+                if quarters_found >= max_quarters:
+                    break
+                
+                try:
+                    # Extract quarter info from link
+                    quarter_info = self._extract_quarter_info(link_info)
+                    if not quarter_info:
+                        continue
+                    
+                    # Get files for this quarter
+                    quarter_files = await self._discover_quarter_files(link_info['url'], quarter_info)
+                    discovered_files.extend(quarter_files)
+                    quarters_found += 1
+                    
+                    logger.info(
+                        "Discovered quarter files",
+                        quarter=f"{quarter_info['year']}Q{quarter_info['quarter']}",
+                        file_count=len(quarter_files)
+                    )
+                    
+                except Exception as e:
+                    logger.error(
+                        "Failed to discover quarter files",
+                        quarter=link_info.get('text', 'unknown'),
+                        error=str(e)
+                    )
+                    continue
+            
+            logger.info(
+                "OPPS discovery complete",
+                total_files=len(discovered_files),
+                quarters_discovered=quarters_found
+            )
+            
+            return discovered_files
+            
+        except Exception as e:
+            logger.error("OPPS discovery failed", error=str(e))
+            raise
+    
+    async def _get_quarterly_addenda_links(self) -> List[Dict[str, str]]:
+        """Get links to quarterly addenda pages."""
+        logger.info("Fetching quarterly addenda page", url=self.quarterly_addenda_url)
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(self.quarterly_addenda_url)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Find links to quarterly releases
+            addenda_links = []
+            
+            # Look for links containing quarter/year patterns
+            for link in soup.find_all('a', href=True):
+                href = link.get('href', '')
+                text = link.get_text(strip=True)
+                
+                # Check if this looks like a quarterly addenda link
+                if self._is_quarterly_addenda_link(href, text):
+                    full_url = urljoin(self.quarterly_addenda_url, href)
+                    addenda_links.append({
+                        'url': full_url,
+                        'text': text,
+                        'href': href
+                    })
+            
+            logger.info("Found quarterly addenda links", count=len(addenda_links))
+            return addenda_links
+    
+    def _is_quarterly_addenda_link(self, href: str, text: str) -> bool:
+        """Check if a link points to quarterly addenda."""
+        # Look for quarter patterns in URL or text
+        quarter_indicators = [
+            'addendum', 'quarterly', 'q1', 'q2', 'q3', 'q4',
+            'january', 'april', 'july', 'october'
+        ]
+        
+        text_lower = text.lower()
+        href_lower = href.lower()
+        
+        # Must contain at least one quarter indicator
+        has_quarter_indicator = any(indicator in text_lower or indicator in href_lower 
+                                  for indicator in quarter_indicators)
+        
+        # Must look like a CMS link
+        is_cms_link = 'cms.gov' in href_lower or href.startswith('/')
+        
+        # Must not be a general page (avoid main addendum page)
+        is_not_general = 'addendum' not in href_lower or any(q in href_lower for q in ['q1', 'q2', 'q3', 'q4'])
+        
+        return has_quarter_indicator and is_cms_link and is_not_general
+    
+    def _extract_quarter_info(self, link_info: Dict[str, str]) -> Optional[Dict[str, int]]:
+        """Extract year and quarter from link information."""
+        text = link_info['text']
+        href = link_info['href']
+        
+        # Try to extract year and quarter from text or href
+        combined_text = f"{text} {href}"
+        
+        # Look for year pattern
+        year_match = re.search(r'20(\d{2})', combined_text)
+        if not year_match:
+            return None
+        
+        year = int(f"20{year_match.group(1)}")
+        
+        # Look for quarter pattern
+        quarter = None
+        for q_num, pattern in self.quarterly_release_patterns.items():
+            if pattern.search(combined_text):
+                quarter = int(q_num[1])  # Extract number from 'q1', 'q2', etc.
+                break
+        
+        if quarter is None:
+            # Try to extract quarter from numeric patterns
+            quarter_match = re.search(r'[Qq](\d)', combined_text)
+            if quarter_match:
+                quarter = int(quarter_match.group(1))
+        
+        if quarter is None or quarter < 1 or quarter > 4:
+            return None
+        
+        return {
+            'year': year,
+            'quarter': quarter
+        }
+    
+    async def _discover_quarter_files(self, quarter_url: str, quarter_info: Dict[str, int]) -> List[ScrapedFileInfo]:
+        """Discover files for a specific quarter."""
+        logger.info(
+            "Discovering quarter files",
+            url=quarter_url,
+            year=quarter_info['year'],
+            quarter=quarter_info['quarter']
+        )
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(quarter_url)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            files = []
+            year = quarter_info['year']
+            quarter = quarter_info['quarter']
+            
+            # Look for file links
+            for link in soup.find_all('a', href=True):
+                href = link.get('href', '')
+                text = link.get_text(strip=True)
+                
+                # Check if this is a relevant file
+                file_type = self._classify_file(href, text)
+                if file_type:
+                    full_url = urljoin(quarter_url, href)
+                    
+                    # Generate batch ID
+                    batch_id = f"opps_{year}q{quarter}_r01"
+                    
+                    file_info = ScrapedFileInfo(
+                        url=full_url,
+                        filename=self._extract_filename(href, text),
+                        file_type=file_type,
+                        batch_id=batch_id,
+                        discovered_at=datetime.utcnow(),
+                        source_page=quarter_url,
+                        metadata={
+                            'year': year,
+                            'quarter': quarter,
+                            'addendum_type': file_type,
+                            'original_text': text
+                        }
+                    )
+                    
+                    files.append(file_info)
+            
+            return files
+    
+    def _classify_file(self, href: str, text: str) -> Optional[str]:
+        """Classify file type based on URL and text."""
+        href_lower = href.lower()
+        text_lower = text.lower()
+        
+        # Check for Addendum A files
+        if (self.file_patterns['addendum_a'].search(href) or 
+            self.file_patterns['addendum_a'].search(text)):
+            return 'addendum_a'
+        
+        # Check for Addendum B files
+        if (self.file_patterns['addendum_b'].search(href) or 
+            self.file_patterns['addendum_b'].search(text)):
+            return 'addendum_b'
+        
+        # Check for ZIP files that might contain addenda
+        if self.file_patterns['zip_files'].search(href):
+            # Check if text suggests it contains addenda
+            if any(keyword in text_lower for keyword in ['addendum', 'opps', 'quarterly']):
+                return 'addendum_zip'
+        
+        return None
+    
+    def _extract_filename(self, href: str, text: str) -> str:
+        """Extract filename from URL or text."""
+        # Try to get filename from URL
+        parsed_url = urlparse(href)
+        if parsed_url.path:
+            filename = Path(parsed_url.path).name
+            if filename and '.' in filename:
+                return filename
+        
+        # Fall back to text if it looks like a filename
+        if '.' in text and len(text) < 100:
+            return text
+        
+        # Generate a default filename
+        return f"opps_file_{hashlib.md5(href.encode()).hexdigest()[:8]}.txt"
+    
+    async def download_file(self, file_info: ScrapedFileInfo) -> Path:
+        """
+        Download a single OPPS file.
+        
+        Args:
+            file_info: File information to download
+            
+        Returns:
+            Path to downloaded file
+        """
+        logger.info(
+            "Downloading OPPS file",
+            url=file_info.url,
+            filename=file_info.filename,
+            batch_id=file_info.batch_id
+        )
+        
+        try:
+            # Create batch directory
+            batch_dir = self.output_dir / "scraped" / file_info.batch_id
+            batch_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Download file
+            file_path = await self._download_with_retry(file_info.url, batch_dir / file_info.filename)
+            
+            # Calculate checksum
+            checksum = self._calculate_checksum(file_path)
+            
+            # Update file info
+            file_info.local_path = file_path
+            file_info.checksum = checksum
+            file_info.downloaded_at = datetime.utcnow()
+            
+            # Generate manifest
+            await self._generate_manifest(file_info, batch_dir)
+            
+            logger.info(
+                "OPPS file downloaded successfully",
+                file_path=str(file_path),
+                checksum=checksum,
+                size=file_path.stat().st_size
+            )
+            
+            return file_path
+            
+        except Exception as e:
+            logger.error(
+                "Failed to download OPPS file",
+                url=file_info.url,
+                error=str(e)
+            )
+            raise
+    
+    async def _generate_manifest(self, file_info: ScrapedFileInfo, batch_dir: Path):
+        """Generate manifest file for the batch."""
+        manifest = {
+            'batch_id': file_info.batch_id,
+            'discovered_at': file_info.discovered_at.isoformat(),
+            'downloaded_at': file_info.downloaded_at.isoformat(),
+            'source_page': file_info.source_page,
+            'files': [{
+                'url': file_info.url,
+                'filename': file_info.filename,
+                'file_type': file_info.file_type,
+                'local_path': str(file_info.local_path),
+                'checksum': file_info.checksum,
+                'size_bytes': file_info.local_path.stat().st_size,
+                'metadata': file_info.metadata
+            }],
+            'scraper_version': '1.0.0',
+            'discovery_method': 'cms_opps_scraper'
+        }
+        
+        manifest_path = batch_dir / 'manifest.json'
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f, indent=2)
+        
+        logger.info("Generated OPPS manifest", manifest_path=str(manifest_path))
+    
+    def get_latest_quarters(self, count: int = 4) -> List[str]:
+        """Get the latest N quarters for OPPS releases."""
+        current_year = datetime.now().year
+        current_quarter = ((datetime.now().month - 1) // 3) + 1
+        
+        quarters = []
+        for i in range(count):
+            year = current_year
+            quarter = current_quarter - i
+            
+            if quarter <= 0:
+                quarter += 4
+                year -= 1
+            
+            quarters.append(f"{year}q{quarter}")
+        
+        return quarters
+    
+    async def discover_latest(self, quarters: int = 2) -> List[ScrapedFileInfo]:
+        """Discover files for the latest N quarters."""
+        logger.info("Discovering latest OPPS quarters", quarters=quarters)
+        
+        # Get latest quarters
+        latest_quarters = self.get_latest_quarters(quarters)
+        
+        # Discover files for each quarter
+        all_files = []
+        for quarter_str in latest_quarters:
+            year, quarter = quarter_str.split('q')
+            year = int(year)
+            quarter = int(quarter)
+            
+            # Look for files in the quarterly addenda
+            try:
+                quarter_files = await self._discover_quarter_by_date(year, quarter)
+                all_files.extend(quarter_files)
+            except Exception as e:
+                logger.warning(
+                    "Failed to discover quarter",
+                    year=year,
+                    quarter=quarter,
+                    error=str(e)
+                )
+        
+        return all_files
+    
+    async def _discover_quarter_by_date(self, year: int, quarter: int) -> List[ScrapedFileInfo]:
+        """Discover files for a specific year/quarter."""
+        # This would implement specific logic to find files for a given quarter
+        # For now, we'll use the general discovery and filter
+        all_files = await self.discover_files(max_quarters=8)
+        
+        # Filter for the specific quarter
+        quarter_files = [
+            f for f in all_files
+            if f.metadata.get('year') == year and f.metadata.get('quarter') == quarter
+        ]
+        
+        return quarter_files
+
+
+# CLI interface
+async def main():
+    """CLI entry point for OPPS scraper."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='CMS OPPS Scraper')
+    parser.add_argument('--discover', action='store_true', help='Discover OPPS files')
+    parser.add_argument('--download', action='store_true', help='Download discovered files')
+    parser.add_argument('--latest', type=int, default=2, help='Number of latest quarters to discover')
+    parser.add_argument('--max-quarters', type=int, default=8, help='Maximum quarters to discover')
+    parser.add_argument('--output-dir', type=Path, default=Path('data/scraped/opps'), help='Output directory')
+    
+    args = parser.parse_args()
+    
+    scraper = CMSOPPSScraper(output_dir=args.output_dir)
+    
+    if args.discover:
+        files = await scraper.discover_files(max_quarters=args.max_quarters)
+        print(f"Discovered {len(files)} OPPS files")
+        
+        for file_info in files:
+            print(f"  {file_info.batch_id}: {file_info.filename} ({file_info.file_type})")
+    
+    if args.download:
+        files = await scraper.discover_latest(quarters=args.latest)
+        print(f"Downloading {len(files)} latest OPPS files")
+        
+        for file_info in files:
+            try:
+                await scraper.download_file(file_info)
+                print(f"  Downloaded: {file_info.filename}")
+            except Exception as e:
+                print(f"  Failed to download {file_info.filename}: {e}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

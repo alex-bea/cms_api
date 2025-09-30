@@ -19,12 +19,21 @@ from cms_pricing.schemas.mpfs import (
     MPFSRVUResponse, MPFSRVUListResponse, MPFSConversionFactorResponse,
     MPFSAbstractResponse, MPFSHealthResponse
 )
-from cms_pricing.auth import get_current_user
-from cms_pricing.middleware.correlation import get_correlation_id
+from cms_pricing.auth import verify_api_key
+import uuid
+from fastapi import Request
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/mpfs", tags=["MPFS"])
+
+
+def get_correlation_id(request: Request) -> str:
+    """Get correlation ID from request headers or generate new one"""
+    correlation_id = request.headers.get("X-Correlation-Id")
+    if not correlation_id:
+        correlation_id = str(uuid.uuid4())
+    return correlation_id
 
 
 @router.get("/health", response_model=MPFSHealthResponse)
@@ -50,6 +59,7 @@ async def health_check():
 
 @router.get("/rvu", response_model=MPFSRVUListResponse)
 async def get_rvu_items(
+    request: Request,
     hcpcs: Optional[str] = Query(None, description="HCPCS code filter"),
     modifier: Optional[str] = Query(None, description="Modifier code filter"),
     status_code: Optional[str] = Query(None, description="Status code filter"),
@@ -59,7 +69,7 @@ async def get_rvu_items(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(100, ge=1, le=1000, description="Page size"),
     db: Session = Depends(get_db),
-    correlation_id: str = Depends(get_correlation_id)
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Get MPFS RVU items with filtering and pagination
@@ -79,9 +89,11 @@ async def get_rvu_items(
     Returns:
         MPFSRVUListResponse: Paginated list of RVU items
     """
+    correlation_id = get_correlation_id(request)
+    
     try:
         logger.info("Getting MPFS RVU items", 
-                   hcpcs=hcpcs, 
+                   hcpcs=hcpcs,
                    modifier=modifier,
                    status_code=status_code,
                    effective_date=effective_date,
@@ -169,11 +181,12 @@ async def get_rvu_items(
 
 @router.get("/rvu/{hcpcs}", response_model=MPFSRVUResponse)
 async def get_rvu_item(
+    request: Request,
     hcpcs: str,
     modifier: Optional[str] = Query(None, description="Modifier code"),
     effective_date: Optional[date] = Query(None, description="Effective date"),
     db: Session = Depends(get_db),
-    correlation_id: str = Depends(get_correlation_id)
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Get specific MPFS RVU item by HCPCS code
@@ -183,11 +196,13 @@ async def get_rvu_item(
         modifier: Optional modifier code
         effective_date: Optional effective date
         db: Database session
-        correlation_id: Request correlation ID
+        request: FastAPI request object
         
     Returns:
         MPFSRVUResponse: RVU item details
     """
+    correlation_id = get_correlation_id(request)
+    
     try:
         logger.info("Getting MPFS RVU item", 
                    hcpcs=hcpcs, 
@@ -247,11 +262,12 @@ async def get_rvu_item(
 
 @router.get("/conversion-factors", response_model=List[MPFSConversionFactorResponse])
 async def get_conversion_factors(
+    request: Request,
     cf_type: Optional[str] = Query(None, description="Conversion factor type filter"),
     effective_date: Optional[date] = Query(None, description="Effective date filter"),
     vintage_year: Optional[str] = Query(None, description="Vintage year filter"),
     db: Session = Depends(get_db),
-    correlation_id: str = Depends(get_correlation_id)
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Get MPFS conversion factors
@@ -261,11 +277,13 @@ async def get_conversion_factors(
         effective_date: Filter by effective date
         vintage_year: Filter by vintage year
         db: Database session
-        correlation_id: Request correlation ID
+        request: FastAPI request object
         
     Returns:
         List[MPFSConversionFactorResponse]: List of conversion factors
     """
+    correlation_id = get_correlation_id(request)
+    
     try:
         logger.info("Getting MPFS conversion factors", 
                    cf_type=cf_type,
@@ -311,11 +329,12 @@ async def get_conversion_factors(
 
 @router.get("/abstracts", response_model=List[MPFSAbstractResponse])
 async def get_abstracts(
+    request: Request,
     abstract_type: Optional[str] = Query(None, description="Abstract type filter"),
     payment_year: Optional[str] = Query(None, description="Payment year filter"),
     effective_date: Optional[date] = Query(None, description="Effective date filter"),
     db: Session = Depends(get_db),
-    correlation_id: str = Depends(get_correlation_id)
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Get MPFS abstracts and national payment data
@@ -325,11 +344,13 @@ async def get_abstracts(
         payment_year: Filter by payment year
         effective_date: Filter by effective date
         db: Database session
-        correlation_id: Request correlation ID
+        request: FastAPI request object
         
     Returns:
         List[MPFSAbstractResponse]: List of abstracts
     """
+    correlation_id = get_correlation_id(request)
+    
     try:
         logger.info("Getting MPFS abstracts", 
                    abstract_type=abstract_type,
@@ -375,9 +396,10 @@ async def get_abstracts(
 
 @router.get("/stats")
 async def get_mpfs_stats(
+    request: Request,
     effective_date: Optional[date] = Query(None, description="Effective date filter"),
     db: Session = Depends(get_db),
-    correlation_id: str = Depends(get_correlation_id)
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Get MPFS statistics and summary data
@@ -385,11 +407,13 @@ async def get_mpfs_stats(
     Args:
         effective_date: Filter by effective date
         db: Database session
-        correlation_id: Request correlation ID
+        request: FastAPI request object
         
     Returns:
         Dict[str, Any]: MPFS statistics
     """
+    correlation_id = get_correlation_id(request)
+    
     try:
         logger.info("Getting MPFS statistics", 
                    effective_date=effective_date,
