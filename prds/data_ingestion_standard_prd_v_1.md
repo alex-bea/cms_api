@@ -163,6 +163,18 @@ Every dataset PRD must include an **Ingestion Summary** stating: source spec, sc
 ## 14. Change Management
 - Changes to DIS require an ADR: context, decision, alternatives, impact, migration plan.
 - DIS version (e.g., v1.0) must be referenced by dataset PRDs.
+- API surfaces or contracts derived from DIS-managed datasets must comply with the **Global API Program PRDs (v1.0)**.
+
+## 15. QA Summary (per QA & Testing Standard v1.0)
+| Item | Details |
+| --- | --- |
+| **Scope & Ownership** | DIS applies to all ingestion pipelines; owned by Platform/Data Engineering with QA Guild stewardship; consumers include downstream product, analytics, and pricing teams. |
+| **Test Tiers & Coverage** | Unit: `tests/test_ingestion_pipeline.py`, `tests/test_effective_date_selection.py`; Component/Data-contract: `tests/test_golden.py` plus schema drift checks embedded in dataset suites; Integration: `tests/test_geography_ingestion.py` exercises end-to-end DIS flow; Scenario: nightly ingestion replay via `ci-nightly`. Target coverage ≥90% for shared ingestion code (current rolling avg 86%, reported in coverage dashboard). |
+| **Fixtures & Baselines** | Golden manifests/parquet slices in `tests/golden/test_scenarios.jsonl`; RVU canonical fixtures under `tests/fixtures/rvu/`; baseline metrics tracked via QA warehouse dashboards (freshness, volume drift) with release digests recorded alongside `TESTING_SUMMARY.md`. |
+| **Quality Gates** | Merge: `ci-unit.yaml` enforces unit + lint + coverage delta ≤0.5%; `ci-integration.yaml` runs DIS component suites with schema diff blockers; Release: `ci-nightly.yaml` executes replay + data-contract gates prior to tagging. |
+| **Production Monitors** | Airflow/Dagster ingestion jobs emit freshness & volume drift metrics; manifest checksum monitor compares `/raw` artifacts vs prior run; PagerDuty alert on SLA breach (ingestion lag >24h) per §8. |
+| **Manual QA** | Operator spot-check of new source manifests/runbooks (§11) before first production release; compliance review of licensing requirements (§12). |
+| **Outstanding Risks / TODO** | Increase coverage on quarantine/error-handling paths (tracked in `TESTING_SUMMARY.md`); automate validation-warnings suite; finalize self-healing for manifest drift alerts. |
 
 ---
 

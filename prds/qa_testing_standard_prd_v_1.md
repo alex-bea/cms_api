@@ -88,6 +88,7 @@ We standardize QA into **Plan → Implement → Execute → Observe → Improve*
 - **Data-Contract:** Schema diff detection; any breaking change blocks merge, surfaces ADR requirement.
 - **Scenario/E2E:** Smoke flows executed pre-deploy; failure blocks release.
 - **Non-Functional:** Load/perf + accuracy SLO tests run nightly; regression beyond tolerance opens Sev2.
+- **API Contracts:** When surfaces are exposed, contract tests must also satisfy the governance defined in the **Global API Program PRDs (v1.0)**.
 
 ### 7.1 Failure Handling & Quarantine
 - Auto quarantine newly failing tests only with explicit override label (`ALLOW_QUARANTINE`) + issue link.
@@ -175,4 +176,3 @@ Each PRD must append a QA Summary table covering:
 
 ### Appendix E — Deviation Request Form (abridged)
 Fields: `requester`, `suite_id`, `deviation_type`, `justification`, `mitigation`, `expiry`, `approver`.
-

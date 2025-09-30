@@ -27,10 +27,12 @@ The resolver depends on multiple external datasets with varying stability. We pr
 ## 2) Scope
 **In:**
 - Normalization of ZIP5/ZIP9 → ZCTA5
-- CMS‑state–constrained nearest ZIP lookup
-- Distance engine (Haversine primary; NBER fast‑path/validation)
+- CMS-state–constrained nearest ZIP lookup
+- Distance engine (Haversine primary; NBER fast-path/validation)
 - PO Box filtering via SimpleMaps
 - Full traces for observability and QA
+
+All HTTP interfaces produced by this resolver must follow the **Global API Program PRDs (v1.0)** for contract, versioning, and change management.
 
 **Out (future):**
 - Multi‑state search
@@ -536,6 +538,17 @@ FROM resolver_results_sample;
 
 ---
 
+## 21.1) QA Summary (per QA & Testing Standard v1.0)
+| Item | Details |
+| --- | --- |
+| **Scope & Ownership** | Nearest ZIP resolver service + supporting ETL; owned by Resolver/INS squad with QA partner from Quality Engineering; consumers include pricing engines and analytics parity harnesses. |
+| **Test Tiers & Coverage** | Unit/component: `tests/test_geometry_nearest_logic.py`, `tests/test_nearest_zip_resolver.py`; Scenario suites cover happy-path + strict-mode errors via `tests/test_nearest_zip_simple.py` and `tests/test_nearest_zip_comprehensive*.py`; Boundary integration with geography and state constraints validated in `tests/test_state_boundary_enforcement.py` and related fixtures. Coverage trending at 84% (target 90%). |
+| **Fixtures & Baselines** | Gazetteer/NBER samples under `sample_data/nber_sample_1000.csv`; ZIP9/ZIP5 packs in `sample_data/zplc_oct2025/`; golden traces for parity stored in `tests/golden/test_scenarios.jsonl` with digests captured in QA observability dashboards. |
+| **Quality Gates** | Merge: `ci-unit.yaml` runs resolver unit suites + lint; `ci-integration.yaml` spins resolver stack (Postgres + cache) to execute comprehensive tests; Nightly: `ci-nightly.yaml` replays background precompute + drift checks, blocking releases on regression. |
+| **Production Monitors** | Synthetic `/nearest` probes every 5 min verifying latency + determinism; fallback-rate and distance-spread alerts wired to Grafana; Gazetteer Fallback Rate P1 defined in §1.1. |
+| **Manual QA** | SQL spot-checks in §20 run on staging prior to new datasets; operators review trace samples for top states before enabling feature flags. |
+| **Outstanding Risks / TODO** | Track `Non-Blocking Enhancements` in §23 (Top-N API, rate limiting); expand sample coverage for territories (VI/GU) before GA; automate parity harness vs. CMS reference dataset. |
+
 ## 22) Rollout Playbook
 1. **Migrations:** `alembic upgrade head`.
 2. **Load latest data:** `python -m cms_pricing.ingestion.nearest_zip_etl --source all` (checksums, row counts, `ingest_runs`).
@@ -551,4 +564,3 @@ FROM resolver_results_sample;
 - **API versioning** (`/v1`) for forward compatibility.
 - **Rate limiting & API‑key scopes** for external exposure.
 - **Grafana dashboard** for KPIs above.
-
