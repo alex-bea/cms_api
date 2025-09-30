@@ -17,19 +17,33 @@ import logging
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Any
 from urllib.parse import urljoin, urlparse
+from dataclasses import dataclass
 
 import httpx
 from bs4 import BeautifulSoup
 from structlog import get_logger
 
-from .base_scraper import BaseScraper, ScrapedFileInfo
-
 logger = get_logger()
 
 
-class CMSOPPSScraper(BaseScraper):
+@dataclass
+class ScrapedFileInfo:
+    """Information about a scraped file"""
+    url: str
+    filename: str
+    file_type: str
+    batch_id: str
+    discovered_at: datetime
+    source_page: str
+    metadata: Dict[str, Any]
+    local_path: Optional[Path] = None
+    checksum: Optional[str] = None
+    downloaded_at: Optional[datetime] = None
+
+
+class CMSOPPSScraper:
     """
     CMS OPPS Scraper for quarterly addenda discovery and download.
     
@@ -39,7 +53,8 @@ class CMSOPPSScraper(BaseScraper):
     """
     
     def __init__(self, base_url: str = "https://www.cms.gov", output_dir: Path = None):
-        super().__init__(base_url, output_dir)
+        self.base_url = base_url
+        self.output_dir = output_dir or Path("data/scraped/opps")
         self.opps_base_url = "https://www.cms.gov/medicare/medicare-fee-for-service-payment/hospitaloutpatientpps"
         self.quarterly_addenda_url = "https://www.cms.gov/medicare/medicare-fee-for-service-payment/hospitaloutpatientpps/addendum"
         
@@ -377,6 +392,33 @@ class CMSOPPSScraper(BaseScraper):
             json.dump(manifest, f, indent=2)
         
         logger.info("Generated OPPS manifest", manifest_path=str(manifest_path))
+    
+    def _calculate_checksum(self, file_path: Path) -> str:
+        """Calculate SHA256 checksum of a file."""
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
+    
+    async def _download_with_retry(self, url: str, file_path: Path, max_retries: int = 3) -> Path:
+        """Download file with retry logic."""
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    
+                    with open(file_path, 'wb') as f:
+                        f.write(response.content)
+                    
+                    return file_path
+                    
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                logger.warning(f"Download attempt {attempt + 1} failed, retrying", error=str(e))
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
     
     def get_latest_quarters(self, count: int = 4) -> List[str]:
         """Get the latest N quarters for OPPS releases."""

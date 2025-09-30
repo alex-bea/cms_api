@@ -27,12 +27,12 @@ import structlog
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from ..base import BaseDISIngestor
+from ..contracts.ingestor_spec import BaseDISIngestor
 from ..contracts.schema_registry import SchemaRegistry
-from ..contracts.ingestor_spec import IngestorSpec, ValidationRule, SlaSpec, OutputSpec, DataClass
-from ..validators.validation_engine import ValidationEngine, ValidationSeverity
-from ..enrichers.data_enrichers import DataEnricher
-from ..publishers.data_publishers import DataPublisher
+from ..contracts.ingestor_spec import IngestorSpec, ValidationRule, SlaSpec, OutputSpec, DataClass, ValidationSeverity
+from ..validators.validation_engine import ValidationEngine
+from ..enrichers.data_enrichers import GeographyEnricher
+from ..publishers.data_publishers import ParquetPublisher
 from ..quarantine.dis_quarantine import QuarantineManager
 from ..observability.dis_observability import DISObservabilityCollector
 from ..scrapers.cms_opps_scraper import CMSOPPSScraper, ScrapedFileInfo
@@ -82,8 +82,8 @@ class OPPSIngestor(BaseDISIngestor):
         # DIS compliance components
         self.schema_registry = SchemaRegistry()
         self.validation_engine = ValidationEngine()
-        self.data_enricher = DataEnricher()
-        self.data_publisher = DataPublisher()
+        self.data_enricher = GeographyEnricher({})  # Empty reference data for now
+        self.data_publisher = ParquetPublisher(str(self.output_dir))
         self.quarantine_manager = QuarantineManager()
         self.observability = DISObservabilityCollector()
         
@@ -181,8 +181,8 @@ class OPPSIngestor(BaseDISIngestor):
                 self.si_schema = self._create_default_si_schema()
             
             # Register schemas
-            self.schema_registry.register("cms_opps", "1.0.0", self.opps_schema)
-            self.schema_registry.register("cms_opps_si_lookup", "1.0.0", self.si_schema)
+            # Note: SchemaRegistry loads schemas automatically from files
+            # We don't need to manually register them
             
         except Exception as e:
             logger.error("Failed to load schema contracts", error=str(e))
@@ -288,98 +288,98 @@ class OPPSIngestor(BaseDISIngestor):
         self._validation_rules = [
             # Structural validation
             ValidationRule(
-                rule_name="required_files_present",
+                name="required_files_present",
                 description="Required Addendum A and B files must be present",
-                severity=ValidationSeverity.CRITICAL,
-                validator=self._validate_required_files
+                validator_func=self._validate_required_files,
+                severity="critical"
             ),
             ValidationRule(
-                rule_name="file_format_valid",
+                name="file_format_valid",
                 description="Files must be in supported format (CSV, XLS, XLSX, TXT)",
-                severity=ValidationSeverity.CRITICAL,
-                validator=self._validate_file_formats
+                validator_func=self._validate_file_formats,
+                severity="critical"
             ),
             
             # Schema validation
             ValidationRule(
-                rule_name="required_columns_present",
+                name="required_columns_present",
                 description="Required columns must be present in all files",
-                severity=ValidationSeverity.CRITICAL,
-                validator=self._validate_required_columns
+                validator_func=self._validate_required_columns,
+                severity="critical"
             ),
             ValidationRule(
-                rule_name="data_types_valid",
+                name="data_types_valid",
                 description="Data types must match schema specifications",
-                severity=ValidationSeverity.CRITICAL,
-                validator=self._validate_data_types
+                validator_func=self._validate_data_types,
+                severity="critical"
             ),
             
             # Domain validation
             ValidationRule(
-                rule_name="hcpcs_code_format",
+                name="hcpcs_code_format",
                 description="HCPCS codes must be 5 characters (A-Z, 0-9)",
-                severity=ValidationSeverity.CRITICAL,
-                validator=self._validate_hcpcs_codes
+                validator_func=self._validate_hcpcs_codes,
+                severity="critical"
             ),
             ValidationRule(
-                rule_name="apc_code_format",
+                name="apc_code_format",
                 description="APC codes must be 4 digits",
-                severity=ValidationSeverity.CRITICAL,
-                validator=self._validate_apc_codes
+                validator_func=self._validate_apc_codes,
+                severity="critical"
             ),
             ValidationRule(
-                rule_name="status_indicator_valid",
+                name="status_indicator_valid",
                 description="Status indicators must be valid values",
-                severity=ValidationSeverity.CRITICAL,
-                validator=self._validate_status_indicators
+                validator_func=self._validate_status_indicators,
+                severity="critical"
             ),
             ValidationRule(
-                rule_name="payment_rates_positive",
+                name="payment_rates_positive",
                 description="Payment rates must be non-negative",
-                severity=ValidationSeverity.CRITICAL,
-                validator=self._validate_payment_rates
+                validator_func=self._validate_payment_rates,
+                severity="critical"
             ),
             
             # Cross-file validation
             ValidationRule(
-                rule_name="apc_referenced_in_b_exists_in_a",
+                name="apc_referenced_in_b_exists_in_a",
                 description="APC codes referenced in Addendum B must exist in Addendum A",
-                severity=ValidationSeverity.CRITICAL,
-                validator=self._validate_apc_cross_reference
+                validator_func=self._validate_apc_cross_reference,
+                severity="critical"
             ),
             ValidationRule(
-                rule_name="hcpcs_exists_for_quarter",
+                name="hcpcs_exists_for_quarter",
                 description="HCPCS codes must exist in HCPCS quarterly update",
-                severity=ValidationSeverity.WARNING,
-                validator=self._validate_hcpcs_existence
+                validator_func=self._validate_hcpcs_existence,
+                severity="warning"
             ),
             
             # Temporal validation
             ValidationRule(
-                rule_name="no_overlapping_effective_ranges",
+                name="no_overlapping_effective_ranges",
                 description="No overlapping effective ranges for same HCPCS+modifier",
-                severity=ValidationSeverity.CRITICAL,
-                validator=self._validate_temporal_uniqueness
+                validator_func=self._validate_temporal_uniqueness,
+                severity="critical"
             ),
             
             # Statistical validation
             ValidationRule(
-                rule_name="row_count_drift",
+                name="row_count_drift",
                 description="Row count must be within acceptable drift from previous quarter",
-                severity=ValidationSeverity.WARNING,
-                validator=self._validate_row_count_drift
+                validator_func=self._validate_row_count_drift,
+                severity="warning"
             ),
             ValidationRule(
-                rule_name="rate_bounded_drift",
+                name="rate_bounded_drift",
                 description="Payment rate changes must be within acceptable bounds",
-                severity=ValidationSeverity.WARNING,
-                validator=self._validate_rate_drift
+                validator_func=self._validate_rate_drift,
+                severity="warning"
             ),
             ValidationRule(
-                rule_name="coverage_drift",
+                name="coverage_drift",
                 description="HCPCS coverage must be within acceptable bounds",
-                severity=ValidationSeverity.WARNING,
-                validator=self._validate_coverage_drift
+                validator_func=self._validate_coverage_drift,
+                severity="warning"
             )
         ]
     
@@ -533,20 +533,20 @@ class OPPSIngestor(BaseDISIngestor):
         # Run all validation rules
         for rule in self._validation_rules:
             try:
-                result = await rule.validator(batch_info)
-                validation_results["rules"][rule.rule_name] = result
+                result = await rule.validator_func(batch_info)
+                validation_results["rules"][rule.name] = result
                 
                 if not result["passed"]:
-                    if rule.severity == ValidationSeverity.CRITICAL:
+                    if rule.severity == "critical":
                         validation_results["passed"] = False
                         validation_results["errors"].extend(result["errors"])
                     else:
                         validation_results["warnings"].extend(result["errors"])
                 
             except Exception as e:
-                logger.error("Validation rule failed", rule=rule.rule_name, error=str(e))
+                logger.error("Validation rule failed", rule=rule.name, error=str(e))
                 validation_results["passed"] = False
-                validation_results["errors"].append(f"Rule {rule.rule_name} failed: {str(e)}")
+                validation_results["errors"].append(f"Rule {rule.name} failed: {str(e)}")
         
         logger.info("Validate stage completed", 
                    batch_id=batch_info.batch_id, 
