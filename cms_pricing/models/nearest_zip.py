@@ -1,7 +1,7 @@
 """Data models for nearest ZIP resolver per PRD v1.0"""
 
-from sqlalchemy import Column, String, Integer, Float, Date, Boolean, Index, Text, CHAR, NUMERIC, TIMESTAMP, BIGINT
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, Integer, Float, Date, Boolean, Index, Text, CHAR, NUMERIC, TIMESTAMP, BIGINT, DateTime
+from sqlalchemy.dialects.postgresql import UUID, JSON
 from cms_pricing.database import Base
 import uuid
 
@@ -64,6 +64,15 @@ class CMSZipLocality(Base):
     source_filename = Column(Text, nullable=True)
     ingest_run_id = Column(UUID(as_uuid=True), nullable=True)
     
+    # DIS-required metadata fields
+    data_quality_score = Column(Float, nullable=True)
+    validation_results = Column(JSON, nullable=True)
+    processing_timestamp = Column(DateTime, nullable=True)
+    file_checksum = Column(String(64), nullable=True)
+    record_count = Column(Integer, nullable=True)
+    schema_version = Column(String(20), nullable=True)
+    business_rules_applied = Column(JSON, nullable=True)
+    
     # Indexes
     __table_args__ = (
         Index("idx_cms_zip_locality_state", "state"),
@@ -87,6 +96,17 @@ class ZIP9Overrides(Base):
     vintage = Column(String(10), nullable=False)
     source_filename = Column(Text, nullable=True)
     ingest_run_id = Column(UUID(as_uuid=True), nullable=True)
+    
+    # DIS-required metadata fields
+    effective_from = Column(Date, nullable=True)
+    effective_to = Column(Date, nullable=True)
+    data_quality_score = Column(Float, nullable=True)
+    validation_results = Column(JSON, nullable=True)
+    processing_timestamp = Column(DateTime, nullable=True)
+    file_checksum = Column(String(64), nullable=True)
+    record_count = Column(Integer, nullable=True)
+    schema_version = Column(String(20), nullable=True)
+    business_rules_applied = Column(JSON, nullable=True)
     
     # Indexes
     __table_args__ = (

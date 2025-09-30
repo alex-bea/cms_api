@@ -1,0 +1,185 @@
+{
+  "dataset_name": "cms_pprrvu",
+  "version": "1.0",
+  "generated_at": "2025-09-30T04:35:55.860056",
+  "columns": {
+    "hcpcs": {
+      "name": "hcpcs",
+      "type": "str",
+      "nullable": false,
+      "description": "Healthcare Common Procedure Coding System code",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^[A-Z0-9]{5}$",
+      "sample_values": null
+    },
+    "modifier": {
+      "name": "modifier",
+      "type": "str",
+      "nullable": true,
+      "description": "HCPCS modifier code",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^[A-Z0-9]{2}$",
+      "sample_values": null
+    },
+    "status_code": {
+      "name": "status_code",
+      "type": "str",
+      "nullable": false,
+      "description": "Status code indicating if service is active",
+      "unit": null,
+      "domain": [
+        "A",
+        "R",
+        "T",
+        "I",
+        "N"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
+    "global_days": {
+      "name": "global_days",
+      "type": "str",
+      "nullable": true,
+      "description": "Global period days",
+      "unit": null,
+      "domain": [
+        "000",
+        "010",
+        "090",
+        "XXX",
+        "YYY",
+        "ZZZ"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
+    "rvu_work": {
+      "name": "rvu_work",
+      "type": "float64",
+      "nullable": true,
+      "description": "Work RVU component",
+      "unit": null,
+      "domain": null,
+      "min_value": 0.0,
+      "max_value": 100.0,
+      "pattern": null,
+      "sample_values": null
+    },
+    "rvu_pe_nonfac": {
+      "name": "rvu_pe_nonfac",
+      "type": "float64",
+      "nullable": true,
+      "description": "Practice expense RVU (non-facility)",
+      "unit": null,
+      "domain": null,
+      "min_value": 0.0,
+      "max_value": 100.0,
+      "pattern": null,
+      "sample_values": null
+    },
+    "rvu_pe_fac": {
+      "name": "rvu_pe_fac",
+      "type": "float64",
+      "nullable": true,
+      "description": "Practice expense RVU (facility)",
+      "unit": null,
+      "domain": null,
+      "min_value": 0.0,
+      "max_value": 100.0,
+      "pattern": null,
+      "sample_values": null
+    },
+    "rvu_malp": {
+      "name": "rvu_malp",
+      "type": "float64",
+      "nullable": true,
+      "description": "Malpractice RVU component",
+      "unit": null,
+      "domain": null,
+      "min_value": 0.0,
+      "max_value": 10.0,
+      "pattern": null,
+      "sample_values": null
+    },
+    "na_indicator": {
+      "name": "na_indicator",
+      "type": "str",
+      "nullable": true,
+      "description": "Not applicable indicator",
+      "unit": null,
+      "domain": [
+        "Y",
+        "N"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
+    "opps_cap_applicable": {
+      "name": "opps_cap_applicable",
+      "type": "bool",
+      "nullable": true,
+      "description": "Whether OPPS cap applies",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
+    "effective_from": {
+      "name": "effective_from",
+      "type": "datetime64[ns]",
+      "nullable": false,
+      "description": "Effective start date",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
+    "effective_to": {
+      "name": "effective_to",
+      "type": "datetime64[ns]",
+      "nullable": true,
+      "description": "Effective end date",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    }
+  },
+  "primary_keys": [
+    "hcpcs",
+    "modifier",
+    "effective_from"
+  ],
+  "partition_columns": [
+    "effective_from"
+  ],
+  "business_rules": [
+    "HCPCS codes must be 5 characters",
+    "Status code must be valid",
+    "RVU components must be non-negative",
+    "Global days must be valid if present"
+  ],
+  "quality_thresholds": {
+    "null_rate_threshold": 0.01,
+    "duplicate_rate_threshold": 0.0
+  }
+}

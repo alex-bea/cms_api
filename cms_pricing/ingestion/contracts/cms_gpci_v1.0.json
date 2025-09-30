@@ -1,0 +1,108 @@
+{
+  "dataset_name": "cms_gpci",
+  "version": "1.0",
+  "generated_at": "2025-09-30T04:35:55.860065",
+  "columns": {
+    "locality_code": {
+      "name": "locality_code",
+      "type": "str",
+      "nullable": false,
+      "description": "2-digit locality code",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^\\d{2}$",
+      "sample_values": null
+    },
+    "state_fips": {
+      "name": "state_fips",
+      "type": "str",
+      "nullable": false,
+      "description": "2-digit state FIPS code",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^\\d{2}$",
+      "sample_values": null
+    },
+    "gpci_work": {
+      "name": "gpci_work",
+      "type": "float64",
+      "nullable": false,
+      "description": "Work GPCI index",
+      "unit": null,
+      "domain": null,
+      "min_value": 0.3,
+      "max_value": 2.0,
+      "pattern": null,
+      "sample_values": null
+    },
+    "gpci_pe": {
+      "name": "gpci_pe",
+      "type": "float64",
+      "nullable": false,
+      "description": "Practice expense GPCI index",
+      "unit": null,
+      "domain": null,
+      "min_value": 0.3,
+      "max_value": 2.0,
+      "pattern": null,
+      "sample_values": null
+    },
+    "gpci_malp": {
+      "name": "gpci_malp",
+      "type": "float64",
+      "nullable": false,
+      "description": "Malpractice GPCI index",
+      "unit": null,
+      "domain": null,
+      "min_value": 0.3,
+      "max_value": 2.0,
+      "pattern": null,
+      "sample_values": null
+    },
+    "effective_from": {
+      "name": "effective_from",
+      "type": "datetime64[ns]",
+      "nullable": false,
+      "description": "Effective start date",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
+    "effective_to": {
+      "name": "effective_to",
+      "type": "datetime64[ns]",
+      "nullable": true,
+      "description": "Effective end date",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    }
+  },
+  "primary_keys": [
+    "locality_code",
+    "state_fips",
+    "effective_from"
+  ],
+  "partition_columns": [
+    "effective_from"
+  ],
+  "business_rules": [
+    "Locality code must be 2 digits",
+    "State FIPS must be 2 digits",
+    "GPCI indices must be between 0.3 and 2.0"
+  ],
+  "quality_thresholds": {
+    "null_rate_threshold": 0.0,
+    "duplicate_rate_threshold": 0.0
+  }
+}

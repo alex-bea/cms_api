@@ -1,0 +1,112 @@
+{
+  "dataset_name": "cms_oppscap",
+  "version": "1.0",
+  "generated_at": "2025-09-30T04:35:55.860070",
+  "columns": {
+    "hcpcs": {
+      "name": "hcpcs",
+      "type": "str",
+      "nullable": false,
+      "description": "HCPCS code",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^[A-Z0-9]{5}$",
+      "sample_values": null
+    },
+    "modifier": {
+      "name": "modifier",
+      "type": "str",
+      "nullable": true,
+      "description": "HCPCS modifier code",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^[A-Z0-9]{2}$",
+      "sample_values": null
+    },
+    "opps_cap_applies": {
+      "name": "opps_cap_applies",
+      "type": "bool",
+      "nullable": false,
+      "description": "Whether OPPS cap applies",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
+    "cap_amount_usd": {
+      "name": "cap_amount_usd",
+      "type": "float64",
+      "nullable": true,
+      "description": "OPPS cap amount in USD",
+      "unit": null,
+      "domain": null,
+      "min_value": 0.0,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
+    "cap_method": {
+      "name": "cap_method",
+      "type": "str",
+      "nullable": true,
+      "description": "Method used to calculate cap",
+      "unit": null,
+      "domain": [
+        "APC",
+        "HCPCS",
+        "CUSTOM"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
+    "effective_from": {
+      "name": "effective_from",
+      "type": "datetime64[ns]",
+      "nullable": false,
+      "description": "Effective start date",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
+    "effective_to": {
+      "name": "effective_to",
+      "type": "datetime64[ns]",
+      "nullable": true,
+      "description": "Effective end date",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    }
+  },
+  "primary_keys": [
+    "hcpcs",
+    "modifier",
+    "effective_from"
+  ],
+  "partition_columns": [
+    "effective_from"
+  ],
+  "business_rules": [
+    "HCPCS codes must be 5 characters",
+    "Cap amount must be non-negative when cap applies",
+    "Cap method must be valid if present"
+  ],
+  "quality_thresholds": {
+    "null_rate_threshold": 0.05,
+    "duplicate_rate_threshold": 0.0
+  }
+}

@@ -192,7 +192,7 @@ class PricingService:
                 cbsa_name=geography_result.selected_candidate.cbsa_name if geography_result.selected_candidate else None,
                 county_fips=geography_result.selected_candidate.county_fips if geography_result.selected_candidate else None,
                 state_code=geography_result.selected_candidate.state_code if geography_result.selected_candidate else None,
-                is_rural_dmepos=geography_result.selected_candidate.is_rural_dmepos if geography_result.selected_candidate else False,
+                rural_flag=geography_result.selected_candidate.rural_flag if geography_result.selected_candidate else None,
                 resolution_method=geography_result.resolution_method,
                 candidates=geography_result.candidates
             )

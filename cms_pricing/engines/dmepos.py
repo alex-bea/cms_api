@@ -43,7 +43,7 @@ class DMEPOSEngine(BasePricingEngine):
             # Determine rural status
             is_rural = False
             if geography and geography.selected_candidate:
-                is_rural = geography.selected_candidate.is_rural_dmepos
+                is_rural = geography.selected_candidate.rural_flag in ['R', 'B'] if geography.selected_candidate and geography.selected_candidate.rural_flag else False
             
             # Get DMEPOS data
             dmepos_data = self.db.query(FeeDMEPOS).filter(

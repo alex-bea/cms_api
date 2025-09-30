@@ -1,0 +1,62 @@
+"""RVU test fixtures for data ingestion testing
+
+This module contains test fixtures and sample data for RVU ingestion testing
+as mandated by PRD Section 10 (Test-First Implementation).
+"""
+
+from .sample_data import (
+    SAMPLE_PPRRVU_TXT_RECORDS,
+    SAMPLE_PPRRVU_CSV_RECORDS,
+    SAMPLE_GPCI_RECORDS,
+    SAMPLE_GPCI_TXT_RECORDS,
+    SAMPLE_GPCI_CSV_RECORDS,
+    SAMPLE_OPPSCAP_RECORDS,
+    SAMPLE_OPPSCAP_TXT_RECORDS,
+    SAMPLE_OPPSCAP_CSV_RECORDS,
+    SAMPLE_ANES_RECORDS,
+    SAMPLE_ANES_TXT_RECORDS,
+    SAMPLE_ANES_CSV_RECORDS,
+    SAMPLE_LOCCO_RECORDS,
+    SAMPLE_LOCCO_TXT_RECORDS,
+    SAMPLE_LOCCO_CSV_RECORDS,
+)
+
+from .expected_parsed import (
+    EXPECTED_PPRRVU_PARSED,
+    EXPECTED_GPCI_PARSED,
+    EXPECTED_OPPSCAP_PARSED,
+    EXPECTED_ANES_PARSED,
+    EXPECTED_LOCCO_PARSED,
+)
+
+from .layout_registry import (
+    PPRRVU_2025D_LAYOUT,
+    GPCI_2025D_LAYOUT,
+    OPPSCAP_2025D_LAYOUT,
+    ANES_2025D_LAYOUT,
+    LOCCO_2025D_LAYOUT,
+)
+
+__all__ = [
+    # Sample data
+    'SAMPLE_PPRRVU_TXT_RECORDS',
+    'SAMPLE_PPRRVU_CSV_RECORDS', 
+    'SAMPLE_GPCI_RECORDS',
+    'SAMPLE_OPPSCAP_RECORDS',
+    'SAMPLE_ANES_RECORDS',
+    'SAMPLE_LOCCO_RECORDS',
+    
+    # Expected parsed results
+    'EXPECTED_PPRRVU_PARSED',
+    'EXPECTED_GPCI_PARSED',
+    'EXPECTED_OPPSCAP_PARSED',
+    'EXPECTED_ANES_PARSED',
+    'EXPECTED_LOCCO_PARSED',
+    
+    # Layout definitions
+    'PPRRVU_2025D_LAYOUT',
+    'GPCI_2025D_LAYOUT',
+    'OPPSCAP_2025D_LAYOUT',
+    'ANES_2025D_LAYOUT',
+    'LOCCO_2025D_LAYOUT',
+]

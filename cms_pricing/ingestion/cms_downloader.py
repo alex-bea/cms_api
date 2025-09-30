@@ -51,6 +51,45 @@ class CMSDownloader:
             }
         }
     
+    async def check_file_changes(
+        self,
+        url: str,
+        last_etag: Optional[str] = None,
+        last_modified: Optional[str] = None,
+        timeout: float = 30.0
+    ) -> Dict[str, Any]:
+        """Check if a file has changed using ETag/Last-Modified headers"""
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                # Make HEAD request to check headers
+                response = await client.head(url, timeout=timeout)
+                
+                current_etag = response.headers.get("etag")
+                current_modified = response.headers.get("last-modified")
+                
+                # Check if file has changed
+                etag_changed = last_etag and current_etag != last_etag
+                modified_changed = last_modified and current_modified != last_modified
+                
+                has_changes = etag_changed or modified_changed or not last_etag
+                
+                return {
+                    "has_changes": has_changes,
+                    "etag": current_etag,
+                    "last_modified": current_modified,
+                    "etag_changed": etag_changed,
+                    "modified_changed": modified_changed,
+                    "status_code": response.status_code
+                }
+                
+            except Exception as e:
+                logger.error("Error checking file changes", url=url, error=str(e))
+                return {
+                    "has_changes": True,  # Default to downloading if check fails
+                    "error": str(e)
+                }
+
     async def download_file(
         self,
         url: str,

@@ -71,7 +71,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip auth for health checks and docs
-        if request.url.path in ["/healthz", "/readyz", "/docs", "/redoc", "/openapi.json"]:
+        if request.url.path in ["/healthz", "/readyz", "/docs", "/redoc", "/openapi.json", "/geo/healthz"]:
             return await call_next(request)
         
         # Verify API key

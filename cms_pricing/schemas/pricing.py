@@ -82,7 +82,7 @@ class GeographyResponse(BaseModel):
     cbsa_name: Optional[str] = Field(None, description="CBSA name")
     county_fips: Optional[str] = Field(None, description="County FIPS")
     state_code: Optional[str] = Field(None, description="State code")
-    is_rural_dmepos: bool = Field(default=False, description="Rural status")
+    rural_flag: Optional[str] = Field(default=None, description="Rural indicator (R, B, or blank) per PRD")
     resolution_method: str = Field(..., description="Resolution method used")
     candidates: List[GeographyCandidate] = Field(..., description="All candidates considered")
 

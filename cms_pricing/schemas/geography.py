@@ -1,6 +1,7 @@
 """Geography-related Pydantic schemas"""
 
 from typing import List, Optional
+from datetime import date
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -14,7 +15,7 @@ class GeographyCandidate(BaseModel):
     county_fips: Optional[str] = Field(None, description="County FIPS code")
     state_code: Optional[str] = Field(None, description="State code")
     population_share: Optional[float] = Field(None, description="Population share for this mapping")
-    is_rural_dmepos: Optional[bool] = Field(None, description="Rural status for DMEPOS")
+    rural_flag: Optional[str] = Field(None, description="Rural indicator (R, B, or blank) per PRD")
     used: bool = Field(default=False, description="Whether this candidate was selected")
     
     @field_validator('zip5')
@@ -28,12 +29,32 @@ class GeographyCandidate(BaseModel):
 class GeographyResolveRequest(BaseModel):
     """Request schema for geography resolution"""
     zip: str = Field(..., min_length=5, max_length=5, description="5-digit ZIP code")
+    plus4: Optional[str] = Field(None, min_length=4, max_length=4, description="4-digit ZIP+4 add-on")
+    valuation_year: Optional[int] = Field(None, ge=2020, le=2030, description="Year for effective date selection")
+    quarter: Optional[int] = Field(None, ge=1, le=4, description="Quarter (1-4) for effective date selection")
+    valuation_date: Optional[date] = Field(None, description="Specific date for effective date selection (overrides year/quarter)")
+    strict: bool = Field(default=False, description="Require exact ZIP+4 match (no fallback)")
+    expose_carrier: bool = Field(default=False, description="Include carrier/MAC information in response")
     
     @field_validator('zip')
     @classmethod
     def validate_zip(cls, v):
         if not v.isdigit():
             raise ValueError('ZIP must contain only digits')
+        return v
+    
+    @field_validator('plus4')
+    @classmethod
+    def validate_plus4(cls, v):
+        if v is not None and not v.isdigit():
+            raise ValueError('Plus4 must contain only digits')
+        return v
+    
+    @field_validator('quarter')
+    @classmethod
+    def validate_quarter(cls, v):
+        if v is not None and (v < 1 or v > 4):
+            raise ValueError('Quarter must be between 1 and 4')
         return v
 
 

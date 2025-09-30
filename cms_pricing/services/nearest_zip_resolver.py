@@ -222,42 +222,43 @@ class NearestZipResolver:
     
     def _get_candidates(self, state: str, exclude_zip: str) -> List[Dict[str, Any]]:
         """Get candidate ZIPs in same state, excluding PO Boxes"""
-        # Get all ZIPs in state from CMS data
-        cms_zips = self.db.query(CMSZipLocality).filter(
+        # Get all ZIPs that have ZCTA mappings and are in the same state
+        # We need to join ZipToZCTA with CMSZipLocality to get state info
+        candidates_query = self.db.query(
+            ZipToZCTA.zip5,
+            ZipToZCTA.zcta5,
+            CMSZipLocality.locality,
+            ZipMetadata.population,
+            ZipMetadata.is_pobox
+        ).join(
+            CMSZipLocality, ZipToZCTA.zip5 == CMSZipLocality.zip5
+        ).outerjoin(
+            ZipMetadata, ZipToZCTA.zip5 == ZipMetadata.zip5
+        ).filter(
             and_(
                 CMSZipLocality.state == state,
-                CMSZipLocality.zip5 != exclude_zip
+                ZipToZCTA.zip5 != exclude_zip
             )
-        ).all()
+        ).order_by(
+            (ZipToZCTA.relationship == 'Zip matches ZCTA').desc(),
+            ZipToZCTA.weight.desc().nullslast()
+        )
         
         candidates = []
         excluded_pobox = 0
         
-        for cms_zip in cms_zips:
-            # Check if it's a PO Box
-            metadata = self.db.query(ZipMetadata).filter(
-                ZipMetadata.zip5 == cms_zip.zip5
-            ).first()
-            
-            if metadata and metadata.is_pobox:
+        for row in candidates_query.all():
+            # Skip PO Boxes
+            if row.is_pobox:
                 excluded_pobox += 1
                 continue
             
-            # Get ZCTA mapping
-            zip_to_zcta = self.db.query(ZipToZCTA).filter(
-                ZipToZCTA.zip5 == cms_zip.zip5
-            ).order_by(
-                (ZipToZCTA.relationship == 'Zip matches ZCTA').desc(),
-                ZipToZCTA.weight.desc().nullslast()
-            ).first()
-            
-            if zip_to_zcta:
-                candidates.append({
-                    'zip5': cms_zip.zip5,
-                    'zcta5': zip_to_zcta.zcta5,
-                    'locality': cms_zip.locality,
-                    'population': metadata.population if metadata else None
-                })
+            candidates.append({
+                'zip5': row.zip5,
+                'zcta5': row.zcta5,
+                'locality': row.locality,
+                'population': row.population
+            })
         
         # Check for empty candidates set
         if not candidates:
