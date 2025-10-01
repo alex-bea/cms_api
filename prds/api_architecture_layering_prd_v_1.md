@@ -197,6 +197,7 @@ Routers → Services → Engines → Repositories → Models
 - Repositories (data access)
 - Other services
 - Configuration
+- DTO adapters
 
 **Engines can depend on:**
 - Domain models (not ORM models)
@@ -207,12 +208,14 @@ Routers → Services → Engines → Repositories → Models
 - SQLAlchemy models
 - Database sessions
 - Query builders
+- Unit of Work
 
 ### 3.2 Forbidden Dependencies
 - **Routers cannot directly import engines** (must go through services)
 - **Routers cannot directly import models** (must go through services)
 - **Engines cannot import HTTP libraries** (FastAPI, requests, etc.)
 - **Engines cannot import database libraries** (SQLAlchemy, etc.)
+- **Engines cannot import Pydantic** (domain isolation)
 - **Services cannot import HTTP libraries** (except for external API calls)
 
 ### 3.3 Dependency Injection Pattern
@@ -226,9 +229,68 @@ async def price_endpoint(
 ):
     return await pricing_service.price_code(...)
 
-# Service factory
+# Service factory with Unit of Work
 def get_pricing_service(db: Session = Depends(get_db)) -> PricingService:
-    return PricingService(db)
+    uow = UnitOfWork(db)
+    return PricingService(uow)
+```
+
+### 3.4 DTO Mapping Policy
+**Decision:** Adopt explicit, lightweight mapping within the Service layer.
+
+**Implementation:**
+- Services accept Pydantic DTOs, then immediately map them to pure domain dataclasses
+- Use Pydantic v2's `model_validate/model_dump` for concise mapping
+- Domain dataclasses use `from_attributes=True` and no FastAPI imports
+
+**Acceptance Criteria:**
+- **Domain and Engine modules must import no `pydantic` or `fastapi`**
+- Static analysis or CI test enforces this rule
+- All DTO-to-domain mapping happens in `adapters/` layer
+
+```python
+# Service layer mapping
+class PricingService:
+    async def price_code(self, dto: PricingRequestDTO):
+        # Map DTO to domain
+        domain_request = PricingRequest.model_validate(dto.model_dump())
+        
+        # Pass to engine
+        result = await self.engine.price_code(domain_request)
+        
+        # Map domain back to DTO
+        return PricingResponseDTO.model_validate(result.model_dump())
+```
+
+### 3.5 Repository Pattern Policy
+**Decision:** Decouple Services from SQLAlchemy by introducing interface protocols.
+
+**Implementation:**
+- Define `Protocol` interfaces in `repositories/interfaces.py`
+- Implementations live in `repositories/sqlalchemy.py`
+- Use minimal, per-request Unit-of-Work to manage transactional scope
+
+**Acceptance Criteria:**
+- **Services and Engines import from `repositories.interfaces` only**
+- Contract tests run cleanly using fake (mock) repository implementation
+- Unit of Work manages transactional scope per request
+
+```python
+# Repository interface
+class PricingRepository(Protocol):
+    async def get_rate(self, code: str, year: int, tenant_id: str) -> Optional[Rate]
+    async def save_rate(self, rate: Rate, tenant_id: str) -> None
+
+# Service using interface
+class PricingService:
+    def __init__(self, uow: UnitOfWork):
+        self.uow = uow
+    
+    async def price_code(self, request: PricingRequest):
+        async with self.uow:
+            repo = self.uow.pricing_repository
+            rate = await repo.get_rate(request.code, request.year, request.tenant_id)
+            return await self.engine.calculate_price(rate)
 ```
 
 ## 4. Error Handling Strategy
@@ -358,6 +420,54 @@ class PricingService:
 - **Write operations:** Use read-write database sessions
 - **Cross-service calls:** Use distributed transactions when needed
 
+### 6.3 Idempotency Policy
+**Decision:** Require idempotency for state-changing, long-running, or cost-incurring endpoints.
+
+**Implementation:**
+- Implement mandatory `Idempotency-Key` header for selected non-GET endpoints
+- Cache `(tenant, route, idempotency_key)` → `response` in Redis for 24h TTL
+- Conflict (key exists but request body differs) returns **409 Conflict**
+
+**Endpoints requiring idempotency:**
+- `POST /plans` (plan creation)
+- `POST /uploads` (file uploads)
+- `POST /ingestion` (data ingestion triggers)
+- `POST /jobs` (bulk jobs)
+
+**Acceptance Criteria:**
+- Contract tests must cover successful replay (same key, same body → **200/201** with original response)
+- Contract tests must cover conflict handling (different body → **409**)
+
+```python
+# Idempotency middleware
+@app.middleware("http")
+async def idempotency_middleware(request: Request, call_next):
+    if request.method in ["POST", "PUT", "PATCH"]:
+        idempotency_key = request.headers.get("Idempotency-Key")
+        if idempotency_key:
+            # Check Redis cache
+            cache_key = f"idempotency:{tenant_id}:{request.url.path}:{idempotency_key}"
+            cached_response = await redis.get(cache_key)
+            
+            if cached_response:
+                # Check if request body matches
+                if request_body_hash == cached_response["body_hash"]:
+                    return JSONResponse(**cached_response["response"])
+                else:
+                    return JSONResponse(status_code=409, content={"error": "Idempotency key conflict"})
+    
+    response = await call_next(request)
+    
+    # Cache successful responses
+    if response.status_code in [200, 201] and idempotency_key:
+        await redis.setex(cache_key, 86400, {
+            "response": {"status_code": response.status_code, "content": response.body},
+            "body_hash": hashlib.sha256(request.body).hexdigest()
+        })
+    
+    return response
+```
+
 ## 7. Caching Strategy
 
 ### 7.1 Multi-Tier Caching
@@ -425,6 +535,68 @@ class Settings(BaseSettings):
 - **Local:** `.env` files (gitignored)
 - **CI/CD:** GitHub Secrets
 - **Production:** Vault or cloud secret manager
+
+## 9. Background Work Policy
+
+### 9.1 Background Jobs Strategy
+**Decision:** Implement a simple Redis Queue (RQ) for async processing.
+
+**Implementation:**
+- Route long-running tasks to RQ (bulk comparison, large ingests)
+- Expose `/jobs` endpoint to manage submissions and polling
+- Default timeout 15 min; retries with backoff; leverage `Idempotency-Key`
+
+**Job Types:**
+- **Bulk Pricing Update:** Process large batches of pricing calculations
+- **Data Ingestion:** Process large file uploads and transformations
+- **Report Generation:** Generate complex reports and exports
+- **Plan Comparison:** Compare multiple treatment plans
+
+**Acceptance Criteria:**
+- E2E tests must submit a bulk job (e.g., **"Bulk Pricing Update"**)
+- Poll until completion and verify metrics are exported per job type
+- Jobs must respect idempotency keys for retry safety
+
+```python
+# Job submission endpoint
+@router.post("/jobs")
+async def submit_job(
+    job_type: str,
+    job_data: Dict[str, Any],
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+    tenant_id: str = Depends(get_tenant_id)
+):
+    # Check idempotency
+    if await redis.exists(f"job:{tenant_id}:{idempotency_key}"):
+        return {"job_id": await redis.get(f"job:{tenant_id}:{idempotency_key}")}
+    
+    # Submit to RQ
+    job = rq_queue.enqueue(
+        f"jobs.{job_type}",
+        job_data,
+        timeout=900,  # 15 minutes
+        retry=Retry(max=3, interval=60)
+    )
+    
+    # Cache job ID for idempotency
+    await redis.setex(f"job:{tenant_id}:{idempotency_key}", 86400, job.id)
+    
+    return {"job_id": job.id, "status": "queued"}
+
+# Job status endpoint
+@router.get("/jobs/{job_id}")
+async def get_job_status(job_id: str, tenant_id: str = Depends(get_tenant_id)):
+    job = rq_queue.fetch_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    return {
+        "job_id": job_id,
+        "status": job.get_status(),
+        "result": job.result if job.is_finished else None,
+        "error": str(job.exc_info) if job.is_failed else None
+    }
+```
 
 ## 9. Performance & SLOs
 
@@ -499,6 +671,44 @@ app.state.limiter = limiter
 @limiter.limit("100/minute")
 async def price_endpoint(request: Request, ...):
     # Rate limited endpoint
+```
+
+### 10.4 Tenant Enforcement Policy
+**Decision:** Enforce security predicates at the data layer (Repositories).
+
+**Implementation:**
+- Extract `tenant_id` from API key in Authentication Middleware
+- Inject `tenant_id` into Service layer via dependency injection
+- Repositories require `tenant_id` and apply it to all queries
+- Forbidden cross-tenant access returns **403** with catalog code **E2301**
+
+**Acceptance Criteria:**
+- **Negative tests must prove tenant isolation**
+- Static analysis forbids repository methods from accepting `None` for required `tenant_id` parameter
+- Authorization (401/403) happens in middleware; data filtering happens in repositories
+
+```python
+# Authentication middleware extracts tenant
+def verify_api_key(api_key: str = Header(..., alias="X-API-Key")):
+    key_record = get_api_key(api_key)
+    if not key_record:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    # Extract tenant_id from key
+    tenant_id = extract_tenant_from_key(api_key)
+    return {"api_key": api_key, "tenant_id": tenant_id}
+
+# Repository enforces tenant isolation
+class PricingRepository:
+    async def get_rate(self, code: str, year: int, tenant_id: str) -> Optional[Rate]:
+        if not tenant_id:
+            raise ValueError("tenant_id is required")
+        
+        return await self.db.query(Rate).filter(
+            Rate.code == code,
+            Rate.year == year,
+            Rate.tenant_id == tenant_id  # Enforced isolation
+        ).first()
 ```
 
 ## 11. Testing Strategy
@@ -627,19 +837,47 @@ logger.info(
 
 ## 14. Migration & Compatibility
 
-### 14.1 Backward Compatibility
-**Decision Needed:** Migration strategy for breaking changes
+### 14.1 Schema Migration Policy
+**Decision:** Enforce a zero-downtime, two-phase (Expand/Contract) deployment model.
+
+**Implementation:**
+- All changes must be backward-compatible for at least one release
+- Use Alembic for versioned scripts and staging rehearsals
+- Risky changes require an ADR and explicit rollback steps
+
+**Two-Phase Policy:**
+1. **Expand:** Additive schema change → deploy code using both old/new fields
+2. **Contract:** Drop old fields in a later release
+
+**Acceptance Criteria:**
+- CI must run `alembic upgrade/downgrade` on a snapshot database
+- Release checklist includes a required staging rehearsal
+- All migrations must be backward-compatible for at least one release
+
+```python
+# Example: Adding a new column
+# Phase 1: Expand (additive)
+def upgrade():
+    op.add_column('pricing_rates', sa.Column('new_field', sa.String(100), nullable=True))
+
+def downgrade():
+    op.drop_column('pricing_rates', 'new_field')
+
+# Phase 2: Contract (cleanup) - in later release
+def upgrade():
+    op.drop_column('pricing_rates', 'old_field')
+
+def downgrade():
+    op.add_column('pricing_rates', sa.Column('old_field', sa.String(100), nullable=True))
+```
+
+### 14.2 Backward Compatibility
+**Decision:** Migration strategy for breaking changes
 
 **Recommendation:**
 1. **Additive changes:** Always backward compatible
 2. **Breaking changes:** MAJOR version bump with 90-day deprecation
 3. **Dual-read/write:** Support both old and new formats during transition
-
-### 14.2 Schema Evolution
-**Database migrations:**
-- **Additive first:** Add new columns, don't remove old ones
-- **Dual-write:** Write to both old and new formats
-- **Cleanup:** Remove old format after migration complete
 
 ### 14.3 API Versioning
 **Strategy:** URL versioning (`/api/v1/`, `/api/v2/`)
@@ -648,23 +886,53 @@ logger.info(
 
 ## 15. Release Discipline
 
-### 15.1 ADR Requirements
-**Decision Needed:** When to require ADRs
+### 15.1 Release Discipline Policy
+**Decision:** Standardize non-trivial changes via Architecture Decision Records (ADR) and enforce versioning.
 
-**Recommendation:**
-- **New services:** ADR required
-- **Cross-layer changes:** ADR required
-- **Breaking changes:** ADR required
-- **Performance changes:** ADR required
+**Implementation:**
+- Use SemVer (Semantic Versioning) driven by the OpenAPI contract
+- Any change to `api-contracts/openapi.yaml` must include a **SemVer bump** and changelog entry
+
+**ADR Required For:**
+- New services
+- Crossing a layer boundary
+- Non-trivial data/schema changes
+- Breaking API changes
+- Performance-impacting changes
+
+**Acceptance Criteria:**
+- CI checks: PRs touching OpenAPI specification must include `SEMVER_BUMP=X` label (MAJOR, MINOR, or PATCH)
+- All contract tests must pass
+- Release notes auto-generated from changelog
+
+```python
+# CI check example
+def check_semver_bump():
+    if "api-contracts/openapi.yaml" in changed_files:
+        if not has_semver_label():
+            fail("OpenAPI changes require SEMVER_BUMP label")
+        
+        semver_type = get_semver_label()
+        if semver_type == "MAJOR":
+            require_adr("Breaking changes require ADR")
+        
+        run_contract_tests()
+```
 
 ### 15.2 Semver Enforcement
-**Decision Needed:** Semver policy for API changes
+**Decision:** Semver policy for API changes
 
-**Recommendation:**
+**Policy:**
 - **OpenAPI changes:** Semver bump required
 - **Breaking changes:** MAJOR version bump
 - **New endpoints:** MINOR version bump
 - **Bug fixes:** PATCH version bump
+
+**OpenAPI Contract as Trigger:**
+- Any change to `api-contracts/openapi.yaml` triggers semver requirement
+- Breaking changes (removed endpoints, changed response schemas) = MAJOR
+- New endpoints or optional fields = MINOR
+- Documentation or bug fixes = PATCH
 
 ## 16. Acceptance Criteria
 
@@ -679,14 +947,23 @@ logger.info(
 - [ ] All dependencies follow allowed dependency flow
 - [ ] All tests follow testing pyramid
 - [ ] All performance SLOs are met
+- [ ] **DTO mapping:** Domain modules import no pydantic or fastapi
+- [ ] **Repository pattern:** Services import from repositories.interfaces only
+- [ ] **Idempotency:** Contract tests cover replay and conflict scenarios
+- [ ] **Tenant enforcement:** Negative tests prove tenant isolation
+- [ ] **Background work:** E2E tests submit bulk jobs and poll completion
+- [ ] **Schema migration:** CI runs migration apply/rollback on snapshot DB
+- [ ] **Release discipline:** CI blocks merges missing SEMVER_BUMP label
 
 ### 16.2 Compliance Gates
-- **Lint checks:** Enforce import rules
+- **Lint checks:** Enforce import rules and forbidden dependencies
 - **Unit tests:** ≥90% coverage on engines
 - **Integration tests:** Critical paths covered
-- **Contract tests:** All endpoints compliant
+- **Contract tests:** All endpoints compliant with idempotency
 - **Performance tests:** SLOs met
-- **Security tests:** Auth and rate limiting work
+- **Security tests:** Auth, rate limiting, and tenant isolation work
+- **Migration tests:** Alembic upgrade/downgrade on snapshot DB
+- **Semver enforcement:** OpenAPI changes require SEMVER_BUMP label
 
 ## 17. Change Management
 
@@ -703,21 +980,54 @@ logger.info(
 
 ---
 
-## Appendix A — Decision Matrix
+## Appendix A — Consolidated Policy Summary
+
+### A.1 Resolved Architecture Decisions
+
+| Policy | Decision | Acceptance Criteria |
+|--------|----------|-------------------|
+| **DTO Mapping** | Explicit adapters in Service layer using Pydantic v2 `model_validate/model_dump` | Domain modules import no `pydantic` or `fastapi` |
+| **Repository Pattern** | Protocol interfaces with Unit-of-Work pattern | Services import from `repositories.interfaces` only |
+| **Idempotency** | Redis-based caching with 24h TTL for state-changing endpoints | Contract tests cover replay (200) and conflict (409) |
+| **Tenant Enforcement** | Repository-level filtering with middleware extraction | Negative tests prove tenant isolation |
+| **Background Work** | RQ + Redis queue for async processing | E2E tests submit bulk jobs and poll completion |
+| **Schema Migration** | Zero-downtime expand/contract pattern | CI runs migration apply/rollback on snapshot DB |
+| **Release Discipline** | ADR + Semver enforcement driven by OpenAPI changes | CI blocks merges missing `SEMVER_BUMP` label |
+
+### A.2 Implementation Priorities
+
+**Phase 1: Foundation (Week 1-2)**
+1. Implement DTO mapping with adapters layer
+2. Create repository interfaces and Unit-of-Work pattern
+3. Add tenant enforcement to repositories
+
+**Phase 2: Reliability (Week 3-4)**
+1. Implement idempotency middleware with Redis
+2. Add background job processing with RQ
+3. Set up schema migration CI checks
+
+**Phase 3: Governance (Week 5-6)**
+1. Implement release discipline with ADR requirements
+2. Add Semver enforcement for OpenAPI changes
+3. Complete compliance gates and testing
+
+---
+
+## Appendix B — Decision Matrix
 
 | Decision | Current State | Recommendation | Rationale |
 |----------|---------------|----------------|-----------|
 | Async/Sync | Async throughout | ✅ Keep async | Already implemented, better performance |
 | Transaction Boundaries | Per-request | ✅ Keep per-request | Simple, works well with FastAPI |
-| DTO Mapping | Pydantic schemas | ❓ Need decision | Explicit adapters vs inline mapping |
-| Repository Pattern | SQLAlchemy models | ❓ Need decision | Repository interfaces vs direct models |
+| DTO Mapping | Pydantic schemas | ✅ Explicit adapters | Domain isolation, testability |
+| Repository Pattern | SQLAlchemy models | ✅ Repository interfaces | Decoupling, testability, UoW pattern |
 | Caching | Multi-tier | ✅ Keep multi-tier | Good performance, already implemented |
-| Idempotency | None | ❓ Need decision | Required for external APIs |
-| Tenant Enforcement | API keys only | ❓ Need decision | Repository vs service layer |
+| Idempotency | None | ✅ Redis-based with 24h TTL | Required for external APIs, reliability |
+| Tenant Enforcement | API keys only | ✅ Repository-level filtering | Security isolation, data protection |
 | Error Handling | HTTPException | ✅ Standardize | Good pattern, needs hierarchy |
-| Background Work | None | ❓ Need decision | Task queue vs synchronous |
-| Schema Migration | Alembic | ❓ Need decision | Zero-downtime vs simple migrations |
-| Release Discipline | None | ❓ Need decision | ADR requirements and semver policy |
+| Background Work | None | ✅ RQ + Redis queue | Scalability, async processing |
+| Schema Migration | Alembic | ✅ Zero-downtime expand/contract | Production safety, rollback capability |
+| Release Discipline | None | ✅ ADR + Semver enforcement | Change governance, contract versioning |
 
 ## Appendix B — Implementation Examples
 
