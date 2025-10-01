@@ -60,7 +60,11 @@ We separate concerns into **Land → Validate → Normalize → Enrich → Publi
 ### 3.6 Publish (Curated)
 - Snapshot tables partitioned by `vintage_date` and optionally `effective_from`.
 - Publish **Latest‑Effective Views** using window functions over `effective_from DESC`.
-- Generate export artifacts (Parquet/CSV) and API caches as needed.
+- Generate export artifacts (Parquet/CSV) and **API caches** as needed.
+- **API Readiness**: Support both header and query param for digest pins; header takes precedence
+  - Header: `X-Dataset-Digest: sha256:…`
+  - Query: `?digest=sha256:…`
+  - Selection rule: if no digest provided, choose Latest ≤ valuation_date (per dataset)
 
 ## 4. Storage Layout
 ```
@@ -110,7 +114,7 @@ Modern observability focuses on **data health**, not just job health. DIS mandat
 - **Volume:** Rows/bytes vs. expectation and vs. previous vintage.
 - **Schema:** Drift detection (added/removed/typed-changed fields) vs. registered schema version.
 - **Quality/Distribution:** Field-level null rates, range checks, and distribution shift (e.g., KS tests) vs. golden baselines.
-- **Lineage & Usage:** Upstream/downstream asset graph; consumer usage stats for impact assessment during incidents.
+- **Lineage & Usage:** Upstream/downstream asset graph; **API endpoint usage stats** for impact assessment during incidents.
 
 ### 8.2 Data SLAs (defaults; override per dataset)
 - **Timeliness:** Land→Publish ≤ 24h for standard datasets; Freshness alert at cadence + 3d.
@@ -135,6 +139,7 @@ $1
 - **Technical Metadata:** Auto-capture schema (column names/types), constraints, PII tags, and lineage edges; publish to a catalog (e.g., OpenMetadata/Amundsen/Unity Catalog).
 - **Business Metadata:** Dataset Owner, Data Steward, business glossary for key fields, data classification, license, and intended use. Expose in catalog docs.
 - **Automated Classification:** Each dataset declares **Data Classification**: Public / Internal / Confidential / Restricted. Classification drives encryption-at-rest, masking policies, and RBAC at ingestion and in curated views.
+- **API Integration Requirements:** All curated datasets must expose API-ready views with trace blocks, vintage information, and digest pins for reproducibility.
 
 ## 11. Operations Runbook
 **Smoke Test (pre‑merge)**
@@ -158,12 +163,11 @@ $1
 - Curated docs must include an **Attribution Note** when licenses require it.
 
 ## 13. Dataset Integration Contract
-Every dataset PRD must include an **Ingestion Summary** stating: source spec, schema contract & keys, semantics, validations (with thresholds), crosswalks & tie‑breakers, outputs, SLAs, and any deviations from DIS.
+Every dataset PRD must include an **Ingestion Summary** stating: source spec, schema contract & keys, semantics, validations (with thresholds), crosswalks & tie‑breakers, outputs, SLAs, and any deviations from DIS. **API surfaces or contracts derived from DIS-managed datasets must comply with the Global API Program PRDs (v1.0)**.
 
 ## 14. Change Management
 - Changes to DIS require an ADR: context, decision, alternatives, impact, migration plan.
 - DIS version (e.g., v1.0) must be referenced by dataset PRDs.
-- API surfaces or contracts derived from DIS-managed datasets must comply with the **Global API Program PRDs (v1.0)**.
 
 ## 15. QA Summary (per QA & Testing Standard v1.0)
 | Item | Details |
@@ -1268,3 +1272,129 @@ class IngestorSpec:
     outputs: OutputSpec                              # curated paths, view names
     slas: SlaSpec                                    # freshness, quality targets
     classification: DataClass                        # Public/Internal/…
+
+
+## APPENDIX
+Perfect. I’ve locked the decisions and turned them into a clean appendix you can paste under “Reference Data Integration” in the DIS.
+
+Appendix — Reference Data Integration (Final)
+
+A. Structure & Inventory
+
+/ref/
+  census/
+    fips_states/<vintage>/{data.parquet, manifest.json}
+    fips_counties/<vintage>/{data.parquet, manifest.json}
+    gazetteer_centroids/<vintage>/{data.parquet, manifest.json}
+    zcta/<vintage>/{data.parquet, manifest.json}
+    cbsa_msa/<vintage>/{data.parquet, manifest.json}
+    ruca/<vintage>/{data.parquet, manifest.json}
+  cms/
+    hcpcs_codes/<vintage>/{data.parquet, manifest.json}
+    status_indicators/<vintage>/{data.parquet, manifest.json}
+    pos_codes/<vintage>/{data.parquet, manifest.json}
+    cpt_level_1/<vintage>/{data.parquet, manifest.json}          # licensed (Restricted)
+  geo/
+    zip_zcta_crosswalk/<vintage>/{data.parquet, manifest.json}
+    nber_distances/<vintage>/{data.parquet, manifest.json}
+    timezones/<vintage>/{data.parquet, manifest.json}
+  providers/
+    npi_taxonomy/<vintage>/{data.parquet, manifest.json}
+    ein_npi_crosswalk/<vintage>/{data.parquet, manifest.json}     # Confidential
+
+	•	Format: Parquet for production, JSON/CSV seeds allowed only for dev fixtures.
+	•	Schema: Each ref set has a contract in the Schema Registry (SemVer).
+	•	Vintage: See §C for standard rules.
+
+B. Integration Points (Runtime)
+	•	Enrichers read curated /ref snapshots (never in-repo JSON).
+	•	Hot-key KV/LRU caches: zip→locality, zip→zcta, zip_pair→distance.
+	•	Emit mapping_confidence ∈ {exact,weighted,nearest,pip_fallback,ambiguous} on all geo enrichments.
+
+C. Vintage Semantics
+	•	vintage_date = source publication timestamp when available; else use source-provided effective date.
+	•	Keep product_year as an attribute for readability (e.g., “2023 Gazetteer”).
+	•	Records may also have effective_from/to columns used by latest-effective views.
+
+D. Precedence & Constraint Policy
+
+Why: Conflicting refs change pricing/eligibility; deterministic rules protect consistency and auditability.
+
+D.1 Precedence (highest → lowest)
+	1.	CMS official lists (payment codes, localities, POS)
+	2.	Gazetteer shapes PIP (true spatial containment)
+	3.	Census/ICPSR crosswalks (tabular relations)
+	4.	Nearest centroid ≤ 1.0 mile (haversine fallback)
+	5.	Internal fallbacks (flagged)
+
+Always retain alternates with confidence labels for audit.
+
+D.2 Constraints (tiered)
+	•	Block publish (critical): unknown HCPCS/CPT/POS, invalid FIPS, missing locality/GPCI key.
+	•	Warn + quarantine rows (non-critical): ZIP↔ZCTA disagreements, distance anomalies, missing county when other geography still usable.
+
+E. Tie-Breakers & Thresholds
+
+Goal: pick the closest/most faithful mapping while staying explainable.
+
+E.1 Defaults
+	•	ZIP→ZCTA: preserve many-to-many with weights; dominant used in “simple” views; else equal split.
+	•	ZIP→County: PIP > crosswalk > nearest ≤ 1.0 mi, else ambiguous.
+	•	Distance: prefer NBER; if present, keep even when far from haversine but flag deltas.
+	•	Code lists: unknown HCPCS/CPT/APC/POS → block in curated; allowed in staging (quarantine) for triage.
+
+E.2 Thresholds
+	•	Share sum tolerance (ZIP↔ZCTA): 1.00 ± 0.01.
+	•	NBER vs haversine delta: median ≤ 1.0 mi, p95 ≤ 3.0 mi (else alert).
+	•	Nearest fallback radius (ZIP→county): ≤ 1.0 mi; beyond → ambiguous, no auto-assign.
+
+F. Classifications & Licensing
+
+Ref set	Classification	Notes
+Census FIPS, Gazetteer, ZCTA, CBSA, RUCA	Public	Attribution required in docs/UI
+CMS code lists, localities, POS	Public	Attribution required
+NBER distances	Internal	Treat conservatively; attribution required
+Time zones	Internal	Derived mapping tables
+NPI taxonomy	Internal	No PHI/PII; verify license terms
+EIN↔NPI crosswalk	Confidential	Access-limited; potential PII/organizational sensitivity
+CPT Level I	Restricted	Licensed content; no redistribution; masked exports
+
+RBAC/masking is driven automatically from this classification.
+
+G. Freshness SLAs & Breach Handling
+
+Ref set	Freshness SLA	Breach action
+CMS code lists/localities/POS	≤ 5 business days	Block publish if stale or schema drift
+CPT Level I	≤ 10 business days	Block publish on schema drift; warn if source timing delayed by vendor
+Gazetteer/ZCTA/CBSA/RUCA	≤ 15 business days after vintage	Warn (block only on schema contract failure)
+ZIP↔ZCTA/County (ICPSR)	≤ 30 business days	Warn
+NBER distances	Static; monthly check	Warn if unexpected change detected
+
+H. Ownership & Stewardship (solo-friendly)
+
+Until more contributors join:
+	•	Owner (all ref sets): Platform / Data Eng (Arnina)
+	•	Steward role: defaults to Owner. When SMEs exist, assign: Geo SME for Census/NBER/CBSA/RUCA; Medicare SME for CMS; Governance/Licensing for CPT; Provider SME for EIN↔NPI/NPI taxonomy.
+	•	Incident paging and ADR authorship default to Owner.
+
+I. Retention
+	•	Hot: keep last 3 vintages of each ref set online.
+	•	Archive: all older vintages to cold storage with manifests and checksums.
+	•	Critical (CMS/CPT): optionally keep up to 12 months hot before archiving.
+
+J. Reference Data Management
+	•	Loader enforces schema registry validation, writes manifest.json (url, sha256, size, license, vintage, schema_version).
+	•	Freshness monitors per ref set, wired into the five-pillar dashboards.
+	•	Conflict metrics: track ambiguous, pip_fallback, distance deltas; expose in dashboards.
+	•	Any change to precedence/tie-breaker logic requires an ADR.
+
+K. Tests (minimum per ref set)
+	•	NBER: symmetry + triangle spot checks; delta vs haversine thresholds.
+	•	FIPS: 100% coverage and valid lengths/zero-padding.
+	•	ZIP↔ZCTA: share sum within ±0.01; dominant correctness; fallback radius honored.
+	•	CMS/CPT/POS: accepted values; no unknowns; SemVer schema checks.
+	•	Gazetteer/ZCTA: lat/lon bounds; PIP containment sanity.
+
+⸻
+
+If you want me to apply this appendix into the DIS canvas and wire the classifications/SLAs into the existing tables, say the word and I’ll slot it in cleanly.

@@ -63,6 +63,19 @@
 
 - Endpoint added only if: OpenAPI approved; examples provided; error cases defined; contract tests pass in CI.
 
+### 1.9 OpenAPI SSOT & SemVer Enforcement
+
+- **Single source of truth:** `/api-contracts/openapi.yaml` must be updated first. Code, tests, SDKs, docs, and changelog entries follow that PR.
+- **SemVer rules:** MINOR/PATCH for backward-compatible changes; MAJOR for breaking changes with ≥90 day deprecation window. Deprecations advertise via `X-Deprecation` header and docs banner.
+- **CI gates:** Spectral lint, contract-test suite, and router/spec drift check block merges on failure.
+- **Release workflow:** Git tag (`vMAJOR.MINOR.PATCH`) equals spec version. Tag builds SDKs (TypeScript, Python) and Postman collection as release assets and publishes rendered docs to `/docs/<version>` (with `/docs` tracking main).
+
+**Acceptance Criteria**
+
+- ✅ CI blocks merges when Spectral lint or contract tests fail.
+- ✅ Each API code PR references the spec diff (PR link or commit hash).
+- ✅ Tagged releases upload SDKs/Postman assets and publish versioned docs + changelog.
+
 ---
 
 ## 2) Architecture & NFR PRD
@@ -97,7 +110,24 @@
 - RPO ≤ 15m; RTO ≤ 1h for Tier-1.
 - Quarterly restore drills with signed report.
 
-### 2.6 Acceptance Criteria
+### 2.6 Transport Middleware Stack (FastAPI)
+
+- **Middleware order:** request_id → auth (API key + tenant bind) → rate limiting (Redis-backed) → body-size/timeouts → error shaper → metrics → tracing.
+- **Correlation IDs:** require `X-Correlation-Id`; generate a UUIDv4 when absent and echo in responses/logs.
+- **Auth & rate limits:** enforce API-key auth before rate limiting. Expose `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and on 429 include `Retry-After`.
+- **Error envelope:** responses must use the standard error structure defined in the Error Catalog PRD.
+- **Defaults:** body size capped at 5 MB unless overridden; request timeout default 30s.
+- **Extensibility:** middleware must allow swapping to an external gateway in the future without changing headers/behavior.
+- **FastAPI Implementation:** Use `@app.middleware("http")` decorators with proper exception handling, dependency injection for auth, and structured logging with `structlog`.
+
+**Acceptance Criteria**
+
+- ✅ Responses include the correlation ID header and surface it in the trace block.
+- ✅ Error responses always follow the standard envelope.
+- ✅ Where limits apply, rate-limit headers are present (and 429 adds `Retry-After`).
+- ✅ FastAPI middleware stack properly handles exceptions and dependency injection.
+
+### 2.7 Acceptance Criteria
 
 - ADR recorded for new patterns.
 - Perf SLOs defined + verified in CI perf smoke.
@@ -111,8 +141,12 @@
 
 ### 3.1 AuthN & AuthZ
 
-- OAuth2/JWT; service-to-service via mTLS + short-lived tokens.
-- RBAC matrix checked in as code; negative tests in CI.
+- **API Key Management:** Simple API keys for external customers with format `cms_<env>_<tenant>_<random>` (e.g., `cms_prod_acme_abc123def456`). Keys stored hashed in database, never plaintext.
+- **Key Validation:** Middleware validates key format, checks database for active keys, caches in Redis (5-minute TTL).
+- **Key Scoping:** Keys bound to specific tenant/organization with per-key rate limits (1000 req/hour default).
+- **Future RBAC:** Role-based access (read-only, admin, etc.) planned for later phases.
+- **OAuth2/JWT:** Service-to-service via mTLS + short-lived tokens.
+- **RBAC matrix:** Checked in as code; negative tests in CI.
 
 ### 3.2 Data Protection
 
@@ -157,17 +191,38 @@
 - Response includes `trace.vintage` and `trace.hash` (sha256 of source bundle).
 - Vintage lock check in CI.
 
-### 4.3 Provenance & Lineage
+### 4.3 Response Trace Block (Reproducibility)
+
+- Every data-backed endpoint must include a `trace` object:
+
+```
+"trace": {
+  "correlation_id": "uuid",
+  "vintage": "2025Q1",
+  "hash": "sha256:…"
+}
+```
+
+- `trace.vintage` maps to the snapshot selected by the API (“Latest ≤ valuation date” unless a digest pin is provided).
+- `trace.hash` is the dataset bundle digest (from DIS publish step) proving the exact data slice.
+- Store correlation ID + trace fields in logs for reproducibility; expose them via `/trace/{run_id}`.
+
+**Acceptance Criteria**
+
+- ✅ `/price`, `/compare`, `/plans/*`, `/datasets/*`, `/geo/*` (and any data-backed endpoint) return the trace block.
+- ✅ CI asserts presence/format of `trace.vintage` and `trace.hash` for these endpoints.
+
+### 4.4 Provenance & Lineage
 
 - Store `ingest_runs` with: source URL, timestamp, checksum, record counts.
 - Expose `/meta/vintage` endpoint for transparency.
 
-### 4.4 Backfills & Reprocessing
+### 4.5 Backfills & Reprocessing
 
 - Immutable historical vintages; new vintage creation never mutates prior outputs.
 - Parity test required vs prior vintage.
 
-### 4.5 Acceptance Criteria
+### 4.6 Acceptance Criteria
 
 - Great Expectations suite green on ingest.
 - Parity delta within thresholds set in PRD.
@@ -181,8 +236,10 @@
 
 ### 5.1 Logging
 
-- JSON logs; include `correlation_id`, `user_id` (hashed), `vintage`, `latency_ms`, `status_code`.
-- No PII/PHI in logs.
+- **JSON logs:** Include `correlation_id`, `user_id` (hashed), `vintage`, `latency_ms`, `status_code`.
+- **Correlation ID Middleware:** FastAPI middleware generates UUIDv4 if `X-Correlation-Id` header missing, echoes in all responses and logs.
+- **Structured Logging:** Use `structlog` for consistent JSON formatting across all services.
+- **No PII/PHI:** Mask sensitive data in logs; use data classification labels to drive masking policies.
 
 ### 5.2 Metrics & Golden Signals
 
@@ -227,13 +284,18 @@
 
 - Backward-compatible first; dual-read/write windows documented; cutover scripts versioned.
 
-### 6.4 Deprecation
+### 6.4 Deprecation & Migration Playbook
 
-- 90-day window minimum; publish migration guides and headers.
+- **Announce:** open an ADR/PRD update, add changelog entry, and publish a `/docs/migrations/<version>.md` guide.
+- **Signal:** ship `X-Deprecation: <ISO-date>; info=<URL>` header + docs banner. Dual-run new behavior behind a feature flag (≥2 weeks in staging, ≥90 days for external breaking changes).
+- **Instrument:** add metrics/logs to monitor adoption; ensure rollback plan in runbook.
+- **Sunset:** remove deprecated behavior after the sunset date; update docs and release notes accordingly.
 
 ### 6.5 Acceptance Criteria
 
 - Release checklist signed; rollback proven; change ticket links embedded in release notes.
+- ✅ Breaking-change PRs include migration notes, sunset date, and flag plan.
+- ✅ Deprecation headers appear in staging prior to production rollout.
 
 ---
 
@@ -276,6 +338,18 @@
 /tests/{unit,integration,contract,data_quality,perf,_golden,_fixtures,_schemas}
 /tests/config/test_matrix.yaml
 ```
+
+### 7.6 Contract Test Patterns
+
+- **Tooling:** Schemathesis drives OpenAPI-based tests in CI; project-specific pytest suites cover domain goldens/invariants.
+- **Coverage:** Every public route must have at least one happy-path (2xx), validation error (4xx), and auth (401/403) test.
+- **Docs parity:** Examples in docs/Postman must execute as tests against the mock/sandbox environment during CI.
+- **CI integration:** Contract tests run on every PR and in nightly builds; failures block merge.
+
+**Acceptance Criteria**
+
+- ✅ Schemathesis coverage spans all public endpoints in CI.
+- ✅ Documentation examples execute successfully against the mock during CI.
 
 ---
 
