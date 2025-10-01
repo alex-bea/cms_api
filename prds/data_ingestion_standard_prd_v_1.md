@@ -6,7 +6,12 @@ This document defines the **Data Ingestion Standard (DIS)** used across projects
 **Status:** Adopted 1.0  
 **Owners:** Platform/Data Engineering  
 **Consumers:** Product, Analytics, Services  
-**Change control:** ADR + PR review  
+**Change control:** ADR + PR review
+
+**Cross-References:**
+- **Observability & Monitoring PRD v1.0:** Comprehensive monitoring standards, five-pillar framework, and unified SLAs
+- **QA Testing Standard (QTS) v1.0:** Testing requirements for data pipelines and quality gates
+- **API Security & Auth PRD v1.0:** Security requirements for data access and audit logging  
 
 ## 1. Goals & Non‑Goals
 **Goals**
@@ -112,6 +117,8 @@ We separate concerns into **Land → Validate → Normalize → Enrich → Publi
 - **Data SLAs:** Timeliness ≤ 24h, Completeness ≥ 99.5%, Accuracy ≥ 99.0%, Schema Stability 0 breaking changes, Availability ≥ 99.9%
 - **Dashboards:** One dashboard per dataset with five-pillar widgets and last three vintages
 - **Alerts:** Pager on freshness breach/schema drift/quality fail; Slack on volume drift warnings
+
+*For detailed implementation: See Observability PRD Section 2.1 (Data Pipeline Freshness), Section 3.1 (Data Pipeline SLAs), and Section 4.1 (Data Pipeline Metrics)*
 
 ## 9. Security & Access
 - Raw and Stage are read‑only to most roles; Curated is RBAC‑controlled by domain.
@@ -229,6 +236,18 @@ def ingest_dataset():
 
 ### Appendix H — Deviation Process
 - Any exception to DIS must be documented in the dataset PRD with a rationale and an end date; owner must open an ADR if the deviation persists beyond one vintage.
+
+### Appendix I — Cross-Reference Map
+
+**Related PRDs:**
+- **Observability & Monitoring PRD v1.0:** Comprehensive monitoring standards and unified SLAs
+- **QA Testing Standard (QTS) v1.0:** Testing requirements for data pipelines and quality gates
+- **API Security & Auth PRD v1.0:** Security requirements for data access and audit logging
+
+**Integration Points:**
+- **Observability:** DIS Section 8 → Observability PRD Section 2.1 (Data Pipeline Freshness), Section 3.1 (Data Pipeline SLAs), Section 4.1 (Data Pipeline Metrics)
+- **Testing:** DIS Section 7 → QTS Section 7 (Quality Gates), Section 2.5 (Test Accuracy Metrics)
+- **Security:** DIS Section 9 → Security PRD Section 22.1 (Operational Runbooks), Section 10.4 (Extended Prometheus Metrics)
 
 
 ---

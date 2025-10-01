@@ -6,7 +6,12 @@ This document defines the **QA & Testing Standard (QTS)** that governs validatio
 **Status:** Draft v1.0 (proposed)  
 **Owners:** Quality Engineering & Platform Reliability  
 **Consumers:** Product, Engineering, Data, Ops  
-**Change control:** ADR + QA guild review + PR sign-off  
+**Change control:** ADR + QA guild review + PR sign-off
+
+**Cross-References:**
+- **Observability & Monitoring PRD v1.0:** Comprehensive monitoring standards, test observability, and unified SLAs
+- **Data Ingestion Standard (DIS) v1.0:** Data pipeline testing requirements and quality gates
+- **API Security & Auth PRD v1.0:** Security testing requirements and compliance procedures  
 
 ## 1. Goals & Non-Goals
 **Goals**
@@ -108,6 +113,8 @@ We standardize QA into **Plan → Implement → Execute → Observe → Improve*
 - **Synthetic checks:** Hit critical APIs every 5 min; latency SLO p95 tracked
 - **Reporting:** Weekly QA health email with gate stats, top failures, quarantined tests
 
+*For detailed implementation: See Observability PRD Section 2.5 (Testing Lineage), Section 3.3 (Testing SLAs), and Section 4.3 (Testing Metrics)*
+
 ## 9. Security & Access
 - Synthetic data preferred; PII/PHI prohibited in fixtures.
 - If regulated datasets needed, tokenize identifiers; store encryption keys in HSM/Vault.
@@ -170,6 +177,18 @@ Each PRD must append a QA Summary table covering:
 
 ### Appendix E — Deviation Request Form (abridged)
 Fields: `requester`, `suite_id`, `deviation_type`, `justification`, `mitigation`, `expiry`, `approver`.
+
+### Appendix F — Cross-Reference Map
+
+**Related PRDs:**
+- **Observability & Monitoring PRD v1.0:** Comprehensive monitoring standards, test observability, and unified SLAs
+- **Data Ingestion Standard (DIS) v1.0:** Data pipeline testing requirements and quality gates
+- **API Security & Auth PRD v1.0:** Security testing requirements and compliance procedures
+
+**Integration Points:**
+- **Observability:** QTS Section 8 → Observability PRD Section 2.5 (Testing Lineage), Section 3.3 (Testing SLAs), Section 4.3 (Testing Metrics)
+- **Data Testing:** QTS Section 7 → DIS Section 7 (Quality Gates), Section 8 (Observability & Monitoring)
+- **Security Testing:** QTS Section 9 → Security PRD Section 22.1 (Operational Runbooks), Section 18B (Security Test Suites)
 
 always check to see if you've already written tests before writing new ones
 

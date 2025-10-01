@@ -6,7 +6,12 @@ This document defines the **Observability & Monitoring Standard** for the CMS Pr
 **Status:** Adopted v1.0  
 **Owners:** Platform Engineering (SRE + Data Engineering)  
 **Consumers:** Product, Engineering, Data, Ops, QA  
-**Change control:** ADR + Architecture Board review  
+**Change control:** ADR + Architecture Board review
+
+**Cross-References:**
+- **Data Ingestion Standard (DIS) v1.0:** Data pipeline lifecycle, quality gates, and ingestion observability
+- **QA Testing Standard (QTS) v1.0:** Testing philosophy, coverage requirements, and test observability
+- **API Security & Auth PRD v1.0:** Security observability, audit logging, and incident response procedures  
 
 ## 1. Goals & Non-Goals
 
@@ -128,6 +133,8 @@ Modern observability focuses on **system health** across all domains. We mandate
 - **Schema Stability:** 0 uncontracted breaking changes per month
 - **Availability:** Latest-effective views ≥ 99.9% monthly
 
+*Reference: DIS PRD Section 8.2 for detailed data SLAs and Section 7 for quality gates*
+
 ### 3.2 API Service SLAs (new)
 
 **Performance:**
@@ -152,6 +159,8 @@ Modern observability focuses on **system health** across all domains. We mandate
 - **Accuracy:** 100% test expectations match implementation
 - **Business Logic Coverage:** All documented business rules tested
 - **Mock Accuracy:** All mocks target actual import paths
+
+*Reference: QTS PRD Section 7 for quality gates and Section 2.5 for test accuracy metrics*
 
 ## 4. Metrics & Monitoring
 
@@ -216,6 +225,8 @@ Modern observability focuses on **system health** across all domains. We mandate
 **Level 1:** Alex (Security Team) notification within 15 minutes
 **Level 2:** Alex (CTO/Head of Security) notification within 30 minutes  
 **Level 3:** Executive team notification within 1 hour
+
+*Reference: Security PRD Section 22.1 for detailed incident response playbook*
 
 ### 5.3 Communication Templates
 
@@ -496,6 +507,34 @@ observability_histogram = Histogram('observability_duration_seconds', 'Observabi
 - Incident Response Procedures
 - Infrastructure Integration
 - Compliance Requirements
+
+---
+
+## 13. Cross-Reference Map
+
+### Related PRDs
+- **Data Ingestion Standard (DIS) v1.0**
+  - Section 8: Observability & Monitoring (data-specific requirements)
+  - Section 7: Quality Gates (data quality thresholds)
+  - Section 10.1: Metadata & Catalog Requirements (ingestion runs table)
+  - Appendix G: SLAs (defaults for data pipelines)
+
+- **QA Testing Standard (QTS) v1.0**
+  - Section 8: Observability & Monitoring (test-specific requirements)
+  - Section 7: Quality Gates (testing thresholds)
+  - Section 2.5: Test Accuracy Metrics (implementation alignment)
+  - Phase 3: Performance & Load Testing (benchmarking framework)
+
+- **API Security & Auth PRD v1.0**
+  - Section 22.1: Operational Runbooks (incident response)
+  - Section 10.4: Extended Prometheus Metrics (security observability)
+  - Section 6.3: Credits & Billing Model (usage tracking)
+
+### Integration Points
+- **Data Pipeline Observability:** DIS Section 8 → Observability Section 2.1, 3.1, 4.1
+- **Testing Observability:** QTS Section 8 → Observability Section 2.5, 3.3, 4.3
+- **Security Observability:** Security PRD Section 22.1 → Observability Section 5.2
+- **Incident Response:** Security PRD Section 22.1 → Observability Section 5.2, 8.1
 
 ---
 
