@@ -340,7 +340,46 @@ This project is licensed under the MIT License. See LICENSE file for details.
 ---
 
 **Note**: This API is designed for healthcare pricing analysis and should not be used for actual claims processing without proper validation and compliance review.
-- **PRD Catalog**
-  - [`prds/global_api_program_prds_v_1.md`](prds/global_api_program_prds_v_1.md): global API standards (contracts, architecture, security, QA).
-  - [`prds/data_ingestion_standard_prd_v_1.md`](prds/data_ingestion_standard_prd_v_1.md): ingestion lifecycle and dataset contract requirements.
-  - [`prds/qa_testing_standard_prd_v_1.md`](prds/qa_testing_standard_prd_v_1.md): shared QA/testing expectations and summary template.
+## PRD Catalog
+
+This project follows comprehensive Product Requirements Documents (PRDs) that define standards, architecture, and best practices across all components:
+
+### Core Architecture PRDs
+
+- **[Data Architecture PRD v1.0](prds/data_architecture_prd_v_1.md)**: Comprehensive data architecture including ingestion lifecycle, storage patterns, data modeling, database design, quality gates, versioning, security, and observability. Defines the Data Ingestion Standard (DIS) for all data pipelines.
+
+- **[API Standards & Architecture PRD v1.0](prds/api_standards_architecture_prd_v_1.md)**: Unified API design and architecture standards covering contracts, versioning, request/response envelopes, pagination, errors, correlation, layer responsibilities, dependency flow, and release discipline.
+
+### Security & Quality PRDs
+
+- **[API Security & Auth PRD v1.0](prds/prd-api-security-and-auth.md)**: Comprehensive security standards including authentication, authorization, API key management, RBAC, PII/PHI handling, rate limiting, security middleware, and operational runbooks.
+
+- **[QA Testing Standard (QTS) v1.0](prds/qa_testing_standard_prd_v_1.md)**: Comprehensive testing standards including test tiers, quality gates, test environments, naming conventions, versioning, observability, reporting, and test accuracy metrics.
+
+### Performance & Operations PRDs
+
+- **[Observability & Monitoring PRD v1.0](prds/observability_monitoring_prd_v_1.md)**: Unified monitoring standards with five-pillar framework (Freshness, Volume, Schema, Quality, Lineage), SLAs for data pipelines and API services, metrics, alerting, and incident response.
+
+- **[API Performance & Scalability PRD v1.0](prds/api_performance_scalability_prd_v_1.md)**: Performance budgets, caching strategies, scaling patterns, load testing, performance monitoring, and optimization guidelines.
+
+- **[API Contract Management PRD v1.0](prds/api_contract_management_prd_v_1.md)**: Schema evolution, versioning, compatibility rules, contract governance, OpenAPI SSOT, and automated contract testing.
+
+### Specialized PRDs
+
+- **[Scraper Standard PRD v1.0](prds/scraper_standard_prd_v_1.md)**: Web scraping standards for automated data discovery, disclaimer handling, orchestration, and compliance with data ingestion requirements.
+
+- **[OPPS Scraper PRD](prds/prd-opps-scraper.md)**: Specific requirements for CMS OPPS data scraping including quarterly addenda discovery, disclaimer acceptance, and file classification.
+
+### PRD Compliance
+
+All components in this project are designed to comply with these PRDs:
+- **Data pipelines** follow the Data Architecture PRD (DIS)
+- **API endpoints** comply with API Standards & Architecture PRD
+- **Security** implements API Security & Auth PRD requirements
+- **Testing** follows QA Testing Standard (QTS) guidelines
+- **Monitoring** adheres to Observability & Monitoring PRD
+- **Performance** meets API Performance & Scalability PRD standards
+- **Contracts** are managed per API Contract Management PRD
+- **Scrapers** follow Scraper Standard PRD requirements
+
+For implementation details, see the individual PRD files in the `prds/` directory.
