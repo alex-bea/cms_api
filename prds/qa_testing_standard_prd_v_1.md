@@ -178,3 +178,506 @@ Each PRD must append a QA Summary table covering:
 Fields: `requester`, `suite_id`, `deviation_type`, `justification`, `mitigation`, `expiry`, `approver`.
 
 always check to see if you've already written tests before writing new ones
+
+APPENDIX 
+QA Testing Standard (QTS) — v1.1 with DIS Enhancements
+
+Status: Proposed → Adopt for all ingestion/scraper repos
+
+Owners: QA Guild (primary), Platform/Data Eng (co-owners)
+
+Consumers: Ingestion engineers, Scraper maintainers, DevEx, Compliance
+
+Change control: PR + QA Guild review + Architecture Board sign‑off
+
+⸻
+
+Changelog (v1.1)
+	•	Added Section 2.1–2.3 to harden scraper method unit tests, coverage, and test infra.
+	•	Added Section 2.1.1 Implementation Analysis Before Testing (REQUIRED) to prevent test-implementation mismatches.
+	•	Added Section 2.2.1 Real Data Structure Analysis (REQUIRED) to ensure test expectations match actual behavior.
+	•	Added Section 2.3.1 Mocking Strategy Analysis (REQUIRED) to target correct import paths and call patterns.
+	•	Added Section 2.4 Test-First Discovery Process with implementation analysis workflow.
+	•	Added Section 2.5 Test Accuracy Metrics with validation checklist and quality gates.
+	•	Added Phase 3 performance & load testing with SLAs and measurement guidance.
+	•	Added Phase 4 DIS metadata & catalog requirements (ingestion_runs table, technical/business metadata, lineage).
+	•	Added Phase 5 fixture management (golden datasets, SemVer, baselines, backward compatibility).
+	•	Added Phase 6 observability (five‑pillar dashboard + alerting).
+	•	Introduced CI gates for QTS compliance and reporting.
+
+⸻
+
+0. Purpose & Scope
+
+This standard defines the minimum bar for QA across all data scrapers and ingestion pipelines that feed DIS‑compliant systems. It codifies what must be tested, how results are measured, and which artifacts must be produced to prove compliance (coverage reports, baselines, metadata, lineage, dashboards).
+
+Applies to:
+	•	Web scrapers (e.g., CMS OPPS/MPFS/RVU/GPCI)
+	•	Ingestors (Land → Validate → Normalize → Enrich → Publish)
+	•	Catalog/metadata sidecars
+
+Non‑goals: Security testing, privacy reviews, and legal license reviews are separate tracks; this doc references them where relevant.
+
+⸻
+
+1. Test Layers & Definitions
+	•	Unit tests: Pure function/class tests; no network or filesystem (except tmp fixtures).
+	•	Component tests: Module‑level with file IO and HTML parsing; network and browser calls are mocked.
+	•	Integration tests: Exercise real disk and parser stacks with local fixtures; still no external network.
+	•	End‑to‑end (E2E): Optional smoke against a known public URL with explicit allowlist and backoff; runs nightly only.
+	•	Performance/Load: Benchmarks and concurrency tests.
+	•	Contract/Baseline: Golden data & backward compatibility checks.
+
+⸻
+
+2. Scraper QA Requirements
+
+2.1 Method Unit Tests (HIGH priority)
+
+### 2.1.1 Implementation Analysis Before Testing (REQUIRED)
+
+Before writing any unit tests, engineers MUST:
+
+1. **Analyze Real Implementation**
+   - Read the actual method signatures and return types
+   - Understand the complete business logic flow
+   - Identify all conditional branches and edge cases
+   - Document the actual data structures returned
+
+2. **Create Implementation Contract**
+   ```python
+   # Example: Document actual behavior before testing
+   def _extract_quarter_info(self, link_info: Dict[str, str]) -> Optional[Dict[str, int]]:
+       """
+       ACTUAL RETURN TYPE: {'year': int, 'quarter': int} or None
+       NOT: (year, quarter) tuple as initially assumed
+       """
+   ```
+
+3. **Test-Driven Discovery Process**
+   - Write ONE test case based on assumptions
+   - Run it against real implementation
+   - Update test expectations to match reality
+   - Document the actual behavior
+   - Then write comprehensive test suite
+
+4. **Business Logic Documentation**
+   - Document all business rules (e.g., "requires year pattern for quarterly addenda links")
+   - Identify precedence rules and tie-breakers
+   - Document error handling strategies
+
+### 2.1.2 Required Test Coverage
+
+Method	What to test	Cases
+_extract_quarter_info(text)	Month→Quarter mapping; malformed strings	"January 2025"→{'year': 2025, 'quarter': 1}, "Apr 2025"→{'year': 2025, 'quarter': 2}, mixed case, extra spaces, non‑English months, None, empty, garbage
+_is_quarterly_addenda_link(url, text)	True/false identification incl. edge words	positive phrases ("Addendum A/B", "Quarterly Update"), negatives ("Errata", "Annual"), case and punctuation, **requires year pattern**
+_classify_file(href, link_text)	File type enum	zip, csv, xls/xlsx, pdf, unknown/ambiguous
+_resolve_disclaimer_url(url)	Tiered resolution strategy	direct pass‑through, license trampoline (/apps/ama/license.asp?file=...), bad/malformed URLs, timeouts
+_handle_disclaimer_with_browser(url)	Browser automation flow	detect button text variants, headless mode, popup failures, retry/backoff limits
+
+Implementation notes
+	•	Use pytest.mark.parametrize for table‑driven tests and to include negative/edge cases.
+	•	Disallow real HTTP: mock httpx/requests.
+	•	Disallow real browser: mock selenium/playwright drivers; assert called with expected selectors and timeouts.
+	•	**CRITICAL**: Test expectations must match actual implementation return types and behavior
+
+Example
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("January 2025 Addendum A", {'year': 2025, 'quarter': 1}),
+        ("Apr 2025 OPPS", {'year': 2025, 'quarter': 2}),
+        ("  july 2025  ", {'year': 2025, 'quarter': 3}),
+        ("Oct 2025 Errata", {'year': 2025, 'quarter': 4}),
+        ("N/A", None),
+        (None, None),
+    ],
+)
+def test_extract_quarter_info(text, expected):
+    # CRITICAL: Test expectations must match actual implementation
+    result = scraper._extract_quarter_info({'text': text, 'href': ''})
+    assert result == expected
+
+2.2 Coverage & Negative Testing (HIGH)
+
+### 2.2.1 Real Data Structure Analysis (REQUIRED)
+
+Before writing parametrized tests:
+
+1. **Sample Real Data**
+   ```python
+   # Create test data from actual implementation
+   def analyze_real_behavior():
+       scraper = CMSOPPSScraper()
+       
+       # Test actual return types
+       result = scraper._extract_quarter_info({'text': 'January 2025', 'href': ''})
+       print(f"Actual return type: {type(result)}")
+       print(f"Actual value: {result}")
+       
+       # Test actual boolean logic
+       is_valid = scraper._is_quarterly_addenda_link('/test', 'Test')
+       print(f"Actual boolean logic: {is_valid}")
+   ```
+
+2. **Document Actual Patterns**
+   - What patterns actually work vs. what we assumed
+   - What edge cases the implementation actually handles
+   - What the implementation actually rejects
+
+3. **Update Test Expectations**
+   - Modify parametrized test cases to match reality
+   - Add cases for actual edge cases discovered
+   - Remove cases for scenarios the implementation doesn't handle
+
+### 2.2.2 Coverage Requirements
+	•	Coverage bar: ≥ 90% line coverage for core scraper modules (*_scraper.py, HTML classifier helpers). Measured with pytest-cov and enforced in CI.
+	•	Negative cases: malformed URLs, network timeouts, 3xx/4xx/5xx, HTML without expected anchors, duplicate links, empty ZIPs, corrupt files.
+	•	Mocking:
+	•	HTTP: httpx.Client/AsyncClient mocked for status and payloads.
+	•	Browser: mock selenium.webdriver / playwright.sync_api calls.
+	•	Parsing: mock BeautifulSoup responses where appropriate.
+
+Coverage config (excerpt)
+
+# pyproject.toml
+[tool.pytest.ini_options]
+addopts = "-q --maxfail=1 --disable-warnings --cov=src --cov-report=xml --cov-fail-under=90"
+
+2.3 Test Infrastructure (HIGH)
+
+### 2.3.1 Mocking Strategy Analysis (REQUIRED)
+
+Before writing mocks:
+
+1. **Analyze Import Structure**
+   ```python
+   # Check where imports actually happen
+   grep -r "from selenium" cms_pricing/ingestion/scrapers/
+   grep -r "import selenium" cms_pricing/ingestion/scrapers/
+   ```
+
+2. **Understand Dependency Injection**
+   - Are dependencies imported at module level or inside methods?
+   - Are they passed as parameters or accessed globally?
+   - What's the actual call pattern?
+
+3. **Create Accurate Mocks**
+   ```python
+   # Mock the actual import path, not assumed path
+   with patch('selenium.webdriver') as mock_webdriver:  # Correct
+   # NOT: with patch('cms_pricing.ingestion.scrapers.cms_opps_scraper.webdriver')  # Wrong
+   ```
+
+4. **Test Mock Accuracy**
+   - Verify mocks are actually called
+   - Ensure mock return values match expected types
+   - Test that mocks don't interfere with real logic
+
+### 2.3.2 Infrastructure Requirements
+	•	Fixtures with manifests: Each fixture directory must contain a manifest.yaml describing source URL, vintage, checksum, expected rows/files.
+	•	Generators: Provide utilities to generate synthetic HTML pages with N links, controlled types, and broken variants.
+	•	Isolation: Each test uses a tmp working dir; all temp artifacts cleaned at end. Randomness is seeded.
+
+Fixture manifest (example)
+
+fixture_version: 1.0.0
+source:
+  url: https://www.cms.gov/apps/ama/license.asp?file=/files/zip/july-2025-opps-addendum.zip
+  retrieved_at: 2025-07-12T03:10:11Z
+expected:
+  files: ["addendum_a.csv", "addendum_b.csv"]
+  sha256: "<zip-hash>"
+  rows: { addendum_a.csv: 120345, addendum_b.csv: 90211 }
+license:
+  name: CMS Open Data
+  attribution_required: true
+
+
+⸻
+
+## 2.4 Test-First Discovery Process (NEW)
+
+### 2.4.1 Discovery Workflow
+
+1. **Phase 1: Implementation Analysis**
+   ```bash
+   # Step 1: Understand the real implementation
+   python -c "
+   from cms_pricing.ingestion.scrapers.cms_opps_scraper import CMSOPPSScraper
+   scraper = CMSOPPSScraper()
+   
+   # Test actual behavior
+   print('=== Real Implementation Analysis ===')
+   result = scraper._extract_quarter_info({'text': 'January 2025', 'href': ''})
+   print(f'Return type: {type(result)}')
+   print(f'Return value: {result}')
+   "
+   ```
+
+2. **Phase 2: Behavior Documentation**
+   ```python
+   # Document actual behavior in test file
+   """
+   ACTUAL IMPLEMENTATION BEHAVIOR:
+   - _extract_quarter_info returns Dict[str, int] or None
+   - _is_quarterly_addenda_link requires year pattern in text/href
+   - _classify_file requires file extensions in patterns
+   """
+   ```
+
+3. **Phase 3: Test Suite Creation**
+   - Write tests based on documented behavior
+   - Include edge cases discovered during analysis
+   - Verify all conditional branches are covered
+
+### 2.4.2 Validation Checklist
+
+Before marking tests complete:
+- [ ] All test expectations match actual implementation return types
+- [ ] All business logic branches are tested
+- [ ] All edge cases discovered during analysis are covered
+- [ ] Mocks target actual import paths and call patterns
+- [ ] Test data reflects real-world scenarios
+
+⸻
+
+## 2.5 Test Accuracy Metrics (NEW)
+
+### 2.5.1 Accuracy Requirements
+
+- **Implementation Alignment**: 100% of test expectations must match actual implementation behavior
+- **Business Logic Coverage**: All documented business rules must have test cases
+- **Edge Case Discovery**: Tests must include all edge cases found during analysis
+- **Mock Accuracy**: All mocks must target actual import paths and call patterns
+
+### 2.5.2 Validation Process
+
+1. **Pre-Test Analysis**: Document actual behavior before writing tests
+2. **Test-Implementation Alignment**: Verify all test expectations match reality
+3. **Business Logic Validation**: Ensure all business rules are tested
+4. **Mock Verification**: Confirm mocks work with actual implementation
+5. **Edge Case Coverage**: Verify all discovered edge cases are tested
+
+### 2.5.3 Quality Gates
+
+- **Accuracy Gate**: 100% of test expectations must match implementation
+- **Coverage Gate**: ≥90% line coverage on core modules
+- **Business Logic Gate**: All documented business rules must have tests
+- **Mock Gate**: All mocks must be verified against actual implementation
+
+### 2.5.4 Practical Example: OPPS Scraper Lessons Learned
+
+**Problem**: Tests assumed `_extract_quarter_info` returned `(year, quarter)` tuple, but actual implementation returned `{'year': year, 'quarter': quarter}` dict.
+
+**Solution**: 
+1. **Analyze First**: `python -c "from cms_pricing.ingestion.scrapers.cms_opps_scraper import CMSOPPSScraper; scraper = CMSOPPSScraper(); print(scraper._extract_quarter_info({'text': 'January 2025', 'href': ''}))"`
+2. **Document Behavior**: `# ACTUAL RETURN TYPE: {'year': int, 'quarter': int} or None`
+3. **Update Tests**: Change all test expectations from `(2025, 1)` to `{'year': 2025, 'quarter': 1}`
+4. **Verify**: Run tests to confirm 100% alignment
+
+**Key Takeaway**: Always analyze the real implementation before writing tests to prevent costly rewrites.
+
+⸻
+
+3. Performance & Load Testing (MEDIUM)
+
+3.1 Benchmarking Framework
+	•	Use pytest-benchmark to measure function‑level performance for classification and parsing.
+	•	Metrics captured: latency p50/p95/p99, throughput (files/min), RSS memory peak during large file processing.
+	•	Target SLA: < 30s per file end‑to‑end for standard addendum ZIPs (≤50MB) on CI‑class machines.
+
+3.2 Load Profiles
+	•	Simulate high‑volume scraping (100–300 files) with concurrency profiles: 1, 5, 10 workers.
+	•	Stress disclaimer resolution: 50% of links require browser click‑through.
+	•	Measure DB ingestion throughput with backpressure (e.g., Postgres COPY).
+
+3.3 Performance Monitoring
+	•	Export benchmark results as JSON; publish time series to observability collector.
+	•	Fail CI on >20% regression versus last successful baseline.
+
+Benchmark example
+
+def test_classify_file_benchmark(benchmark, synthetic_links):
+    def run():
+        for href, text in synthetic_links:
+            classify_file(href, text)
+    benchmark(run)
+
+
+⸻
+
+4. DIS Metadata & Catalog Requirements (MEDIUM)
+
+4.1 ingestion_runs Table (Required)
+
+Persist one row per batch/run for auditability.
+
+Schema (Postgres)
+
+create table if not exists ingestion_runs (
+  run_id uuid primary key,
+  dataset text not null,
+  pipeline text not null,
+  source_urls jsonb not null,
+  file_hashes jsonb not null,
+  file_bytes bigint,
+  row_count bigint,
+  schema_version text,
+  quality_score numeric(5,2),
+  runtime_sec integer,
+  cost_estimate_usd numeric(10,4),
+  outcome text check (outcome in ('success','partial','failed')),
+  environment text,
+  commit_sha text,
+  started_at timestamptz not null,
+  finished_at timestamptz not null,
+  tags jsonb default '{}'::jsonb
+);
+
+4.2 Technical Metadata (Auto‑capture)
+	•	Schema capture: column names/types, nullability, primary keys/uniques.
+	•	Constraint detection: inferred min/max, enum sets, regex.
+	•	PII tags: heuristic detectors (SSN, email, phone) flagged to tags.
+	•	Lineage: Emit OpenLineage events (job/run/dataset) on publish.
+
+OpenLineage event (minimal)
+
+{
+  "eventType": "COMPLETE",
+  "job": {"namespace": "pricing.scrapers", "name": "cms_opps_scraper"},
+  "run": {"runId": "<uuid>"},
+  "inputs": [{"namespace": "web", "name": "cms.gov/opps/addenda"}],
+  "outputs": [{"namespace": "warehouse", "name": "curated.opps_addenda"}]
+}
+
+4.3 Business Metadata
+	•	Ownership: dataset_owner, steward, escalation Slack channel.
+	•	Glossary: definitions for Addendum A/B, Conversion Factor, Locality, etc.
+	•	Classification: Public / Internal / Confidential / Restricted.
+	•	License & Attribution: record license, obligations, and attribution strings.
+
+⸻
+
+5. QTS Fixture Management (MEDIUM)
+
+5.1 Golden Datasets
+	•	Maintain comprehensive golden datasets per dataset version with manifest.yaml.
+	•	Version using SemVer (e.g., opps-golden@1.3.0).
+	•	Validate goldens against schema contracts before use.
+	•	Automate refresh when upstream schema/vintage changes.
+
+5.2 Baselines & Backward Compatibility
+	•	Store baseline metrics (row counts, distinct keys, distribution summaries) per release.
+	•	Add change detection tests that diff current vs baseline; fail on breaking changes unless allowlisted.
+	•	Enforce backward compatibility for APIs/curated views (snapshot tests on JSON/CSV outputs).
+
+Snapshot test (example)
+
+import json, pathlib
+
+def test_curated_view_snapshot(tmp_path):
+    current = run_curated_view_export()
+    snapshot = json.loads(pathlib.Path("tests/snapshots/opps_curated_v1.json").read_text())
+    assert current[0:100] == snapshot[0:100]
+
+5.3 Test Environment Matrix
+	•	Isolation: No cross‑test contamination; each test creates/cleans its own dirs and temp DB schemas.
+	•	Secrets: Fetch dynamically from secret manager in CI; locally, use .env overrides.
+	•	Config: Env‑specific settings via config.<env>.yaml with safe defaults.
+
+Matrix (minimum)
+
+Dimension	Values
+Python	3.11.x (pin minor), optional 3.12 in canary
+OS	Ubuntu LTS in CI; macOS dev supported
+Browser	Chromium headless (Playwright) or ChromeDriver (Selenium)
+DB	Postgres 14/15
+Concurrency	1, 5, 10 workers
+
+
+⸻
+
+6. Observability & Alerting (MEDIUM)
+
+6.1 Five‑Pillar Dashboard (Required)
+	•	Freshness: time since last successful publish vs SLO (e.g., ≤ 14 days for monthly datasets).
+	•	Volume: rows/bytes vs expectation (±15% warn, ±30% page).
+	•	Schema: drift vs registered contract; field additions/removals.
+	•	Quality: null rates, range checks, key uniqueness, categorical distributions.
+	•	Lineage: upstream/downstream asset graph with last run status.
+
+6.2 Alerting Rules
+	•	Pager: freshness breach, schema drift, failed publish, performance regression (>20%).
+	•	Slack: volume drift warnings, quality dips below thresholds.
+	•	Ownership routing: alerts must include dataset owner and run URL.
+
+⸻
+
+7. CI Gates & Reporting
+	•	Required to merge:
+	•	Unit/component coverage ≥ 90% on core modules.
+	•	Performance regression < 20% vs last green.
+	•	All baseline/contract tests pass (or explicit, approved bypass label).
+	•	Ingestion run metadata written; OpenLineage event emitted.
+	•	Artifacts: JUnit XML, coverage XML/HTML, benchmark JSON, baseline diffs, fixture manifests.
+	•	Badges: Coverage and last‑green status published to README.
+
+CI (excerpt)
+
+# .github/workflows/qts.yml
+name: QTS Compliance
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q --cov=src --cov-report=xml --cov-fail-under=90
+      - run: pytest tests/perf -q --benchmark-json=bench.json
+      - run: python tools/check_perf_regression.py bench.json .qts/last_bench.json
+      - run: python tools/emit_openlineage.py
+      - uses: actions/upload-artifact@v4
+        with: { name: qts-artifacts, path: "coverage.xml, bench.json, tests/**/manifest.yaml" }
+
+
+⸻
+
+8. Appendix
+
+A. Selector expectations for disclaimer clicks
+	•	Primary button text variants: "I Agree", "Accept & Continue", "Proceed".
+	•	Fallback selectors must be configurable; retries: 3; backoff: 1s → 2s → 4s.
+
+B. Quality checks (min set)
+	•	File checksum verification on download; reject unknown sizes <10KB.
+	•	CSV sniffing: delimiter, quoting; fail on mixed column counts.
+	•	Unique key checks on curated outputs; null rate thresholds per field.
+
+C. Business glossary (starter)
+	•	Addendum A/B: OPPS hospital outpatient payment addenda.
+	•	Conversion Factor (CF): Payment multiplier applied to RVUs.
+	•	Locality: Geographic payment area used in MPFS.
+
+⸻
+
+9. Acceptance Criteria (Ready‑to‑Adopt)
+	•	This repo implements Sections 2–7 with passing CI.
+	•	**NEW**: Implementation analysis completed before writing tests (Section 2.1.1).
+	•	**NEW**: Real data structure analysis documented (Section 2.2.1).
+	•	**NEW**: Mocking strategy verified against actual import paths (Section 2.3.1).
+	•	**NEW**: Test-First Discovery Process followed (Section 2.4).
+	•	**NEW**: Test Accuracy Metrics achieved (Section 2.5).
+	•	Coverage ≥ 90% on core modules; negative tests present for listed failure modes.
+	•	Benchmarks in place with JSON output and regression guard.
+	•	ingestion_runs table populated per run; OpenLineage events emitted.
+	•	Golden datasets + baseline metrics stored and validated; snapshot/contract tests enabled.
+	•	Five‑pillar dashboard live; alerts wired to owner channel.
+
+⸻
+
+End of v1.1
