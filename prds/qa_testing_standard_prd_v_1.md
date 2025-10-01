@@ -101,18 +101,12 @@ We standardize QA into **Plan → Implement → Execute → Observe → Improve*
 | **Sev2** | Nightly regression, SLO breach without production impact | Fix within 2 business days |
 | **Sev3** | Flake >1%, non-blocking inconsistencies | Track in backlog, resolve within sprint |
 
-## 8. Observability, Monitoring & Data SLAs
-- Publish dashboards (Looker/Grafana) for pass rates, duration, coverage.
-- Alert thresholds: pass rate <95%, flake >1%, duration +50% vs baseline.
-- Test data freshness: ingest snapshots used in tests must lag production ≤ 30 days (unless synthetic).
-
-### 8.1 Production Probes & SLAs
-- Synthetic checks hit critical APIs every 5 min; latency SLO p95 tracked.
-- Data drift monitors compare daily aggregates vs. baselines with 3σ thresholds.
-
-### 8.2 Reporting
-- Weekly QA health email with gate stats, top failures, quarantined tests.
-- Monthly governance review summarizing compliance-related test outcomes.
+## 8. Observability & Monitoring
+- **References:** Observability & Monitoring PRD v1.0 for comprehensive monitoring standards
+- **Test-specific monitoring:** Pass rates, duration, coverage, flake rates
+- **Test data freshness:** Ingest snapshots used in tests must lag production ≤ 30 days (unless synthetic)
+- **Synthetic checks:** Hit critical APIs every 5 min; latency SLO p95 tracked
+- **Reporting:** Weekly QA health email with gate stats, top failures, quarantined tests
 
 ## 9. Security & Access
 - Synthetic data preferred; PII/PHI prohibited in fixtures.

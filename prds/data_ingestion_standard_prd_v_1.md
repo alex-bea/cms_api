@@ -106,26 +106,12 @@ We separate concerns into **Land → Validate → Normalize → Enrich → Publi
 - **Idempotency:** All publish steps use transactional **UPSERT/MERGE** keyed by the natural key + `effective_from/To`. Re-runs and backfills do not create duplicates nor regress valid records.
 - **Determinism:** Given the same inputs and schema version, outputs are bitwise-identical (content-addressed artifacts). Seed dedupe uses row content hashes where appropriate.
 
-## 8. Observability, Monitoring & Data SLAs
-Modern observability focuses on **data health**, not just job health. DIS mandates metrics and alerts across five pillars, with default **Data SLAs**.
-
-### 8.1 Observability Pillars (must-have metrics)
-- **Freshness:** Age since last successful publish vs. cadence + grace.
-- **Volume:** Rows/bytes vs. expectation and vs. previous vintage.
-- **Schema:** Drift detection (added/removed/typed-changed fields) vs. registered schema version.
-- **Quality/Distribution:** Field-level null rates, range checks, and distribution shift (e.g., KS tests) vs. golden baselines.
-- **Lineage & Usage:** Upstream/downstream asset graph; **API endpoint usage stats** for impact assessment during incidents.
-
-### 8.2 Data SLAs (defaults; override per dataset)
-- **Timeliness:** Land→Publish ≤ 24h for standard datasets; Freshness alert at cadence + 3d.
-- **Completeness:** Critical columns ≥ 99.5% non-null (dataset PRD declares criticals).
-- **Accuracy/Validity:** ≥ 99.0% rows pass domain/relationship rules (as defined in PRD tests).
-- **Schema Stability:** 0 uncontracted breaking changes; any drift triggers incident.
-- **Availability:** Latest-effective views available ≥ 99.9% monthly.
-
-### 8.3 Dashboards & Alerts
-- One dashboard per dataset with the five-pillar widgets and last three vintages.
-- Alerts: **Pager** on freshness breach, schema drift, or quality fail; **Slack** on volume drift warnings.
+## 8. Observability & Monitoring
+- **References:** Observability & Monitoring PRD v1.0 for comprehensive monitoring standards
+- **Data-specific monitoring:** Freshness, volume, schema, quality, lineage for data pipelines
+- **Data SLAs:** Timeliness ≤ 24h, Completeness ≥ 99.5%, Accuracy ≥ 99.0%, Schema Stability 0 breaking changes, Availability ≥ 99.9%
+- **Dashboards:** One dashboard per dataset with five-pillar widgets and last three vintages
+- **Alerts:** Pager on freshness breach/schema drift/quality fail; Slack on volume drift warnings
 
 ## 9. Security & Access
 - Raw and Stage are read‑only to most roles; Curated is RBAC‑controlled by domain.
