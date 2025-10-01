@@ -1,0 +1,98 @@
+openapi: 3.0.3
+info:
+  title: CMS Pricing API
+  version: 1.0.0
+  description: Contract-first spec for pricing, credits, and metadata endpoints.
+servers:
+  - url: https://api.cms-pricing.com
+    description: Production
+  - url: https://staging-api.cms-pricing.com
+    description: Staging
+
+paths:
+  /health:
+    get:
+      summary: Liveness/contract probe
+      responses:
+        '200':
+          description: OK
+
+  /pricing/estimate:
+    get:
+      summary: Estimate professional/facility price
+      parameters:
+        - in: query
+          name: zip_code
+          required: true
+          schema: { type: string, pattern: '^[0-9]{5}$' }
+        - in: query
+          name: hcpcs_code
+          required: true
+          schema: { type: string }
+        - in: query
+          name: modifier
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          headers:
+            X-Credits-Remaining:
+              schema: { type: integer }
+            X-Plan:
+              schema: { type: string, enum: [free, pro, enterprise] }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { $ref: '#/components/responses/PaymentRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+components:
+  schemas:
+    PricingResponse:
+      type: object
+      required: [zip_code, hcpcs_code, amount, currency]
+      properties:
+        zip_code: { type: string }
+        hcpcs_code: { type: string }
+        unit: { type: string, example: "service" }
+        amount: { type: string, description: "decimal string with up to 6 dp" }
+        currency: { type: string, example: "USD" }
+    Error:
+      type: object
+      required: [code, message, trace_id]
+      properties:
+        code: { type: string, example: CREDITS_EXHAUSTED }
+        message: { type: string }
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              issue: { type: string }
+        trace_id: { type: string }
+        docs_url: { type: string, format: uri }
+  responses:
+    BadRequest:
+      description: Bad Request
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' }}}
+    Unauthorized:
+      description: Unauthorized
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' }}}
+    PaymentRequired:
+      description: Payment Required (credits)
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' }}}
+    NotFound:
+      description: Not Found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' }}}
+    TooManyRequests:
+      description: Too Many Requests
+      headers:
+        Retry-After:
+          schema: { type: string }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' }}}

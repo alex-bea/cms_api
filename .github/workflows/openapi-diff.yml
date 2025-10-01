@@ -1,0 +1,33 @@
+name: OpenAPI Diff (breaking-change gate)
+on:
+  pull_request:
+    paths: ["api-contracts/openapi.yaml"]
+
+jobs:
+  oas-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install oasdiff
+        run: pipx install oasdiff
+      - name: Fetch base branch spec
+        run: |
+          git fetch origin ${{ github.base_ref }} --depth=1
+      - name: Breaking change check
+        id: diff
+        run: |
+          oasdiff breaking \
+            --fail-on-diff \
+            --base origin/${{ github.base_ref }}:api-contracts/openapi.yaml \
+            --revision api-contracts/openapi.yaml
+      - name: Allow only if PR has 'major' label
+        if: failure()
+        run: |
+          echo "Breaking change detected by oasdiff."
+          labels=$(jq -r '.pull_request.labels[].name' <<<"$GITHUB_EVENT")
+          if grep -q '^major$' <<<"$labels"; then
+            echo "Major label present: allow."
+            exit 0
+          else
+            echo "No 'major' label: failing."
+            exit 1

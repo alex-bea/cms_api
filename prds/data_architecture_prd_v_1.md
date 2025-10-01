@@ -1,7 +1,7 @@
-# Data Ingestion Standard PRD (v1.0)
+# Data Architecture PRD (v1.0)
 
 ## 0. Overview
-This document defines the **Data Ingestion Standard (DIS)** used across projects. It specifies the end‑to‑end lifecycle, folder conventions, schemas, quality gates, versioning/vintage rules, security, observability, and the operational runbook. All dataset PRDs must conform to this standard and include a dataset‑specific **Ingestion Summary** (see §12 and template link in project docs).
+This document defines the **Data Architecture Standard** used across projects. It specifies comprehensive data architecture including ingestion lifecycle, storage patterns, data modeling, database design, quality gates, versioning/vintage rules, security, observability, and operational runbooks. All dataset PRDs must conform to this standard and include a dataset‑specific **Ingestion Summary** (see §12 and template link in project docs).
 
 **Status:** Adopted 1.0  
 **Owners:** Platform/Data Engineering  

@@ -12,7 +12,7 @@ This document defines the **API Performance & Scalability Standard** for the CMS
 - **API Standards & Architecture PRD v1.0:** Layer architecture and performance budgets
 - **Observability & Monitoring PRD v1.0:** Performance monitoring and alerting
 - **API Security & Auth PRD v1.0:** Rate limiting and security performance impact
-- **Data Ingestion Standard (DIS) v1.0:** Data pipeline performance requirements
+- **Data Architecture PRD v1.0:** Data pipeline performance requirements
 
 ## 1. Goals & Non-Goals
 

@@ -9,9 +9,15 @@ from cms_pricing.cache import CacheManager
 router = APIRouter()
 
 
-@router.get("/healthz")
+@router.get("/health")
 async def health_check():
-    """Basic health check"""
+    """Basic health check (OpenAPI contract endpoint)"""
+    return {"status": "healthy", "service": "cms-pricing-api"}
+
+
+@router.get("/healthz")
+async def health_check_legacy():
+    """Basic health check (legacy endpoint for Docker)"""
     return {"status": "healthy", "service": "cms-pricing-api"}
 
 

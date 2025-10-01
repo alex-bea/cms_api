@@ -9,7 +9,7 @@ This document defines the **Observability & Monitoring Standard** for the CMS Pr
 **Change control:** ADR + Architecture Board review
 
 **Cross-References:**
-- **Data Ingestion Standard (DIS) v1.0:** Data pipeline lifecycle, quality gates, and ingestion observability
+- **Data Architecture PRD v1.0:** Data pipeline lifecycle, quality gates, and ingestion observability
 - **QA Testing Standard (QTS) v1.0:** Testing philosophy, coverage requirements, and test observability
 - **API Security & Auth PRD v1.0:** Security observability, audit logging, and incident response procedures  
 

@@ -55,8 +55,8 @@ class CMSOPPSScraper:
     def __init__(self, base_url: str = "https://www.cms.gov", output_dir: Path = None):
         self.base_url = base_url
         self.output_dir = output_dir or Path("data/scraped/opps")
-        self.opps_base_url = "https://www.cms.gov/medicare/medicare-fee-for-service-payment/hospitaloutpatientpps"
-        self.quarterly_addenda_url = "https://www.cms.gov/medicare/medicare-fee-for-service-payment/hospitaloutpatientpps/addendum"
+        self.opps_base_url = "https://www.cms.gov/medicare/payment/prospective-payment-systems/hospital-outpatient"
+        self.quarterly_addenda_url = "https://www.cms.gov/medicare/payment/prospective-payment-systems/hospital-outpatient-pps/quarterly-addenda-updates"
         
         # OPPS-specific patterns
         self.quarterly_pattern = re.compile(r'(\d{4})\s*[Qq](\d)', re.IGNORECASE)
@@ -153,6 +153,9 @@ class CMSOPPSScraper:
                 href = link.get('href', '')
                 text = link.get_text(strip=True)
                 
+                # Debug logging
+                logger.debug("Checking link", href=href, text=text)
+                
                 # Check if this looks like a quarterly addenda link
                 if self._is_quarterly_addenda_link(href, text):
                     full_url = urljoin(self.quarterly_addenda_url, href)
@@ -161,20 +164,21 @@ class CMSOPPSScraper:
                         'text': text,
                         'href': href
                     })
+                    logger.debug("Added quarterly link", url=full_url, text=text)
             
             logger.info("Found quarterly addenda links", count=len(addenda_links))
             return addenda_links
     
     def _is_quarterly_addenda_link(self, href: str, text: str) -> bool:
         """Check if a link points to quarterly addenda."""
+        text_lower = text.lower()
+        href_lower = href.lower()
+        
         # Look for quarter patterns in URL or text
         quarter_indicators = [
             'addendum', 'quarterly', 'q1', 'q2', 'q3', 'q4',
-            'january', 'april', 'july', 'october'
+            'january', 'april', 'july', 'october', 'jan', 'apr', 'jul', 'oct'
         ]
-        
-        text_lower = text.lower()
-        href_lower = href.lower()
         
         # Must contain at least one quarter indicator
         has_quarter_indicator = any(indicator in text_lower or indicator in href_lower 
@@ -183,10 +187,21 @@ class CMSOPPSScraper:
         # Must look like a CMS link
         is_cms_link = 'cms.gov' in href_lower or href.startswith('/')
         
-        # Must not be a general page (avoid main addendum page)
-        is_not_general = 'addendum' not in href_lower or any(q in href_lower for q in ['q1', 'q2', 'q3', 'q4'])
+        # Must not be a general page (avoid main addendum page and RSS feeds)
+        is_not_general = (
+            'addendum' not in href_lower or 
+            any(q in href_lower for q in ['q1', 'q2', 'q3', 'q4']) or
+            any(month in href_lower for month in ['january', 'april', 'july', 'october'])
+        )
         
-        return has_quarter_indicator and is_cms_link and is_not_general
+        # Exclude RSS feeds and other non-file links
+        is_not_rss = not any(exclude in href_lower for exclude in ['rss', 'feed', 'subscribe'])
+        
+        # Must have a year pattern (2025, 2024, etc.)
+        has_year = bool(re.search(r'20\d{2}', f"{text} {href}"))
+        
+        return (has_quarter_indicator and is_cms_link and is_not_general and 
+                is_not_rss and has_year)
     
     def _extract_quarter_info(self, link_info: Dict[str, str]) -> Optional[Dict[str, int]]:
         """Extract year and quarter from link information."""
@@ -196,27 +211,32 @@ class CMSOPPSScraper:
         # Try to extract year and quarter from text or href
         combined_text = f"{text} {href}"
         
-        # Look for year pattern
+        # Look for year pattern - handle both "2025" and "25" formats
         year_match = re.search(r'20(\d{2})', combined_text)
         if not year_match:
             return None
         
         year = int(f"20{year_match.group(1)}")
         
-        # Look for quarter pattern
+        # Look for quarter pattern using our predefined patterns
         quarter = None
         for q_num, pattern in self.quarterly_release_patterns.items():
             if pattern.search(combined_text):
                 quarter = int(q_num[1])  # Extract number from 'q1', 'q2', etc.
                 break
         
+        # If no quarter found via patterns, try numeric patterns
         if quarter is None:
-            # Try to extract quarter from numeric patterns
             quarter_match = re.search(r'[Qq](\d)', combined_text)
             if quarter_match:
                 quarter = int(quarter_match.group(1))
         
+        # Validate quarter range
         if quarter is None or quarter < 1 or quarter > 4:
+            return None
+        
+        # Additional validation: ensure we have a reasonable year
+        if year < 2020 or year > 2030:
             return None
         
         return {
@@ -251,13 +271,16 @@ class CMSOPPSScraper:
                 # Check if this is a relevant file
                 file_type = self._classify_file(href, text)
                 if file_type:
-                    full_url = urljoin(quarter_url, href)
+                    initial_url = urljoin(quarter_url, href)
                     
                     # Generate batch ID
                     batch_id = f"opps_{year}q{quarter}_r01"
                     
+                    # Handle disclaimer interstitials using tiered strategy
+                    final_url = await self._resolve_disclaimer_url(client, initial_url, text)
+                    
                     file_info = ScrapedFileInfo(
-                        url=full_url,
+                        url=final_url,
                         filename=self._extract_filename(href, text),
                         file_type=file_type,
                         batch_id=batch_id,
@@ -267,27 +290,270 @@ class CMSOPPSScraper:
                             'year': year,
                             'quarter': quarter,
                             'addendum_type': file_type,
-                            'original_text': text
+                            'original_text': text,
+                            'initial_url': initial_url,
+                            'disclaimer_resolved': final_url != initial_url
                         }
                     )
                     
                     files.append(file_info)
             
+            logger.info(
+                "Discovered quarter files",
+                quarter=f"{year}Q{quarter}",
+                file_count=len(files)
+            )
+            
             return files
+    
+    async def _resolve_disclaimer_url(self, client: httpx.AsyncClient, initial_url: str, text: str) -> str:
+        """
+        Resolve disclaimer interstitials using tiered strategy from PRD.
+        
+        Tier 1: Direct HTTP GET
+        Tier 2: Headless browser disclaimer acceptance
+        Tier 3: Quarantine (return original URL with error flag)
+        """
+        logger.debug("Resolving disclaimer URL", initial_url=initial_url, text=text)
+        
+        try:
+            # Tier 1: Direct HTTP GET with appropriate headers
+            headers = {
+                'User-Agent': 'DIS-OPPS-Scraper/1.0 (+ops@yourco.com)',
+                'Accept': 'application/octet-stream, application/zip, */*',
+                'Referer': 'https://www.cms.gov/'
+            }
+            
+            response = await client.get(initial_url, headers=headers, follow_redirects=True)
+            
+            # Check if we got a disclaimer page (common indicators)
+            content_type = response.headers.get('content-type', '').lower()
+            content_text = response.text.lower() if response.text else ''
+            
+            disclaimer_indicators = [
+                'license.asp' in initial_url.lower(),
+                'disclaimer' in content_text,
+                'terms' in content_text,
+                'accept' in content_text,
+                'agreement' in content_text,
+                'click here to accept' in content_text
+            ]
+            
+            if any(disclaimer_indicators):
+                logger.warning(
+                    "Disclaimer interstitial detected",
+                    url=initial_url,
+                    content_type=content_type,
+                    indicators=disclaimer_indicators
+                )
+                
+                # Tier 2: Headless browser disclaimer acceptance
+                resolved_url = await self._handle_disclaimer_with_browser(initial_url, text)
+                if resolved_url != initial_url:
+                    logger.info(
+                        "Successfully resolved disclaimer with browser",
+                        original_url=initial_url,
+                        resolved_url=resolved_url
+                    )
+                    return resolved_url
+                else:
+                    logger.warning(
+                        "Browser disclaimer resolution failed, quarantining",
+                        url=initial_url
+                    )
+                    # Tier 3: Quarantine - return original URL with error flag
+                    return initial_url
+            
+            # Check if we got a file (success indicators)
+            file_indicators = [
+                'application/zip' in content_type,
+                'application/octet-stream' in content_type,
+                'text/csv' in content_type,
+                'application/vnd.ms-excel' in content_type,
+                response.headers.get('content-disposition', '').startswith('attachment')
+            ]
+            
+            if any(file_indicators):
+                logger.info(
+                    "Successfully resolved to file",
+                    url=initial_url,
+                    content_type=content_type,
+                    content_length=response.headers.get('content-length', 'unknown')
+                )
+                return initial_url
+            
+            # If we get here, it's unclear what we got
+            logger.warning(
+                "Unclear response type",
+                url=initial_url,
+                content_type=content_type,
+                status_code=response.status_code
+            )
+            return initial_url
+            
+        except Exception as e:
+            logger.error(
+                "Error resolving disclaimer URL",
+                url=initial_url,
+                error=str(e)
+            )
+            return initial_url
+    
+    async def _handle_disclaimer_with_browser(self, disclaimer_url: str, text: str) -> str:
+        """
+        Tier 2: Use headless browser to accept disclaimer and get download URL.
+        
+        Returns the resolved download URL if successful, original URL if failed.
+        """
+        logger.info("Attempting browser disclaimer acceptance", url=disclaimer_url)
+        
+        try:
+            from selenium import webdriver
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            from selenium.webdriver.firefox.options import Options as FirefoxOptions
+            from selenium.webdriver.chrome.options import Options as ChromeOptions
+            from selenium.common.exceptions import TimeoutException, NoSuchElementException
+            
+            # Try Chrome first, then Firefox
+            driver = None
+            
+            # Set up headless Chrome options
+            try:
+                chrome_options = ChromeOptions()
+                chrome_options.add_argument('--headless')
+                chrome_options.add_argument('--no-sandbox')
+                chrome_options.add_argument('--disable-dev-shm-usage')
+                chrome_options.add_argument('--disable-gpu')
+                chrome_options.add_argument('--window-size=1920,1080')
+                chrome_options.add_argument('--user-agent=DIS-OPPS-Scraper/1.0 (+ops@yourco.com)')
+                
+                driver = webdriver.Chrome(options=chrome_options)
+                logger.info("Using Chrome WebDriver for disclaimer handling")
+                
+            except Exception as chrome_error:
+                logger.warning("Chrome WebDriver failed, trying Firefox", error=str(chrome_error))
+                
+                try:
+                    # Set up headless Firefox options
+                    firefox_options = FirefoxOptions()
+                    firefox_options.add_argument('--headless')
+                    firefox_options.add_argument('--width=1920')
+                    firefox_options.add_argument('--height=1080')
+                    
+                    driver = webdriver.Firefox(options=firefox_options)
+                    logger.info("Using Firefox WebDriver for disclaimer handling")
+                    
+                except Exception as firefox_error:
+                    logger.error("Both Chrome and Firefox WebDriver failed", 
+                               chrome_error=str(chrome_error),
+                               firefox_error=str(firefox_error))
+                    logger.info("To enable browser disclaimer handling, install Chrome or Firefox and their WebDriver")
+                    logger.info("Chrome: brew install --cask google-chrome && pip install webdriver-manager")
+                    logger.info("Firefox: brew install firefox && pip install webdriver-manager")
+                    return disclaimer_url
+            
+            if not driver:
+                logger.error("No WebDriver available")
+                return disclaimer_url
+            
+            try:
+                # Navigate to disclaimer page
+                driver.get(disclaimer_url)
+                
+                # Wait for page to load
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                
+                # Look for Accept button with various selectors
+                accept_selectors = [
+                    "//button[contains(text(), 'Accept')]",
+                    "//input[@type='submit' and contains(@value, 'Accept')]",
+                    "//a[contains(text(), 'Accept')]",
+                    "//button[contains(text(), 'I Accept')]",
+                    "//input[@type='submit' and contains(@value, 'I Accept')]",
+                    "//a[contains(text(), 'I Accept')]",
+                    "//button[contains(text(), 'Agree')]",
+                    "//input[@type='submit' and contains(@value, 'Agree')]",
+                    "//a[contains(text(), 'Agree')]",
+                    "//button[@id='accept']",
+                    "//input[@id='accept']",
+                    "//a[@id='accept']"
+                ]
+                
+                accept_button = None
+                for selector in accept_selectors:
+                    try:
+                        accept_button = driver.find_element(By.XPATH, selector)
+                        if accept_button.is_displayed() and accept_button.is_enabled():
+                            break
+                    except NoSuchElementException:
+                        continue
+                
+                if not accept_button:
+                    logger.warning("No Accept button found on disclaimer page", url=disclaimer_url)
+                    return disclaimer_url
+                
+                # Click Accept button
+                logger.info("Clicking Accept button", button_text=accept_button.text)
+                accept_button.click()
+                
+                # Wait for redirect or download to start
+                WebDriverWait(driver, 10).until(
+                    lambda d: d.current_url != disclaimer_url or 
+                    any(header in d.page_source.lower() for header in ['content-disposition', 'download'])
+                )
+                
+                # Check if we got redirected to a download URL
+                current_url = driver.current_url
+                if current_url != disclaimer_url:
+                    logger.info("Successfully redirected after disclaimer acceptance", 
+                              original_url=disclaimer_url, 
+                              new_url=current_url)
+                    return current_url
+                
+                # Check if we're on a download page (might be same URL but different content)
+                page_source = driver.page_source.lower()
+                if any(indicator in page_source for indicator in ['download', 'content-disposition', 'attachment']):
+                    logger.info("Download page detected after disclaimer acceptance", url=disclaimer_url)
+                    return disclaimer_url
+                
+                # If we get here, disclaimer acceptance didn't work as expected
+                logger.warning("Disclaimer acceptance completed but no download detected", url=disclaimer_url)
+                return disclaimer_url
+                
+            finally:
+                driver.quit()
+                
+        except ImportError:
+            logger.error("Selenium not available for browser automation")
+            return disclaimer_url
+        except TimeoutException:
+            logger.error("Timeout waiting for disclaimer page elements", url=disclaimer_url)
+            return disclaimer_url
+        except Exception as e:
+            logger.error("Error in browser disclaimer handling", url=disclaimer_url, error=str(e))
+            return disclaimer_url
     
     def _classify_file(self, href: str, text: str) -> Optional[str]:
         """Classify file type based on URL and text."""
         href_lower = href.lower()
         text_lower = text.lower()
         
-        # Check for Addendum A files
+        # Check for Addendum A files (APC rates)
         if (self.file_patterns['addendum_a'].search(href) or 
-            self.file_patterns['addendum_a'].search(text)):
+            self.file_patterns['addendum_a'].search(text) or
+            'addendum a' in text_lower or
+            'addendum-a' in href_lower):
             return 'addendum_a'
         
-        # Check for Addendum B files
+        # Check for Addendum B files (HCPCS→APC/SI mapping)
         if (self.file_patterns['addendum_b'].search(href) or 
-            self.file_patterns['addendum_b'].search(text)):
+            self.file_patterns['addendum_b'].search(text) or
+            'addendum b' in text_lower or
+            'addendum-b' in href_lower):
             return 'addendum_b'
         
         # Check for ZIP files that might contain addenda
@@ -295,6 +561,11 @@ class CMSOPPSScraper:
             # Check if text suggests it contains addenda
             if any(keyword in text_lower for keyword in ['addendum', 'opps', 'quarterly']):
                 return 'addendum_zip'
+        
+        # Check for other OPPS-related files
+        if any(keyword in text_lower for keyword in ['opps', 'quarterly', 'addendum']):
+            if any(ext in href_lower for ext in ['.csv', '.xls', '.xlsx', '.txt', '.zip']):
+                return 'opps_file'
         
         return None
     

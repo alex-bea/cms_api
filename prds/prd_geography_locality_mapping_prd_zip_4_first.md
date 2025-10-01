@@ -116,7 +116,7 @@ Define how we ingest and use CMS geography mapping to resolve a service **ZIP(+4
 6. **Register snapshot**: Insert `(dataset_id, effective_from, effective_to, digest, source_url)` into `snapshots`.
 
 ## 9) Resolver Behavior
-API contracts implementing this behavior must comply with the **Global API Program PRDs (v1.0)**.
+API contracts implementing this behavior must comply with the **API Standards & Architecture PRD v1.0**.
 Input: `{ zip5: str, plus4: Optional[str], valuation_year: int, quarter: Optional[int], strict: bool=false, max_radius_miles?: int, initial_radius_miles?: int, expand_step_miles?: int, expose_carrier?: bool }`
 Algorithm:
 1. Select **dataset version** by valuation (year/quarter or snapshot pin); trace `dataset_selection`.

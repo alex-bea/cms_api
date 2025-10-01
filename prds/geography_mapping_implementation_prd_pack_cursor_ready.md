@@ -71,7 +71,7 @@ SLOs are enforced by CI and monitored in production dashboards; **CI gates** (se
 - **Precedence**: `valuation_date` **overrides** `{valuation_year, quarter}` which **overrides** `valuation_year`.
 - **Response**: `{ locality_id, state, rural_flag, carrier?, match_level, candidate_zip?, candidate_distance_miles?, snapshot_digest, source:'ZIP_LOCALITY' }`
 - **Contract**: OpenAPI stub committed **before code**; contract tests enforce shapes, codes, and latency budgets. **Rate limiting (429)** is in scope for GA. **Caching/ETag** behavior is **post-GA** (documented later).
-- **Standards**: API contract and lifecycle must conform to the **Global API Program PRDs (v1.0)**.
+- **Standards**: API contract and lifecycle must conform to the **API Standards & Architecture PRD v1.0**.
 
 **Healthcheck Endpoint** `GET /geo/healthz` … *(unchanged spec above)*
 

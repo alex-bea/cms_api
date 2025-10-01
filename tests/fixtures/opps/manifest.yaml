@@ -1,0 +1,11 @@
+fixture_version: 1.0.0
+source:
+  url: https://www.cms.gov/apps/ama/license.asp?file=/files/zip/july-2025-opps-addendum.zip
+  retrieved_at: 2025-07-12T03:10:11Z
+expected:
+  files: ["addendum_a.csv", "addendum_b.csv"]
+  sha256: "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+  rows: { addendum_a.csv: 120345, addendum_b.csv: 90211 }
+license:
+  name: CMS Open Data
+  attribution_required: true

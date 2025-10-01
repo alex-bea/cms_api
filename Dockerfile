@@ -24,6 +24,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Validate OpenAPI contract
+RUN python -m pytest tests/test_openapi_consistency.py tests/test_error_contract.py
+
 # Development stage
 FROM base AS development
 CMD ["uvicorn", "cms_pricing.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

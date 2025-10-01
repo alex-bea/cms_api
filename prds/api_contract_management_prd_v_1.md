@@ -12,7 +12,7 @@ This document defines the **API Contract Management Standard** for the CMS Prici
 - **API Standards & Architecture PRD v1.0:** OpenAPI SSOT and contract-first development
 - **Observability & Monitoring PRD v1.0:** Contract monitoring and drift detection
 - **QA Testing Standard (QTS) v1.0:** Contract testing requirements
-- **Data Ingestion Standard (DIS) v1.0:** Data schema contracts and evolution
+- **Data Architecture PRD v1.0:** Data schema contracts and evolution
 
 ## 1. Goals & Non-Goals
 
@@ -52,6 +52,7 @@ This document defines the **API Contract Management Standard** for the CMS Prici
 - Request/response schemas must be complete
 - Examples must be provided for all schemas
 - Error responses must be documented
+- All 4xx/5xx responses must reference the canonical error schema via `components.responses`; ad-hoc error bodies are forbidden.
 
 **Implementation Validation:**
 - Code must match OpenAPI contract
@@ -70,6 +71,93 @@ This document defines the **API Contract Management Standard** for the CMS Prici
 - 90-day deprecation window
 - Migration guide required
 - Client notification process
+
+### 2.4 Canonical Error Contract
+
+All 4xx/5xx responses MUST conform to a single, canonical error schema. No ad-hoc error bodies are allowed. Every error response MUST include a stable machine code, a human-readable message, and a `trace_id` that correlates with server logs. Where useful, include a `docs_url` to the relevant troubleshooting page.
+
+```yaml
+components:
+  schemas:
+    Error:
+      type: object
+      required: [code, message, trace_id]
+      properties:
+        code:
+          type: string
+          description: Stable, documented machine code (e.g., "CREDITS_EXHAUSTED")
+        message:
+          type: string
+          description: Human-readable summary (safe for logs)
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              issue: { type: string }
+        trace_id:
+          type: string
+          description: Correlates with server logs (e.g., W3C traceparent)
+        docs_url:
+          type: string
+          format: uri
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PaymentRequired:
+      description: Payment Required (credits)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TooManyRequests:
+      description: Too Many Requests
+      headers:
+        Retry-After:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+```
+
+**Standard usage in paths (example):**
+```yaml
+paths:
+  /pricing/estimate:
+    get:
+      responses:
+        '200':
+          description: OK
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '402':
+          $ref: '#/components/responses/PaymentRequired'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+```
 
 ## 3. Schema Evolution & Versioning
 
@@ -150,6 +238,21 @@ components:
           x-sunset-date: "2025-09-01"
 ```
 
+### 3.4 Compatibility Matrix
+
+| Change Type                          | Example                                    | Allowed w/o Major? | Client Action Needed | Notes |
+|-------------------------------------|--------------------------------------------|---------------------|----------------------|------|
+| Add optional response field         | `PricingResponse.unit`                      | ✅ MINOR            | None                 | Clients must tolerate unknown fields. |
+| Add enum value                      | `PricingTier: "ENTERPRISE"`                 | ⚠️ MINOR*           | Maybe                | Breaking for strict switch/case—clients must default. |
+| Add query param (optional)          | `?modifier=LT`                              | ✅ MINOR            | None                 | Server must preserve behavior if omitted. |
+| Change default value                | default sort from `code`→`date`             | ❌ MAJOR            | Yes                  | Behavior change. |
+| Make optional → required            | `zip_code`                                  | ❌ MAJOR            | Yes                  | N/A  |
+| Remove field/endpoint               | `old_field`                                 | ❌ MAJOR            | Yes                  | Follow deprecation §7. |
+| Tighten validation                  | max length 64→32                            | ❌ MAJOR            | Yes                  | N/A  |
+| Add error code                      | introduce `429` rate-limit                  | ✅ MINOR            | None                 | Must be documented in error catalog. |
+
+
+
 ## 4. Contract Testing & Validation
 
 ### 4.1 Contract Testing Strategy
@@ -158,6 +261,7 @@ components:
 - **Compatibility Tests:** Ensure backward compatibility
 - **Regression Tests:** Detect breaking changes
 - **Client Tests:** Validate SDK generation
+- **Error Contract Tests:** Verify that all 4xx/5xx responses conform to `components.schemas.Error`.
 
 **Testing Tools:**
 - **Schemathesis:** OpenAPI-based contract testing
@@ -284,6 +388,12 @@ jobs:
 - **GitBook:** Comprehensive guides
 - **Custom Docs:** Domain-specific documentation
 
+#### Error Catalog (excerpt)
+- `CREDITS_EXHAUSTED` → 402: Balance is 0; includes top-up link.
+- `RATE_LIMITED` → 429: `Retry-After` header included; exponential backoff advised.
+- `VALIDATION_FAILED` → 400: `details[]` lists (field, issue).
+- `UNAUTHORIZED` → 401: Invalid or missing credentials.
+
 ### 6.2 Documentation Implementation
 ```yaml
 # Swagger UI configuration
@@ -338,6 +448,21 @@ paths:
 - **Month 2:** Provide migration guide
 - **Month 3:** Sunset deprecated functionality
 - **Month 4:** Remove deprecated code
+
+**Deprecation headers**
+Deprecation: true
+Sunset: Wed, 01 Jan 2026 00:00:00 GMT
+Link: <https://docs.cms-pricing.com/migration/v2>; rel="deprecation"
+
+
+**OpenAPI extension on deprecated elements:**
+x-deprecation:
+  announced_at: "2025-10-01"
+  sunset_at: "2026-01-01"
+  replacement: "/v2/pricing"
+  migration_doc: "https://docs.cms-pricing.com/migration/v2"
+
+  
 
 ## 8. Contract Monitoring & Observability
 
