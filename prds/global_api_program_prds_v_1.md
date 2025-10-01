@@ -114,7 +114,7 @@
 
 - **Middleware order:** request_id → auth (API key + tenant bind) → rate limiting (Redis-backed) → body-size/timeouts → error shaper → metrics → tracing.
 - **Correlation IDs:** require `X-Correlation-Id`; generate a UUIDv4 when absent and echo in responses/logs.
-- **Auth & rate limits:** enforce API-key auth before rate limiting. Expose `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and on 429 include `Retry-After`.
+- **Auth & rate limits:** References API Security & Auth PRD for authentication, authorization, and rate limiting implementation.
 - **Error envelope:** responses must use the standard error structure defined in the Error Catalog PRD.
 - **Defaults:** body size capped at 5 MB unless overridden; request timeout default 30s.
 - **Extensibility:** middleware must allow swapping to an external gateway in the future without changing headers/behavior.
@@ -141,10 +141,8 @@
 
 ### 3.1 AuthN & AuthZ
 
-- **API Key Management:** Simple API keys for external customers with format `cms_<env>_<tenant>_<random>` (e.g., `cms_prod_acme_abc123def456`). Keys stored hashed in database, never plaintext.
-- **Key Validation:** Middleware validates key format, checks database for active keys, caches in Redis (5-minute TTL).
-- **Key Scoping:** Keys bound to specific tenant/organization with per-key rate limits (1000 req/hour default).
-- **Future RBAC:** Role-based access (read-only, admin, etc.) planned for later phases.
+- **Authentication:** References API Security & Auth PRD for API key management, validation, and scoping.
+- **Authorization:** References API Security & Auth PRD for RBAC, tenant isolation, and access controls.
 - **OAuth2/JWT:** Service-to-service via mTLS + short-lived tokens.
 - **RBAC matrix:** Checked in as code; negative tests in CI.
 

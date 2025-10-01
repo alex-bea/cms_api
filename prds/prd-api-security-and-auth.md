@@ -48,6 +48,14 @@ This PRD defines the **Security & Authentication standard** for the CMS Pricing 
 ### 3.3 Key States & Lifecycle
 - **States:** `active | disabled | expired | compromised` (immutable audit trail).
 - **Rotation:** Self-serve/UI + API; **zero-downtime** via **overlap window** (old/new valid for ≤24h).
+
+### 3.4 Rate Limiting & Throttling
+- **Implementation:** Redis-backed token bucket algorithm for distributed rate limiting
+- **Per-tenant limits:** 1000 req/hour default, configurable per tenant tier
+- **Per-endpoint limits:** Different limits for read vs write operations
+- **Burst handling:** Allow short bursts up to 2x normal rate for 1 minute
+- **Headers:** `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After`
+- **Middleware order:** `request_id → auth → rate_limit → business_logic`
 - **Expiration:** **Indefinite by default**, optional `expires_at` per key. Rotation **recommended quarterly**.
 - **Display:** Full key shown **once** at creation; never retrievable thereafter.
 
