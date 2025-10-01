@@ -139,37 +139,17 @@
 **Owner:** Security Engineering\
 **Scope:** AuthN/Z, data protection, audit, third-party data.
 
-### 3.1 AuthN & AuthZ
+> **Note:** This section has been consolidated into the **API Security & Auth PRD v1.0**. Please refer to that document for comprehensive security requirements, authentication, authorization, rate limiting, and compliance procedures.
 
-- **Authentication:** References API Security & Auth PRD for API key management, validation, and scoping.
-- **Authorization:** References API Security & Auth PRD for RBAC, tenant isolation, and access controls.
-- **OAuth2/JWT:** Service-to-service via mTLS + short-lived tokens.
-- **RBAC matrix:** Checked in as code; negative tests in CI.
+### 3.1 Cross-Reference
+- **API Security & Auth PRD v1.0:** Complete security standards, authentication, authorization, rate limiting, audit logging, and compliance procedures
+- **Data Ingestion Standard (DIS) v1.0:** Data protection and licensing requirements
+- **Observability & Monitoring PRD v1.0:** Security observability and incident response
 
-### 3.2 Data Protection
-
-- TLS 1.2+ in transit; AES-256 at rest.
-- Secrets via vault; no secrets in env files/PRs.
-
-### 3.3 PII/PHI Handling
-
-- Data classification labels required; masking in logs; field-level encryption where mandated.
-- Right-to-delete workflows defined.
-
-### 3.4 Audit & Access
-
-- Immutable audit log of admin and schema changes.
-- Just-in-time access; monthly review.
-
-### 3.5 External Data Licensing
+### 3.2 External Data Licensing
 
 - Source attribution retained (per DIS).
 - License terms stored alongside dataset vintage; surfaced in `/meta/sources` endpoint.
-
-### 3.6 Acceptance Criteria
-
-- Security tests pass (auth required; PII redaction).
-- No High/Critical SCA/Vuln findings at release time.
 
 ---
 
@@ -302,52 +282,23 @@
 **Owner:** QA Guild\
 **Scope:** Testing philosophy, types, data, and CI gates.
 
-> Canonical guidance lives in **qa_testing_standard_prd_v_1.md** (QA & Testing Standard v1.0). This section highlights API-program specifics layered on top of that standard.
+> **Note:** This section has been consolidated into the **QA Testing Standard (QTS) v1.0**. Please refer to that document for comprehensive testing requirements, quality gates, and CI integration.
 
-### 7.1 Philosophy
+### 7.1 Cross-Reference
+- **QA Testing Standard (QTS) v1.0:** Complete testing philosophy, test types, quality gates, and CI integration
+- **API Security & Auth PRD v1.0:** Security testing requirements and compliance procedures
+- **Observability & Monitoring PRD v1.0:** Test observability and monitoring requirements
 
-- **Shift-left, data-centric, contract-first.** Tests are code-owned and PR-blocking.
-
-### 7.2 Test Types & Minimums
-
-- **Unit** (critical paths)
-- **Contract** (OpenAPI compliance)
-- **Integration** (e2e across services)
-- **Data Quality** (Great Expectations)
-- **Parity/Golden** (median haversine ≤ 1.0 mile for NZR)
-- **Property-based** (Hypothesis for geo math)
-- **Performance** (Locust p95 budgets)
-- **Security** (auth/RBAC/PII)
-
-### 7.3 Test Data & Fixtures
-
-- Small, deterministic fixtures versioned by vintage; large datasets fetched via `make` with checksums.
-
-### 7.4 CI Gates
-
-- P0/P1 tests 100% pass; coverage ≥ 85% on critical modules.
-- Contract drift blocks merge.
-- Vintage lock enforced.
-- Perf budget enforced.
-
-### 7.5 Directory & Matrix
-
-```
-/tests/{unit,integration,contract,data_quality,perf,_golden,_fixtures,_schemas}
-/tests/config/test_matrix.yaml
-```
-
-### 7.6 Contract Test Patterns
-
-- **Tooling:** Schemathesis drives OpenAPI-based tests in CI; project-specific pytest suites cover domain goldens/invariants.
-- **Coverage:** Every public route must have at least one happy-path (2xx), validation error (4xx), and auth (401/403) test.
-- **Docs parity:** Examples in docs/Postman must execute as tests against the mock/sandbox environment during CI.
-- **CI integration:** Contract tests run on every PR and in nightly builds; failures block merge.
+### 7.2 API-Specific Testing Requirements
+- Contract tests auto-generated from OpenAPI SSOT
+- Schemathesis coverage for all public endpoints
+- Documentation examples must execute as tests
+- Performance tests for SLA validation
 
 **Acceptance Criteria**
-
-- ✅ Schemathesis coverage spans all public endpoints in CI.
-- ✅ Documentation examples execute successfully against the mock during CI.
+- ✅ Schemathesis coverage spans all public endpoints in CI
+- ✅ Documentation examples execute successfully against the mock during CI
+- ✅ All testing requirements from QTS PRD v1.0 are met
 
 ---
 

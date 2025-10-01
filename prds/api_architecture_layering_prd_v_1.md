@@ -713,12 +713,19 @@ class PricingRepository:
 
 ## 11. Testing Strategy
 
-### 11.1 Testing Pyramid
+> **Note:** Comprehensive testing requirements are defined in the **QA Testing Standard (QTS) v1.0**. This section covers API-specific testing considerations.
+
+### 11.1 Cross-Reference
+- **QA Testing Standard (QTS) v1.0:** Complete testing philosophy, test types, quality gates, and CI integration
+- **API Security & Auth PRD v1.0:** Security testing requirements and compliance procedures
+- **Observability & Monitoring PRD v1.0:** Test observability and monitoring requirements
+
+### 11.2 API-Specific Testing Pyramid
 ```
 Unit Tests (Engines) ≫ Integration Tests (Services) ≫ Contract Tests (API) ≫ E2E Tests
 ```
 
-### 11.2 Unit Tests (Engines)
+### 11.3 Unit Tests (Engines)
 - **Focus:** Pure business logic
 - **No dependencies:** Mock all external dependencies
 - **Coverage:** ≥90% line coverage
