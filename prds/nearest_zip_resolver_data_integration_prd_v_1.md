@@ -32,7 +32,7 @@ The resolver depends on multiple external datasets with varying stability. We pr
 - PO Box filtering via SimpleMaps
 - Full traces for observability and QA
 
-All HTTP interfaces produced by this resolver must follow the **API Standards & Architecture PRD v1.0** for contract, versioning, and change management.
+All HTTP interfaces produced by this resolver must follow the **API-STD-Architecture_prd_v1.0** for contract, versioning, and change management.
 
 **Out (future):**
 - Multi‑state search

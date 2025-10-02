@@ -9,7 +9,7 @@ This document defines the **API Performance & Scalability Standard** for the CMS
 **Change control:** ADR + Architecture Board review  
 
 **Cross-References:**
-- **API Standards & Architecture PRD v1.0:** Layer architecture and performance budgets
+- **API-STD-Architecture_prd_v1.0:** Layer architecture and performance budgets
 - **Observability & Monitoring PRD v1.0:** Performance monitoring and alerting
 - **API Security & Auth PRD v1.0:** Rate limiting and security performance impact
 - **Data Architecture PRD v1.0:** Data pipeline performance requirements
@@ -417,7 +417,7 @@ def get_pricing_data(zip_code: str, code: str):
 ## 10. Cross-Reference Map
 
 ### Related PRDs
-- **API Standards & Architecture PRD v1.0:** Layer architecture and performance budgets
+- **API-STD-Architecture_prd_v1.0:** Layer architecture and performance budgets
 - **Observability & Monitoring PRD v1.0:** Performance monitoring, alerting, and SLAs
 - **API Security & Auth PRD v1.0:** Rate limiting performance impact and security overhead
 - **Data Ingestion Standard (DIS) v1.0:** Data pipeline performance requirements

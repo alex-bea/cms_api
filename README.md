@@ -348,7 +348,7 @@ This project follows comprehensive Product Requirements Documents (PRDs) that de
 
 - **[Data Architecture PRD v1.0](prds/data_architecture_prd_v_1.md)**: Comprehensive data architecture including ingestion lifecycle, storage patterns, data modeling, database design, quality gates, versioning, security, and observability. Defines the Data Ingestion Standard (DIS) for all data pipelines.
 
-- **[API Standards & Architecture PRD v1.0](prds/api_standards_architecture_prd_v_1.md)**: Unified API design and architecture standards covering contracts, versioning, request/response envelopes, pagination, errors, correlation, layer responsibilities, dependency flow, and release discipline.
+- **[API Standards & Architecture PRD v1.0](prds/API-STD-Architecture_prd_v1.0.md)**: Unified API design and architecture standards covering contracts, versioning, request/response envelopes, pagination, errors, correlation, layer responsibilities, dependency flow, and release discipline.
 
 ### Security & Quality PRDs
 
@@ -374,7 +374,7 @@ This project follows comprehensive Product Requirements Documents (PRDs) that de
 
 All components in this project are designed to comply with these PRDs:
 - **Data pipelines** follow the Data Architecture PRD (DIS)
-- **API endpoints** comply with API Standards & Architecture PRD
+- **API endpoints** comply with API-STD-Architecture_prd_v1.0
 - **Security** implements API Security & Auth PRD requirements
 - **Testing** follows QA Testing Standard (QTS) guidelines
 - **Monitoring** adheres to Observability & Monitoring PRD
