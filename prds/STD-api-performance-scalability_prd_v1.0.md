@@ -9,10 +9,10 @@ This document defines the **API Performance & Scalability Standard** for the CMS
 **Change control:** ADR + Architecture Board review  
 
 **Cross-References:**
-- **API-STD-Architecture_prd_v1.0:** Layer architecture and performance budgets
+- **STD-api-architecture_prd_v1.0:** Layer architecture and performance budgets
 - **STD-observability-monitoring_prd_v1.0:** Performance monitoring and alerting
 - **STD-api-security-and-auth_prd_v1.0:** Rate limiting and security performance impact
-- **STD-Data-Architecture_prd_v1.0:** Data pipeline performance requirements
+- **STD-data-architecture_prd_v1.0:** Data pipeline performance requirements
 
 ## 1. Goals & Non-Goals
 
@@ -25,7 +25,7 @@ This document defines the **API Performance & Scalability Standard** for the CMS
 
 **Non-Goals**
 - Real-time streaming performance (covered by separate streaming standard)
-- Database optimization (covered by STD-Data-Architecture_prd_v1.0)
+- Database optimization (covered by STD-data-architecture_prd_v1.0)
 - Infrastructure provisioning (covered by separate infrastructure PRD)
 
 ## 2. Performance Budgets & SLAs
@@ -417,10 +417,10 @@ def get_pricing_data(zip_code: str, code: str):
 ## 10. Cross-Reference Map
 
 ### Related PRDs
-- **API-STD-Architecture_prd_v1.0:** Layer architecture and performance budgets
+- **STD-api-architecture_prd_v1.0:** Layer architecture and performance budgets
 - **STD-observability-monitoring_prd_v1.0:** Performance monitoring, alerting, and SLAs
 - **STD-api-security-and-auth_prd_v1.0:** Rate limiting performance impact and security overhead
-- **STD-Data-Architecture_prd_v1.0:** Data pipeline performance requirements
+- **STD-data-architecture_prd_v1.0:** Data pipeline performance requirements
 
 ### Integration Points
 - **Performance Monitoring:** This PRD Section 5 → Observability PRD Section 2.2 (API Service Volume)

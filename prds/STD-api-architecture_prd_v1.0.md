@@ -12,7 +12,7 @@ This document defines the **API Standards & Architecture** for the CMS Pricing A
 - **STD-observability-monitoring_prd_v1.0:** API service monitoring and observability
 - **STD-api-security-and-auth_prd_v1.0:** Authentication, authorization, and security requirements
 - **STD-qa-testing_prd_v1.0:** API testing requirements and quality gates
-- **STD-Data-Architecture_prd_v1.0:** Data pipeline integration and observability
+- **STD-data-architecture_prd_v1.0:** Data pipeline integration and observability
 
 ## 1. Goals & Non-Goals
 

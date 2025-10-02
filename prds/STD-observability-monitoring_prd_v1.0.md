@@ -9,7 +9,7 @@ This document defines the **Observability & Monitoring Standard** for the CMS Pr
 **Change control:** ADR + Architecture Board review
 
 **Cross-References:**
-- **STD-Data-Architecture_prd_v1.0:** Data pipeline lifecycle, quality gates, and ingestion observability
+- **STD-data-architecture_prd_v1.0:** Data pipeline lifecycle, quality gates, and ingestion observability
 - **STD-qa-testing_prd_v1.0:** Testing philosophy, coverage requirements, and test observability
 - **STD-api-security-and-auth_prd_v1.0:** Security observability, audit logging, and incident response procedures  
 
@@ -513,7 +513,7 @@ observability_histogram = Histogram('observability_duration_seconds', 'Observabi
 ## 13. Cross-Reference Map
 
 ### Related PRDs
-- **STD-Data-Architecture_prd_v1.0**
+- **STD-data-architecture_prd_v1.0**
   - Section 8: Observability & Monitoring (data-specific requirements)
   - Section 7: Quality Gates (data quality thresholds)
   - Section 10.1: Metadata & Catalog Requirements (ingestion runs table)

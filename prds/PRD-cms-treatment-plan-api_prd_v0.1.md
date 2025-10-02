@@ -158,7 +158,7 @@ Build a Python-based API that produces **ZIP-level, episode-based** treatment pl
 - `run_trace(run_id, datasets_jsonb, notes_jsonb)`
 
 ## 9) API Endpoints (MVP) (MVP)
-All endpoints and change management must align with the **API-STD-Architecture_prd_v1.0**.
+All endpoints and change management must align with the **STD-api-architecture_prd_v1.0**.
 - `POST /plans` — create/update plan definition.  
 - `GET /plans` — list plan summaries (cursor pagination: **default limit=20**, **max=200**, `next_page_token`).
 - `GET /geography/resolve?zip=` — return locality/CBSA candidates, `requires_resolution` flag.
