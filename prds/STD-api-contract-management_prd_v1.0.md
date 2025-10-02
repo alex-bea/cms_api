@@ -9,10 +9,10 @@ This document defines the **API Contract Management Standard** for the CMS Prici
 **Change control:** ADR + Architecture Board review  
 
 **Cross-References:**
-- **API Standards & Architecture PRD v1.0:** OpenAPI SSOT and contract-first development
-- **Observability & Monitoring PRD v1.0:** Contract monitoring and drift detection
-- **QA Testing Standard (QTS) v1.0:** Contract testing requirements
-- **Data Architecture PRD v1.0:** Data schema contracts and evolution
+- **STD-api-architecture_prd_v1.0:** OpenAPI SSOT and contract-first development
+- **STD-observability-monitoring_prd_v1.0:** Contract monitoring and drift detection
+- **STD-qa-testing_prd_v1.0:** Contract testing requirements
+- **STD-data-architecture_prd_v1.0:** Data schema contracts and evolution
 
 ## 1. Goals & Non-Goals
 
@@ -24,7 +24,7 @@ This document defines the **API Contract Management Standard** for the CMS Prici
 - Enable client SDK generation and documentation
 
 **Non-Goals**
-- Database schema management (covered by Data Architecture PRD)
+- Database schema management (covered by STD-data-architecture_prd_v1.0)
 - Internal service contracts (covered by separate microservices standard)
 - Real-time streaming contracts (covered by separate streaming standard)
 
@@ -533,10 +533,10 @@ def validate_response(response_data, schema):
 ## 10. Cross-Reference Map
 
 ### Related PRDs
-- **API Standards & Architecture PRD v1.0:** OpenAPI SSOT and contract-first development
-- **Observability & Monitoring PRD v1.0:** Contract monitoring, drift detection, and analytics
-- **QA Testing Standard (QTS) v1.0:** Contract testing requirements and validation
-- **Data Ingestion Standard (DIS) v1.0:** Data schema contracts and evolution patterns
+- **STD-api-architecture_prd_v1.0:** OpenAPI SSOT and contract-first development
+- **STD-observability-monitoring_prd_v1.0:** Contract monitoring, drift detection, and analytics
+- **STD-qa-testing_prd_v1.0:** Contract testing requirements and validation
+- **STD-data-architecture_prd_v1.0:** Data schema contracts and evolution patterns
 
 ### Integration Points
 - **Contract Testing:** This PRD Section 4 → QTS PRD Section 7 (Contract Test Patterns)

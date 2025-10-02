@@ -1,6 +1,6 @@
 OPPS Scraper PRD (Draft)
 
-Links to standards: Main Scraper Standard PRD → /Users/alexanderbea/Cursor/cms-api/prds/scraper_standard_prd_v_1.md (this OPPS PRD inherits all baseline rules; only OPPS-specific overrides are defined here).
+Links to standards: Main Scraper Standard PRD → /Users/alexanderbea/Cursor/cms-api/prds/STD-scraper_prd_v1.0.md (this OPPS PRD inherits all baseline rules; only OPPS-specific overrides are defined here).
 
 ⸻
 
