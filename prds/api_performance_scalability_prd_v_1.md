@@ -12,7 +12,7 @@ This document defines the **API Performance & Scalability Standard** for the CMS
 - **API-STD-Architecture_prd_v1.0:** Layer architecture and performance budgets
 - **Observability & Monitoring PRD v1.0:** Performance monitoring and alerting
 - **API Security & Auth PRD v1.0:** Rate limiting and security performance impact
-- **Data Architecture PRD v1.0:** Data pipeline performance requirements
+- **STD-Data-Architecture_prd_v1.0:** Data pipeline performance requirements
 
 ## 1. Goals & Non-Goals
 
@@ -25,7 +25,7 @@ This document defines the **API Performance & Scalability Standard** for the CMS
 
 **Non-Goals**
 - Real-time streaming performance (covered by separate streaming standard)
-- Database optimization (covered by Data Architecture PRD)
+- Database optimization (covered by STD-Data-Architecture_prd_v1.0)
 - Infrastructure provisioning (covered by separate infrastructure PRD)
 
 ## 2. Performance Budgets & SLAs

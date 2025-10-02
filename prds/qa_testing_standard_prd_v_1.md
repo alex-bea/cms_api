@@ -10,7 +10,7 @@ This document defines the **QA & Testing Standard (QTS)** that governs validatio
 
 **Cross-References:**
 - **Observability & Monitoring PRD v1.0:** Comprehensive monitoring standards, test observability, and unified SLAs
-- **Data Architecture PRD v1.0:** Data pipeline testing requirements and quality gates
+- **STD-Data-Architecture_prd_v1.0:** Data pipeline testing requirements and quality gates
 - **API Security & Auth PRD v1.0:** Security testing requirements and compliance procedures  
 
 ## 1. Goals & Non-Goals

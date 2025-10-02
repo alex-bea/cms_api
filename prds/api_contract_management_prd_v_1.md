@@ -12,7 +12,7 @@ This document defines the **API Contract Management Standard** for the CMS Prici
 - **API-STD-Architecture_prd_v1.0:** OpenAPI SSOT and contract-first development
 - **Observability & Monitoring PRD v1.0:** Contract monitoring and drift detection
 - **QA Testing Standard (QTS) v1.0:** Contract testing requirements
-- **Data Architecture PRD v1.0:** Data schema contracts and evolution
+- **STD-Data-Architecture_prd_v1.0:** Data schema contracts and evolution
 
 ## 1. Goals & Non-Goals
 
@@ -24,7 +24,7 @@ This document defines the **API Contract Management Standard** for the CMS Prici
 - Enable client SDK generation and documentation
 
 **Non-Goals**
-- Database schema management (covered by Data Architecture PRD)
+- Database schema management (covered by STD-Data-Architecture_prd_v1.0)
 - Internal service contracts (covered by separate microservices standard)
 - Real-time streaming contracts (covered by separate streaming standard)
 
