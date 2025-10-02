@@ -10,8 +10,8 @@ This document defines the **API Contract Management Standard** for the CMS Prici
 
 **Cross-References:**
 - **API-STD-Architecture_prd_v1.0:** OpenAPI SSOT and contract-first development
-- **Observability & Monitoring PRD v1.0:** Contract monitoring and drift detection
-- **QA Testing Standard (QTS) v1.0:** Contract testing requirements
+- **STD-observability-monitoring_prd_v1.0:** Contract monitoring and drift detection
+- **STD-qa-testing_prd_v1.0:** Contract testing requirements
 - **STD-Data-Architecture_prd_v1.0:** Data schema contracts and evolution
 
 ## 1. Goals & Non-Goals
@@ -534,9 +534,9 @@ def validate_response(response_data, schema):
 
 ### Related PRDs
 - **API-STD-Architecture_prd_v1.0:** OpenAPI SSOT and contract-first development
-- **Observability & Monitoring PRD v1.0:** Contract monitoring, drift detection, and analytics
-- **QA Testing Standard (QTS) v1.0:** Contract testing requirements and validation
-- **Data Ingestion Standard (DIS) v1.0:** Data schema contracts and evolution patterns
+- **STD-observability-monitoring_prd_v1.0:** Contract monitoring, drift detection, and analytics
+- **STD-qa-testing_prd_v1.0:** Contract testing requirements and validation
+- **STD-Data-Architecture_prd_v1.0:** Data schema contracts and evolution patterns
 
 ### Integration Points
 - **Contract Testing:** This PRD Section 4 → QTS PRD Section 7 (Contract Test Patterns)

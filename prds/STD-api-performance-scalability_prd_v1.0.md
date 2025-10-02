@@ -10,8 +10,8 @@ This document defines the **API Performance & Scalability Standard** for the CMS
 
 **Cross-References:**
 - **API-STD-Architecture_prd_v1.0:** Layer architecture and performance budgets
-- **Observability & Monitoring PRD v1.0:** Performance monitoring and alerting
-- **API Security & Auth PRD v1.0:** Rate limiting and security performance impact
+- **STD-observability-monitoring_prd_v1.0:** Performance monitoring and alerting
+- **STD-api-security-and-auth_prd_v1.0:** Rate limiting and security performance impact
 - **STD-Data-Architecture_prd_v1.0:** Data pipeline performance requirements
 
 ## 1. Goals & Non-Goals
@@ -418,9 +418,9 @@ def get_pricing_data(zip_code: str, code: str):
 
 ### Related PRDs
 - **API-STD-Architecture_prd_v1.0:** Layer architecture and performance budgets
-- **Observability & Monitoring PRD v1.0:** Performance monitoring, alerting, and SLAs
-- **API Security & Auth PRD v1.0:** Rate limiting performance impact and security overhead
-- **Data Ingestion Standard (DIS) v1.0:** Data pipeline performance requirements
+- **STD-observability-monitoring_prd_v1.0:** Performance monitoring, alerting, and SLAs
+- **STD-api-security-and-auth_prd_v1.0:** Rate limiting performance impact and security overhead
+- **STD-Data-Architecture_prd_v1.0:** Data pipeline performance requirements
 
 ### Integration Points
 - **Performance Monitoring:** This PRD Section 5 → Observability PRD Section 2.2 (API Service Volume)

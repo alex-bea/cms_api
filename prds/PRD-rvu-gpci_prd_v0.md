@@ -174,7 +174,7 @@ We ingest these artifacts each cycle (A/B/C/D + potential AR corrections). This 
 ---
 
 ## 9) Interfaces
-API contracts exposed from this pack must follow the **Global API Program PRDs (v1.0)** for versioning and lifecycle.
+API contracts exposed from this pack must follow the **API-STD-Architecture_prd_v1.0** for versioning and lifecycle.
 ### 9.1 Warehouse Views
 - `vw_rvu_current(date)` → latest RVUs (by HCPCS/modifier) effective on `date`.
 - `vw_gpci_current(date)` → locality GPCIs effective on `date`.

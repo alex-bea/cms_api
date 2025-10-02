@@ -693,7 +693,7 @@ chore(prd): split Security & Auth into standalone PRD
 
 ## 23) Cross-PRD Integration
 
-### 23.1 QTS Integration (QA Testing Standard)
+### 23.1 QTS Integration (STD-qa-testing_prd_v1.0)
 
 **Security Testing Requirements:**
 - **Unit Tests:** ≥90% coverage on auth middleware and key validation

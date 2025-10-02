@@ -9,10 +9,10 @@ This document defines the **API Standards & Architecture** for the CMS Pricing A
 **Change control:** ADR + Architecture Board review  
 
 **Cross-References:**
-- **Observability & Monitoring PRD v1.0:** API service monitoring and observability
-- **API Security & Auth PRD v1.0:** Authentication, authorization, and security requirements
-- **QA Testing Standard (QTS) v1.0:** API testing requirements and quality gates
-- **Data Ingestion Standard (DIS) v1.0:** Data pipeline integration and observability
+- **STD-observability-monitoring_prd_v1.0:** API service monitoring and observability
+- **STD-api-security-and-auth_prd_v1.0:** Authentication, authorization, and security requirements
+- **STD-qa-testing_prd_v1.0:** API testing requirements and quality gates
+- **STD-Data-Architecture_prd_v1.0:** Data pipeline integration and observability
 
 ## 1. Goals & Non-Goals
 
@@ -378,10 +378,10 @@ class PricingService:
 ## 9. Cross-Reference Map
 
 ### Related PRDs
-- **Observability & Monitoring PRD v1.0:** API service monitoring, performance metrics, and alerting
-- **API Security & Auth PRD v1.0:** Authentication, authorization, rate limiting, and security middleware
-- **QA Testing Standard (QTS) v1.0:** API testing requirements, contract testing, and quality gates
-- **Data Ingestion Standard (DIS) v1.0:** Data pipeline integration and data-backed response requirements
+- **STD-observability-monitoring_prd_v1.0:** API service monitoring, performance metrics, and alerting
+- **STD-api-security-and-auth_prd_v1.0:** Authentication, authorization, rate limiting, and security middleware
+- **STD-qa-testing_prd_v1.0:** API testing requirements, contract testing, and quality gates
+- **STD-Data-Architecture_prd_v1.0:** Data pipeline integration and data-backed response requirements
 
 ### Integration Points
 - **API Observability:** This PRD Section 5.3 → Observability PRD Section 2.2 (API Service Volume)

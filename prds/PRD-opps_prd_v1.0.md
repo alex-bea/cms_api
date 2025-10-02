@@ -192,9 +192,9 @@ Change Log
 
 Cross-References
 	•	DIS PRD: ingestion stages, manifests, quarantine, lineage.
-	•	QA Testing Standard: test tiers, fixtures, CI gates.
+	•	STD-qa-testing_prd_v1.0: test tiers, fixtures, CI gates.
 	•	Scraper Standard: discovery, throttling, checksum/idempotency.
-	•	Global API Program PRD: Optional API (deferred/derived):
+	•	API-STD-Architecture_prd_v1.0: Optional API (deferred/derived):
 
 Optional API (Deferred / Derived Layer — DIS-Aligned)
 	•	Treat APIs as interfaces over curated data; responses include batch_id/published_at to bind to data vintage.

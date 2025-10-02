@@ -10,8 +10,8 @@ This document defines the **Observability & Monitoring Standard** for the CMS Pr
 
 **Cross-References:**
 - **STD-Data-Architecture_prd_v1.0:** Data pipeline lifecycle, quality gates, and ingestion observability
-- **QA Testing Standard (QTS) v1.0:** Testing philosophy, coverage requirements, and test observability
-- **API Security & Auth PRD v1.0:** Security observability, audit logging, and incident response procedures  
+- **STD-qa-testing_prd_v1.0:** Testing philosophy, coverage requirements, and test observability
+- **STD-api-security-and-auth_prd_v1.0:** Security observability, audit logging, and incident response procedures  
 
 ## 1. Goals & Non-Goals
 
@@ -513,19 +513,19 @@ observability_histogram = Histogram('observability_duration_seconds', 'Observabi
 ## 13. Cross-Reference Map
 
 ### Related PRDs
-- **Data Ingestion Standard (DIS) v1.0**
+- **STD-Data-Architecture_prd_v1.0**
   - Section 8: Observability & Monitoring (data-specific requirements)
   - Section 7: Quality Gates (data quality thresholds)
   - Section 10.1: Metadata & Catalog Requirements (ingestion runs table)
   - Appendix G: SLAs (defaults for data pipelines)
 
-- **QA Testing Standard (QTS) v1.0**
+- **STD-qa-testing_prd_v1.0**
   - Section 8: Observability & Monitoring (test-specific requirements)
   - Section 7: Quality Gates (testing thresholds)
   - Section 2.5: Test Accuracy Metrics (implementation alignment)
   - Phase 3: Performance & Load Testing (benchmarking framework)
 
-- **API Security & Auth PRD v1.0**
+- **STD-api-security-and-auth_prd_v1.0**
   - Section 22.1: Operational Runbooks (incident response)
   - Section 10.4: Extended Prometheus Metrics (security observability)
   - Section 6.3: Credits & Billing Model (usage tracking)
