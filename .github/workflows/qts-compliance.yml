@@ -27,29 +27,29 @@ jobs:
         pip install -r requirements-dev.txt
         pip install pytest-cov pytest-benchmark pytest-asyncio
     
-    - name: Run unit tests with coverage
+    - name: Run scraper/API tests with coverage
       run: |
-        pytest tests/unit/ -q --cov=cms_pricing --cov-report=xml --cov-report=html --cov-fail-under=90
+        pytest tests/scrapers tests/api -q --cov=cms_pricing --cov-report=xml --cov-report=html --cov-fail-under=90
     
-    - name: Run component tests
+    - name: Run PRD documentation audits
       run: |
-        pytest tests/component/ -q --maxfail=5
+        pytest tests/prd_docs -m prd_docs -q --maxfail=5
     
-    - name: Run integration tests
+    - name: Run ingestor suites
       run: |
-        pytest tests/integration/ -q --maxfail=3
+        pytest tests/ingestors -m ingestor -q --maxfail=3
     
-    - name: Run performance tests
+    - name: Run scraper performance benchmarks
       run: |
-        pytest tests/perf/ -q --benchmark-json=benchmark-results.json
+        pytest tests/scrapers/test_opps_scraper_performance.py -q --benchmark-json=benchmark-results.json
     
     - name: Check performance regression
       run: |
         python tools/check_perf_regression.py benchmark-results.json .qts/last_benchmark.json
     
-    - name: Run data contract tests
+    - name: Run API contract tests
       run: |
-        pytest tests/contract/ -q --maxfail=1
+        pytest tests/api/test_rvu_api_contracts.py tests/api/test_openapi_consistency.py -q --maxfail=1
     
     - name: Run schema drift checks
       run: |
@@ -205,7 +205,7 @@ jobs:
     
     - name: Run observability tests
       run: |
-        pytest tests/integration/test_observability_alerting.py -q
+        pytest tests/prd_docs/test_observability_alerting.py -q
     
     - name: Test dashboard metrics
       run: |

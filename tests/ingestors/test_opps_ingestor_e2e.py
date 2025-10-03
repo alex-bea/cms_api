@@ -21,11 +21,12 @@ from pathlib import Path
 from typing import Dict, Any, List
 import pandas as pd
 import pytest
+import pytest_asyncio
 import structlog
 
 from cms_pricing.ingestion.ingestors.opps_ingestor import OPPSIngestor
 from cms_pricing.ingestion.scrapers.cms_opps_scraper import CMSOPPSScraper
-from tests.fixtures.opps.test_dataset_creator import OPPSTestDatasetCreator
+from tests.fixtures.opps.opps_dataset_creator import OPPSTestDatasetCreator
 
 
 # Configure logging
@@ -36,7 +37,7 @@ logger = structlog.get_logger()
 class TestOPPSIngestorE2E:
     """End-to-end test suite for OPPS ingester."""
     
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def test_environment(self):
         """Set up test environment with temporary directories."""
         with tempfile.TemporaryDirectory() as temp_dir:

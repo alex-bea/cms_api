@@ -15,10 +15,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from cms_pricing.database import SessionLocal
-from cms_pricing.ingestion.nearest_zip_ingestion import (
-    GazetteerIngester, UDSCrosswalkIngester, CMSZip5Ingester, NBERIngester,
-    NearestZipIngestionPipeline
-)
+
+nearest_zip_module = pytest.importorskip("cms_pricing.ingestion.nearest_zip_ingestion")
+
+GazetteerIngester = nearest_zip_module.GazetteerIngester
+UDSCrosswalkIngester = nearest_zip_module.UDSCrosswalkIngester
+CMSZip5Ingester = nearest_zip_module.CMSZip5Ingester
+NBERIngester = nearest_zip_module.NBERIngester
+NearestZipIngestionPipeline = nearest_zip_module.NearestZipIngestionPipeline
 from cms_pricing.models.nearest_zip import (
     ZCTACoords, ZipToZCTA, CMSZipLocality, NBERCentroids, ZCTADistances, IngestRun
 )

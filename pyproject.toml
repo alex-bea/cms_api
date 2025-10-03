@@ -96,4 +96,12 @@ markers = [
     "integration: marks tests as integration tests",
     "golden: marks tests as golden/parity tests",
     "asyncio: marks tests as async tests",
+    "mpfs: marks tests as mac mpfs dataset scenarios",
+    "opps: marks tests as opps dataset scenarios",
+    "prd_docs: marks documentation audit suites",
+    "scraper: marks scraper unit/component suites",
+    "ingestor: marks ingestion pipeline suites",
+    "geography: marks geography resolver suites",
+    "api: marks API contract suites",
+    "performance: marks tests as performance or throughput scenarios",
 ]

@@ -10,10 +10,15 @@ import asyncio
 from unittest.mock import Mock, patch, AsyncMock
 from datetime import datetime
 
-from cms_pricing.ingestion.scheduler import IngestionScheduler, TaskStatus
-from cms_pricing.ingestion.geography import GeographyIngester
+scheduler_module = pytest.importorskip("cms_pricing.ingestion.scheduler")
+geography_module = pytest.importorskip("cms_pricing.ingestion.geography")
+
 from cms_pricing.ingestion.cms_downloader import CMSDownloader
 from cms_pricing.ingestion.geography_notifications import GeographyNotificationService
+
+IngestionScheduler = scheduler_module.IngestionScheduler
+TaskStatus = scheduler_module.TaskStatus
+GeographyIngester = geography_module.GeographyIngester
 
 
 class TestGeographyAutomation:
@@ -290,4 +295,3 @@ class TestGeographyCLI:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

@@ -5,6 +5,7 @@ Following QTS (QA & Testing Standard) PRD v1.0 and DIS compliance
 """
 
 import pytest
+import pytest_asyncio
 import asyncio
 import tempfile
 import shutil
@@ -23,25 +24,25 @@ logger = structlog.get_logger()
 class TestMPFSIngestorE2E:
     """End-to-end tests for MPFS ingestor"""
     
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def temp_dir(self):
         """Create temporary directory for test data"""
         temp_dir = tempfile.mkdtemp()
         yield Path(temp_dir)
         shutil.rmtree(temp_dir)
     
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def test_data(self, temp_dir):
         """Create test data"""
         creator = MPFSTestDatasetCreator(str(temp_dir / "test_data"))
         return creator.create_all()
     
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def mpfs_ingestor(self, temp_dir):
         """Create MPFS ingestor instance"""
         return MPFSIngestor(str(temp_dir / "ingestion"))
     
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def mpfs_scraper(self, temp_dir):
         """Create MPFS scraper instance"""
         return CMSMPFSScraper(str(temp_dir / "scraped"))

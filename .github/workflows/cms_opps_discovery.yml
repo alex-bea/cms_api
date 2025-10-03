@@ -232,7 +232,7 @@ jobs:
       
       - name: Run OPPS ingester tests
         run: |
-          python -m pytest tests/integration/test_opps_ingestor_e2e.py \
+          python -m pytest tests/ingestors/test_opps_ingestor_e2e.py \
             -v \
             --tb=short \
             --junitxml=test-results.xml

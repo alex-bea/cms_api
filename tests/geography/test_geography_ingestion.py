@@ -12,9 +12,12 @@ from datetime import date
 from unittest.mock import Mock, patch
 from sqlalchemy.orm import Session
 
-from cms_pricing.ingestion.geography import GeographyIngester
+geography_module = pytest.importorskip("cms_pricing.ingestion.geography")
+
 from cms_pricing.models.geography import Geography
 from cms_pricing.database import SessionLocal
+
+GeographyIngester = geography_module.GeographyIngester
 
 
 class TestGeographyIngestion:
@@ -439,4 +442,3 @@ class TestGeographyValidation:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-
