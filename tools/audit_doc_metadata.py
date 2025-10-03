@@ -15,10 +15,22 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Tuple
+from typing import Dict
 
-PRDS_DIR = Path("prds")
-MASTER_DOC = PRDS_DIR / "DOC-master-catalog_prd_v1.0.md"
+from tools.shared.logging_utils import (
+    AuditIssue,
+    count_by_severity,
+    emit_issues,
+    exit_code_from_issues,
+    get_logger,
+)
+from tools.shared.prd_helpers import (
+    MASTER_DOC_NAME,
+    PRDS_DIR,
+    get_prd_names,
+    read_master_catalog,
+    read_path_text,
+)
 HEADER_PATTERN = re.compile(r"^\*\*(?P<field>[^:]+):\*\*\s*(?P<value>.+?)\s*$")
 STATUS_PATTERN = re.compile(r"(Adopted|Draft|Deprecated)[^\s]*", re.IGNORECASE)
 
@@ -28,7 +40,7 @@ class DocHeader:
 
 
 def parse_header(path: Path) -> DocHeader:
-    lines = path.read_text(encoding="utf-8").splitlines()[:20]
+    lines = read_path_text(path).splitlines()[:20]
     status_line = next((line for line in lines if "**Status:**" in line), None)
     if not status_line:
         raise ValueError(f"Missing Status field in {path.name}")
@@ -55,29 +67,37 @@ def extract_table_entries(text: str) -> Dict[str, str]:
 
 
 def main() -> int:
-    if not MASTER_DOC.exists():
-        print(f"Master catalog not found at {MASTER_DOC}", file=sys.stderr)
+    logger = get_logger("audit.doc_metadata")
+    issues: list[AuditIssue] = []
+
+    try:
+        master_text = read_master_catalog()
+    except FileNotFoundError as exc:
+        logger.error(str(exc))
         return 1
 
-    master_text = MASTER_DOC.read_text(encoding="utf-8")
     catalog_status = extract_table_entries(master_text)
-    actual_docs = {p.name for p in PRDS_DIR.glob("*.md")}
+    actual_docs = get_prd_names()
 
-    issues = False
-
-    missing_files = sorted(name for name in catalog_status if name not in actual_docs)
-    if missing_files:
-        issues = True
-        print("[ERROR] Catalog lists docs that are missing on disk:")
-        for name in missing_files:
-            print(f"  - {name}")
+    for name in sorted(catalog_status):
+        if name not in actual_docs:
+            issues.append(
+                AuditIssue(
+                    "error",
+                    "Catalog lists document that is missing on disk",
+                    doc=name,
+                )
+            )
 
     placeholder_dates = [line for line in master_text.splitlines() if "YYYY-MM-DD" in line]
-    if placeholder_dates:
-        issues = True
-        print("[WARN] Catalog still contains placeholder last-reviewed dates (YYYY-MM-DD). Please update:")
-        for line in placeholder_dates:
-            print(f"  {line.strip()}")
+    for line in placeholder_dates:
+        issues.append(
+            AuditIssue(
+                "error",
+                f"Placeholder last-reviewed date remains: {line.strip()}",
+                doc=MASTER_DOC_NAME,
+            )
+        )
 
     for name, status in catalog_status.items():
         if name not in actual_docs:
@@ -85,31 +105,51 @@ def main() -> int:
         try:
             header = parse_header(PRDS_DIR / name)
         except ValueError as exc:
-            issues = True
-            print(f"[ERROR] {exc}")
+            issues.append(AuditIssue("error", str(exc)))
             continue
 
         header_status_norm = STATUS_PATTERN.search(header.status or "")
         catalog_status_norm = STATUS_PATTERN.search(status or "")
 
         if not header_status_norm:
-            issues = True
-            print(f"[ERROR] Could not parse header status for {name}: '{header.status}'")
+            issues.append(
+                AuditIssue(
+                    "error",
+                    f"Could not parse header status: '{header.status}'",
+                    doc=name,
+                )
+            )
             continue
         if not catalog_status_norm:
-            issues = True
-            print(f"[ERROR] Could not parse catalog status for {name}: '{status}'")
+            issues.append(
+                AuditIssue(
+                    "error",
+                    f"Could not parse catalog status: '{status}'",
+                    doc=name,
+                )
+            )
             continue
 
         if header_status_norm.group(0).lower() != catalog_status_norm.group(0).lower():
-            issues = True
-            print(f"[ERROR] Status mismatch for {name}: header='{header.status}' vs catalog='{status}'")
+            issues.append(
+                AuditIssue(
+                    "error",
+                    f"Status mismatch: header='{header.status}' vs catalog='{status}'",
+                    doc=name,
+                )
+            )
 
-    if issues:
-        return 1
+    if not issues:
+        logger.info("Metadata audit passed.")
+        return 0
 
-    print("Metadata audit passed.")
-    return 0
+    emit_issues(logger, issues)
+    counts = count_by_severity(issues)
+    logger.error(
+        "Metadata audit failed (%s errors).",
+        counts.get("error", 0),
+    )
+    return exit_code_from_issues(issues)
 
 
 if __name__ == "__main__":
