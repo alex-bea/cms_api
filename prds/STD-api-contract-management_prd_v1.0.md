@@ -9,6 +9,7 @@ This document defines the **API Contract Management Standard** for the CMS Prici
 **Change control:** ADR + Architecture Board review  
 
 **Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
 - **STD-api-architecture_prd_v1.0:** OpenAPI SSOT and contract-first development
 - **STD-observability-monitoring_prd_v1.0:** Contract monitoring and drift detection
 - **STD-qa-testing_prd_v1.0:** Contract testing requirements
@@ -158,6 +159,79 @@ paths:
         '429':
           $ref: '#/components/responses/TooManyRequests'
 ```
+
+### 2.5 CRUD Resource Contract Template
+All CRUD-capable resources MUST document their HTTP contract using the following template. Embed a completed version in the owning PRD and keep it aligned with the OpenAPI spec.
+
+```
+## CRUD Contract — <ResourceName>
+
+### 0. Resource Identity & Data Governance
+| Field | Value |
+| :--- | :--- |
+| **Resource Name (API/Code)** | <resource_name_id> |
+| **Canonical ID Type** | <UUID/ULID/...> |
+| **Source of Truth (SoT)** | <database/service> |
+| **Optimistic Lock** | `version` (int) — required for UPDATE/DELETE |
+
+### 1. Operations & HTTP Contract
+| Operation | Method / Path | Idempotency-Key | Response | Default Sort |
+| :--- | :--- | :--- | :--- | :--- |
+| CREATE | `POST /<res>` | Yes | 201 Created (body) | N/A |
+| READ | `GET /<res>/{id}` | No | 200 OK (body) | N/A |
+| LIST | `GET /<res>` | No | 200 OK (paginated) | `created_at` DESC |
+| UPDATE | `PATCH /<res>/{id}` | Yes | 200 OK (body) | N/A |
+| DELETE | `DELETE /<res>/{id}` | No | 204 No Content | N/A |
+
+### 2. Concurrency, Deletion & Safety
+| Constraint | Policy |
+| :--- | :--- |
+| Concurrency Guard | Require `If-Match: <version>` on UPDATE/DELETE |
+| Idempotency Conflict | 409 Conflict if key reused with different payload |
+| Idempotency Window | <duration> |
+| Deletion Mode | Soft delete / Hard delete / Not supported |
+| Deletion Retention | e.g., 6 years |
+
+### 3. Validation & Invariants
+| Type | Policy |
+| :--- | :--- |
+| Required Fields | ... |
+| Uniqueness | `(tenant_id, external_id)` |
+| Immutable Fields | `tenant_id`, `created_by` |
+| Max Cardinality | e.g., ≤100 children per parent |
+| Field Sanitization | Trim, normalize casing, UTC timestamps |
+| FK Constraints | Reference policies + error codes |
+| State Machine | Allowed transitions |
+
+### 4. Authorization & Filtering
+| Operation | Required Roles | Default Filters |
+| :--- | :--- | :--- |
+| CREATE | `write` | Auto-set `tenant_id` |
+| READ/LIST | `read` | Enforce `tenant_id` filter |
+| UPDATE | `write` | Must match `tenant_id` |
+| DELETE | `admin` | Reason required |
+
+### 5. Audit & Observability
+| Type | Policy |
+| :--- | :--- |
+| Domain Events | `<res>.created`, `.updated`, `.deleted` |
+| Audit Fields | `created_at/by`, `updated_at/by`, `deleted_at/by` |
+| Tracing Link | Capture `trace_id` / `span_id` |
+| Metrics | CRUD request count/duration/error rate |
+
+### 6. Non-CRUD Actions (Commands)
+| Command | Purpose |
+| :--- | :--- |
+| `POST /<res>/{id}:reprocess` | ... |
+
+### 7. API Error Catalog (Examples)
+| HTTP Status | Custom Code | Description |
+| :--- | :--- | :--- |
+| 400 | `VALIDATION_ERROR` | ... |
+| 409 | `CONCURRENCY_VIOLATION` | ... |
+```
+
+Teams may extend the template with resource-specific details but must keep the standard sections.
 
 ## 3. Schema Evolution & Versioning
 

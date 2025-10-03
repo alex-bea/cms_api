@@ -1,0 +1,30 @@
+name: Documentation Catalog Audit
+
+on:
+  schedule:
+    - cron: '0 12 * * *'  # Daily at 12:00 UTC
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Run catalog consistency audit
+        run: python tools/audit_doc_catalog.py
+
+      - name: Run metadata audit
+        run: python tools/audit_doc_metadata.py
+
+      - name: Run cross-reference audit
+        run: python tools/audit_doc_links.py
+
+      - name: Run dependency graph audit
+        run: python tools/audit_doc_dependencies.py

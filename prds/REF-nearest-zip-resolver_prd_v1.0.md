@@ -1,9 +1,18 @@
 # Nearest ZIP (Same‑State) Resolver & Data Integration — PRD
 
+**Status:** Draft v1.0  
+**Owners:** Arnina / INS • Pricing Platform Engineering  
+**Consumers:** Pricing API, Data Engineering, Ops  
+**Change control:** ADR + PR review
+
+**Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-qa-testing_prd_v1.0:** Testing requirements for ZIP resolver
+- **REF-geography-mapping-cursor_prd_v1.0.md:** Related geography mapping patterns
+
 **Version:** 1.0  
-**Date:** 2025‑09‑29  
-**Owner:** Arnina / INS/Prawn BBQ  
-**Status:** Draft — ready for engineering
+**Date:** 2025‑09‑29
 
 ---
 

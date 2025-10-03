@@ -1,5 +1,15 @@
 # Geography Locality Mapping — PRD (ZIP+4‑first, Cursor‑Ready)
 
+**Status:** Draft v1.0  
+**Owners:** Pricing Platform Product & Engineering  
+**Consumers:** Geography Resolver Team, Pricing API, Ops  
+**Change control:** ADR + PR review
+
+**Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-qa-testing_prd_v1.0:** Testing requirements for geography mapping
+
 ## Changelog (Pinned)
 - **2025‑09‑28**: Automation implemented — hourly scheduler with **monthly geography checks**, **ETag/Last‑Modified change detection**, smart **ingest‑on‑change**, notification system (log/email/slack/webhook‑ready), and **operator CLI** (`ingest`, `check‑changes`, `notifications`, `status`).
 - **2025‑09‑27**: Incorporated implementation clarifications: geometry table for nearest, PO Box handling, strict error codes, resolver API contract, exclusion constraints for effective windows, cache sizing, and expanded acceptance tests.

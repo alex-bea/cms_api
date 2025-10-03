@@ -33,3 +33,18 @@ repos:
       - id: mypy
         additional_dependencies: [types-all]
         args: [--ignore-missing-imports]
+
+  - repo: local
+    hooks:
+      - id: prd-filename-check
+        name: Ensure PRD filenames follow governance pattern
+        entry: bash -c 'for file in "$@"; do base="$(basename "$file")"; [[ $base =~ ^(STD|BP|PRD|SCR|RUN|DOC)-[a-z0-9-]+_prd_v[0-9]+\.[0-9]+\.md$ ]] || { echo "Invalid PRD filename: $base" >&2; exit 1; }; done'
+        language: system
+        files: ^prds/.*\.md$
+        pass_filenames: true
+
+      - id: prd-header-check
+        name: Ensure PRDs include governance header
+        entry: tools/verify-prd-headers.sh
+        language: system
+        files: ^prds/.*\.md$

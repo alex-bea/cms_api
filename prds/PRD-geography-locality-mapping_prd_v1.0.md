@@ -1,4 +1,16 @@
 # Changelog (Pinned)
+
+**Status:** Draft v1.0  
+**Owners:** Pricing Platform Product & Engineering  
+**Consumers:** Geography Resolver Team, Pricing API, Ops  
+**Change control:** ADR + PR review
+
+**Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-qa-testing_prd_v1.0:** Testing requirements for geography mapping
+- **REF-geography-mapping-cursor_prd_v1.0.md:** Related geography mapping patterns
+
 - **2025-09-26**: Initial draft of Geography PRD with **ZIP+4-first mandate**, effective-dating rules, schema, ingestion steps, QA, and trace requirements.
 - **2025-09-26**: Clarifications applied — non-strict default with explicit fallback policy; **nearest fallback constrained to same state**; carrier exposure optional; locality-name dictionary loader added; annual-as-quarter fallback allowed; ZIP+4 normalization; cache strategy clarified (digest-aware by default, TTL optional); conversational strict-mode errors; per-request radius override; daily gap report methodology.
 

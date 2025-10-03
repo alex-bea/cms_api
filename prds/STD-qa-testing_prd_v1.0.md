@@ -9,6 +9,7 @@ This document defines the **QA & Testing Standard (QTS)** that governs validatio
 **Change control:** ADR + QA guild review + PR sign-off
 
 **Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
 - **STD-observability-monitoring_prd_v1.0:** Comprehensive monitoring standards, test observability, and unified SLAs
 - **STD-data-architecture_prd_v1.0:** Data pipeline testing requirements and quality gates
 - **STD-api-security-and-auth_prd_v1.0:** Security testing requirements and compliance procedures  

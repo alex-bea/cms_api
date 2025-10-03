@@ -1,5 +1,11 @@
 # PRD: OPPS Addendum B Ingest
 
+**Status:** Draft v1.0  
+**Owners:** Platform/Data Engineering; Medicare SME (review)  
+**Consumers:** Pricing engine, analytics, ops  
+**Change control:** ADR + Data Architecture Board sign-off
+
+For complete index see [Master System Catalog](DOC-master-catalog_prd_v1.0.md).  
 
 Overview
 
@@ -9,6 +15,13 @@ Status: Draft for approval
 Owners: Platform/Data Eng (primary), Medicare SME (review)
 Consumers: Pricing engine, analytics, data science, ops
 Change control: ADR + Data Architecture Board sign-off
+
+**Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-scraper_prd_v1.0:** Scraper requirements for OPPS data discovery
+- **STD-api-security-and-auth_prd_v1.0:** Security requirements for OPPS data access
+- **REF-geography-mapping-cursor_prd_v1.0.md:** Geography mapping for OPPS localities
 
 ⸻
 

@@ -9,6 +9,7 @@ This document defines the **API Standards & Architecture** for the CMS Pricing A
 **Change control:** ADR + Architecture Board review  
 
 **Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
 - **STD-observability-monitoring_prd_v1.0:** API service monitoring and observability
 - **STD-api-security-and-auth_prd_v1.0:** Authentication, authorization, and security requirements
 - **STD-qa-testing_prd_v1.0:** API testing requirements and quality gates

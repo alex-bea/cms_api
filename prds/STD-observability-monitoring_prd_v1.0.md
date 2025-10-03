@@ -9,6 +9,7 @@ This document defines the **Observability & Monitoring Standard** for the CMS Pr
 **Change control:** ADR + Architecture Board review
 
 **Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
 - **STD-data-architecture_prd_v1.0:** Data pipeline lifecycle, quality gates, and ingestion observability
 - **STD-qa-testing_prd_v1.0:** Testing philosophy, coverage requirements, and test observability
 - **STD-api-security-and-auth_prd_v1.0:** Security observability, audit logging, and incident response procedures  

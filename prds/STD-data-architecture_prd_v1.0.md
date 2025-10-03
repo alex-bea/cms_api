@@ -7,6 +7,8 @@ This document defines the **Data Architecture Standard** used across projects. I
 **Owners:** Platform/Data Engineering  
 **Consumers:** Product, Analytics, Services  
 **Change control:** ADR + PR review
+For complete index see [Master System Catalog](DOC-master-catalog_prd_v1.0.md).  
+
 
 **Cross-References:**
 - **STD-observability-monitoring_prd_v1.0:** Comprehensive monitoring standards, five-pillar framework, and unified SLAs

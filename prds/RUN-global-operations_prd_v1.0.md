@@ -1,5 +1,17 @@
 # Runbook: MPFS / NCCI / OPPS — Go-Live & Ops
 
+**Status:** Draft v1.0  
+**Owners:** Operations & Data Engineering  
+**Consumers:** On-call Engineers, Product Ops, QA  
+**Change control:** PR review + Ops sign-off
+
+**Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
+- **STD-observability-monitoring_prd_v1.0:** Monitoring and alerting procedures
+- **STD-qa-testing_prd_v1.0:** Testing and validation procedures
+- **PRD-mpfs_prd_v1.0.md:** MPFS ingestion procedures
+- **PRD-opps_prd_v1.0.md:** OPPS ingestion procedures
+
 This runbook lists validation steps and ops playbook items for the new MPFS ingester, related NCCI/MUE storage, and OPPS (stub). Reference links are CMS primary sources.
 
 ## A. Go-Live Validation (do on each new drop)

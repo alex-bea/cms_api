@@ -8,6 +8,10 @@ This PRD defines the **Security & Authentication standard** for the CMS Pricing 
 **Consumers:** Product, Engineering, Ops, Legal  
 **Change control:** ADR + Architecture Board review  
 
+**Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
+- **STD-api-architecture_prd_v1.0.md:** API layering, DTO patterns, middleware
+
 ---
 
 ## 1) Goals & Non-Goals

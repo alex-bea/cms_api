@@ -1,5 +1,15 @@
 Scraper Platform PRD (MVP → v1)
 
+**Status:** Draft v1.0  
+**Owners:** Data Engineering / Platform Tooling  
+**Consumers:** Ingestion Engineers, QA Guild, Ops  
+**Change control:** ADR + PR review
+
+**Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-observability-monitoring_prd_v1.0:** Scraper monitoring and alerting
+
 0) Summary
 
 Build a cheap, reliable, and auditable scraper/orchestration layer that discovers and fetches latest files monthly across CMS/HRSA (and future sources), snapshots raw artifacts, normalizes to typed tables (Parquet-first), and exposes dataset digests for downstream pricing and comparisons. Freshness is defined, costs are guarded, and observability + alerts route to Page Alex.

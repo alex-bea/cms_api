@@ -7,6 +7,17 @@
 
 # PRD — CMS Treatment Plan Pricing & Comparison API (v0.1)
 
+**Status:** Draft v0.1  
+**Owners:** Pricing Platform Product & Engineering  
+**Consumers:** API Engineering, Analytics, QA, Ops  
+**Change control:** ADR + PR review
+
+**Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
+- **STD-api-contract-management_prd_v1.0:** API contract management and versioning
+- **STD-api-security-and-auth_prd_v1.0:** Security requirements for treatment plan API
+- **STD-api-architecture_prd_v1.0:** API architecture and layering patterns
+
 **Owner:** <you>  
 **Author:** ChatGPT  
 **Date:** Sept 17, 2025  
@@ -190,287 +201,78 @@ All endpoints and change management must align with the **STD-api-architecture_p
 
 ---
 
-## 10) Calculation Rules (by setting)
-- **MPFS:** `(WorkRVU×GPCIw + PERVU×GPCIpe + MPRVU×GPCImp) × CF`; apply POS to choose NF vs FAC PE RVU; handle modifiers (-26/TC, bilateral, multiple-procedure discount).  
-- **OPPS:** wage‑adjust Addendum B base; apply packaging (status indicators J1, Q1/Q2/Q3, N, etc.); do not double‑count packaged items; add professional read via MPFS if applicable.  
-- **ASC:** use ASC rate; professional separated via MPFS as needed.  
-- **IPPS:** baseline = `DRG weight × ((OpBase × WI) + (CapBase × WI))`; enhanced mode may add IME/DSH/outlier factors by configuration.  
-- **CLFS/DMEPOS:** use schedule rates; DMEPOS rural multiplier where applicable.  
-- **Part B Drugs:** `ASP × 1.06 × units` (sequestration toggle later).  
-- **NADAC:** `unit_price × units` (reference only; no cost sharing).
+## 10) CRUD Contract — Treatment Plan Resource
 
----
+### 0. Resource Identity & Data Governance
+| Field | Value |
+| :--- | :--- |
+| **Resource Name (API/Code)** | `plan_id` |
+| **Canonical ID Type** | UUIDv4 |
+| **Source of Truth (SoT)** | `plans` table (PostgreSQL) |
+| **Optimistic Lock** | Integer `version` column (required on `PATCH`)
 
-## 11) Beneficiary Cost Sharing & Policy Toggles
-- **Part B deductible & coinsurance (MVP):** Apply an annual **Part B deductible first** across **Part B‑eligible** lines (MPFS, HOPD/OPPS, ASC, CLFS, DMEPOS, Part B drugs). For each line: `deduct_applied = min(remaining_deductible, allowed)`; `coinsurance = coinsurance_rate × (allowed − deduct_applied)`. Update the run‑level deductible accumulator afterward. Default coinsurance rate **20%**, configurable via `benefit_params.part_b.coinsurance_rate`.
-- **OPPS coinsurance cap (per service):** If enabled, cap HOPD coinsurance at `benefit_params.opps.coinsurance_cap_per_service`. If the cap is **null/0**, it **defaults to** the **Part A inpatient deductible** you provide in `benefit_params.part_a.inpatient_deductible_amount`. When the cap binds, return `opps_cap_applied=true` and `opps_cap_amount` on that line.
-- **IPPS Part A deductible (baseline policy):** Allocate the **entire** inpatient deductible to the **DRG parent line** (not proportional) and include a trace note; proportional allocation is a roadmap option (`deductible_allocation="proportional"`).
-- **Sequestration (toggle):** When `benefit_params.policy_toggles.apply_sequestration=true`, compute and return `program_payment_after_sequestration = (allowed − beneficiary_total) × (1 − sequestration_rate)`. **Do not** alter beneficiary amounts. Toggle is **off by default**.
+### 1. Operations & HTTP Contract
+| Operation | Method / Path | Idempotency-Key | Response | Default Sort |
+| :--- | :--- | :--- | :--- | :--- |
+| CREATE | `POST /plans` | Mandatory (`Idempotency-Key`) | 201 Created + full plan | N/A |
+| READ (by id)* | `GET /plans/{plan_id}` *(roadmap)* | No | 200 OK + full plan | N/A |
+| LIST | `GET /plans?cursor=...` | No | 200 OK (paginated) | `created_at` DESC |
+| UPDATE | `PATCH /plans/{plan_id}` *(MVP)* | Yes | 200 OK + full plan | N/A |
+| DELETE | — | Not supported | — | — |
 
-## 12) Ambiguity & Packaging Policies
-- **ZIP ambiguity:** return all candidates (`used` true/false); default rule = highest population overlap; allow client to pin.
-- **Packaging:** any packaged OPPS items appear as lines with `packaged=true` and `$0` separate payment; rolled into parent line for totals.
+### 2. Concurrency, Deletion & Safety
+| Constraint | Policy |
+| :--- | :--- |
+| Concurrency Guard | `PATCH` requires `If-Match: <version>`; mismatch ⇒ 409 `CONCURRENCY_VIOLATION`. |
+| Idempotency Conflict | Re-using an `Idempotency-Key` with a different payload ⇒ 409 `IDEMPOTENCY_CONFLICT`. |
+| Idempotency Window | 24 hours per tenant/endpoint. |
+| Deletion Mode | Not available in MVP (future soft delete, 6-year retention). |
+| Deletion Retention | N/A until delete ships. |
 
----
+### 3. Validation & Invariants
+| Type | Policy |
+| :--- | :--- |
+| Required Fields | `name`, ≥1 `components[]` each with `code`, `setting`, `units`. |
+| Uniqueness | `(tenant_id, external_plan_ref)` unique when provided. |
+| Immutable Fields | `tenant_id`, `created_by`, `created_at`, `external_plan_ref`. |
+| Max Cardinality | `components[]` ≤ 200; `modifiers[]` ≤ 5 per component. |
+| Field Sanitization | Trim strings, lowercase payer IDs, UTC timestamps. |
+| FK Constraints | Component codes must exist in catalog; violations emit `400 PLAN_VALIDATION_ERROR`. |
+| State Machine | `status`: `DRAFT → READY → ACTIVE`; `ACTIVE` cannot revert to `DRAFT`. |
 
-## 13) Facility‑Specific Pricing via CCN
-- On `ccn` input, attempt MRF pull for relevant HCPCS/DRG/Rev‑code subsets.  
-- If found, return **facility tech** amount and benchmark side-by-side; set `facility_specific=true` and cite **MRF dataset** in trace.  
-- If not found, fallback to benchmark and set `facility_specific_unavailable=true` with reason.
+### 4. Authorization & Filtering
+| Operation | Required Role(s) | Default Filtering |
+| :--- | :--- | :--- |
+| CREATE | `pricing:plans.write` | Auto-populate `tenant_id` from auth context. |
+| READ/LIST | `pricing:plans.read` | Auto-filter by `tenant_id`; cross-tenant access forbidden. |
+| UPDATE | `pricing:plans.write` (admin bypass state checks) | Payload `tenant_id` must match token. |
+| DELETE | — | — |
 
----
+### 5. Audit & Observability
+| Type | Policy |
+| :--- | :--- |
+| Domain Events | Emit `plan.created`, `plan.updated`, `plan.status_changed`. |
+| Audit Fields | `created_at/by`, `updated_at/by`, `version`; future `deleted_*` fields. |
+| Tracing Link | Correlate `trace_id`/`span_id`; surface in response trace block. |
+| Metrics | CRUD request count, latency, error rate (labelled by operation). |
 
-## 14) Roadmap & Milestones
-**MVP (4–6 weeks)**
-- MPFS, OPPS, ASC, CLFS, DMEPOS, ASP, NADAC (read-only), IPPS baseline.  
-- ZIP resolver; beneficiary math; plan CRUD; trace; compare A vs B; **/compare/providers** matrix.
-- **Temporal Resolution** per‑dataset logic (latest ≤ valuation date) + quarter/digest pinning.
-- **Geography fallback** w/ radius expansion to 100 miles (configurable).
-- **Provider Registry** (IDs + fuzzy matching + manual override).  
-- Independent provider CSV loader with auto‑mapping + raw column preserve.
+### 6. Non-CRUD Actions (Commands)
+| Command | Purpose / Triggers |
+| :--- | :--- |
+| `POST /plans/{plan_id}:publish` | Promote plan from `READY` → `ACTIVE` after validations. |
+| `POST /plans/{plan_id}:clone` *(roadmap)* | Duplicate composition into new draft. |
 
-**v1**
-- MRF facility pricing (selected CCNs) with caching; NCCI edit enforcement; OPPS packaging completeness.  
-- Enhanced IPPS add‑ons; anesthesia base+time.  
-- **Medicaid FFS scaffolding** (start with **Texas**; add state & nationwide defaults upload).
-
-**v2**
-- **MCO TiC parsing API** (varied formats like `.json.gz`, etc.) with flexible readers and caching.  
-- Payer TiC MRF parsing (select payers); additional state Medicaid schedules.  
-- Advanced scenario UI (sensitivity sliders), cohort‑weighted mixes.  
-- “Top‑50 default multiplier” computation (12‑month lookback; plan mix → else state spend; sources: Hospital MRF → Payer TiC → CSV/value).
-
-## 15) Risks & Mitigations
-- **MRF variability/size:** parse by CCN+code whitelist; cache; expose coverage % and fallback flags.
-- **Time misalignment:** enforce valuation date parity across datasets; trace shows versions per line.
-- **Double counting (TC vs facility):** validator rules and status indicators; fail fast on conflicts.
-- **Drugs unit errors:** dual‑key model with explicit converters; show both HCPCS and NDC math in trace.
-- **ZIP ambiguity:** require pinning for compares when ambiguity is material.
-- **Licensing (CPT®):** store HCPCS freely; do not distribute CPT content without AMA license.
-
----
-
-## 16) Acceptance Criteria (examples)
-1. **Pricing parity:** For a curated set of 50 CPT/HCPCS across 3 localities, API allowed amounts exactly match CMS reference within ≤1%.
-2. **Comparison guardrails:** `/compare` rejects requests where snapshots differ; returns explicit parity report when accepted.
-3. **Trace completeness:** Every `/price` response includes dataset IDs, effective dates, and formulas; a rerun with `run_id` reproduces identical totals.
-4. **ZIP ambiguity:** `/geography/resolve?zip=73301` returns ≥2 MPFS localities with `used` flags; `/price` echoes the choice.
-5. **Facility override:** Passing `ccn` with an available MRF toggles `facility_specific=true` and shows both benchmark and facility amounts.
-6. **Drug dual-key:** A Part B J‑code line shows Part B allowed, and—if NDC provided—NADAC reference with unit conversion trace.
-
----
-
-## 17) Open Questions
-- Default rule for allocating IPPS Part A deductible across line items (proportional to allowed vs fixed to the DRG line only)?
-- Should we expose a **policy toggles** endpoint to set sequestration ON/OFF per run?  
-- What threshold of ZIP ambiguity triggers `requires_resolution=true` (e.g., >20% split)?
-
----
-
-## 18) Appendix — Loader Schemas (expected columns)
-- **MPFS RVU:** `hcpcs, work_rvu, pe_nf_rvu, pe_fac_rvu, mp_rvu, global_days, status_indicator` (+ `year, revision` added).
-- **GPCI:** `locality, locality_name, gpci_work, gpci_pe, gpci_mp, year`.
-- **CF:** `year, cf, source, effective_from, effective_to`.
-- **OPPS:** `year, quarter, hcpcs, status_indicator, apc, national_unadj_rate, packaging_flag`; `wage_index(year, cbsa, wage_index)`.
-- **ASC:** `year, quarter, hcpcs, asc_rate`.
-- **IPPS:** `fy, drg, weight`; `ipps_base_rates(fy, operating_base, capital_base)`; `wage_index(fy(or year), cbsa, wage_index)`.
-- **CLFS:** `year, quarter, hcpcs, fee`.
-- **DMEPOS:** `year, quarter, code, rural_flag, fee`.
-- **ASP:** `year, quarter, hcpcs, asp_per_unit`; **NADAC:** `as_of, ndc11, unit_price`; **NDC↔HCPCS:** `ndc11, hcpcs, units_per_hcpcs`.
-- **Geography:** `zip5, locality_id, share`; `zip5, cbsa, share`.
-- **Benefits:** `year, setting, rules_json` (Part A/B deductibles, caps, percentages).
-
----
-
-## 19) Example Requests & Responses
-
-### Example: Price a plan with OPPS cap defaulting to Part A deductible
-**Request**
-```http
-POST /price?zip=94110&year=2025
-Content-Type: application/json
-
-{
-  "plan": {
-    "plan_id": "knee_bundle",
-    "components": [
-      {"code": "27447", "setting": "ASC", "units": 1, "professional_component": true},
-      {"code": "66984", "setting": "HOPD", "units": 1},
-      {"code": "J0171", "setting": "DRUG_PARTB", "units": 10}
-    ]
-  },
-  "benefit_params": {
-    "part_b": {"annual_deductible_amount": 240, "coinsurance_rate": 0.2},
-    "part_a": {"inpatient_deductible_amount": 1632, "deductible_allocation": "parent"},
-    "opps": {"apply_cap": true, "coinsurance_cap_per_service": null},
-    "policy_toggles": {"apply_sequestration": false, "sequestration_rate": 0.02}
-  }
-}
-```
-
-**Response (shape)**
-```json
-{
-  "total_allowed": 12345.67,
-  "lines": [
-    { "code": "66984", "setting": "HOPD", "allowed": 5200.00, "components": {"facility": 5200.00},
-      "beneficiary": {"deductible": 240.00, "coinsurance": 104.00, "total": 344.00, "opps_cap_applied": true, "opps_cap_amount": 1632.00 } },
-    { "code": "27447", "setting": "ASC", "allowed": 2200.00, "components": {"facility": 1200.00, "professional": 1000.00},
-      "beneficiary": {"deductible": 0.00, "coinsurance": 440.00, "total": 440.00 } },
-    { "code": "J0171", "setting": "DRUG_PARTB", "allowed": 1000.00, "components": {"allowed": 1000.00},
-      "beneficiary": {"deductible": 0.00, "coinsurance": 200.00, "total": 200.00 } }
-  ],
-  "benefits": {"remaining_part_b_deductible": 0.00},
-  "geo": {"zip5": "94110", "locality_id": "...", "cbsa": "...", "is_rural_dmepos": false},
-  "trace": {"datasets": [...], "notes": ["OPPS packaged ...", "DMEPOS rural status inferred by heuristic (no CBSA)"]}
-}
-```
-
-### Example: Sequestration ON (field only appears when enabled)
-Set `benefit_params.policy_toggles.apply_sequestration=true`.
-Each line will additionally include:
-```json
-{ "program_payment_after_sequestration": 3872.00 }
-```
-
-### Example: Compare two locations (A vs B)
-**Request**
-```http
-POST /compare?zip_a=94110&zip_b=77030&year=2025&payer=ExamplePayer&plan_filter=Commercial%20PPO
-Content-Type: application/json
-
-{
-  "plan": {
-    "plan_id": "knee_bundle",
-    "components": [
-      {"code": "27447", "setting": "ASC", "units": 1, "professional_component": true},
-      {"code": "66984", "setting": "HOPD", "units": 1}
-    ]
-  },
-  "benefit_params": {
-    "part_b": {"annual_deductible_amount": 240, "coinsurance_rate": 0.2},
-    "part_a": {"inpatient_deductible_amount": 1632, "deductible_allocation": "parent"},
-    "opps": {"apply_cap": true, "coinsurance_cap_per_service": null},
-    "policy_toggles": {"apply_sequestration": false, "sequestration_rate": 0.02}
-  }
-}
-```
-
-**Response (shape)**
-```json
-{
-  "status": "ok",
-  "year": 2025,
-  "quarter": null,
-  "payer": "ExamplePayer",
-  "plan_filter": "Commercial PPO",
-  "A": { "zip": "94110", "ccn": null, "result": { "total_allowed": 7400.00, "lines": [...], "trace": {...}, "geo": {...} } },
-  "B": { "zip": "77030", "ccn": null, "result": { "total_allowed": 7800.00, "lines": [...], "trace": {...}, "geo": {...} } },
-  "delta_total_allowed_B_minus_A": 400.00
-}
-```
-
-### Example: Compare N providers in one request (matrix)
-**Request**
-```http
-POST /compare/providers?zip=94110&year=2025
-Content-Type: application/json
-
-{
-  "plan": { "plan_id": "tka" },
-  "providers": [
-    {"label": "Medicare", "source": "medicare"},
-    {"label": "Medicaid (TX FFS)", "source": "medicaid", "medicaid_source": "ffs", "state": "TX"},
-    {"label": "Hospital A", "source": "hospital_mrf", "ccn": "450123", "payer": "ExamplePayer", "plan_filter": "PPO"},
-    {"label": "Independent Ortho", "source": "independent_csv", "provider_id": "prov-abc", "fallback_multiplier": 2.25}
-  ],
-  "benefit_params": {"part_b": {"annual_deductible_amount": 240, "coinsurance_rate": 0.2}},
-  "options": {"use_provider_zip": false, "max_radius_miles": 100}
-}
-```
-
-**Response (shape)**
-```json
-{
-  "matrix": {
-    "rows": [
-      {"code": "27447", "setting": "ASC", "Medicare": 2200.00, "Medicaid (TX FFS)": 1800.00, "Hospital A": 5400.00, "Independent Ortho": 4950.00, "winner": "Medicaid (TX FFS)"},
-      {"code": "J0171", "setting": "DRUG_PARTB", "Medicare": 1000.00, "Medicaid (TX FFS)": 950.00, "Hospital A": 2250.00, "Independent Ortho": 2000.00, "winner": "Medicaid (TX FFS)"}
-    ],
-    "totals": {"Medicare": 3200.00, "Medicaid (TX FFS)": 2750.00, "Hospital A": 7650.00, "Independent Ortho": 6950.00, "winner": "Medicaid (TX FFS)"}
-  },
-  "coverage_summary": {
-    "Hospital A": {"mrf_pct": 80.0, "tic_pct": 10.0, "fallback_pct": 10.0},
-    "Independent Ortho": {"csv_pct": 60.0, "fallback_pct": 40.0}
-  },
-  "trace": {"notes": ["Same ZIP used for all providers", "Fallback multiplier 2.25× used for 1 line (Independent Ortho)"]}
-}
-```
-
----
+### 7. API Error Catalog (Examples)
+| HTTP Status | Custom Code | Description |
+| :--- | :--- | :--- |
+| 400 | `PLAN_VALIDATION_ERROR` | Schema or invariant failure. |
+| 401 | `AUTH_INVALID_KEY` | Missing/invalid API key. |
+| 403 | `ACCESS_DENIED` | Caller lacks required scope. |
+| 404 | `PLAN_NOT_FOUND` | Plan ID not found for tenant. |
+| 409 | `CONCURRENCY_VIOLATION` | `If-Match` version mismatch. |
+| 409 | `IDEMPOTENCY_CONFLICT` | Reused idempotency key with different payload. |
+| 422 | `STATE_VIOLATION` | Illegal state transition. |
+| 503 | `UPSTREAM_UNAVAILABLE` | Dependency failure. |
+| 500 | `SYSTEM_ERROR` | Unhandled exception (trace ID logged). |
 
 
-## Changelog (recent)
-**2025-09-25**
-- Added **Beneficiary Cost Sharing & Policy Toggles** section.
-- Updated **API Endpoints (MVP)** for `POST /price` with `benefit_params`; added `POST /compare` and **`POST /compare/providers`**.
-- Added **Examples** for pricing, sequestration, A vs B, and **multi-provider matrix**.
-- Added **Temporal Resolution** algorithm and **Geography Fallback Policy** (radius expansion up to **100 miles**).
-- Added **Data Model** entries for **Provider Registry** and **Independent Provider Rates**.
-- Roadmap updated: **Medicaid FFS scaffolding** (start with **Texas**); future **MCO TiC parsing API** supporting `.json.gz` and other formats.
-
-
-## 3) Architecture & Deployment
-- **Language:** Python **3.11** (CI covers 3.11 & 3.12; runtime pinned to 3.11 for MVP).
-- **Framework:** FastAPI + Pydantic v2 + Uvicorn/Gunicorn.
-- **Persistence:** PostgreSQL (prod/MVP service), SQLite (dev/tests). Optional DuckDB for offline analytics.
-- **DB layer:** SQLAlchemy 2.x (Core for heavy ingest; ORM for app models). Alembic for migrations.
-- **Containers:** Multi‑stage Docker build; `docker-compose` with `api` + `db` (+ optional `worker`). Cloud‑agnostic image for ECS/EKS/GKE/Cloud Run.
-- **Config (env):** `DATABASE_URL`, `API_KEYS`, `MAX_PROVIDERS`, `MAX_RADIUS_MILES`, `DEFAULT_FALLBACK_MULTIPLIER` (2.25), `RETENTION_MONTHS` (13).
-- **Auth:** Require API key via header `X-API-Key`. Basic per‑key rate limiting recommended.
-- **Money precision:** return **integer cents** by default; optional `?format=decimal` adds doubles. Include `{currency:"USD", scale:2}`.
-- **Licensing/Compliance:** No distribution of CPT®. We store and ship **HCPCS/DRG/APC** only. If users upload CPT, treat as user-supplied; optional private crosswalk behind a flag.
-
-## Changelog (recent)
-**2025-09-25**
-- Added **Architecture & Deployment** section (Python 3.11; FastAPI/Pydantic v2; Postgres prod, SQLite dev; SQLAlchemy 2.x; Dockerized; API key auth; money in integer cents; licensing constraints).
-- Expanded **Data Model** with `runs/*` tables for persisted traces and enriched `plan_components` fields (`pos`, `ndc11`, `ndc_units`, `assume_facility_component`, `fallback_multiplier`, `wastage_units`, `label`, `source_prefs`).
-- Updated **API Endpoints**: `/plans` pagination (default 20, max 200), return **run_id** from pricing endpoints, and money fields in **cents** with optional decimal format.
-
-
-## 20) Success Metrics & Testing
-### Functional success
-- **Cent‑level parity** on golden tests: ≥ **98%** of lines match exactly; remaining within **±1 cent** (known rounding cases only).
-- **Trace completeness:** 100% of runs include dataset digests, temporal selection reason, geo fallback notes, and source precedence per line.
-
-### Performance SLOs (MVP)
-- **Warm requests (10‑line plan):** p95 **< 250 ms**.
-- **Cold start (no cache):** p95 **< 1200 ms**.
-- **Throughput target:** 50–100 RPS on 4 vCPU VM.
-
-### Cache targets
-- **In‑memory cache hit ratio:** ≥ **0.80** during steady state.
-- **Disk cache hit ratio (if enabled):** ≥ **0.60** after warmup.
-- **Slice build time (p95):** **< 150 ms** for common filters.
-
-### Test strategy
-- **Golden suite:** 50 HCPCS across 3 MPFS localities + 2 OPPS quarters; includes E/M, imaging, surgery, lab, DME, Part B drugs; modifiers: `-26`, `-TC`, `-50`, multiple‑procedure discount cases.
-- **Unit tests:** dataset selection (digest/quarter/latest), geo fallback expansion, beneficiary math (Part B + OPPS cap), sequestration flag behavior.
-- **Endpoint tests:** `/price`, `/compare`, `/compare/providers`, `/trace/{run_id}`, `/admin/datasets` (RBAC).
-- **Load tests:** baseline with cached datasets; monitor p95 + error rate < **0.1%**.
-
-### Observability
-- **Logs:** `structlog` JSON with `request_id`, `run_id`, digests, decisions per line; redaction for user identifiers.
-- **Metrics:** Prometheus `/metrics` exposing request counts/latency histograms, cache hits, dataset selection, packaging counters, modifier counters.
-- **Health:** `/healthz` (liveness) and `/readyz` (DB + required snapshots present + cache writable).
-
-### QA Summary (per QA & Testing Standard v1.0)
-| Item | Details |
-| --- | --- |
-| **Scope & Ownership** | CMS treatment plan pricing & comparison API; owned by Pricing Apps squad with QA partner from Quality Engineering; stakeholders include Product Strategy, Provider Ops, and external clients. |
-| **Test Tiers & Coverage** | Unit/component: `tests/test_plans.py` (pricing math, modifiers, beneficiary cost sharing); Contract/API: `tests/test_rvu_api_contracts.py` verifies payload + schema; Integration: `tests/test_geography_resolver.py` + `tests/test_nearest_zip_resolver.py` exercised via API harness; Scenario/E2E: golden run comparisons in `tests/test_plans.py::test_golden_pricing`. Coverage currently 78% (target ≥85% for API layer) tracked in CI coverage report. |
-| **Fixtures & Baselines** | Golden treatment plans + expected outputs stored in `tests/golden/test_scenarios.jsonl`; RVU/GPCI fixtures under `tests/fixtures/rvu/`; API response baselines tracked in QA dashboards with digests logged alongside release notes. |
-| **Quality Gates** | Merge pipeline executes unit + contract tests (fails on coverage regression >0.5%); `ci-integration.yaml` runs API end-to-end suites against docker-compose; release gating requires passing load harness + acceptance checklist in §16. |
-| **Production Monitors** | Synthetic `/price` + `/compare` probes every 5 min; Prometheus latency/error alerts aligned with SLOs above; dataset freshness monitor ensures backing snapshots ≤ 10 days old. |
-| **Manual QA** | Pre-release review of multi-provider matrix outputs; manual validation of trace payloads for new modifiers; compliance check for licensing toggles before external enablement. |
-| **Outstanding Risks / TODO** | Expand load/SLO automation (per Test strategy); backfill Medicaid comparators coverage; finalize RBAC smoke for `/admin/datasets` before GA. |

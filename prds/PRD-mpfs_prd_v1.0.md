@@ -1,5 +1,16 @@
 # PRD: MPFS Ingest (RVU / GPCI / CF / Indicators)
 
+**Status:** Draft v1.0  
+**Owners:** Pricing Platform Product & Engineering  
+**Consumers:** Data Engineering, Pricing API, Analytics, Ops  
+**Change control:** ADR + PR review
+
+**Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-qa-testing_prd_v1.0:** Testing requirements for MPFS ingestion
+- **REF-nearest-zip-resolver_prd_v1.0.md:** ZIP resolver for geography mapping
+
 ## Objective  
 Persist the full Medicare Physician Fee Schedule (MPFS) inputs — RVUs, policy/status indicators, Localities & GPCIs, and annual Conversion Factors — to support downstream **network + price + access** and analytics use cases. The ingester stores everything; **no price math in-ingest** (computation lives downstream).
 
@@ -80,4 +91,3 @@ Persist the full Medicare Physician Fee Schedule (MPFS) inputs — RVUs, policy/
 - Add flags / override logic for geographic floors (e.g. PE floor)  
 - Site-neutral analytics via joining into OPPS data  
 - Support retroactive updates or corrections (CMS errata)  
-

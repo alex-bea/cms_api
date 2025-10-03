@@ -1,5 +1,16 @@
 # Product Requirements — RVU Ingestor (PPRRVU, GPCI, OPPSCAP, ANES, Locality) — Draft v0.2
 
+**Status:** Draft v0.2  
+**Owners:** Pricing Platform Product & Engineering  
+**Consumers:** Data Engineering, Pricing API, Compliance, Ops  
+**Change control:** ADR + PR review
+
+**Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-scraper_prd_v1.0:** Scraper requirements for RVU data discovery
+- **STD-qa-testing_prd_v1.0:** Testing requirements for RVU ingestion
+
 > Owner: TBD  •  Approver(s): TBD  •  Stakeholders: Eng, Data, Ops, Compliance, QA  •  Last updated: {{today}}
 
 ---

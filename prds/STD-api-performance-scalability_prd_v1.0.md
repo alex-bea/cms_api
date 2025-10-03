@@ -9,6 +9,7 @@ This document defines the **API Performance & Scalability Standard** for the CMS
 **Change control:** ADR + Architecture Board review  
 
 **Cross-References:**
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
 - **STD-api-architecture_prd_v1.0:** Layer architecture and performance budgets
 - **STD-observability-monitoring_prd_v1.0:** Performance monitoring and alerting
 - **STD-api-security-and-auth_prd_v1.0:** Rate limiting and security performance impact

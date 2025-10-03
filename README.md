@@ -366,9 +366,9 @@ This project follows comprehensive Product Requirements Documents (PRDs) that de
 
 ### Blueprints & Implementation Packs
 
-- **[Geography Mapping Implementation Pack](prds/BP-geography-mapping-cursor_prd_v1.0.md)**: Comprehensive geography service implementation including ingestion, resolver, and operations with ZIP+4-first mandate.
+- **[Geography Mapping Implementation Pack](prds/REF-geography-mapping-cursor_prd_v1.0.md)**: Comprehensive geography service implementation including ingestion, resolver, and operations with ZIP+4-first mandate.
 
-- **[Nearest ZIP Resolver Implementation Pack](prds/BP-nearest-zip-resolver_prd_v1.0.md)**: State-constrained nearest ZIP lookup algorithm with Haversine distance calculation and PO Box filtering.
+- **[Nearest ZIP Resolver Implementation Pack](prds/REF-nearest-zip-resolver_prd_v1.0.md)**: State-constrained nearest ZIP lookup algorithm with Haversine distance calculation and PO Box filtering.
 
 ### Product & Dataset PRDs
 
