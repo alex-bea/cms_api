@@ -27,7 +27,7 @@ Change control: ADR + Data Architecture Board sign-off
 - **Classification:** Public CMS release (Internal handling for enriched wage-index view)  
 - **License & Attribution:** CMS OPPS Addenda (public domain); CPT® descriptors require AMA license—suppress externally until executed  
 - **Data Owner / Steward:** Platform & Data Engineering (primary), Medicare SME (data steward)  
-- **Downstream Visibility:** Curated outputs remain Internal; external publication requires compliance review per **API-STD-Architecture_prd_v1.0.md**
+- **Downstream Visibility:** Curated outputs remain Internal; external publication requires compliance review per **STD-api-architecture-prd-v1.0.md**
 
 ## Ingestion Summary (DIS v1.0)
 - **Sources & Cadence:** OPPS Addendum A/B quarterly ZIP bundles, I/OCE quarterly edits, HCPCS quarterly updates, annual IPPS wage index reference  
