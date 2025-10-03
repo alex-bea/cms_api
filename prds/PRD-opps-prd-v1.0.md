@@ -18,10 +18,33 @@ Change control: ADR + Data Architecture Board sign-off
 
 **Cross-References:**
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
-- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-scraper-prd-v1.0:** Scraper requirements for OPPS data discovery
-- **STD-api-security-and-auth-prd-v1.0:** Security requirements for OPPS data access
+- **STD-data-architecture-prd-v1.0.md:** Data ingestion lifecycle and storage patterns
+- **STD-scraper-prd-v1.0.md:** Scraper requirements for OPPS data discovery
+- **STD-api-security-and-auth-prd-v1.0.md:** Security requirements for OPPS data access
 - **REF-geography-mapping-cursor-prd-v1.0.md:** Geography mapping for OPPS localities
+
+## Data Classification & Stewardship
+- **Classification:** Public CMS release (Internal handling for enriched wage-index view)  
+- **License & Attribution:** CMS OPPS Addenda (public domain); CPT® descriptors require AMA license—suppress externally until executed  
+- **Data Owner / Steward:** Platform & Data Engineering (primary), Medicare SME (data steward)  
+- **Downstream Visibility:** Curated outputs remain Internal; external publication requires compliance review per **API-STD-Architecture_prd_v1.0.md**
+
+## Ingestion Summary (DIS v1.0)
+- **Sources & Cadence:** OPPS Addendum A/B quarterly ZIP bundles, I/OCE quarterly edits, HCPCS quarterly updates, annual IPPS wage index reference  
+- **Schema Contracts:** `cms_pricing/ingestion/contracts/cms_opps_v1.0.json` (rates) and `cms_opps_si_lookup_v1.0.json` (status indicator crosswalk); contract version pinned per release  
+- **Landing Layout:** `/raw/opps/{release_id}/files/*` + `manifest.json` capturing `source_url`, `sha256`, `size_bytes`, `license`, `release_notes_url`, `fetched_at`  
+- **Natural Keys & Partitioning:** Rates keyed by `(valuation_year, quarter, apc)`; crosswalk keyed by `(valuation_year, quarter, hcpcs, modifier)`; curated snapshots partitioned by `quarter_start` (`vintage_date`)  
+- **Validations & Gates:** Structural (required files/headers), schema contract enforcement, HCPCS existence vs HCPCS update file, APC/SI domain checks, wage-index join coverage ≥ 99%, delta tolerances ±2% row drift  
+- **Quarantine Policy:** Any rule failure quarantines offending rows under `/stage/opps/{release_id}/reject/` with `error_code`, `error_msg`, and sample payload—publish blocks on >0 critical errors  
+- **Enrichment & Crosswalks:** CCN→CBSA→wage index join via `ref_geography` tables; tie-breakers prefer latest CMS crosswalk and raise warning when multiple CBSA candidates exist  
+- **Outputs:** `/curated/opps/{vintage}/opps_apc_payment.parquet`, `/curated/opps/{vintage}/opps_hcpcs_crosswalk.parquet`, and enriched materialized view `opps_rates_enriched` with wage index multipliers  
+- **SLAs:** Land + publish within ≤5 business days of CMS posting; historical backfills honor same validations; digests recorded in manifest for reproducibility  
+- **Deviations:** None—ingester is required to remain DIS-compliant; any exceptions require ADR and update to this section
+
+## API Readiness & Distribution
+- **Curated Views:** `opps_rates_enriched` and `opps_hcpcs_crosswalk_latest` expose Latest-Effective semantics keyed by `valuation_date`  
+- **Digest Pinning:** APIs must honor `X-Dataset-Digest` or `?digest=` aligned with `/curated` manifests  
+- **Access Controls:** Internal APIs require service-to-service auth (per **STD-api-security-and-auth-prd-v1.0.md**); no unauthenticated distribution of CPT descriptors until licensing complete
 
 ⸻
 
@@ -204,10 +227,10 @@ Change Log
 ⸻
 
 Cross-References
-	•	DIS PRD: ingestion stages, manifests, quarantine, lineage.
-	•	STD-qa-testing-prd-v1.0: test tiers, fixtures, CI gates.
-	•	Scraper Standard: discovery, throttling, checksum/idempotency.
-	•	STD-api-architecture-prd-v1.0: Optional API (deferred/derived):
+	•	STD-data-architecture-prd-v1.0.md: ingestion stages, manifests, quarantine, lineage.
+	•	STD-qa-testing-prd-v1.0.md: test tiers, fixtures, CI gates.
+	•	STD-scraper-prd-v1.0.md: discovery, throttling, checksum/idempotency.
+	•	STD-api-architecture-prd-v1.0.md: Optional API (deferred/derived):
 
 Optional API (Deferred / Derived Layer — DIS-Aligned)
 	•	Treat APIs as interfaces over curated data; responses include batch_id/published_at to bind to data vintage.

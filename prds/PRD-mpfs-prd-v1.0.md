@@ -7,9 +7,32 @@
 
 **Cross-References:**
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
-- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-qa-testing-prd-v1.0:** Testing requirements for MPFS ingestion
+- **STD-data-architecture-prd-v1.0.md:** Data ingestion lifecycle and storage patterns
+- **STD-qa-testing-prd-v1.0.md:** Testing requirements for MPFS ingestion
 - **REF-nearest-zip-resolver-prd-v1.0.md:** ZIP resolver for geography mapping
+
+## Data Classification & Stewardship
+- **Classification:** Public CMS release (Internal derived metrics and aggregations)  
+- **License & Attribution:** CMS MPFS files (public domain); include CMS citation in manifests and curated docs  
+- **Data Owner / Steward:** Pricing Platform Product (product owner), Data Engineering (technical steward)  
+- **Downstream Visibility:** Curated tables are Internal; external pricing surfaces must pass compliance review and mask non-public enrichments
+
+## Ingestion Summary (DIS v1.0)
+- **Sources & Cadence:** Quarterly RVU A/B/C/D files, annual Locality & GPCI tables, annual Conversion Factor notices, CMS abstracts/policy files  
+- **Schema Contracts:** `cms_pricing/ingestion/contracts/cms_pprrvu_v1.0.json`, `cms_gpci_v1.0.json`, `cms_localitycounty_v1.0.json`, `cms_anescf_v1.0.json`; versions pinned in manifests  
+- **Landing Layout:** `/raw/mpfs/{release_id}/files/*` with `manifest.json` recording `source_url`, `fetched_at`, `release_id`, `sha256`, `license`, `notes_url`  
+- **Natural Keys & Partitioning:** RVU tables keyed by `(hcpcs, modifier, quarter_vintage)`; locality/GPCI keyed by `(carrier_id, locality_code, valuation_year)`; curated snapshots partitioned by `vintage_date`  
+- **Validations & Gates:** Structural (required files), schema contract enforcement, HCPCS format and effective-dating checks, indicator completeness, locality/GPCI join coverage ≥99.5%, quarter-over-quarter diff thresholds (±1% row drift)  
+- **Quarantine Policy:** Failed records land in `/stage/mpfs/{release_id}/reject/` with rule code + payload; publish blocks on any critical errors or missing quarters  
+- **Enrichment & Crosswalks:** Join to ZIP→Locality resolver for analytics keys; compute effective windows using valuation quarter and CMS effective_from metadata  
+- **Outputs:** `/curated/mpfs/{vintage}/mpfs_rvu.parquet`, `mpfs_indicators_all.parquet`, `mpfs_locality.parquet`, `mpfs_gpci.parquet`, `mpfs_cf_vintage.parquet`, plus latest-effective views for API usage  
+- **SLAs:** Land + publish ≤7 business days from CMS posting; manifest digests recorded; backfills re-run through identical validations  
+- **Deviations:** None; any exceptions require ADR and update to this summary
+
+## API Readiness & Distribution
+- **Curated Views:** `mpfs_rvu_latest`, `mpfs_gpci_latest`, and `mpfs_cf_current` provide Latest-Effective semantics for pricing services  
+- **Digest Pinning:** APIs must accept `X-Dataset-Digest` / `?digest` matching curated manifest digests  
+- **Access Controls:** Internal APIs behind token-based auth per **STD-api-security-and-auth-prd-v1.0.md**; pricing outputs include attribution if surfaced externally
 
 ## Objective  
 Persist the full Medicare Physician Fee Schedule (MPFS) inputs — RVUs, policy/status indicators, Localities & GPCIs, and annual Conversion Factors — to support downstream **network + price + access** and analytics use cases. The ingester stores everything; **no price math in-ingest** (computation lives downstream).

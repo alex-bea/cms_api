@@ -7,9 +7,32 @@
 
 **Cross-References:**
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
-- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-scraper-prd-v1.0:** Scraper requirements for RVU data discovery
-- **STD-qa-testing-prd-v1.0:** Testing requirements for RVU ingestion
+- **STD-data-architecture-prd-v1.0.md:** Data ingestion lifecycle and storage patterns
+- **STD-scraper-prd-v1.0.md:** Scraper requirements for RVU data discovery
+- **STD-qa-testing-prd-v1.0.md:** Testing requirements for RVU ingestion
+
+## Data Classification & Stewardship
+- **Classification:** Public CMS release (Internal for enriched analytics outputs)  
+- **License & Attribution:** CMS RVU/GPCI/OPPSCAP/ANES publications (public domain); maintain CMS citation in manifests and curated docs  
+- **Data Owner / Steward:** Pricing Platform Product (owner), Data Engineering (technical steward)  
+- **Distribution Policy:** External publication requires compliance + legal review, especially where CPT® descriptors appear
+
+## Ingestion Summary (DIS v1.0)
+- **Sources & Cadence:** Quarterly PPRRVU bundles (A/B/C/D + corrections), annual GPCI, annual OPPS-based caps, annual ANES conversion factors, locality-to-county crosswalk; authoritative layout PDFs accompany each release  
+- **Schema Contracts:** `cms_pricing/ingestion/contracts/cms_pprrvu_v1.0.json`, `cms_oppscap_v1.0.json`, `cms_gpci_v1.0.json`, `cms_anescf_v1.0.json`, `cms_localitycounty_v1.0.json`  
+- **Landing Layout:** `/raw/rvu/{release_id}/files/*` with DIS-compliant `manifest.json` capturing source URLs, SHA256, size, license, release notes, and fetched timestamp  
+- **Natural Keys & Partitioning:** RVU keyed by `(hcpcs, modifier, effective_from)`; GPCI keyed by `(valuation_year, locality_id)`; OPPSCAP keyed by `(hcpcs, modifier, locality_id)`; curated partitions by `vintage_date` and dataset type  
+- **Validations & Gates:** Structural & schema validation, authoritative layout enforcement, decimal precision checks, policy indicator enumerations, locality/GPCI coverage ≥99.5%, delta comparisons vs prior release, recomputed payment parity smoke tests  
+- **Quarantine Policy:** Rule failures routed to `/stage/rvu/{release_id}/reject/` with error metadata; publish blocked on critical issues and missing effective dating  
+- **Enrichment & Crosswalks:** Locality-to-county mapping to support ZIP pricing; calculate effective ranges using CMS notes; maintain release lineage via `release_id` + `published_at`  
+- **Outputs:** `/curated/rvu/{vintage}` parquet tables for RVU, GPCI, OPPSCAP, ANES, and locality crosswalk plus latest-effective warehouse views `vw_rvu_current`, `vw_gpci_current`  
+- **SLAs:** Land within 2 business days of CMS release; publish within 5 business days; all manifests record dataset digest for reproducibility  
+- **Deviations:** None currently; exceptions require ADR and PRD update
+
+## API Readiness & Distribution
+- **Warehouse Views:** `vw_rvu_current`, `vw_gpci_current`, `vw_opps_cap_current`, `vw_anes_cf_current`, `vw_locality_county_current` follow Latest-Effective semantics  
+- **Digest Pinning:** APIs consume `X-Dataset-Digest` / `?digest` aligned to curated manifests  
+- **Security:** Follow **STD-api-security-and-auth-prd-v1.0.md** for token-based access; suppress CPT descriptors if license not finalized
 
 > Owner: TBD  •  Approver(s): TBD  •  Stakeholders: Eng, Data, Ops, Compliance, QA  •  Last updated: {{today}}
 
@@ -185,7 +208,7 @@ We ingest these artifacts each cycle (A/B/C/D + potential AR corrections). This 
 ---
 
 ## 9) Interfaces
-API contracts exposed from this pack must follow the **STD-api-architecture-prd-v1.0** for versioning and lifecycle.
+API contracts exposed from this pack must follow the **STD-api-architecture-prd-v1.0.md** for versioning and lifecycle.
 ### 9.1 Warehouse Views
 - `vw_rvu_current(date)` → latest RVUs (by HCPCS/modifier) effective on `date`.
 - `vw_gpci_current(date)` → locality GPCIs effective on `date`.

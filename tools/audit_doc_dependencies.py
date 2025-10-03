@@ -5,11 +5,17 @@ from __future__ import annotations
 
 import re
 import sys
-from pathlib import Path
 from typing import Dict, Set
 
-MASTER = Path("prds/DOC-master-catalog_prd_v1.0.md")
-TABLE_PATTERN = re.compile(r"^\| `([A-Z]{3}-[a-z0-9\-]+)_prd_v[0-9]+\.[0-9]+\.md`")
+from tools.shared.logging_utils import (
+    AuditIssue,
+    count_by_severity,
+    emit_issues,
+    exit_code_from_issues,
+    get_logger,
+)
+from tools.shared.prd_helpers import MASTER_DOC_NAME, read_master_catalog
+
 MERMAID_BLOCK = re.compile(r"```mermaid\n(.*?)\n```", re.DOTALL)
 NODE_PATTERN = re.compile(r"\[(.*?)\]")
 
@@ -40,7 +46,7 @@ def parse_tables(text: str) -> Dict[str, Set[str]]:
             cells = [cell.strip() for cell in line.strip().split("|")]
             if len(cells) >= 2 and cells[1].startswith("`"):
                 name = cells[1].strip("` ")
-                base = name.split("_prd_", 1)[0]
+                base = name.split("-prd-", 1)[0]
                 sections[current].add(base)
     return sections
 
@@ -64,7 +70,7 @@ def parse_graph_nodes(text: str) -> Dict[str, Set[str]]:
         match = NODE_PATTERN.search(line)
         if match and current:
             name = match.group(1)
-            name = name.split("_prd", 1)[0]
+            name = name.split("-prd", 1)[0]
             sections[current].add(name)
     for section in sections:
         sections[section] = {n.strip('`') for n in sections[section]}
@@ -73,28 +79,40 @@ def parse_graph_nodes(text: str) -> Dict[str, Set[str]]:
 
 
 def main() -> int:
-    if not MASTER.exists():
-        print("Master catalog not found.", file=sys.stderr)
+    logger = get_logger("audit.doc_dependencies")
+    try:
+        text = read_master_catalog()
+    except FileNotFoundError as exc:
+        logger.error(str(exc))
         return 1
 
-    text = MASTER.read_text(encoding="utf-8")
     table_docs = parse_tables(text)
     graph_docs = parse_graph_nodes(text)
 
-    issues = False
+    issues: list[AuditIssue] = []
     for section in CATEGORY_HEADERS:
         stale = graph_docs.get(section, set()) - table_docs[section]
         if stale:
-            issues = True
-            print(f"[ERROR] Dependency graph lists extra {section} nodes not in tables:")
             for name in sorted(stale):
-                print(f"  - {name}")
+                issues.append(
+                    AuditIssue(
+                        "error",
+                        f"Dependency graph lists extra {section} node not in tables",
+                        doc=name,
+                    )
+                )
 
-    if issues:
-        return 1
+    if not issues:
+        logger.info("Dependency graph audit passed.")
+        return 0
 
-    print("Dependency graph audit passed.")
-    return 0
+    emit_issues(logger, issues)
+    counts = count_by_severity(issues)
+    logger.error(
+        "Dependency graph audit failed (%s errors).",
+        counts.get("error", 0),
+    )
+    return exit_code_from_issues(issues)
 
 
 if __name__ == '__main__':

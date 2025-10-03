@@ -22,9 +22,30 @@ Change control: Follows Main Scraper Standard PRD; ADR for interface/selector ch
 
 **Cross-References:**
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
-- **STD-scraper-prd-v1.0:** Main scraper standard and baseline rules
-- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-qa-testing-prd-v1.0:** Testing requirements for OPPS scraper
+- **STD-scraper-prd-v1.0.md:** Main scraper standard and baseline rules
+- **STD-data-architecture-prd-v1.0.md:** Data ingestion lifecycle and storage patterns
+- **STD-qa-testing-prd-v1.0.md:** Testing requirements for OPPS scraper
+
+## Data Classification & Stewardship
+- **Classification:** Public CMS artifacts (Internal operational telemetry)  
+- **License & Attribution:** CMS OPPS Addenda (public domain); acknowledgement required in downstream manifests  
+- **Data Owner / Steward:** Platform/Data Engineering (scraper operators) with Medicare SME for content validation  
+- **Distribution Policy:** Raw artifacts remain Internal; redistribution must retain CMS attribution and respect CPT® licensing constraints (handled by ingester/API PRDs)
+
+## Ingestion Summary (DIS v1.0)
+- **Discovery Cadence:** Weekly scheduled crawl + manual trigger; monitors CMS Quarterly Addenda Updates index for new or corrected quarters  
+- **Batch Identifier:** `opps_{year}q{quarter}_r{nn}` recorded in both discovery and download manifests  
+- **Manifest Requirements:** Emit dual manifests (`discovery_manifest.json`, `download_manifest.json`) with fields: intended artifacts, final URL, checksum, size, disclaimer mode, retries, content type, fetched timestamps  
+- **Storage Layout:** Artifacts persisted under `/raw/opps/{batch}/files/*` with `manifest.json` meeting DIS §3.2 requirements; manifests mirrored to `/ops/scraper/opps/{batch}/` for ops visibility  
+- **Validations & Gates:** Structural presence of Addendum A/B enforced, checksum verification, TLS + content-length sanity, disclaimer acceptance recorded; failures quarantine the batch (`/raw/opps/{batch}/quarantine/`) and surface via Ops alert  
+- **Hand-off to Ingester:** Successful batches notify OPPS ingester with manifest location + dataset digest; ingester re-validates before publish  
+- **SLAs:** Detect updates within ≤3 calendar days of CMS posting; deliver artifacts to ingestion within ≤1 business day post-detection  
+- **Deviations:** None—scraper adheres to **STD-scraper-prd-v1.0.md**; any exceptions require ADR and update here
+
+## Delivery & API Readiness
+- **Integration:** OPPS ingester consumes scraper manifests; dataset digest attached to Slack/monitoring payloads  
+- **Observability Hooks:** Metrics/log exports streamed to DIS observability stack; alerts raised when mandatory artifacts missing or disclaimer flow fails  
+- **Security Controls:** Credential-less downloads; operational dashboards gated behind internal auth per **STD-api-security-and-auth-prd-v1.0.md**
 
 ⸻
 

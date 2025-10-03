@@ -14,9 +14,33 @@
 
 **Cross-References:**
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
-- **STD-api-contract-management-prd-v1.0:** API contract management and versioning
-- **STD-api-security-and-auth-prd-v1.0:** Security requirements for treatment plan API
-- **STD-api-architecture-prd-v1.0:** API architecture and layering patterns
+- **STD-api-contract-management-prd-v1.0.md:** API contract management and versioning
+- **STD-api-security-and-auth-prd-v1.0.md:** Security requirements for treatment plan API
+- **STD-api-architecture-prd-v1.0.md:** API architecture and layering patterns
+- **STD-data-architecture-prd-v1.0.md:** Dataset ingestion lifecycle that powers this API
+- **STD-qa-testing-prd-v1.0.md:** Testing requirements inherited for pricing datasets
+
+## Data Classification & Stewardship
+- **Classification:** Internal (derived pricing analytics built from public CMS sources)  
+- **License & Attribution:** CMS datasets cited in traces; hospital/payer MRF usage governed by transparency rules; no CPT® redistribution  
+- **Data Owner / Steward:** Pricing Platform Product (product owner); API Engineering (service steward); Compliance reviewer on change control  
+- **Distribution Policy:** External exposure requires compliance + legal review; responses always include dataset provenance for audit
+
+## Ingestion Summary (DIS v1.0)
+- **Upstream Dependencies:** Consumes curated datasets from DIS-compliant ingesters—`mpfs_rvu`, `opps_apc_payment`, `opps_hcpcs_crosswalk`, `asc_fee`, `ipps_drg`, `clfs_fee`, `dmepos_fee`, `asp_prices`, `nadac_prices`, `geography_zip_locality`, and `ncci_mue`  
+- **Schema Contracts:** Relies on dataset contracts in `cms_pricing/ingestion/contracts/` (PPRRVU, OPPS, ASC, IPPS, CLFS, DMEPOS, ASP, NADAC, Geography); API enforces contract versions via manifest digests  
+- **Data Selection:** Resolver pins datasets using `dataset_id` + `dataset_digest`; valuation request includes `valuation_date`, `geography_digest`, and optional overrides; service refuses to run when required digests missing or stale  
+- **Validations & Gates:** At boot the API verifies manifest freshness vs SLA (MPFS annual, OPPS/ASC quarterly, ASP quarterly, NADAC weekly, Geography ≤5 days old); per-request validation checks dataset availability, plan schema, georesolution success, and pricing parity smoke tests  
+- **Quarantine & Error Handling:** If upstream dataset digest flagged stale or invalid, API marks dataset as unavailable and returns error `DATASET_SLA_BREACH`; pricing runs require all mandatory datasets to pass health checks  
+- **Outputs:** Response payload includes per-line pricing, facility/professional split, coinsurance/deductible, locality decisions, dataset provenance, and assumption flags  
+- **SLAs:** Runtime p95 < 1.5s (no MRF); dataset freshness SLAs mirror upstream ingestion requirements; all responses embed manifest digests for reproducibility  
+- **Deviations:** Any variance from DIS dataset usage (e.g., alternative overrides) must be documented in plan metadata and ADR
+
+## API Readiness & Distribution
+- **Contract Surface:** Versioned OpenAPI spec with digest-aware responses; adheres to **STD-api-contract-management-prd-v1.0.md**  
+- **Authentication:** API key + optional OAuth service tokens per **STD-api-security-and-auth-prd-v1.0.md**  
+- **Observability:** Structured logs capture request ID, valuation date, dataset digests, pricing latency, georesolution match level; traces link back to ingestion runs  
+- **Client Guidance:** Responses include `dataset_digest` and `valuation_snapshot` so clients can persist provenance and rehydrate results later
 
 **Owner:** <you>  
 **Author:** ChatGPT  
@@ -169,7 +193,7 @@ Build a Python-based API that produces **ZIP-level, episode-based** treatment pl
 - `run_trace(run_id, datasets_jsonb, notes_jsonb)`
 
 ## 9) API Endpoints (MVP) (MVP)
-All endpoints and change management must align with the **STD-api-architecture-prd-v1.0**.
+All endpoints and change management must align with the **STD-api-architecture-prd-v1.0.md**.
 - `POST /plans` — create/update plan definition.  
 - `GET /plans` — list plan summaries (cursor pagination: **default limit=20**, **max=200**, `next_page_token`).
 - `GET /geography/resolve?zip=` — return locality/CBSA candidates, `requires_resolution` flag.
@@ -274,5 +298,3 @@ All endpoints and change management must align with the **STD-api-architecture-p
 | 422 | `STATE_VIOLATION` | Illegal state transition. |
 | 503 | `UPSTREAM_UNAVAILABLE` | Dependency failure. |
 | 500 | `SYSTEM_ERROR` | Unhandled exception (trace ID logged). |
-
-

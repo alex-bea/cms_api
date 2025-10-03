@@ -7,9 +7,32 @@
 
 **Cross-References:**
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
-- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-qa-testing-prd-v1.0:** Testing requirements for geography mapping
+- **STD-data-architecture-prd-v1.0.md:** Data ingestion lifecycle and storage patterns
+- **STD-qa-testing-prd-v1.0.md:** Testing requirements for geography mapping
 - **REF-geography-mapping-cursor-prd-v1.0.md:** Related geography mapping patterns
+
+## Data Classification & Stewardship
+- **Classification:** Public CMS geography release (Internal enriched resolver outputs)  
+- **License & Attribution:** CMS ZIP Code to Carrier Locality files (public domain); cite CMS source in manifests and resolver docs  
+- **Data Owner / Steward:** Pricing Platform Product (business owner), Geography Resolver Team (technical steward)  
+- **Distribution Policy:** Resolver APIs are Internal by default; external exposure requires compliance sign-off and CMS attribution
+
+## Ingestion Summary (DIS v1.0)
+- **Sources & Cadence:** CMS ZIP→Locality ZIP9 files (quarterly/annual), locality dictionaries, MAC jurisdiction metadata, supplemental overrides for ZIP gaps  
+- **Schema Contracts:** `cms_pricing/ingestion/contracts/cms_zip_locality_v1.json` plus optional overrides `cms_zip9_overrides_v1.json`; contracts govern canonical columns, enums, and nullability  
+- **Landing Layout:** `/raw/geography/{release_id}/files/*` with DIS `manifest.json` including `release_notes_url`, `sha256`, `size_bytes`, `fetched_at`, `license`, and `dataset_digest`  
+- **Natural Keys & Partitioning:** Canonical tables keyed by `(zip5, plus4, effective_from)`; ZIP5 fallback keyed by `(zip5, effective_from)`; curated partitions by `vintage_date` and `match_level`  
+- **Validations & Gates:** Structural completeness, schema enforcement, ZIP/Plus4 format checks, locality + MAC enumerations, effective-dating continuity, coverage ≥99% per state, same-state nearest fallback verification  
+- **Quarantine Policy:** Invalid rows written to `/stage/geography/{release_id}/reject/` with rule codes; publish blocked when coverage dips below SLA or structural rules fail  
+- **Enrichment & Crosswalks:** Join to MAC/locality dictionaries, maintain nearest-ZIP lookup tables, compute digest-aware caches, emit daily gap reports  
+- **Outputs:** `/curated/geography/{vintage}/zip_locality.parquet`, `zip_locality_zip5.parquet`, `nearest_zip_lookup.parquet`, alongside latest-effective resolver view `vw_geo_locality_current`  
+- **SLAs:** Land within ≤5 business days of CMS posting; publish + refresh resolver caches within ≤2 business days; digests recorded for reproducibility  
+- **Deviations:** None—exceptions require ADR and PRD update
+
+## API Readiness & Distribution
+- **Resolver Surface:** `POST /geography/resolve` (internal) returns locality + trace metadata including dataset digest  
+- **Digest Pinning:** Clients encouraged to pass `valuation_date` + `dataset_digest`; resolver caches are digest-aware with TTL optional  
+- **Security Controls:** Internal traffic gated via service auth per **STD-api-security-and-auth-prd-v1.0.md**; logs exclude PII (ZIP-only inputs)
 
 - **2025-09-26**: Initial draft of Geography PRD with **ZIP+4-first mandate**, effective-dating rules, schema, ingestion steps, QA, and trace requirements.
 - **2025-09-26**: Clarifications applied — non-strict default with explicit fallback policy; **nearest fallback constrained to same state**; carrier exposure optional; locality-name dictionary loader added; annual-as-quarter fallback allowed; ZIP+4 normalization; cache strategy clarified (digest-aware by default, TTL optional); conversational strict-mode errors; per-request radius override; daily gap report methodology.
@@ -128,7 +151,7 @@ Define how we ingest and use CMS geography mapping to resolve a service **ZIP(+4
 6. **Register snapshot**: Insert `(dataset_id, effective_from, effective_to, digest, source_url)` into `snapshots`.
 
 ## 9) Resolver Behavior
-API contracts implementing this behavior must comply with the **STD-api-architecture-prd-v1.0**.
+API contracts implementing this behavior must comply with the **STD-api-architecture-prd-v1.0.md**.
 Input: `{ zip5: str, plus4: Optional[str], valuation_year: int, quarter: Optional[int], strict: bool=false, max_radius_miles?: int, initial_radius_miles?: int, expand_step_miles?: int, expose_carrier?: bool }`
 Algorithm:
 1. Select **dataset version** by valuation (year/quarter or snapshot pin); trace `dataset_selection`.
