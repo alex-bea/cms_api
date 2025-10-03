@@ -53,6 +53,7 @@ We standardize QA into **Plan → Implement → Execute → Observe → Improve*
 - Nightly broad-run: full suite including expensive end-to-end, load, and drift tests.
 - Pre-deploy: smoke + health probes against staging using production-like configuration.
 - Production: synthetic monitors & drift watchers continuously run; failures page the on-call.
+- **Database-backed suites:** Any test touching Postgres-only types (e.g., JSONB/ARRAY) must run against a real Postgres harness rather than SQLite fallbacks. Use `scripts/test_with_postgres.sh` locally (wraps Docker Compose, `tests/scripts/bootstrap_test_db.py`, and pytest) or the matching CI job to guarantee migrations + seed data execute before API suites (see RUN-global-operations-prd-v1.0 §E).
 
 ### 3.4 Observe (Reporting & Telemetry)
 - Emit structured test results (JUnit XML + JSON metadata) to the QA warehouse and dashboards.
