@@ -9,11 +9,11 @@ This document defines the **API Standards & Architecture** for the CMS Pricing A
 **Change control:** ADR + Architecture Board review  
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-observability-monitoring_prd_v1.0:** API service monitoring and observability
-- **STD-api-security-and-auth_prd_v1.0:** Authentication, authorization, and security requirements
-- **STD-qa-testing_prd_v1.0:** API testing requirements and quality gates
-- **STD-data-architecture_prd_v1.0:** Data pipeline integration and observability
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-observability-monitoring-prd-v1.0:** API service monitoring and observability
+- **STD-api-security-and-auth-prd-v1.0:** Authentication, authorization, and security requirements
+- **STD-qa-testing-prd-v1.0:** API testing requirements and quality gates
+- **STD-data-architecture-prd-v1.0:** Data pipeline integration and observability
 
 ## 1. Goals & Non-Goals
 
@@ -379,10 +379,10 @@ class PricingService:
 ## 9. Cross-Reference Map
 
 ### Related PRDs
-- **STD-observability-monitoring_prd_v1.0:** API service monitoring, performance metrics, and alerting
-- **STD-api-security-and-auth_prd_v1.0:** Authentication, authorization, rate limiting, and security middleware
-- **STD-qa-testing_prd_v1.0:** API testing requirements, contract testing, and quality gates
-- **STD-Data-Architecture_prd_v1.0:** Data pipeline integration and data-backed response requirements
+- **STD-observability-monitoring-prd-v1.0:** API service monitoring, performance metrics, and alerting
+- **STD-api-security-and-auth-prd-v1.0:** Authentication, authorization, rate limiting, and security middleware
+- **STD-qa-testing-prd-v1.0:** API testing requirements, contract testing, and quality gates
+- **STD-Data-Architecture-prd-v1.0:** Data pipeline integration and data-backed response requirements
 
 ### Integration Points
 - **API Observability:** This PRD Section 5.3 → Observability PRD Section 2.2 (API Service Volume)

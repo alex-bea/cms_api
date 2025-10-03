@@ -6,10 +6,10 @@
 **Change control:** ADR + PR review
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-scraper_prd_v1.0:** Scraper requirements for RVU data discovery
-- **STD-qa-testing_prd_v1.0:** Testing requirements for RVU ingestion
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-scraper-prd-v1.0:** Scraper requirements for RVU data discovery
+- **STD-qa-testing-prd-v1.0:** Testing requirements for RVU ingestion
 
 > Owner: TBD  •  Approver(s): TBD  •  Stakeholders: Eng, Data, Ops, Compliance, QA  •  Last updated: {{today}}
 
@@ -185,7 +185,7 @@ We ingest these artifacts each cycle (A/B/C/D + potential AR corrections). This 
 ---
 
 ## 9) Interfaces
-API contracts exposed from this pack must follow the **STD-api-architecture_prd_v1.0** for versioning and lifecycle.
+API contracts exposed from this pack must follow the **STD-api-architecture-prd-v1.0** for versioning and lifecycle.
 ### 9.1 Warehouse Views
 - `vw_rvu_current(date)` → latest RVUs (by HCPCS/modifier) effective on `date`.
 - `vw_gpci_current(date)` → locality GPCIs effective on `date`.

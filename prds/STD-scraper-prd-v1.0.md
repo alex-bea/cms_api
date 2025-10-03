@@ -6,9 +6,9 @@ Scraper Platform PRD (MVP → v1)
 **Change control:** ADR + PR review
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-observability-monitoring_prd_v1.0:** Scraper monitoring and alerting
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-observability-monitoring-prd-v1.0:** Scraper monitoring and alerting
 
 0) Summary
 

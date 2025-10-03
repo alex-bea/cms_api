@@ -6,11 +6,11 @@
 **Change control:** PR review + Ops sign-off
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-observability-monitoring_prd_v1.0:** Monitoring and alerting procedures
-- **STD-qa-testing_prd_v1.0:** Testing and validation procedures
-- **PRD-mpfs_prd_v1.0.md:** MPFS ingestion procedures
-- **PRD-opps_prd_v1.0.md:** OPPS ingestion procedures
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-observability-monitoring-prd-v1.0:** Monitoring and alerting procedures
+- **STD-qa-testing-prd-v1.0:** Testing and validation procedures
+- **PRD-mpfs-prd-v1.0.md:** MPFS ingestion procedures
+- **PRD-opps-prd-v1.0.md:** OPPS ingestion procedures
 
 This runbook lists validation steps and ops playbook items for the new MPFS ingester, related NCCI/MUE storage, and OPPS (stub). Reference links are CMS primary sources.
 

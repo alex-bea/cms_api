@@ -1,0 +1,188 @@
+name: Task Synchronization
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Weekly on Monday at 9 AM
+  workflow_dispatch:
+    inputs:
+      scan_todos:
+        description: 'Scan for new TODO comments'
+        required: false
+        default: true
+        type: boolean
+      update_plan:
+        description: 'Update GitHub Tasks plan'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  scan-and-report:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Scan for TODOs
+        if: ${{ inputs.scan_todos || github.event.schedule }}
+        run: |
+          echo "## 📋 TODO Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Run the TODO scanner
+          python tools/github_tasks_setup.py --scan-todos >> $GITHUB_STEP_SUMMARY
+          
+          # Count TODOs by category
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 TODO Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract TODO counts by category
+          python tools/github_tasks_setup.py --scan-todos | grep -E "^\s*-" | \
+            awk -F'[' '{print $2}' | awk -F']' '{print $1}' | sort | uniq -c | \
+            sed 's/^[ ]*//' | awk '{print "- **" $2 "**: " $1 " tasks"}' >> $GITHUB_STEP_SUMMARY
+      
+      - name: Update GitHub Tasks Plan
+        if: ${{ inputs.update_plan || github.event.schedule }}
+        run: |
+          python tools/github_tasks_setup.py --convert-todos --output github_tasks_plan.md
+          
+          # Check if the plan has changed
+          if git diff --quiet github_tasks_plan.md; then
+            echo "No changes to GitHub Tasks plan"
+          else
+            echo "## 📝 GitHub Tasks Plan Updated" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The GitHub Tasks plan has been updated with the latest TODO items." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Create a summary of changes
+            echo "### Changes Summary" >> $GITHUB_STEP_SUMMARY
+            git diff --stat github_tasks_plan.md >> $GITHUB_STEP_SUMMARY
+            
+            # Commit changes
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git add github_tasks_plan.md
+            git commit -m "Update GitHub Tasks plan [automated]"
+            git push
+          fi
+      
+      - name: Check for High Priority TODOs
+        run: |
+          echo "### 🔍 High Priority TODOs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Find high priority TODOs
+          high_priority_todos=$(python tools/github_tasks_setup.py --scan-todos | grep -E "\[High\]|\[Critical\]" | wc -l)
+          
+          if [ $high_priority_todos -gt 0 ]; then
+            echo "⚠️ Found $high_priority_todos high priority TODO items that may need attention:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            python tools/github_tasks_setup.py --scan-todos | grep -E "\[High\]|\[Critical\]" | \
+              sed 's/^[ ]*-/•/' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No high priority TODO items found" >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Generate Task Report
+        run: |
+          echo "## 📈 Task Management Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Generated:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Count total TODOs
+          total_todos=$(python tools/github_tasks_setup.py --scan-todos | grep -E "^\s*-" | wc -l)
+          echo "- **Total TODO items:** $total_todos" >> $GITHUB_STEP_SUMMARY
+          
+          # Count by priority
+          critical_todos=$(python tools/github_tasks_setup.py --scan-todos | grep -c "\[Critical\]" || echo "0")
+          high_todos=$(python tools/github_tasks_setup.py --scan-todos | grep -c "\[High\]" || echo "0")
+          medium_todos=$(python tools/github_tasks_setup.py --scan-todos | grep -c "\[Medium\]" || echo "0")
+          low_todos=$(python tools/github_tasks_setup.py --scan-todos | grep -c "\[Low\]" || echo "0")
+          
+          echo "- **Critical:** $critical_todos" >> $GITHUB_STEP_SUMMARY
+          echo "- **High:** $high_todos" >> $GITHUB_STEP_SUMMARY
+          echo "- **Medium:** $medium_todos" >> $GITHUB_STEP_SUMMARY
+          echo "- **Low:** $low_todos" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review high priority TODO items" >> $GITHUB_STEP_SUMMARY
+          echo "2. Update GitHub Projects with new tasks" >> $GITHUB_STEP_SUMMARY
+          echo "3. Assign tasks to team members" >> $GITHUB_STEP_SUMMARY
+          echo "4. Set up milestones for project phases" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Upload GitHub Tasks Plan
+        uses: actions/upload-artifact@v3
+        with:
+          name: github-tasks-plan
+          path: github_tasks_plan.md
+          retention-days: 30
+
+  audit-documentation:
+    runs-on: ubuntu-latest
+    needs: scan-and-report
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run Documentation Audit
+        run: |
+          echo "## 📚 Documentation Audit Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if python tools/audit_doc_catalog.py; then
+            echo "✅ Documentation catalog audit passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Documentation catalog audit failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the audit output for details." >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Check PRD Compliance
+        run: |
+          echo "### 📋 PRD Compliance Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Count PRD files
+          prd_count=$(find prds/ -name "*.md" | wc -l)
+          echo "- **Total PRD files:** $prd_count" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for naming compliance
+          non_compliant=$(find prds/ -name "*.md" | grep -v -- "-prd-v" | wc -l)
+          if [ $non_compliant -eq 0 ]; then
+            echo "✅ All PRD files follow naming convention" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ $non_compliant PRD files don't follow naming convention" >> $GITHUB_STEP_SUMMARY
+          fi

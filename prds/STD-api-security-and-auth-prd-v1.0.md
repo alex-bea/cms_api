@@ -9,8 +9,8 @@ This PRD defines the **Security & Authentication standard** for the CMS Pricing 
 **Change control:** ADR + Architecture Board review  
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-api-architecture_prd_v1.0.md:** API layering, DTO patterns, middleware
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-api-architecture-prd-v1.0.md:** API layering, DTO patterns, middleware
 
 ---
 
@@ -631,9 +631,9 @@ Phase 3 — Governance (Week 5–6)
 # 3) (Optional) Commit message you can use
 
 chore(prd): split Security & Auth into standalone PRD
-	•	Remove embedded Security & Auth section from api_architecture_layering_prd_v_1.md
+	•	Remove embedded Security & Auth section from api_architecture_layering-prd-v_1.md
 	•	Add pointer to new file
-	•	Add new prds/api_security_auth_prd_v1.md (v1.0)
+	•	Add new prds/api_security_auth-prd-v1.md (v1.0)
 
 21) SLA (Enterprise Tier)
 
@@ -697,7 +697,7 @@ chore(prd): split Security & Auth into standalone PRD
 
 ## 23) Cross-PRD Integration
 
-### 23.1 QTS Integration (STD-qa-testing_prd_v1.0)
+### 23.1 QTS Integration (STD-qa-testing-prd-v1.0)
 
 **Security Testing Requirements:**
 - **Unit Tests:** ≥90% coverage on auth middleware and key validation

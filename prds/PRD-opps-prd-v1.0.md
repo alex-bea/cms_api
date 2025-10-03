@@ -5,7 +5,7 @@
 **Consumers:** Pricing engine, analytics, ops  
 **Change control:** ADR + Data Architecture Board sign-off
 
-For complete index see [Master System Catalog](DOC-master-catalog_prd_v1.0.md).  
+For complete index see [Master System Catalog](DOC-master-catalog-prd-v1.0.md).  
 
 Overview
 
@@ -17,11 +17,11 @@ Consumers: Pricing engine, analytics, data science, ops
 Change control: ADR + Data Architecture Board sign-off
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-scraper_prd_v1.0:** Scraper requirements for OPPS data discovery
-- **STD-api-security-and-auth_prd_v1.0:** Security requirements for OPPS data access
-- **REF-geography-mapping-cursor_prd_v1.0.md:** Geography mapping for OPPS localities
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-scraper-prd-v1.0:** Scraper requirements for OPPS data discovery
+- **STD-api-security-and-auth-prd-v1.0:** Security requirements for OPPS data access
+- **REF-geography-mapping-cursor-prd-v1.0.md:** Geography mapping for OPPS localities
 
 ⸻
 
@@ -205,9 +205,9 @@ Change Log
 
 Cross-References
 	•	DIS PRD: ingestion stages, manifests, quarantine, lineage.
-	•	STD-qa-testing_prd_v1.0: test tiers, fixtures, CI gates.
+	•	STD-qa-testing-prd-v1.0: test tiers, fixtures, CI gates.
 	•	Scraper Standard: discovery, throttling, checksum/idempotency.
-	•	STD-api-architecture_prd_v1.0: Optional API (deferred/derived):
+	•	STD-api-architecture-prd-v1.0: Optional API (deferred/derived):
 
 Optional API (Deferred / Derived Layer — DIS-Aligned)
 	•	Treat APIs as interfaces over curated data; responses include batch_id/published_at to bind to data vintage.

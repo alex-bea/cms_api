@@ -6,8 +6,8 @@
 **Change control:** ADR + PR review
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-qa-testing_prd_v1.0:** Testing requirements for NCCI MUE ingestion
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-qa-testing-prd-v1.0:** Testing requirements for NCCI MUE ingestion
 
 > TODO: Populate full PRD content (objective, scope, data sources, validations, QA summary).

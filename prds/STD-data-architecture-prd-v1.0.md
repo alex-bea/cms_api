@@ -7,13 +7,13 @@ This document defines the **Data Architecture Standard** used across projects. I
 **Owners:** Platform/Data Engineering  
 **Consumers:** Product, Analytics, Services  
 **Change control:** ADR + PR review
-For complete index see [Master System Catalog](DOC-master-catalog_prd_v1.0.md).  
+For complete index see [Master System Catalog](DOC-master-catalog-prd-v1.0.md).  
 
 
 **Cross-References:**
-- **STD-observability-monitoring_prd_v1.0:** Comprehensive monitoring standards, five-pillar framework, and unified SLAs
-- **STD-qa-testing_prd_v1.0:** Testing requirements for data pipelines and quality gates
-- **STD-api-security-and-auth_prd_v1.0:** Security requirements for data access and audit logging  
+- **STD-observability-monitoring-prd-v1.0:** Comprehensive monitoring standards, five-pillar framework, and unified SLAs
+- **STD-qa-testing-prd-v1.0:** Testing requirements for data pipelines and quality gates
+- **STD-api-security-and-auth-prd-v1.0:** Security requirements for data access and audit logging  
 
 ## 1. Goals & Non‑Goals
 **Goals**
@@ -114,7 +114,7 @@ We separate concerns into **Land → Validate → Normalize → Enrich → Publi
 - **Determinism:** Given the same inputs and schema version, outputs are bitwise-identical (content-addressed artifacts). Seed dedupe uses row content hashes where appropriate.
 
 ## 8. Observability & Monitoring
-- **References:** STD-observability-monitoring_prd_v1.0 for comprehensive monitoring standards
+- **References:** STD-observability-monitoring-prd-v1.0 for comprehensive monitoring standards
 - **Data-specific monitoring:** Freshness, volume, schema, quality, lineage for data pipelines
 - **Data SLAs:** Timeliness ≤ 24h, Completeness ≥ 99.5%, Accuracy ≥ 99.0%, Schema Stability 0 breaking changes, Availability ≥ 99.9%
 - **Dashboards:** One dashboard per dataset with five-pillar widgets and last three vintages
@@ -158,7 +158,7 @@ $1
 - Curated docs must include an **Attribution Note** when licenses require it.
 
 ## 13. Dataset Integration Contract
-Every dataset PRD must include an **Ingestion Summary** stating: source spec, schema contract & keys, semantics, validations (with thresholds), crosswalks & tie‑breakers, outputs, SLAs, and any deviations from DIS. **API surfaces or contracts derived from DIS-managed datasets must comply with the API-STD-Architecture_prd_v1.0**.
+Every dataset PRD must include an **Ingestion Summary** stating: source spec, schema contract & keys, semantics, validations (with thresholds), crosswalks & tie‑breakers, outputs, SLAs, and any deviations from DIS. **API surfaces or contracts derived from DIS-managed datasets must comply with the API-STD-Architecture-prd-v1.0**.
 
 ## 14. Change Management
 - Changes to DIS require an ADR: context, decision, alternatives, impact, migration plan.
@@ -242,9 +242,9 @@ def ingest_dataset():
 ### Appendix I — Cross-Reference Map
 
 **Related PRDs:**
-- **STD-observability-monitoring_prd_v1.0:** Comprehensive monitoring standards and unified SLAs
-- **STD-qa-testing_prd_v1.0:** Testing requirements for data pipelines and quality gates
-- **STD-api-security-and-auth_prd_v1.0:** Security requirements for data access and audit logging
+- **STD-observability-monitoring-prd-v1.0:** Comprehensive monitoring standards and unified SLAs
+- **STD-qa-testing-prd-v1.0:** Testing requirements for data pipelines and quality gates
+- **STD-api-security-and-auth-prd-v1.0:** Security requirements for data access and audit logging
 
 **Integration Points:**
 - **Observability:** DIS Section 8 → Observability PRD Section 2.1 (Data Pipeline Freshness), Section 3.1 (Data Pipeline SLAs), Section 4.1 (Data Pipeline Metrics)

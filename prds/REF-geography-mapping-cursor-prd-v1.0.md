@@ -6,9 +6,9 @@
 **Change control:** ADR + PR review
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-qa-testing_prd_v1.0:** Testing requirements for geography mapping
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-qa-testing-prd-v1.0:** Testing requirements for geography mapping
 
 ## Changelog (Pinned)
 - **2025‑09‑28**: Automation implemented — hourly scheduler with **monthly geography checks**, **ETag/Last‑Modified change detection**, smart **ingest‑on‑change**, notification system (log/email/slack/webhook‑ready), and **operator CLI** (`ingest`, `check‑changes`, `notifications`, `status`).
@@ -81,7 +81,7 @@ SLOs are enforced by CI and monitored in production dashboards; **CI gates** (se
 - **Precedence**: `valuation_date` **overrides** `{valuation_year, quarter}` which **overrides** `valuation_year`.
 - **Response**: `{ locality_id, state, rural_flag, carrier?, match_level, candidate_zip?, candidate_distance_miles?, snapshot_digest, source:'ZIP_LOCALITY' }`
 - **Contract**: OpenAPI stub committed **before code**; contract tests enforce shapes, codes, and latency budgets. **Rate limiting (429)** is in scope for GA. **Caching/ETag** behavior is **post-GA** (documented later).
-- **Standards**: API contract and lifecycle must conform to the **STD-api-architecture_prd_v1.0**.
+- **Standards**: API contract and lifecycle must conform to the **STD-api-architecture-prd-v1.0**.
 
 **Healthcheck Endpoint** `GET /geo/healthz` … *(unchanged spec above)*
 

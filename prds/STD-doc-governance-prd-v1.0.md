@@ -3,7 +3,7 @@
 ## 0. Overview
 This standard defines how product requirement documents (PRDs), runbooks, and related governance artifacts are named, versioned, and organized within the repository. All new documents must comply; existing files should be renamed during their next major revision.
 
-**Master Catalog.** This repository’s canonical system catalog is `DOC-master-catalog_prd_v1.0.md` (the “Master PRD”). All new or modified documents (STD/BP/PRD/SCR/RUN/DOC) **must be registered** in the Master Catalog in the same pull request before merge. The Master Catalog is a catalog and dependency map only; no business logic or schema definitions live there.
+**Master Catalog.** This repository’s canonical system catalog is `DOC-master-catalog-prd-v1.0.md` (the “Master PRD”). All new or modified documents (STD/BP/PRD/SCR/RUN/DOC) **must be registered** in the Master Catalog in the same pull request before merge. The Master Catalog is a catalog and dependency map only; no business logic or schema definitions live there.
 
 **Status:** Draft v1.0 (proposed)  
 **Owners:** Platform/Product Operations  
@@ -11,7 +11,7 @@ This standard defines how product requirement documents (PRDs), runbooks, and re
 **Change control:** ADR + Docs Guild review  
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
 
 ## 1. File Naming Conventions
 ### 1.1 Prefix (scope indicator)
@@ -21,7 +21,7 @@ This standard defines how product requirement documents (PRDs), runbooks, and re
 - `SCR-` — Scraper-specific PRDs (optional if included in PRD)
 - `RUN-` — Operational runbooks
 - `DOC-` — Misc guides/reference not covered above.
-  - **Reserved filename:** `DOC-master-catalog_prd_vX.Y.md` — the Master Catalog that indexes all other docs and shows dependencies/ownership.
+  - **Reserved filename:** `DOC-master-catalog-prd-vX.Y.md` — the Master Catalog that indexes all other docs and shows dependencies/ownership.
 
 ### 1.2 Slug Formatting
 - Use lowercase hyphenated slugs following the prefix: `STD-global-api-program`
@@ -32,10 +32,10 @@ This standard defines how product requirement documents (PRDs), runbooks, and re
 - Increment MAJOR for breaking structural/content changes; MINOR for additive updates.
 
 ### 1.4 Examples
-- `STD-api-architecture_prd_v1.0.md`
-- `PRD-opps_prd_v1.0.md`
-- `RUN-global-operations_prd_v1.0.md`
-- `DOC-master-catalog_prd_v1.0.md`
+- `STD-api-architecture-prd-v1.0.md`
+- `PRD-opps-prd-v1.0.md`
+- `RUN-global-operations-prd-v1.0.md`
+- `DOC-master-catalog-prd-v1.0.md`
 
 ## 2. Directory Expectations
 - All governance documents live under `/prds`.
@@ -72,9 +72,9 @@ For the Master Catalog, also include `Review cadence:` and `Diagram standard:` i
 - Git history serves as the source of truth for diffs; the Master Catalog’s Change Log references the PR that introduced each change.
 
 ## 6. Cross-Referencing Guidelines
-- Refer to documents by prefix + slug (e.g., "see `STD-api-architecture_prd_v1.0.md`").
+- Refer to documents by prefix + slug (e.g., "see `STD-api-architecture-prd-v1.0.md`").
 - Avoid hardcoding version numbers in prose; instead, link to the latest and note when version-specific behavior applies.
-- All new or renamed documents must add/update an entry in `DOC-master-catalog_prd_v*.md` as part of the same PR (acceptance criterion).
+- All new or renamed documents must add/update an entry in `DOC-master-catalog-prd-v*.md` as part of the same PR (acceptance criterion).
 - When referencing other docs in prose, prefer linking to their entry in the Master Catalog to improve discoverability; avoid hardcoding versions unless version-specific behavior is discussed.
 
 ## 7. Compliance & Review

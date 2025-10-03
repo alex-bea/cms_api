@@ -38,7 +38,7 @@ repos:
     hooks:
       - id: prd-filename-check
         name: Ensure PRD filenames follow governance pattern
-        entry: bash -c 'for file in "$@"; do base="$(basename "$file")"; [[ $base =~ ^(STD|BP|PRD|SCR|RUN|DOC)-[a-z0-9-]+_prd_v[0-9]+\.[0-9]+\.md$ ]] || { echo "Invalid PRD filename: $base" >&2; exit 1; }; done'
+        entry: bash -c 'for file in "$@"; do base="$(basename "$file")"; [[ $base =~ ^(STD|REF|PRD|SRC|RUN|DOC)-[a-z0-9-]+-prd-v[0-9]+\.[0-9]+\.md$ ]] || { echo "Invalid PRD filename: $base" >&2; exit 1; }; done'
         language: system
         files: ^prds/.*\.md$
         pass_filenames: true

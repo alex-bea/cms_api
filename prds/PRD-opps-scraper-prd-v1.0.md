@@ -3,11 +3,11 @@ OPPS Scraper PRD (Draft)
 **Status:** Draft v1.0  
 **Owners:** Platform/Data Engineering; Medicare SME (review)  
 **Consumers:** OPPS ingester, QA, SRE/Ops  
-**Change control:** Follow `STD-scraper_prd_v1.0.md` + ADR for selector changes
+**Change control:** Follow `STD-scraper-prd-v1.0.md` + ADR for selector changes
 
-For complete index see [Master System Catalog](DOC-master-catalog_prd_v1.0.md).  
+For complete index see [Master System Catalog](DOC-master-catalog-prd-v1.0.md).  
 
-Links to standards: Main Scraper Standard PRD → `STD-scraper_prd_v1.0.md` (this OPPS PRD inherits all baseline rules; only OPPS-specific overrides are defined here).
+Links to standards: Main Scraper Standard PRD → `STD-scraper-prd-v1.0.md` (this OPPS PRD inherits all baseline rules; only OPPS-specific overrides are defined here).
 
 ⸻
 
@@ -21,10 +21,10 @@ Consumers: OPPS ingester, QA, SRE/ops
 Change control: Follows Main Scraper Standard PRD; ADR for interface/selector changes
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-scraper_prd_v1.0:** Main scraper standard and baseline rules
-- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-qa-testing_prd_v1.0:** Testing requirements for OPPS scraper
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-scraper-prd-v1.0:** Main scraper standard and baseline rules
+- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-qa-testing-prd-v1.0:** Testing requirements for OPPS scraper
 
 ⸻
 

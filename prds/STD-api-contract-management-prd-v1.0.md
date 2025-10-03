@@ -9,11 +9,11 @@ This document defines the **API Contract Management Standard** for the CMS Prici
 **Change control:** ADR + Architecture Board review  
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-api-architecture_prd_v1.0:** OpenAPI SSOT and contract-first development
-- **STD-observability-monitoring_prd_v1.0:** Contract monitoring and drift detection
-- **STD-qa-testing_prd_v1.0:** Contract testing requirements
-- **STD-data-architecture_prd_v1.0:** Data schema contracts and evolution
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-api-architecture-prd-v1.0:** OpenAPI SSOT and contract-first development
+- **STD-observability-monitoring-prd-v1.0:** Contract monitoring and drift detection
+- **STD-qa-testing-prd-v1.0:** Contract testing requirements
+- **STD-data-architecture-prd-v1.0:** Data schema contracts and evolution
 
 ## 1. Goals & Non-Goals
 
@@ -25,7 +25,7 @@ This document defines the **API Contract Management Standard** for the CMS Prici
 - Enable client SDK generation and documentation
 
 **Non-Goals**
-- Database schema management (covered by STD-data-architecture_prd_v1.0)
+- Database schema management (covered by STD-data-architecture-prd-v1.0)
 - Internal service contracts (covered by separate microservices standard)
 - Real-time streaming contracts (covered by separate streaming standard)
 
@@ -607,10 +607,10 @@ def validate_response(response_data, schema):
 ## 10. Cross-Reference Map
 
 ### Related PRDs
-- **STD-api-architecture_prd_v1.0:** OpenAPI SSOT and contract-first development
-- **STD-observability-monitoring_prd_v1.0:** Contract monitoring, drift detection, and analytics
-- **STD-qa-testing_prd_v1.0:** Contract testing requirements and validation
-- **STD-data-architecture_prd_v1.0:** Data schema contracts and evolution patterns
+- **STD-api-architecture-prd-v1.0:** OpenAPI SSOT and contract-first development
+- **STD-observability-monitoring-prd-v1.0:** Contract monitoring, drift detection, and analytics
+- **STD-qa-testing-prd-v1.0:** Contract testing requirements and validation
+- **STD-data-architecture-prd-v1.0:** Data schema contracts and evolution patterns
 
 ### Integration Points
 - **Contract Testing:** This PRD Section 4 → QTS PRD Section 7 (Contract Test Patterns)

@@ -346,64 +346,64 @@ This project follows comprehensive Product Requirements Documents (PRDs) that de
 
 ### Core Architecture PRDs
 
-- **[Data Architecture PRD v1.0](prds/STD-data-architecture_prd_v1.0.md)**: Comprehensive data architecture including ingestion lifecycle, storage patterns, data modeling, database design, quality gates, versioning, security, and observability. Defines the Data Ingestion Standard (DIS) for all data pipelines.
+- **[Data Architecture PRD v1.0](prds/STD-data-architecture-prd-v1.0.md)**: Comprehensive data architecture including ingestion lifecycle, storage patterns, data modeling, database design, quality gates, versioning, security, and observability. Defines the Data Ingestion Standard (DIS) for all data pipelines.
 
-- **[API Standards & Architecture PRD v1.0](prds/STD-api-architecture_prd_v1.0.md)**: Unified API design and architecture standards covering contracts, versioning, request/response envelopes, pagination, errors, correlation, layer responsibilities, dependency flow, and release discipline.
+- **[API Standards & Architecture PRD v1.0](prds/STD-api-architecture-prd-v1.0.md)**: Unified API design and architecture standards covering contracts, versioning, request/response envelopes, pagination, errors, correlation, layer responsibilities, dependency flow, and release discipline.
 
 ### Security & Quality PRDs
 
-- **[API Security & Auth PRD v1.0](prds/STD-api-security-and-auth_prd_v1.0.md)**: Comprehensive security standards including authentication, authorization, API key management, RBAC, PII/PHI handling, rate limiting, security middleware, and operational runbooks.
+- **[API Security & Auth PRD v1.0](prds/STD-api-security-and-auth-prd-v1.0.md)**: Comprehensive security standards including authentication, authorization, API key management, RBAC, PII/PHI handling, rate limiting, security middleware, and operational runbooks.
 
-- **[QA Testing Standard (QTS) v1.0](prds/STD-qa-testing_prd_v1.0.md)**: Comprehensive testing standards including test tiers, quality gates, test environments, naming conventions, versioning, observability, reporting, and test accuracy metrics.
+- **[QA Testing Standard (QTS) v1.0](prds/STD-qa-testing-prd-v1.0.md)**: Comprehensive testing standards including test tiers, quality gates, test environments, naming conventions, versioning, observability, reporting, and test accuracy metrics.
 
 ### Performance & Operations PRDs
 
-- **[Observability & Monitoring PRD v1.0](prds/STD-observability-monitoring_prd_v1.0.md)**: Unified monitoring standards with five-pillar framework (Freshness, Volume, Schema, Quality, Lineage), SLAs for data pipelines and API services, metrics, alerting, and incident response.
+- **[Observability & Monitoring PRD v1.0](prds/STD-observability-monitoring-prd-v1.0.md)**: Unified monitoring standards with five-pillar framework (Freshness, Volume, Schema, Quality, Lineage), SLAs for data pipelines and API services, metrics, alerting, and incident response.
 
-- **[API Performance & Scalability PRD v1.0](prds/STD-api-performance-scalability_prd_v1.0.md)**: Performance budgets, caching strategies, scaling patterns, load testing, performance monitoring, and optimization guidelines.
+- **[API Performance & Scalability PRD v1.0](prds/STD-api-performance-scalability-prd-v1.0.md)**: Performance budgets, caching strategies, scaling patterns, load testing, performance monitoring, and optimization guidelines.
 
-- **[API Contract Management PRD v1.0](prds/STD-api-contract-management_prd_v1.0.md)**: Schema evolution, versioning, compatibility rules, contract governance, OpenAPI SSOT, and automated contract testing.
+- **[API Contract Management PRD v1.0](prds/STD-api-contract-management-prd-v1.0.md)**: Schema evolution, versioning, compatibility rules, contract governance, OpenAPI SSOT, and automated contract testing.
 
 ### Blueprints & Implementation Packs
 
-- **[Geography Mapping Implementation Pack](prds/REF-geography-mapping-cursor_prd_v1.0.md)**: Comprehensive geography service implementation including ingestion, resolver, and operations with ZIP+4-first mandate.
+- **[Geography Mapping Implementation Pack](prds/REF-geography-mapping-cursor-prd-v1.0.md)**: Comprehensive geography service implementation including ingestion, resolver, and operations with ZIP+4-first mandate.
 
-- **[Nearest ZIP Resolver Implementation Pack](prds/REF-nearest-zip-resolver_prd_v1.0.md)**: State-constrained nearest ZIP lookup algorithm with Haversine distance calculation and PO Box filtering.
+- **[Nearest ZIP Resolver Implementation Pack](prds/REF-nearest-zip-resolver-prd-v1.0.md)**: State-constrained nearest ZIP lookup algorithm with Haversine distance calculation and PO Box filtering.
 
 ### Product & Dataset PRDs
 
-- **[MPFS PRD v1.0](prds/PRD-mpfs_prd_v1.0.md)**: Medicare Physician Fee Schedule data ingestion and processing requirements.
+- **[MPFS PRD v1.0](prds/PRD-mpfs-prd-v1.0.md)**: Medicare Physician Fee Schedule data ingestion and processing requirements.
 
-- **[OPPS PRD v1.0](prds/PRD-opps_prd_v1.0.md)**: Hospital Outpatient Prospective Payment System data requirements and processing standards.
+- **[OPPS PRD v1.0](prds/PRD-opps-prd-v1.0.md)**: Hospital Outpatient Prospective Payment System data requirements and processing standards.
 
-- **[NCCI MUE PRD v1.0](prds/PRD-ncci-mue_prd_v1.0.md)**: National Correct Coding Initiative Medically Unlikely Edits requirements.
+- **[NCCI MUE PRD v1.0](prds/PRD-ncci-mue-prd-v1.0.md)**: National Correct Coding Initiative Medically Unlikely Edits requirements.
 
-- **[CMS Treatment Plan API PRD v0.1](prds/PRD-cms-treatment-plan-api_prd_v0.1.md)**: Treatment plan pricing comparison API specifications and requirements.
+- **[CMS Treatment Plan API PRD v0.1](prds/PRD-cms-treatment-plan-api-prd-v0.1.md)**: Treatment plan pricing comparison API specifications and requirements.
 
-- **[Geography Locality Mapping PRD v1.0](prds/PRD-geography-locality-mapping_prd_v1.0.md)**: ZIP+4-first geography locality mapping with business requirements and validation rules.
+- **[Geography Locality Mapping PRD v1.0](prds/PRD-geography-locality-mapping-prd-v1.0.md)**: ZIP+4-first geography locality mapping with business requirements and validation rules.
 
-- **[RVU GPCI PRD v0.1](prds/PRD-rvu-gpci_prd_v0.1.md)**: Resource-Based Relative Value Units and Geographic Practice Cost Index data requirements.
+- **[RVU GPCI PRD v0.1](prds/PRD-rvu-gpci-prd-v0.1.md)**: Resource-Based Relative Value Units and Geographic Practice Cost Index data requirements.
 
 ### Operational Runbooks
 
-- **[Global Operations Runbook](prds/RUN-global-operations_prd_v1.0.md)**: Operational procedures, troubleshooting guides, and maintenance protocols.
+- **[Global Operations Runbook](prds/RUN-global-operations-prd-v1.0.md)**: Operational procedures, troubleshooting guides, and maintenance protocols.
 
 ### Specialized PRDs
 
-- **[Scraper Standard PRD v1.0](prds/STD-scraper_prd_v1.0.md)**: Web scraping standards for automated data discovery, disclaimer handling, orchestration, and compliance with data ingestion requirements.
+- **[Scraper Standard PRD v1.0](prds/STD-scraper-prd-v1.0.md)**: Web scraping standards for automated data discovery, disclaimer handling, orchestration, and compliance with data ingestion requirements.
 
-- **[OPPS Scraper PRD](prds/PRD-opps-scraper_prd_v1.0.md)**: Specific requirements for CMS OPPS data scraping including quarterly addenda discovery, disclaimer acceptance, and file classification.
+- **[OPPS Scraper PRD](prds/PRD-opps-scraper-prd-v1.0.md)**: Specific requirements for CMS OPPS data scraping including quarterly addenda discovery, disclaimer acceptance, and file classification.
 
 ### PRD Compliance
 
 All components in this project are designed to comply with these PRDs:
-- **Data pipelines** follow the STD-data-architecture_prd_v1.0 (DIS)
-- **API endpoints** comply with STD-api-architecture_prd_v1.0
-- **Security** implements STD-api-security-and-auth_prd_v1.0 requirements
-- **Testing** follows STD-qa-testing_prd_v1.0 guidelines
-- **Monitoring** adheres to STD-observability-monitoring_prd_v1.0
-- **Performance** meets STD-api-performance-scalability_prd_v1.0 standards
-- **Contracts** are managed per STD-api-contract-management_prd_v1.0
-- **Scrapers** follow STD-scraper_prd_v1.0 requirements
+- **Data pipelines** follow the STD-data-architecture-prd-v1.0 (DIS)
+- **API endpoints** comply with STD-api-architecture-prd-v1.0
+- **Security** implements STD-api-security-and-auth-prd-v1.0 requirements
+- **Testing** follows STD-qa-testing-prd-v1.0 guidelines
+- **Monitoring** adheres to STD-observability-monitoring-prd-v1.0
+- **Performance** meets STD-api-performance-scalability-prd-v1.0 standards
+- **Contracts** are managed per STD-api-contract-management-prd-v1.0
+- **Scrapers** follow STD-scraper-prd-v1.0 requirements
 
 For implementation details, see the individual PRD files in the `prds/` directory.

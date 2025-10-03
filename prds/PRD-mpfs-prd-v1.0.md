@@ -6,10 +6,10 @@
 **Change control:** ADR + PR review
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-qa-testing_prd_v1.0:** Testing requirements for MPFS ingestion
-- **REF-nearest-zip-resolver_prd_v1.0.md:** ZIP resolver for geography mapping
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-qa-testing-prd-v1.0:** Testing requirements for MPFS ingestion
+- **REF-nearest-zip-resolver-prd-v1.0.md:** ZIP resolver for geography mapping
 
 ## Objective  
 Persist the full Medicare Physician Fee Schedule (MPFS) inputs — RVUs, policy/status indicators, Localities & GPCIs, and annual Conversion Factors — to support downstream **network + price + access** and analytics use cases. The ingester stores everything; **no price math in-ingest** (computation lives downstream).

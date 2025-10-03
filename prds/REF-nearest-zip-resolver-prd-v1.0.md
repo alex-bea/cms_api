@@ -6,10 +6,10 @@
 **Change control:** ADR + PR review
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-qa-testing_prd_v1.0:** Testing requirements for ZIP resolver
-- **REF-geography-mapping-cursor_prd_v1.0.md:** Related geography mapping patterns
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-qa-testing-prd-v1.0:** Testing requirements for ZIP resolver
+- **REF-geography-mapping-cursor-prd-v1.0.md:** Related geography mapping patterns
 
 **Version:** 1.0  
 **Date:** 2025‑09‑29
@@ -41,7 +41,7 @@ The resolver depends on multiple external datasets with varying stability. We pr
 - PO Box filtering via SimpleMaps
 - Full traces for observability and QA
 
-All HTTP interfaces produced by this resolver must follow the **STD-api-architecture_prd_v1.0** for contract, versioning, and change management.
+All HTTP interfaces produced by this resolver must follow the **STD-api-architecture-prd-v1.0** for contract, versioning, and change management.
 
 **Out (future):**
 - Multi‑state search

@@ -9,10 +9,10 @@ This document defines the **QA & Testing Standard (QTS)** that governs validatio
 **Change control:** ADR + QA guild review + PR sign-off
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-observability-monitoring_prd_v1.0:** Comprehensive monitoring standards, test observability, and unified SLAs
-- **STD-data-architecture_prd_v1.0:** Data pipeline testing requirements and quality gates
-- **STD-api-security-and-auth_prd_v1.0:** Security testing requirements and compliance procedures  
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-observability-monitoring-prd-v1.0:** Comprehensive monitoring standards, test observability, and unified SLAs
+- **STD-data-architecture-prd-v1.0:** Data pipeline testing requirements and quality gates
+- **STD-api-security-and-auth-prd-v1.0:** Security testing requirements and compliance procedures  
 
 ## 1. Goals & Non-Goals
 **Goals**
@@ -94,7 +94,7 @@ We standardize QA into **Plan → Implement → Execute → Observe → Improve*
 - **Data-Contract:** Schema diff detection; any breaking change blocks merge, surfaces ADR requirement.
 - **Scenario/E2E:** Smoke flows executed pre-deploy; failure blocks release.
 - **Non-Functional:** Load/perf + accuracy SLO tests run nightly; regression beyond tolerance opens Sev2.
-- **API Contracts:** When surfaces are exposed, contract tests must also satisfy the governance defined in the **STD-api-architecture_prd_v1.0**.
+- **API Contracts:** When surfaces are exposed, contract tests must also satisfy the governance defined in the **STD-api-architecture-prd-v1.0**.
 
 ### 7.1 Failure Handling & Quarantine
 - Auto quarantine newly failing tests only with explicit override label (`ALLOW_QUARANTINE`) + issue link.
@@ -108,7 +108,7 @@ We standardize QA into **Plan → Implement → Execute → Observe → Improve*
 | **Sev3** | Flake >1%, non-blocking inconsistencies | Track in backlog, resolve within sprint |
 
 ## 8. Observability & Monitoring
-- **References:** STD-observability-monitoring_prd_v1.0 for comprehensive monitoring standards
+- **References:** STD-observability-monitoring-prd-v1.0 for comprehensive monitoring standards
 - **Test-specific monitoring:** Pass rates, duration, coverage, flake rates
 - **Test data freshness:** Ingest snapshots used in tests must lag production ≤ 30 days (unless synthetic)
 - **Synthetic checks:** Hit critical APIs every 5 min; latency SLO p95 tracked
@@ -182,9 +182,9 @@ Fields: `requester`, `suite_id`, `deviation_type`, `justification`, `mitigation`
 ### Appendix F — Cross-Reference Map
 
 **Related PRDs:**
-- **STD-observability-monitoring_prd_v1.0:** Comprehensive monitoring standards, test observability, and unified SLAs
-- **STD-data-architecture_prd_v1.0:** Data pipeline testing requirements and quality gates
-- **STD-api-security-and-auth_prd_v1.0:** Security testing requirements and compliance procedures
+- **STD-observability-monitoring-prd-v1.0:** Comprehensive monitoring standards, test observability, and unified SLAs
+- **STD-data-architecture-prd-v1.0:** Data pipeline testing requirements and quality gates
+- **STD-api-security-and-auth-prd-v1.0:** Security testing requirements and compliance procedures
 
 **Integration Points:**
 - **Observability:** QTS Section 8 → Observability PRD Section 2.5 (Testing Lineage), Section 3.3 (Testing SLAs), Section 4.3 (Testing Metrics)

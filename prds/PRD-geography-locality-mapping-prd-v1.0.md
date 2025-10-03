@@ -6,10 +6,10 @@
 **Change control:** ADR + PR review
 
 **Cross-References:**
-- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
-- **STD-data-architecture_prd_v1.0:** Data ingestion lifecycle and storage patterns
-- **STD-qa-testing_prd_v1.0:** Testing requirements for geography mapping
-- **REF-geography-mapping-cursor_prd_v1.0.md:** Related geography mapping patterns
+- **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
+- **STD-qa-testing-prd-v1.0:** Testing requirements for geography mapping
+- **REF-geography-mapping-cursor-prd-v1.0.md:** Related geography mapping patterns
 
 - **2025-09-26**: Initial draft of Geography PRD with **ZIP+4-first mandate**, effective-dating rules, schema, ingestion steps, QA, and trace requirements.
 - **2025-09-26**: Clarifications applied — non-strict default with explicit fallback policy; **nearest fallback constrained to same state**; carrier exposure optional; locality-name dictionary loader added; annual-as-quarter fallback allowed; ZIP+4 normalization; cache strategy clarified (digest-aware by default, TTL optional); conversational strict-mode errors; per-request radius override; daily gap report methodology.
@@ -128,7 +128,7 @@ Define how we ingest and use CMS geography mapping to resolve a service **ZIP(+4
 6. **Register snapshot**: Insert `(dataset_id, effective_from, effective_to, digest, source_url)` into `snapshots`.
 
 ## 9) Resolver Behavior
-API contracts implementing this behavior must comply with the **STD-api-architecture_prd_v1.0**.
+API contracts implementing this behavior must comply with the **STD-api-architecture-prd-v1.0**.
 Input: `{ zip5: str, plus4: Optional[str], valuation_year: int, quarter: Optional[int], strict: bool=false, max_radius_miles?: int, initial_radius_miles?: int, expand_step_miles?: int, expose_carrier?: bool }`
 Algorithm:
 1. Select **dataset version** by valuation (year/quarter or snapshot pin); trace `dataset_selection`.
