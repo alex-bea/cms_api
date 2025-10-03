@@ -1,6 +1,6 @@
 """Add nearest ZIP resolver tables
 
-Revision ID: 001
+Revision ID: 001_add_nearest_zip_tables
 Revises: 
 Create Date: 2025-09-29 12:30:00.000000
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '001'
+revision = '001_add_nearest_zip_tables'
 down_revision = None
 branch_labels = None
 depends_on = None

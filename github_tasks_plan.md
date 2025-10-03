@@ -6,7 +6,7 @@ Generated on: 2025-10-03 09:57:53
 
 **Name:** CMS API Development Tasks
 **Description:** Comprehensive task management for CMS API development, data ingestion, and system enhancement
-**Total Tasks:** 60
+**Total Tasks:** 63
 
 ## GitHub Project Setup Instructions
 
@@ -95,9 +95,9 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 ### Summary by Category
 
-- **Data Ingestion**: 13 tasks
-- **General**: 31 tasks
-- **API Development**: 2 tasks
+- **Data Ingestion**: 14 tasks
+- **General**: 32 tasks
+- **API Development**: 3 tasks
 - **Performance**: 3 tasks
 - **Security**: 2 tasks
 - **Monitoring**: 3 tasks
@@ -108,8 +108,8 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 ### Summary by Priority
 
 - **Critical**: 8 tasks
-- **High**: 10 tasks
-- **Medium**: 15 tasks
+- **High**: 12 tasks
+- **Medium**: 16 tasks
 - **Low**: 27 tasks
 
 ## Detailed Task List
@@ -1048,6 +1048,75 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 ---
 
+### Task 61: API Development: Wire pricing plan persistence and dataset provenance
+
+**Category:** API Development
+**Priority:** High
+**Estimated Time:** TBD
+**Labels:** api-development, high-priority
+
+**Description:**
+**Files:** `cms_pricing/services/pricing.py:212`, `cms_pricing/services/pricing.py:216`, `cms_pricing/services/trace.py:168`, `cms_pricing/services/pricing.py:434`
+
+**Details:** Capture stored plan components and dataset metadata in pricing responses, propagate dataset usage into trace records, and replace placeholder loaders to deliver full parity and auditing.
+
+**Implementation Steps:**
+- Load stored plan definitions by filling in `_load_plan_components`/`_get_plan_name` with SQLAlchemy queries so pricing reuses persisted sequences and metadata.
+- Normalize stored and ad-hoc components through a shared helper before calling the engines to keep pricing inputs consistent.
+- Extend pricing engines (starting with MPFS) to surface dataset identifiers/digests, leveraging revision/effective date data or snapshot lookups.
+- Aggregate those dataset descriptors into `PricingResponse.datasets_used` to support comparison parity checks.
+- Update `TraceService.store_run` to persist dataset usage and facility flags alongside run data for replay/audit trails.
+- Backstop the change with unit/integration coverage that executes a stored plan and asserts dataset metadata and trace persistence.
+
+---
+
+### Task 62: Data Ingestion: Replace placeholder validation/adaptation logic
+
+**Category:** Data Ingestion
+**Priority:** High
+**Estimated Time:** TBD
+**Labels:** data-ingestion, high-priority
+
+**Description:**
+**Files:** `cms_pricing/ingestion/ingestors/mpfs_ingestor.py:152`, `cms_pricing/ingestion/ingestors/rvu_ingestor.py:1`
+
+**Details:** Implement real DIS validation rules, adapters, and enrichers in MPFS/RVU ingestors to enforce schema quality and unblock failing ingestion tests.
+
+---
+
+### Task 63: General: Execute automation and cache-warming backlog
+
+**Category:** General
+**Priority:** Medium
+**Estimated Time:** TBD
+**Labels:** general, medium-priority
+
+**Description:**
+**Files:** `NEXT_TODOS.md:11`, `cms_pricing/main.py:95`, `.github/workflows/cms_rvu_discovery.yml`
+
+**Details:** Build the CMS release detection, downloader automation, and cache-warming routines so dataset freshness and observability match roadmap expectations.
+
+---
+
+### Task 64: Testing: Stand up Postgres-backed API test harness
+
+**Category:** Testing
+**Priority:** Medium
+**Estimated Time:** TBD
+**Labels:** testing, database, medium-priority
+
+**Description:**
+Stand up a Postgres-backed test harness so API suites that rely on JSONB/ARRAY columns run without SQLite dialect failures.
+
+**Implementation Steps:**
+- Provision a dedicated Postgres test database (e.g., docker compose service or pytest-postgresql fixture) and expose its DSN via environment variables for pytest runs.
+- Build a bootstrap script (e.g., `tests/scripts/bootstrap_test_db.py`) that runs Alembic migrations and seeds the minimal MPFS/OPPS/geography data required by plan/pricing tests.
+- Update `tests/conftest.py` to override `DATABASE_URL`, invoke the bootstrap script once per session, and hand out transactional SQLAlchemy sessions that roll back between tests.
+- Adjust the FastAPI `client` fixture to rely on the Postgres-backed dependency instead of SQLite overrides while still auto-attaching API-key headers.
+- Document the workflow (start DB, bootstrap, run pytest) in the README so contributors can execute the suite locally.
+
+---
+
 
 ## GitHub CLI Commands for Adding Tasks
 
@@ -1137,7 +1206,7 @@ jobs:
 
 ## Notes
 
-- This plan includes {len(tasks)} total tasks
+- This plan includes 63 total tasks
 - Tasks are categorized by type and priority
 - Estimated times are based on complexity analysis
 - Dependencies are noted where applicable

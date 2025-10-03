@@ -217,16 +217,26 @@ The API uses PostgreSQL with the following main tables:
 
 ### Running Tests
 
+We organize the suite by domain to match the QA Testing Standard. Each directory has a matching pytest marker so you can target specific layers:
+
 ```bash
-# Run all tests
-pytest
+# Documentation catalog audits
+pytest tests/prd_docs -m prd_docs
 
-# Run golden tests for parity validation
-pytest tests/test_golden.py -v
+# Scraper unit/component + performance suites
+pytest tests/scrapers -m scraper
 
-# Run with coverage
-pytest --cov=cms_pricing
+# DIS ingestion pipelines (requires Postgres)
+pytest tests/ingestors -m ingestor
+
+# API contract, health, and parity checks
+pytest tests/api -m api
+
+# Geography & nearest-zip resolver suites
+pytest tests/geography -m geography
 ```
+
+Combine markers as needed (e.g., `pytest -m "scraper or prd_docs"`) or run the full suite with `pytest`.
 
 ### Code Quality
 

@@ -12,6 +12,7 @@ from cms_pricing.schemas.geography import GeographyCandidate
 from cms_pricing.services.geography import GeographyService
 from cms_pricing.services.trace import TraceService
 from sqlalchemy.orm import Session
+from cms_pricing.models.plans import Plan, PlanComponent
 from cms_pricing.engines.mpfs import MPSFEngine
 from cms_pricing.engines.opps import OPPSEngine
 from cms_pricing.engines.asc import ASCEngine
@@ -28,8 +29,10 @@ class PricingService:
     """Main pricing service"""
     
     def __init__(self, db: Session = None):
+        self.db = db
         self.geography_service = GeographyService(db)
         self.trace_service = TraceService(db)
+        self._plan_name_cache: Dict[Any, str] = {}
         self.engines = {
             'MPFS': MPSFEngine(),
             'OPPS': OPPSEngine(),
@@ -110,8 +113,11 @@ class PricingService:
                 plan_name = await self._get_plan_name(request.plan_id)
             else:
                 # Use ad-hoc plan
-                components = request.ad_hoc_plan.get('components', [])
-                plan_name = request.ad_hoc_plan.get('name', 'Ad-hoc Plan')
+                ad_hoc_plan = request.ad_hoc_plan or {}
+                components = self._normalize_ad_hoc_components(
+                    ad_hoc_plan.get('components', [])
+                )
+                plan_name = ad_hoc_plan.get('name', 'Ad-hoc Plan')
             
             # Price each component
             line_items = []
@@ -143,22 +149,22 @@ class PricingService:
                     ccn=request.ccn,
                     payer=request.payer,
                     plan=request.plan,
-                    units=component.get('units', 1.0),
-                    utilization_weight=component.get('utilization_weight', 1.0),
-                    professional_component=component.get('professional_component', True),
-                    facility_component=component.get('facility_component', True),
-                    modifiers=component.get('modifiers', []),
-                    pos=component.get('pos'),
-                    ndc11=component.get('ndc11')
+                    units=component['units'],
+                    utilization_weight=component['utilization_weight'],
+                    professional_component=component['professional_component'],
+                    facility_component=component['facility_component'],
+                    modifiers=component['modifiers'],
+                    pos=component['pos'],
+                    ndc11=component['ndc11']
                 )
-                
+
                 # Create line item response
                 line_item = LineItemResponse(
                     sequence=i + 1,
                     code=component['code'],
                     setting=component['setting'],
-                    units=component.get('units', 1.0),
-                    utilization_weight=component.get('utilization_weight', 1.0),
+                    units=component['units'],
+                    utilization_weight=component['utilization_weight'],
                     allowed_cents=result['allowed_cents'],
                     beneficiary_deductible_cents=result.get('beneficiary_deductible_cents', 0),
                     beneficiary_coinsurance_cents=result.get('beneficiary_coinsurance_cents', 0),
@@ -430,11 +436,152 @@ class PricingService:
         return ((value_b - value_a) / value_a) * 100
     
     async def _load_plan_components(self, plan_id) -> List[Dict[str, Any]]:
-        """Load plan components from database (placeholder)"""
-        # TODO: Implement database loading
-        return []
+        """Load plan components from database"""
+        if not self.db:
+            raise ValueError("Database session is required to load stored plans")
+
+        plan = self.db.query(Plan).filter(Plan.id == plan_id).first()
+        if not plan:
+            raise ValueError(f"Plan not found: {plan_id}")
+
+        # Cache plan name for later reuse in the same request
+        self._plan_name_cache[plan_id] = plan.name
+
+        components = (
+            self.db.query(PlanComponent)
+            .filter(PlanComponent.plan_id == plan_id)
+            .order_by(PlanComponent.sequence.asc(), PlanComponent.created_at.asc())
+            .all()
+        )
+
+        if not components:
+            logger.warning("Stored plan found without components", plan_id=str(plan_id))
+            return []
+
+        normalized_components: List[Dict[str, Any]] = []
+        for component in components:
+            raw_component = {
+                "code": component.code,
+                "setting": component.setting,
+                "units": component.units,
+                "utilization_weight": component.utilization_weight,
+                "professional_component": component.professional_component,
+                "facility_component": component.facility_component,
+                "modifiers": component.modifiers,
+                "pos": component.pos,
+                "ndc11": component.ndc11,
+                "wastage_units": component.wastage_units,
+                "sequence": component.sequence,
+            }
+            normalized_components.append(
+                self._apply_component_defaults(raw_component, component.sequence)
+            )
+
+        # Already ordered via query; no additional sort required
+        return normalized_components
     
     async def _get_plan_name(self, plan_id) -> str:
-        """Get plan name from database (placeholder)"""
-        # TODO: Implement database loading
-        return "Unknown Plan"
+        """Get plan name from database, using cached value when available"""
+        if plan_id in self._plan_name_cache:
+            return self._plan_name_cache[plan_id]
+
+        if not self.db:
+            raise ValueError("Database session is required to resolve plan name")
+
+        plan = self.db.query(Plan).filter(Plan.id == plan_id).first()
+        if not plan:
+            raise ValueError(f"Plan not found: {plan_id}")
+
+        self._plan_name_cache[plan_id] = plan.name
+        return plan.name
+
+    def _normalize_ad_hoc_components(self, components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Normalize ad-hoc plan components to match stored plan structure"""
+        if not components:
+            return []
+
+        normalized: List[Dict[str, Any]] = []
+        for idx, raw_component in enumerate(components):
+            # Use explicit sequence if provided, otherwise fallback to index ordering
+            provided_sequence = raw_component.get('sequence')
+            fallback_sequence = provided_sequence if provided_sequence is not None else idx + 1
+            normalized.append(
+                self._apply_component_defaults(raw_component, fallback_sequence)
+            )
+
+        # Preserve explicit sequencing
+        normalized.sort(key=lambda component: component['sequence'])
+        return normalized
+
+    def _apply_component_defaults(
+        self,
+        raw_component: Dict[str, Any],
+        fallback_sequence: int,
+    ) -> Dict[str, Any]:
+        """Apply default values and type normalization for plan components"""
+
+        code = raw_component.get('code')
+        setting = raw_component.get('setting')
+        if not code or not setting:
+            raise ValueError("Plan components must include both 'code' and 'setting'")
+
+        # Normalize modifiers
+        modifiers_value = raw_component.get('modifiers')
+        if modifiers_value is None:
+            modifiers: List[str] = []
+        elif isinstance(modifiers_value, list):
+            modifiers = [str(mod).strip() for mod in modifiers_value if str(mod).strip()]
+        elif isinstance(modifiers_value, str):
+            modifiers = [part.strip() for part in modifiers_value.split(',') if part.strip()]
+        else:
+            modifiers = [str(modifiers_value).strip()]
+
+        modifiers = [mod.upper() for mod in modifiers]
+
+        def _to_int(value: Any, default: int) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+
+        fallback_sequence_int = _to_int(fallback_sequence, 1)
+        sequence_value = raw_component.get('sequence')
+        sequence = _to_int(sequence_value, fallback_sequence_int)
+
+        def _to_bool(value: Any, default: bool) -> bool:
+            if value is None:
+                return default
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return bool(value)
+            value_str = str(value).strip().lower()
+            if value_str in {"true", "1", "yes", "y"}:
+                return True
+            if value_str in {"false", "0", "no", "n"}:
+                return False
+            return default
+
+        def _to_float(value: Any, default: float) -> float:
+            if value is None:
+                return default
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        normalized_component = {
+            "code": str(code).strip(),
+            "setting": str(setting).strip().upper(),
+            "units": _to_float(raw_component.get('units'), 1.0),
+            "utilization_weight": _to_float(raw_component.get('utilization_weight'), 1.0),
+            "professional_component": _to_bool(raw_component.get('professional_component'), True),
+            "facility_component": _to_bool(raw_component.get('facility_component'), True),
+            "modifiers": modifiers,
+            "pos": str(raw_component.get('pos')).strip() if raw_component.get('pos') is not None else None,
+            "ndc11": str(raw_component.get('ndc11')).strip() if raw_component.get('ndc11') is not None else None,
+            "wastage_units": _to_float(raw_component.get('wastage_units'), 0.0),
+            "sequence": sequence,
+        }
+
+        return normalized_component

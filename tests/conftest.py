@@ -7,21 +7,20 @@ the QA Testing Standard (QTS) v1.0 requirements.
 
 import pytest
 import asyncio
-from pathlib import Path
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 import importlib.util
+from typing import Dict, Any
+
+from fastapi.testclient import TestClient
+
+from cms_pricing.main import app
+from cms_pricing.config import settings
+from cms_pricing.database import get_db
 
 # Import all models to ensure they're registered
-from cms_pricing.models.rvu import Base as RVUBase
-from cms_pricing.models.nearest_zip import Base as NearestZipBase
-from cms_pricing.models.geography_trace import Base as GeographyTraceBase
 from cms_pricing.models.plans import Base as PlansBase
-from cms_pricing.models.snapshots import Base as SnapshotsBase
-from cms_pricing.models.runs import Base as RunsBase
-from cms_pricing.models.benefits import Base as BenefitsBase
-from cms_pricing.models.codes import Base as CodesBase
 
 
 GEOGRAPHY_MODULE = "cms_pricing.ingestion.geography"
@@ -42,75 +41,6 @@ DOMAIN_MARKER_PATTERNS = {
     "geography": ("tests/geography", "geography", "nearest_zip", "zip9"),
     "api": ("tests/api", "_api", "router"),
 }
-class SQLiteCompatibleModels:
-    """Create SQLite-compatible versions of models that use JSONB"""
-    
-    @staticmethod
-    def create_test_models():
-        """Create test-compatible model definitions"""
-        from sqlalchemy import Column, String, Text, DateTime, Integer, Float, Boolean
-        from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
-        from sqlalchemy.dialects.postgresql import UUID
-        import uuid
-        
-        # Create a test-compatible version of geography_trace
-        class GeographyResolutionTrace:
-            __tablename__ = 'geography_resolution_traces'
-            
-            id = Column(Integer, primary_key=True)
-            trace_id = Column(String(36), nullable=False, default=lambda: str(uuid.uuid4()))
-            input_zip = Column(String(5), nullable=False)
-            resolved_zip = Column(String(5), nullable=True)
-            resolved_locality = Column(String(10), nullable=True)
-            resolved_state = Column(String(2), nullable=True)
-            distance_miles = Column(Float, nullable=True)
-            resolution_method = Column(String(50), nullable=True)
-            confidence_score = Column(Float, nullable=True)
-            processing_time_ms = Column(Float, nullable=True)
-            created_at = Column(DateTime, nullable=False)
-            
-            # Use SQLite-compatible JSON instead of JSONB
-            inputs_json = Column(SQLiteJSON, nullable=True)
-            output_json = Column(SQLiteJSON, nullable=True)
-        
-        # Create a test-compatible version of runs
-        class IngestionRun:
-            __tablename__ = 'ingestion_runs'
-            
-            id = Column(Integer, primary_key=True)
-            run_id = Column(String(36), nullable=False, default=lambda: str(uuid.uuid4()))
-            dataset_name = Column(String(100), nullable=False)
-            release_id = Column(String(100), nullable=False)
-            batch_id = Column(String(36), nullable=False)
-            status = Column(String(20), nullable=False)
-            started_at = Column(DateTime, nullable=False)
-            completed_at = Column(DateTime, nullable=True)
-            record_count = Column(Integer, nullable=True)
-            quality_score = Column(Float, nullable=True)
-            error_message = Column(Text, nullable=True)
-            
-            # Use SQLite-compatible JSON instead of JSONB
-            request_json = Column(SQLiteJSON, nullable=True)
-            response_json = Column(SQLiteJSON, nullable=True)
-        
-        class TraceRecord:
-            __tablename__ = 'trace_records'
-            
-            id = Column(Integer, primary_key=True)
-            trace_id = Column(String(36), nullable=False)
-            step_name = Column(String(100), nullable=False)
-            step_order = Column(Integer, nullable=False)
-            status = Column(String(20), nullable=False)
-            started_at = Column(DateTime, nullable=False)
-            completed_at = Column(DateTime, nullable=True)
-            duration_ms = Column(Float, nullable=True)
-            error_message = Column(Text, nullable=True)
-            
-            # Use SQLite-compatible JSON instead of JSONB
-            trace_refs = Column(SQLiteJSON, nullable=True)
-            trace_data = Column(SQLiteJSON, nullable=False)
-        
-        return GeographyResolutionTrace, IngestionRun, TraceRecord
 
 
 @pytest.fixture(scope="session")
@@ -124,21 +54,8 @@ def test_engine():
         connect_args={"check_same_thread": False}
     )
     
-    # Create test-compatible models
-    GeographyResolutionTrace, IngestionRun, TraceRecord = SQLiteCompatibleModels.create_test_models()
-    
-    # Create all tables
-    RVUBase.metadata.create_all(engine)
-    NearestZipBase.metadata.create_all(engine)
+    # Create tables required for API tests (avoids JSONB columns for SQLite)
     PlansBase.metadata.create_all(engine)
-    SnapshotsBase.metadata.create_all(engine)
-    BenefitsBase.metadata.create_all(engine)
-    CodesBase.metadata.create_all(engine)
-    
-    # Create test-compatible tables
-    GeographyResolutionTrace.__table__.create(engine, checkfirst=True)
-    IngestionRun.__table__.create(engine, checkfirst=True)
-    TraceRecord.__table__.create(engine, checkfirst=True)
     
     return engine
 
@@ -153,6 +70,84 @@ def test_db_session(test_engine):
         yield session
     finally:
         session.close()
+
+
+@pytest.fixture(scope="function")
+def api_key() -> str:
+    """Provide a valid API key for authenticated requests"""
+    keys = settings.get_api_keys()
+    if not keys:
+        raise RuntimeError("No API keys configured for tests")
+    return keys[0]
+
+
+@pytest.fixture(scope="function")
+def client(api_key: str, test_db_session) -> TestClient:
+    """FastAPI TestClient with default auth headers"""
+
+    def _override_get_db():
+        try:
+            yield test_db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = _override_get_db
+
+    with TestClient(app) as test_client:
+        default_headers: Dict[str, str] = {
+            "X-API-Key": api_key,
+        }
+
+        # Merge default headers into each request by wrapping the original call
+        original_request = test_client.request
+
+        def request_with_auth(method, url, **kwargs):  # type: ignore[override]
+            headers = kwargs.pop("headers", {})
+            merged_headers = {**default_headers, **headers}
+            return original_request(method, url, headers=merged_headers, **kwargs)
+
+        test_client.request = request_with_auth  # type: ignore[assignment]
+        yield test_client
+
+    app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.fixture(scope="function")
+def sample_plan_data() -> Dict[str, Any]:
+    """Provide sample treatment plan payload for tests"""
+
+    return {
+        "name": "Sample Knee Replacement Plan",
+        "description": "Comprehensive knee replacement bundle",
+        "created_by": "unit-test",
+        "metadata": {"category": "orthopedic", "version": "1.0"},
+        "components": [
+            {
+                "sequence": 1,
+                "code": "27447",
+                "setting": "OPPS",
+                "units": 1,
+                "utilization_weight": 1.0,
+                "professional_component": False,
+                "facility_component": True,
+                "modifiers": ["-TC"],
+                "pos": "22",
+                "ndc11": None,
+            },
+            {
+                "sequence": 2,
+                "code": "99213",
+                "setting": "MPFS",
+                "units": 1,
+                "utilization_weight": 1.0,
+                "professional_component": True,
+                "facility_component": False,
+                "modifiers": ["-26"],
+                "pos": "11",
+                "ndc11": None,
+            },
+        ],
+    }
 
 
 @pytest.fixture(scope="session")
