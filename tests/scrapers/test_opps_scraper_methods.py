@@ -211,7 +211,10 @@ class TestOPPSScraperMethods:
         mock_client.get.return_value = mock_response
         
         # Mock the browser resolution to return a different URL
-        with patch.object(scraper, '_handle_disclaimer_with_browser', return_value="https://example.com/resolved.zip"):
+        async def mock_browser_resolution(*args, **kwargs):
+            return "https://example.com/resolved.zip"
+        
+        with patch.object(scraper, '_handle_disclaimer_with_browser', side_effect=mock_browser_resolution):
             result = await scraper._resolve_disclaimer_url(mock_client, "https://example.com/license.asp", "Test File")
             assert result == "https://example.com/resolved.zip"
     
@@ -226,7 +229,10 @@ class TestOPPSScraperMethods:
         mock_client.get.return_value = mock_response
         
         # Mock the browser resolution to fail (return original URL)
-        with patch.object(scraper, '_handle_disclaimer_with_browser', return_value="https://example.com/license.asp"):
+        async def mock_browser_fallback(*args, **kwargs):
+            return "https://example.com/license.asp"
+        
+        with patch.object(scraper, '_handle_disclaimer_with_browser', side_effect=mock_browser_fallback):
             result = await scraper._resolve_disclaimer_url(mock_client, "https://example.com/license.asp", "Test File")
             assert result == "https://example.com/license.asp"
     
