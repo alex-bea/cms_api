@@ -155,8 +155,10 @@ def sample_plan_data() -> Dict[str, Any]:
 def event_loop():
     """Create an event loop for async tests"""
     loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     yield loop
-    loop.close()
+    # Don't close the loop here - let pytest-asyncio handle it
+    # loop.close()
 
 
 @pytest.fixture(scope="function")

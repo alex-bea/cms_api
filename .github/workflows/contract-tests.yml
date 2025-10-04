@@ -8,17 +8,19 @@ on:
 jobs:
   schemathesis:
     runs-on: ubuntu-latest
-    services:
-      api:
-        image: ghcr.io/your-org/cms-api:test
-        ports: ['8000:8000']
-        options: >-
-          --health-cmd="curl -f http://localhost:8000/health || exit 1"
-          --health-interval=5s --health-timeout=2s --health-retries=20
     steps:
       - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Start API server
+        run: |
+          uvicorn cms_pricing.main:app --host 0.0.0.0 --port 8000 &
+          sleep 10
       - name: Install schemathesis
-        run: pipx install schemathesis
+        run: pip install schemathesis
       - name: Run schemathesis
         run: schemathesis run api-contracts/openapi.yaml --base-url=http://localhost:8000
   pytest:

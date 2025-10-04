@@ -62,8 +62,8 @@ class CMSOPPSScraper:
         self.quarterly_pattern = re.compile(r'(\d{4})\s*[Qq](\d)', re.IGNORECASE)
         self.addendum_pattern = re.compile(r'addendum\s*([AB])', re.IGNORECASE)
         self.file_patterns = {
-            'addendum_a': re.compile(r'addendum\s*a.*\.(csv|xls|xlsx|txt)', re.IGNORECASE),
-            'addendum_b': re.compile(r'addendum\s*b.*\.(csv|xls|xlsx|txt)', re.IGNORECASE),
+            'addendum_a': re.compile(r'addendum[\s\-]*a.*\.(csv|xls|xlsx|txt)', re.IGNORECASE),
+            'addendum_b': re.compile(r'addendum[\s\-]*b.*\.(csv|xls|xlsx|txt)', re.IGNORECASE),
             'zip_files': re.compile(r'\.(zip|gz)$', re.IGNORECASE)
         }
         
@@ -200,8 +200,16 @@ class CMSOPPSScraper:
         # Must have a year pattern (2025, 2024, etc.)
         has_year = bool(re.search(r'20\d{2}', f"{text} {href}"))
         
+        # Additional checks for special characters and URL encoding
+        # Allow URL-encoded characters like %20 (space), %2B (+), etc.
+        decoded_href = href.replace('%20', ' ').replace('%2B', '+').replace('%26', '&').replace('%3D', '=')
+        decoded_lower = decoded_href.lower()
+        
+        # Check if decoded URL contains quarter indicators
+        has_decoded_indicators = any(indicator in decoded_lower for indicator in quarter_indicators)
+        
         return (has_quarter_indicator and is_cms_link and is_not_general and 
-                is_not_rss and has_year)
+                is_not_rss and has_year) or (has_decoded_indicators and is_cms_link and has_year)
     
     def _extract_quarter_info(self, link_info: Dict[str, str]) -> Optional[Dict[str, int]]:
         """Extract year and quarter from link information."""
@@ -214,9 +222,14 @@ class CMSOPPSScraper:
         # Look for year pattern - handle both "2025" and "25" formats
         year_match = re.search(r'20(\d{2})', combined_text)
         if not year_match:
-            return None
-        
-        year = int(f"20{year_match.group(1)}")
+            # Try alternative patterns like just "25" or other year formats
+            alt_year_match = re.search(r'(\d{4})', combined_text)
+            if alt_year_match:
+                year = int(alt_year_match.group(1))
+            else:
+                return None
+        else:
+            year = int(f"20{year_match.group(1)}")
         
         # Look for quarter pattern using our predefined patterns
         quarter = None
@@ -236,7 +249,7 @@ class CMSOPPSScraper:
             return None
         
         # Additional validation: ensure we have a reasonable year
-        if year < 2020 or year > 2030:
+        if year < 1990 or year > 2040:
             return None
         
         return {

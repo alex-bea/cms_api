@@ -27,7 +27,7 @@ class TestPPRRVUFixedWidthParser:
     
     def test_parse_pprrvu_fixed_width_basic(self):
         """Test basic fixed-width parsing of PPRRVU records"""
-        from cms_pricing.ingestion.rvu import PPRRVUParser
+        from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor
         
         parser = PPRRVUParser()
         result = parser.parse_fixed_width(SAMPLE_PPRRVU_TXT_RECORDS)
@@ -48,7 +48,7 @@ class TestPPRRVUFixedWidthParser:
     
     def test_parse_pprrvu_fixed_width_modifiers(self):
         """Test modifier parsing and normalization"""
-        from cms_pricing.ingestion.rvu import PPRRVUParser
+        from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor
         
         parser = PPRRVUParser()
         
@@ -67,7 +67,7 @@ class TestPPRRVUFixedWidthParser:
     
     def test_parse_pprrvu_fixed_width_rvu_values(self):
         """Test RVU value parsing and precision"""
-        from cms_pricing.ingestion.rvu import PPRRVUParser
+        from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor
         
         parser = PPRRVUParser()
         
@@ -86,7 +86,7 @@ class TestPPRRVUFixedWidthParser:
     
     def test_parse_pprrvu_fixed_width_status_codes(self):
         """Test status code validation"""
-        from cms_pricing.ingestion.rvu import PPRRVUParser
+        from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor
         
         parser = PPRRVUParser()
         
@@ -101,7 +101,7 @@ class TestPPRRVUFixedWidthParser:
     
     def test_parse_pprrvu_fixed_width_policy_indicators(self):
         """Test policy indicator parsing"""
-        from cms_pricing.ingestion.rvu import PPRRVUParser
+        from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor
         
         parser = PPRRVUParser()
         
@@ -120,7 +120,7 @@ class TestPPRRVUCSVParser:
     
     def test_parse_pprrvu_csv_basic(self):
         """Test basic CSV parsing of PPRRVU records"""
-        from cms_pricing.ingestion.rvu import PPRRVUParser
+        from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor
         
         parser = PPRRVUParser()
         df = pd.DataFrame(SAMPLE_PPRRVU_CSV_RECORDS)
@@ -136,7 +136,7 @@ class TestPPRRVUCSVParser:
     
     def test_parse_pprrvu_csv_header_aliasing(self):
         """Test CSV header aliasing and normalization"""
-        from cms_pricing.ingestion.rvu import PPRRVUParser
+        from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor
         
         parser = PPRRVUParser()
         

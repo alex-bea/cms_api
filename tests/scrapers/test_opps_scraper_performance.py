@@ -247,10 +247,10 @@ class TestOPPSScraperPerformance:
         # For now, we'll establish a baseline and test against it
         
         test_cases = [
-            ("January 2025 Addendum A", (2025, 1)),
-            ("April 2025 Addendum B", (2025, 2)),
-            ("July 2025 Addendum A", (2025, 3)),
-            ("October 2025 Addendum B", (2025, 4)),
+            ("January 2025 Addendum A", {'year': 2025, 'quarter': 1}),
+            ("April 2025 Addendum B", {'year': 2025, 'quarter': 2}),
+            ("July 2025 Addendum A", {'year': 2025, 'quarter': 3}),
+            ("October 2025 Addendum B", {'year': 2025, 'quarter': 4}),
         ] * 100
         
         start_time = time.time()
