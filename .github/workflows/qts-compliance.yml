@@ -1,5 +1,7 @@
 name: QTS Compliance
 on: 
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2:00 UTC
   push:
     branches: [ main, develop ]
   pull_request:

@@ -1,5 +1,7 @@
 name: OpenAPI Diff (breaking-change gate)
 on:
+  schedule:
+    - cron: '0 4 * * *'  # Daily at 4:00 UTC
   pull_request:
     paths: ["api-contracts/openapi.yaml"]
 

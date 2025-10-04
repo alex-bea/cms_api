@@ -1,5 +1,7 @@
 name: Contract Tests
 on:
+  schedule:
+    - cron: '0 3 * * *'  # Daily at 3:00 UTC
   pull_request:
     paths: ["api-contracts/openapi.yaml", "apps/**", "services/**"]
   push:

@@ -1,6 +1,8 @@
 name: API Contract Lint
 
 on:
+  schedule:
+    - cron: '0 5 * * *'  # Daily at 5:00 UTC
   push:
     branches: [ main, develop ]
     paths: [ 'api-contracts/**', '.github/workflows/api-contract-lint.yml' ]
