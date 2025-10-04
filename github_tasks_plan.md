@@ -1251,6 +1251,173 @@ jobs:
 4. Implement comprehensive observability and monitoring features
 5. Complete end-to-end testing and performance validation
 
+### 🏗️ Architecture Documentation (New Priority)
+
+#### Task 1: Create STD-ingestion-pipeline-prd-v1.0.md
+**Priority:** High  
+**Category:** Documentation  
+**Estimated Time:** 4-6 hours  
+**Dependencies:** None  
+
+**Description:**
+Create comprehensive end-to-end ingestion pipeline architecture documentation that maps the complete data flow from scrapers to database.
+
+**Implementation Strategy:**
+1. **Pipeline Architecture Overview**: Document the complete ingestion pipeline stages (Discovery → Acquisition → Processing → Storage)
+2. **Component Interactions**: Detail how scrapers, ingestors, validators, and publishers interact
+3. **Data Flow Diagrams**: Create text-based diagrams showing data movement and transformations
+4. **Error Handling Patterns**: Document error handling, retry mechanisms, and recovery strategies
+5. **Performance Considerations**: Include scalability, throughput, and resource requirements
+6. **Monitoring Integration**: Document observability hooks and monitoring requirements
+
+**Content Outline:**
+- Pipeline stages and responsibilities
+- Component interactions and interfaces
+- Data flow patterns and transformations
+- Error handling and recovery mechanisms
+- Performance and scalability considerations
+- Monitoring and observability integration
+- Implementation guidelines and best practices
+
+**Governance Compliance:**
+- Follow `STD-doc-governance-prd-v1.0.md` naming conventions
+- Include proper metadata header (Status, Owners, Consumers, Change control)
+- Add cross-references to related PRDs
+- Ensure compliance with audit requirements
+
+**Acceptance Criteria:**
+- [ ] Document follows governance standards
+- [ ] Includes comprehensive pipeline architecture
+- [ ] Contains data flow diagrams and component interactions
+- [ ] Documents error handling and performance considerations
+- [ ] Cross-references related PRDs appropriately
+- [ ] Passes audit tool validation
+
+#### Task 2: Create REF-scraper-ingestor-integration-prd-v1.0.md
+**Priority:** High  
+**Category:** Documentation  
+**Estimated Time:** 3-4 hours  
+**Dependencies:** Task 1 (for cross-references)  
+
+**Description:**
+Create reference architecture document detailing integration patterns between scrapers and ingestors, including implementation templates and best practices.
+
+**Implementation Strategy:**
+1. **Integration Patterns**: Document how scrapers hand off data to ingestors via discovery manifests
+2. **Code Templates**: Provide implementation templates and code examples
+3. **Testing Strategies**: Document testing patterns for scraper–ingestor integration
+4. **Error Handling**: Detail error handling and recovery mechanisms
+5. **Best Practices**: Compile lessons learned and implementation best practices
+
+**Content Outline:**
+- Integration patterns and templates
+- Discovery manifest handoff mechanisms
+- Error handling and recovery patterns
+- Data validation and quality gates
+- Testing strategies and patterns
+- Code templates and examples
+- Implementation best practices
+
+**Governance Compliance:**
+- Follow `STD-doc-governance-prd-v1.0.md` naming conventions
+- Include proper metadata header (Status, Owners, Consumers, Change control)
+- Add cross-references to related PRDs
+- Ensure compliance with audit requirements
+
+**Acceptance Criteria:**
+- [ ] Document follows governance standards
+- [ ] Includes comprehensive integration patterns
+- [ ] Contains code templates and examples
+- [ ] Documents testing strategies and best practices
+- [ ] Cross-references related PRDs appropriately
+- [ ] Passes audit tool validation
+
+#### Task 3: Update DOC-master-catalog-prd-v1.0.md
+**Priority:** High  
+**Category:** Documentation  
+**Estimated Time:** 2-3 hours  
+**Dependencies:** Tasks 1 & 2  
+
+**Description:**
+Update the master catalog to include new architecture PRDs with proper cross-references and dependency mapping.
+
+**Implementation Strategy:**
+1. **Add New Entries**: Add both new PRDs to appropriate sections in master catalog
+2. **Update Dependency Graph**: Update Mermaid diagram to include new PRDs and relationships
+3. **Cross-References**: Ensure proper cross-referencing between related documents
+4. **Version Control**: Update version and change log appropriately
+
+**Content Updates:**
+- Add `STD-ingestion-pipeline-prd-v1.0.md` to Standards section
+- Add `REF-scraper-ingestor-integration-prd-v1.0.md` to Reference Architectures section
+- Update dependency graph with new relationships
+- Add cross-references to existing PRDs
+- Update change log with new entries
+
+**Acceptance Criteria:**
+- [ ] New PRDs added to appropriate sections
+- [ ] Dependency graph updated with new relationships
+- [ ] Cross-references added to related documents
+- [ ] Change log updated appropriately
+- [ ] Passes audit tool validation
+
+#### Task 4: Add Cross-References to Related PRDs
+**Priority:** Medium  
+**Category:** Documentation  
+**Estimated Time:** 2-3 hours  
+**Dependencies:** Tasks 1, 2 & 3  
+
+**Description:**
+Add cross-references to new architecture PRDs in related documents to ensure proper integration and discoverability.
+
+**Implementation Strategy:**
+1. **Update STD-data-architecture-prd-v1.0.md**: Add references to new pipeline standard
+2. **Update STD-scraper-prd-v1.0.md**: Add references to integration patterns
+3. **Update Existing Ingestor PRDs**: Add references to pipeline and integration standards
+4. **Update Runbooks**: Add references to new architecture documentation
+
+**Documents to Update:**
+- `STD-data-architecture-prd-v1.0.md`
+- `STD-scraper-prd-v1.0.md`
+- `PRD-opps-prd-v1.0.md`
+- `PRD-mpfs-prd-v1.0.md`
+- `PRD-rvu-gpci-prd-v0.1.md`
+- `RUN-global-operations-prd-v1.0.md`
+
+**Acceptance Criteria:**
+- [ ] All related PRDs reference new architecture documents
+- [ ] Cross-references are bidirectional where appropriate
+- [ ] References follow governance standards
+- [ ] Passes audit tool validation
+
+#### Task 5: Verify PRD Compliance
+**Priority:** Medium  
+**Category:** Documentation  
+**Estimated Time:** 1-2 hours  
+**Dependencies:** Tasks 1, 2, 3 & 4  
+
+**Description:**
+Run audit tools to verify governance compliance for new architecture PRDs and updated documentation.
+
+**Implementation Strategy:**
+1. **Run Audit Tools**: Execute `tools/audit_doc_catalog.py` and `tools/audit_doc_links.py`
+2. **Fix Compliance Issues**: Address any governance violations or missing references
+3. **Validate Cross-References**: Ensure all cross-references are valid and bidirectional
+4. **Verify Master Catalog**: Confirm master catalog is properly updated
+
+**Audit Tools to Run:**
+- `tools/audit_doc_catalog.py` - Verify catalog consistency
+- `tools/audit_doc_links.py` - Validate cross-references
+- `tools/audit_cross_references.py` - Check reference symmetry
+- `.github/workflows/doc-catalog-audit.yml` - CI/CD validation
+
+**Acceptance Criteria:**
+- [ ] All audit tools pass without errors
+- [ ] No governance violations detected
+- [ ] All cross-references are valid and bidirectional
+- [ ] Master catalog is properly updated
+- [ ] CI/CD pipeline passes documentation audits
+
 ### 🔗 Recent Commits
 - `a20a9d1`: feat: add daily scheduling to all test workflows
 - `4fecbcc`: fix: async test mocking issues in OPPS scraper tests
@@ -1259,14 +1426,32 @@ jobs:
 - `c55079b`: docs: Add PostgreSQL test harness dependencies to PRDs
 - `5a48201`: fix: Resolve Alembic migration chain and test script issues
 
+### 🎯 Architecture Documentation Benefits
+
+**Strategic Value:**
+- **Clarity**: Comprehensive end-to-end pipeline documentation for all stakeholders
+- **Consistency**: Standardized integration patterns across all scraper–ingestor implementations
+- **Reusability**: Code templates and examples for rapid development of new ingestors
+- **Compliance**: Full governance compliance with audit requirements
+- **Maintainability**: Centralized architecture documentation for long-term maintenance
+
+**Implementation Priority:**
+1. **Phase 1**: Create core architecture PRDs (Tasks 1-2)
+2. **Phase 2**: Update master catalog and cross-references (Tasks 3-4)
+3. **Phase 3**: Verify compliance and run audit tools (Task 5)
+
+**Total Estimated Time:** 12-18 hours across all tasks
+**Critical Path:** Tasks 1 → 2 → 3 → 4 → 5 (sequential dependencies)
+
 ## Notes
 
-- This plan includes 63 total tasks
+- This plan includes 68 total tasks (63 original + 5 new architecture documentation tasks)
 - Tasks are categorized by type and priority
 - Estimated times are based on complexity analysis
 - Dependencies are noted where applicable
 - All tasks include source information for traceability
 - Recent accomplishments and current focus updated as of 2025-10-04
+- Architecture documentation tasks added as new high-priority items
 
 ---
 *Generated by GitHub Tasks Setup Tool*  
