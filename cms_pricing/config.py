@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     
     # Database
     database_url: str = Field(default="postgresql://cms_user:cms_password@localhost:5432/cms_pricing", env="DATABASE_URL")
+    test_database_url: str = Field(default="postgresql://cms_user:cms_password@localhost:5432/cms_pricing", env="TEST_DATABASE_URL")
     redis_url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
     
     # API Configuration - using simple string field

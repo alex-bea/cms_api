@@ -7,6 +7,7 @@
 
 **Cross-References:**
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **DOC-test-patterns-prd-v1.0.md:** Test patterns and best practices guide
 - **STD-observability-monitoring-prd-v1.0:** Monitoring and alerting procedures
 - **STD-qa-testing-prd-v1.0:** Testing and validation procedures
 - **PRD-mpfs-prd-v1.0.md:** MPFS ingestion procedures
@@ -55,11 +56,13 @@ This runbook lists validation steps and ops playbook items for the new MPFS inge
 
 ## E. Test Harness Dependency (Postgres)
 
-- **Purpose:** API and pricing suites depend on PostgreSQL types (JSONB/ARRAY). Local testing and CI must exercise those flows against a real Postgres instance rather than the default SQLite harness.
+- **Purpose:** API and pricing suites depend on PostgreSQL types (JSONB/ARRAY, UUID). Local testing and CI must exercise those flows against a real Postgres instance rather than the default SQLite harness.
+- **Database isolation:** Each test run must use a dedicated database to prevent conflicts between app startup table creation and Alembic migrations. Use environment-specific database names: `cms_pricing_{environment}`.
 - **Local workflow:**
   1. `docker compose up -d db` (requires Docker socket access).
-  2. `export TEST_DATABASE_URL=postgresql://cms_user:cms_password@localhost:5432/cms_pricing`.
+  2. `export TEST_DATABASE_URL=postgresql://cms_user:cms_password@localhost:5432/cms_pricing_test`.
   3. `scripts/test_with_postgres.sh tests/api/test_plans.py` (wrapper spins up DB, calls `tests/scripts/bootstrap_test_db.py`, executes pytest, and tears down).
-- **CI workflow:** mirrors the script above inside the `ci-integration` pipeline; ensure runners have Docker or an ephemeral Postgres service.
+- **CI workflow:** mirrors the script above inside the `ci-integration` pipeline; ensure runners have Docker or an ephemeral Postgres service. Use `cms_pricing_ci_{build_id}` for unique database names per CI run.
 - **Bootstrap script:** `tests/scripts/bootstrap_test_db.py` runs Alembic migrations and seeds mandatory fixtures; extend it when new suites need additional reference data.
+- **Test lifecycle:** Strict order of operations: (1) Environment setup with dedicated DB URL, (2) Infrastructure provisioning, (3) Schema bootstrap via Alembic only (no app table creation), (4) Test execution, (5) Cleanup.
 - **Fallback:** If Docker is unavailable, provision a managed Postgres instance, set `TEST_DATABASE_URL`, run the bootstrap script manually, then invoke pytest.

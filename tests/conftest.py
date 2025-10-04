@@ -45,17 +45,18 @@ DOMAIN_MARKER_PATTERNS = {
 
 @pytest.fixture(scope="session")
 def test_engine():
-    """Create a test database engine with SQLite compatibility"""
-    # Create in-memory SQLite database
+    """Create a test database engine with PostgreSQL compatibility"""
+    # Use PostgreSQL test database (same as test_with_postgres.sh)
+    database_url = settings.test_database_url
     engine = create_engine(
-        "sqlite:///:memory:",
+        database_url,
         echo=False,
-        poolclass=StaticPool,
-        connect_args={"check_same_thread": False}
+        pool_size=5,
+        max_overflow=10
     )
     
-    # Create tables required for API tests (avoids JSONB columns for SQLite)
-    PlansBase.metadata.create_all(engine)
+    # Tables are already created by Alembic migrations in bootstrap_test_db.py
+    # No need to create them again
     
     return engine
 

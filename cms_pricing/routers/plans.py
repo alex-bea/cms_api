@@ -3,6 +3,7 @@
 from typing import List, Optional
 from uuid import UUID
 from datetime import date
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
@@ -33,7 +34,7 @@ async def create_plan(
     plan = Plan(
         name=plan_data.name,
         description=plan_data.description,
-        metadata_json=plan_data.metadata,
+        metadata_json=json.dumps(plan_data.metadata) if plan_data.metadata else None,
         created_by=plan_data.created_by,
         created_at=date.today()
     )
@@ -67,7 +68,7 @@ async def create_plan(
         id=plan.id,
         name=plan.name,
         description=plan.description,
-        metadata=plan.metadata_json,
+        metadata=json.loads(plan.metadata_json) if plan.metadata_json else None,
         created_by=plan.created_by,
         created_at=plan.created_at,
         updated_at=plan.updated_at,
@@ -153,7 +154,7 @@ async def get_plan(
         id=plan.id,
         name=plan.name,
         description=plan.description,
-        metadata=plan.metadata_json,
+        metadata=json.loads(plan.metadata_json) if plan.metadata_json else None,
         created_by=plan.created_by,
         created_at=plan.created_at,
         updated_at=plan.updated_at,
@@ -233,7 +234,7 @@ async def update_plan(
         id=plan.id,
         name=plan.name,
         description=plan.description,
-        metadata=plan.metadata_json,
+        metadata=json.loads(plan.metadata_json) if plan.metadata_json else None,
         created_by=plan.created_by,
         created_at=plan.created_at,
         updated_at=plan.updated_at,

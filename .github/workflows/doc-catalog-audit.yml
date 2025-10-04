@@ -26,5 +26,12 @@ jobs:
       - name: Run cross-reference audit
         run: python tools/audit_doc_links.py
 
-      - name: Run dependency graph audit
-        run: python tools/audit_doc_dependencies.py
+      - name: Run advanced cross-reference analysis
+        run: python tools/audit_cross_references.py
+
+      - name: Upload cross-reference report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cross-reference-report
+          path: cross_reference_report.md

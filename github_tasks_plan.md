@@ -1104,6 +1104,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Medium
 **Estimated Time:** TBD
 **Labels:** testing, database, medium-priority
+**Status:** ✅ Completed (2025-10-03)
 
 **Description:**
 Stand up a Postgres-backed test harness so API suites that rely on JSONB/ARRAY columns run without SQLite dialect failures.

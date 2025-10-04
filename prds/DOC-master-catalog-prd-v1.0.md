@@ -62,6 +62,7 @@
 | Document | Status | Owner | Purpose |
 |---|---|---|---|
 | `DOC-master-catalog-prd-v1.0.md` | Adopted v1.0 | Architecture | Master index (this document) |
+| `DOC-test-patterns-prd-v1.0.md` | Draft v1.0 (proposed) | QA Guild | Test patterns and best practices guide |
 
 ---
 
@@ -105,7 +106,11 @@ graph TD
   end
 
   subgraph Runbooks
-    R1[RUN-global-operations]
+  R1[RUN-global-operations]
+  end
+
+  subgraph Documentation
+  D1[DOC-test-patterns]
   end
 
   SA --> P1
@@ -121,6 +126,8 @@ graph TD
   RB -.-> P4
   P1 -.-> R1
   P2 -.-> R1
+  SA -.-> D1
+  SB -.-> D1
 ```
 
 ---

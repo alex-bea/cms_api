@@ -10,6 +10,8 @@ This document defines the **QA & Testing Standard (QTS)** that governs validatio
 
 **Cross-References:**
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
+- **DOC-test-patterns-prd-v1.0.md:** Test patterns and best practices guide
+- **RUN-global-operations-prd-v1.0.md:** Operational runbooks and test harness procedures
 - **STD-observability-monitoring-prd-v1.0:** Comprehensive monitoring standards, test observability, and unified SLAs
 - **STD-data-architecture-prd-v1.0:** Data pipeline testing requirements and quality gates
 - **STD-api-security-and-auth-prd-v1.0:** Security testing requirements and compliance procedures  
@@ -53,7 +55,10 @@ We standardize QA into **Plan → Implement → Execute → Observe → Improve*
 - Nightly broad-run: full suite including expensive end-to-end, load, and drift tests.
 - Pre-deploy: smoke + health probes against staging using production-like configuration.
 - Production: synthetic monitors & drift watchers continuously run; failures page the on-call.
-- **Database-backed suites:** Any test touching Postgres-only types (e.g., JSONB/ARRAY) must run against a real Postgres harness rather than SQLite fallbacks. Use `scripts/test_with_postgres.sh` locally (wraps Docker Compose, `tests/scripts/bootstrap_test_db.py`, and pytest) or the matching CI job to guarantee migrations + seed data execute before API suites (see RUN-global-operations-prd-v1.0 §E).
+- **Database-backed suites:** Any test touching Postgres-only types (e.g., JSONB/ARRAY, UUID) must run against a real Postgres harness rather than SQLite fallbacks. Use `scripts/test_with_postgres.sh` locally (wraps Docker Compose, `tests/scripts/bootstrap_test_db.py`, and pytest) or the matching CI job to guarantee migrations + seed data execute before API suites (see RUN-global-operations-prd-v1.0 §E).
+- **Database test isolation:** Each test run must use a dedicated database URL to prevent conflicts between app startup table creation and Alembic migrations. Standard pattern: `postgresql://cms_user:cms_password@localhost:5432/cms_pricing_{environment}` where `{environment}` is `test`, `ci_{build_id}`, or `local`.
+- **Test database lifecycle:** Database tests follow strict order: (1) Environment setup with dedicated DB URL, (2) Infrastructure provisioning (Docker/managed), (3) Schema bootstrap via Alembic only, (4) Test execution, (5) Cleanup. Never mix app startup table creation with test fixtures.
+- **Detailed patterns:** For comprehensive database test patterns, troubleshooting, and implementation examples, see DOC-test-patterns-prd-v1.0.md.
 
 ### 3.4 Observe (Reporting & Telemetry)
 - Emit structured test results (JUnit XML + JSON metadata) to the QA warehouse and dashboards.
@@ -74,6 +79,7 @@ We standardize QA into **Plan → Implement → Execute → Observe → Improve*
 /prod           # live environment with synthetic probes & canaries
 ```
 - **Isolation:** No shared mutable state across concurrent test runs; use namespaced databases.
+- **Database isolation:** Each test environment must use a dedicated PostgreSQL database with unique name pattern: `cms_pricing_{environment}`. Never share databases between test runs or environments.
 - **Secrets:** Provision via Vault-backed dynamic secrets; never commit test creds.
 - **Data:** Stage production snapshots only in `perf` (tokenized, PII stripped) with audit logs.
 
@@ -88,6 +94,7 @@ We standardize QA into **Plan → Implement → Execute → Observe → Improve*
 - Store baseline metrics per release in `/tests/baselines/<metric>.json` with `generated_at`, `source_digest`.
 - QA Summary documents effective date of baselines; enforce backward compatibility via change detection tests.
 - Golden datasets expire after 12 months unless revalidated.
+- **Database fixtures:** Store database fixtures as SQL dumps or Alembic seed scripts, not as application model instances. Use `tests/scripts/bootstrap_test_db.py` for consistent database state across test runs.
 
 ## 7. Quality Gates (Minimum Bar)
 - **Unit:** ≥90% line coverage for core libraries; failures block merge.
@@ -183,11 +190,15 @@ Fields: `requester`, `suite_id`, `deviation_type`, `justification`, `mitigation`
 ### Appendix F — Cross-Reference Map
 
 **Related PRDs:**
+- **DOC-test-patterns-prd-v1.0.md:** Test patterns and best practices guide
+- **RUN-global-operations-prd-v1.0.md:** Operational runbooks and test harness procedures
 - **STD-observability-monitoring-prd-v1.0:** Comprehensive monitoring standards, test observability, and unified SLAs
 - **STD-data-architecture-prd-v1.0:** Data pipeline testing requirements and quality gates
 - **STD-api-security-and-auth-prd-v1.0:** Security testing requirements and compliance procedures
 
 **Integration Points:**
+- **Test Patterns:** QTS Section 3.3 → Test Patterns PRD Section 1 (Database Test Patterns), Section 2 (Test Fixture Patterns)
+- **Operations:** QTS Section 3.3 → Operations PRD Section E (Test Harness Dependency)
 - **Observability:** QTS Section 8 → Observability PRD Section 2.5 (Testing Lineage), Section 3.3 (Testing SLAs), Section 4.3 (Testing Metrics)
 - **Data Testing:** QTS Section 7 → DIS Section 7 (Quality Gates), Section 8 (Observability & Monitoring)
 - **Security Testing:** QTS Section 9 → Security PRD Section 22.1 (Operational Runbooks), Section 18B (Security Test Suites)
