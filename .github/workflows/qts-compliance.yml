@@ -1,3 +1,15 @@
+# QTS Compliance Workflow
+# 
+# This workflow implements the QA Testing Standard (QTS) compliance requirements
+# and integrates database test patterns from DOC-test-patterns-prd-v1.0.md.
+# 
+# Key features:
+# - PostgreSQL test harness for database-backed tests
+# - Daily scheduling for comprehensive validation
+# - Performance benchmarking and regression detection
+# - Comprehensive test coverage with quality gates
+# - Schema drift detection and observability metrics
+
 name: QTS Compliance
 on: 
   schedule:
@@ -10,6 +22,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: cms_user
+          POSTGRES_PASSWORD: cms_password
+          POSTGRES_DB: cms_pricing
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
     strategy:
       matrix:
         python-version: [3.11]
@@ -28,10 +54,14 @@ jobs:
         pip install -r requirements.txt
         pip install -r requirements-dev.txt
         pip install pytest-cov pytest-benchmark pytest-asyncio
+        # Install PostgreSQL client for database tests (see DOC-test-patterns-prd-v1.0.md)
+        sudo apt-get update && sudo apt-get install -y postgresql-client
     
     - name: Run scraper/API tests with coverage
       run: |
-        pytest tests/scrapers tests/api -q --cov=cms_pricing --cov-report=xml --cov-report=html --cov-fail-under=90
+        # Use PostgreSQL test harness for database-backed tests (see DOC-test-patterns-prd-v1.0.md)
+        export TEST_DATABASE_URL="postgresql://cms_user:cms_password@localhost:5432/cms_pricing_ci_${{ github.run_id }}"
+        scripts/test_with_postgres.sh pytest tests/scrapers tests/api -q --cov=cms_pricing --cov-report=xml --cov-report=html --cov-fail-under=90
     
     - name: Run PRD documentation audits
       run: |
@@ -39,7 +69,9 @@ jobs:
     
     - name: Run ingestor suites
       run: |
-        pytest tests/ingestors -m ingestor -q --maxfail=3
+        # Use PostgreSQL test harness for database-backed tests (see DOC-test-patterns-prd-v1.0.md)
+        export TEST_DATABASE_URL="postgresql://cms_user:cms_password@localhost:5432/cms_pricing_ci_${{ github.run_id }}"
+        scripts/test_with_postgres.sh pytest tests/ingestors -m ingestor -q --maxfail=3
     
     - name: Run scraper performance benchmarks
       run: |
@@ -51,7 +83,9 @@ jobs:
     
     - name: Run API contract tests
       run: |
-        pytest tests/api/test_rvu_api_contracts.py tests/api/test_openapi_consistency.py -q --maxfail=1
+        # Use PostgreSQL test harness for database-backed tests (see DOC-test-patterns-prd-v1.0.md)
+        export TEST_DATABASE_URL="postgresql://cms_user:cms_password@localhost:5432/cms_pricing_ci_${{ github.run_id }}"
+        scripts/test_with_postgres.sh pytest tests/api/test_rvu_api_contracts.py tests/api/test_openapi_consistency.py -q --maxfail=1
     
     - name: Run schema drift checks
       run: |

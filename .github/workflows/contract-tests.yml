@@ -1,3 +1,14 @@
+# Contract Tests Workflow
+#
+# This workflow validates API contracts and implements database test patterns
+# from DOC-test-patterns-prd-v1.0.md for contract validation.
+#
+# Key features:
+# - Schemathesis contract testing with PostgreSQL backend
+# - OpenAPI schema validation and consistency checks
+# - Daily scheduling for automated contract validation
+# - Database-backed contract tests using test harness
+
 name: Contract Tests
 on:
   schedule:
@@ -10,15 +21,36 @@ on:
 jobs:
   schemathesis:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: cms_user
+          POSTGRES_PASSWORD: cms_password
+          POSTGRES_DB: cms_pricing
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
     steps:
       - uses: actions/checkout@v4
       - name: Setup Python
         uses: actions/setup-python@v5
         with: { python-version: '3.11' }
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          # Install PostgreSQL client for database tests (see DOC-test-patterns-prd-v1.0.md)
+          sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Start API server
         run: |
+          # Set up database for API server (see DOC-test-patterns-prd-v1.0.md)
+          export TEST_DATABASE_URL="postgresql://cms_user:cms_password@localhost:5432/cms_pricing_ci_${{ github.run_id }}"
+          python tests/scripts/bootstrap_test_db.py --database-url "$TEST_DATABASE_URL"
+          export DATABASE_URL="$TEST_DATABASE_URL"
           uvicorn cms_pricing.main:app --host 0.0.0.0 --port 8000 &
           sleep 10
       - name: Install schemathesis
@@ -27,12 +59,32 @@ jobs:
         run: schemathesis run api-contracts/openapi.yaml --base-url=http://localhost:8000
   pytest:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: cms_user
+          POSTGRES_PASSWORD: cms_password
+          POSTGRES_DB: cms_pricing
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
     steps:
       - uses: actions/checkout@v4
       - name: Setup Python
         uses: actions/setup-python@v5
         with: { python-version: '3.11' }
       - name: Install deps
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          # Install PostgreSQL client for database tests (see DOC-test-patterns-prd-v1.0.md)
+          sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Run contract unit tests
-        run: pytest -q
+        run: |
+          # Use PostgreSQL test harness for database-backed tests (see DOC-test-patterns-prd-v1.0.md)
+          export TEST_DATABASE_URL="postgresql://cms_user:cms_password@localhost:5432/cms_pricing_ci_${{ github.run_id }}"
+          scripts/test_with_postgres.sh pytest tests/test_error_contract.py tests/test_openapi_consistency.py -q
