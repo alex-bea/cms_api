@@ -29,3 +29,5 @@ class ZipGeometry(Base):
     def __repr__(self):
         return f"<ZipGeometry(zip5='{self.zip5}', lat={self.lat}, lon={self.lon}, state='{self.state}', is_pobox={self.is_pobox})>"
 
+
+

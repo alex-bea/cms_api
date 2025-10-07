@@ -11,7 +11,6 @@ Following Scraper Standard PRD v1.0 and Data Ingestion Standard PRD v1.0
 import asyncio
 import httpx
 import hashlib
-import json
 from datetime import datetime, date
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
@@ -19,8 +18,12 @@ import structlog
 from bs4 import BeautifulSoup
 
 from .cms_rvu_scraper import CMSRVUScraper, RVUFileInfo
+from ..metadata.discovery_manifest import DiscoveryManifest, DiscoveryManifestStore
 
 logger = structlog.get_logger()
+
+
+SCRAPER_VERSION = "1.0.0"
 
 
 class CMSMPFSScraper:
@@ -37,6 +40,7 @@ class CMSMPFSScraper:
         
         # Compose with RVU scraper for shared artifacts
         self.rvu_scraper = CMSRVUScraper(str(self.output_dir.parent / "rvu"))
+        self.manifest_store = DiscoveryManifestStore(self.output_dir / "manifests", prefix="cms_mpfs_manifest")
         
         # MPFS-specific URLs and patterns
         self.mpfs_base_url = "https://www.cms.gov/medicare/medicare-fee-for-service-payment/physicianfeesched"
@@ -322,39 +326,40 @@ class CMSMPFSScraper:
         # Keep latest file per type per year
         latest_files = []
         for (file_type, year), type_files in grouped.items():
-            # Sort by last_modified desc and take the first (latest)
-            latest = sorted(type_files, key=lambda x: x.last_modified, reverse=True)[0]
+            latest = sorted(
+                type_files,
+                key=lambda x: x.last_modified or datetime.min,
+                reverse=True
+            )[0]
             latest_files.append(latest)
         
         return latest_files
     
-    async def _save_discovery_manifest(self, files: List[RVUFileInfo], start_year: int, end_year: int):
-        """Save discovery manifest for audit trail"""
-        manifest = {
-            "discovery_timestamp": datetime.now().isoformat(),
-            "start_year": start_year,
-            "end_year": end_year,
-            "total_files": len(files),
-            "files": []
-        }
-        
-        for file_info in files:
-            manifest["files"].append({
-                "url": file_info.url,
-                "filename": file_info.filename,
-                "size_bytes": file_info.size_bytes,
-                "last_modified": file_info.last_modified.isoformat(),
-                "content_type": file_info.content_type,
-                "year": file_info.year,
-                "file_type": file_info.file_type,
-                "checksum": file_info.checksum
-            })
-        
-        manifest_path = self.output_dir / f"mpfs_discovery_manifest_{start_year}_{end_year}.json"
-        with open(manifest_path, 'w') as f:
-            json.dump(manifest, f, indent=2)
-        
-        logger.info("Saved discovery manifest", path=str(manifest_path))
+    async def _save_discovery_manifest(self, files: List[RVUFileInfo], start_year: int, end_year: int) -> None:
+        """Persist discovery manifest using shared helper."""
+        manifest = DiscoveryManifest.create(
+            source="cms_mpfs",
+            source_url=self.mpfs_download_url,
+            discovered_from=self.mpfs_download_url,
+            files=files,
+            metadata={
+                "scraper_version": SCRAPER_VERSION,
+                "discovery_method": "cms_mpfs_scraper",
+                "total_files": len(files),
+            },
+            license_info={
+                "name": "CMS Open Data",
+                "url": "https://www.cms.gov/About-CMS/Agency-Information/Aboutwebsite/Privacy-Policy",
+                "attribution_required": True,
+            },
+            start_year=start_year,
+            end_year=end_year,
+            default_content_type="application/zip",
+        )
+
+        manifest.metadata["includes_rvu_components"] = True
+        self.manifest_store.save(manifest)
+        logger.info("Saved discovery manifest", source="cms_mpfs", files=len(files))
 
 
 # Example usage and testing

@@ -336,12 +336,14 @@ observability_histogram = Histogram('observability_duration_seconds', 'Observabi
 - Check dashboard health across all domains
 - Verify data pipeline freshness
 - Monitor API service performance
+- Run `tools/verify_source_map.py` after each discovery job (attach the report to the related PR or ops ticket).
 
 **Incident Response:**
 - Follow escalation procedures (Alex as primary contact)
 - Use communication templates
 - Document incident timeline
 - Conduct post-mortem within 3 business days
+- On manifest verification failures, label the PR `source-map-drift`, page the data steward, and block merge until the reference docs are updated.
 
 ### 8.2 Maintenance Procedures
 

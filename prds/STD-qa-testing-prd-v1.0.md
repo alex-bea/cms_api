@@ -108,12 +108,21 @@ We standardize QA into **Plan → Implement → Execute → Observe → Improve*
 - Auto quarantine newly failing tests only with explicit override label (`ALLOW_QUARANTINE`) + issue link.
 - Quarantined tests must display warning in CI summary and auto-fail after 7 days if unresolved.
 
-### 7.2 Severity Matrix
+### 7.2 Test Types
+- **Manifest schema tests:** validate each `DiscoveryManifest` entry against the shared JSON schema/typed helper before publishing.
+- **Source-map parity:** enforce `tools/verify_source_map.py` (or equivalent) in CI so reference PRDs mirror discovered artifacts.
+- **Change-tracking tests:** re-running discovery for the same vintage must yield identical hashes unless notes in the manifest explain intentional deviations.
+
+### 7.3 Severity Matrix
 | Severity | Trigger | Response |
 |---|---|---|
 | **Sev1** | Gate failure blocking release; production regression reproduced in staging | Immediate page, stop ship, formal RCA |
 | **Sev2** | Nightly regression, SLO breach without production impact | Fix within 2 business days |
 | **Sev3** | Flake >1%, non-blocking inconsistencies | Track in backlog, resolve within sprint |
+
+### 7.4 CI Gates
+- Block merge unless `tools/verify_source_map.py` exits with 0 for affected datasets.
+- Enforce JSON schema validation (or helper validation) for the latest manifests during CI.
 
 ## 8. Observability & Monitoring
 - **References:** STD-observability-monitoring-prd-v1.0 for comprehensive monitoring standards

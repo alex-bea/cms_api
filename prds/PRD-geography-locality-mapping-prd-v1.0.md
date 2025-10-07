@@ -10,6 +10,10 @@
 - **STD-data-architecture-prd-v1.0.md:** Data ingestion lifecycle and storage patterns
 - **STD-qa-testing-prd-v1.0.md:** Testing requirements for geography mapping
 - **REF-geography-mapping-cursor-prd-v1.0.md:** Related geography mapping patterns
+- **REF-geography-source-map-prd-v1.0.md:** Canonical geography dataset inventory
+
+## Work-Backwards Checklist (Required)
+Geography ingestion or resolver updates must reconcile against **REF-geography-source-map-prd-v1.0.md** before implementation. Confirm source listings, layouts, and checklist items and record any changes prior to code modifications.
 
 ## Data Classification & Stewardship
 - **Classification:** Public CMS geography release (Internal enriched resolver outputs)  

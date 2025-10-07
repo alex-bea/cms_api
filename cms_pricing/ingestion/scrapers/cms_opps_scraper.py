@@ -25,6 +25,8 @@ import httpx
 from bs4 import BeautifulSoup
 from structlog import get_logger
 
+from ..metadata.discovery_manifest import DiscoveryManifest, DiscoveryManifestStore
+
 logger = get_logger()
 
 
@@ -43,6 +45,9 @@ class ScrapedFileInfo:
     downloaded_at: Optional[datetime] = None
 
 
+SCRAPER_VERSION = "1.0.0"
+
+
 class CMSOPPSScraper:
     """
     CMS OPPS Scraper for quarterly addenda discovery and download.
@@ -55,6 +60,8 @@ class CMSOPPSScraper:
     def __init__(self, base_url: str = "https://www.cms.gov", output_dir: Path = None):
         self.base_url = base_url
         self.output_dir = output_dir or Path("data/scraped/opps")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.manifest_store = DiscoveryManifestStore(self.output_dir / "manifests", prefix="cms_opps_manifest")
         self.opps_base_url = "https://www.cms.gov/medicare/payment/prospective-payment-systems/hospital-outpatient"
         self.quarterly_addenda_url = "https://www.cms.gov/medicare/payment/prospective-payment-systems/hospital-outpatient-pps/quarterly-addenda-updates"
         
@@ -128,7 +135,32 @@ class CMSOPPSScraper:
                 total_files=len(discovered_files),
                 quarters_discovered=quarters_found
             )
-            
+
+            manifest = DiscoveryManifest.create(
+                source="cms_opps",
+                source_url=self.quarterly_addenda_url,
+                discovered_from=self.quarterly_addenda_url,
+                files=discovered_files,
+                metadata={
+                    "scraper_version": SCRAPER_VERSION,
+                    "discovery_method": "cms_opps_scraper",
+                    "quarters_requested": max_quarters,
+                    "quarters_discovered": quarters_found,
+                    "total_files": len(discovered_files),
+                },
+                license_info={
+                    "name": "CMS Open Data",
+                    "url": "https://www.cms.gov/About-CMS/Agency-Information/Aboutwebsite/Privacy-Policy",
+                    "attribution_required": True,
+                },
+                default_content_type=None,
+            )
+
+            previous_manifest = self.manifest_store.load_latest()
+            if not manifest.has_same_files(previous_manifest):
+                manifest.metadata["changes_detected"] = True
+            self.manifest_store.save(manifest)
+
             return discovered_files
             
         except Exception as e:

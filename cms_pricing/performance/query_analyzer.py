@@ -274,3 +274,5 @@ class QueryAnalyzer:
         """Clean up resources"""
         self.db.close()
 
+
+

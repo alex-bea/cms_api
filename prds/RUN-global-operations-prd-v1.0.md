@@ -41,7 +41,8 @@ This runbook lists validation steps and ops playbook items for the new MPFS inge
 ## B. First-Month Ops
 
 - **Cadence:** Monthly poller; quarterlies/annuals reflect real changes.  [oai_citation:39‡Centers for Medicare & Medicaid Services](https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files?utm_source=chatgpt.com)  
-- **Lineage/Manifests:** For each artifact, capture **URL, last-modified, checksum, size**, and discovery page (RVU list, Docs, Locality/GPCI).  [oai_citation:40‡Centers for Medicare & Medicaid Services](https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files?utm_source=chatgpt.com)
+- **Lineage/Manifests:** For each artifact, capture **URL, last-modified, checksum, size**, and discovery page (RVU list, Docs, Locality/GPCI).  [oai_citation:40‡Centers for Medicare & Medicaid Services](https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files?utm_source=chatgpt.com)  
+- **Source Map Audit:** After discovery jobs run, execute `python tools/verify_source_map.py` to confirm new manifests (`data/manifests/cms_rvu`, `data/scraped/mpfs/manifests`, `data/scraped/opps/manifests`) agree with the reference docs (`REF-cms-pricing-source-map-prd-v1.0.md`). Treat failures as release blockers.
 - **Alerting:** Page on (a) schema drift vs last quarter, (b) zero-row partitions per vintage, (c) CF mismatch vs pinned CY2025 value.  [oai_citation:41‡Centers for Medicare & Medicaid Services](https://www.cms.gov/newsroom/press-releases/hhs-finalizes-physician-payment-rule-strengthening-person-centered-care-and-health-quality-measures?utm_source=chatgpt.com)
 - **Fallback checks:** Cross-check anomalies via **PFS Look-Up Tool**; for site-neutral studies later, compare status indicators via **OPPS Addendum B**.  [oai_citation:42‡Centers for Medicare & Medicaid Services](https://www.cms.gov/medicare/physician-fee-schedule/search/overview?utm_source=chatgpt.com)
 

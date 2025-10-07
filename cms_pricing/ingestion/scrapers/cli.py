@@ -19,9 +19,8 @@ import structlog
 
 from .cms_rvu_scraper import CMSRVUScraper
 from ..ingestors.rvu_ingestor import RVUIngestor
-from ..contracts.schema_registry import schema_registry
 from ..quarantine.dis_quarantine import QuarantineManager
-from ..enrichers.dis_reference_data_integration import DISReferenceDataEnricher
+from ..metadata.discovery_manifest import DiscoveryManifest, DiscoveryManifestStore
 
 # Configure structured logging
 structlog.configure(
@@ -44,14 +43,15 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
+SCRAPER_VERSION = "1.0.0"
+
 class ScraperCLI:
     """CLI interface for scraper operations"""
     
     def __init__(self, output_dir: str, manifest_dir: str):
         self.output_dir = Path(output_dir)
-        self.manifest_dir = Path(manifest_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.manifest_dir.mkdir(parents=True, exist_ok=True)
+        self.manifest_store = DiscoveryManifestStore(Path(manifest_dir), prefix="cms_rvu_manifest")
         
         # Initialize components
         self.scraper = CMSRVUScraper(str(self.output_dir / "scraped_data"))
@@ -59,7 +59,6 @@ class ScraperCLI:
         
         # Initialize compliance components
         self.quarantine_manager = QuarantineManager(str(self.output_dir / "quarantine"))
-        self.schema_registry = schema_registry
     
     async def discovery_mode(self, 
                            start_year: int = 2025, 
@@ -81,22 +80,38 @@ class ScraperCLI:
                            original_count=len(scraped_files), 
                            latest_count=len(latest_files))
             
-            # Generate manifest
-            manifest = self._generate_manifest(scraped_files, start_year, end_year, latest_only)
-            
-            # Validate manifest against schema contract
-            schema_validation = self._validate_manifest_schema(manifest)
-            if not schema_validation["valid"]:
-                logger.warning("Manifest schema validation failed", errors=schema_validation["errors"])
-            
-            # Check for changes
-            changes_detected = await self._check_for_changes(manifest)
-            
-            # Save manifest
-            manifest_path = self._save_manifest(manifest)
-            
-            # Calculate snapshot digest
-            snapshot_digest = self._calculate_snapshot_digest(manifest)
+            manifest = DiscoveryManifest.create(
+                source="cms_rvu",
+                source_url=self.scraper.rvu_page_url,
+                discovered_from=self.scraper.rvu_page_url,
+                files=scraped_files,
+                metadata={
+                    "scraper_version": SCRAPER_VERSION,
+                    "discovery_method": "scraper",
+                    "total_files": len(scraped_files),
+                    "robots_compliant": True,
+                    "user_agent": "CMS-Pricing-Scraper/1.0.0 (contact@example.com)",
+                },
+                license_info={
+                    "name": "CMS Open Data",
+                    "url": "https://www.cms.gov/About-CMS/Agency-Information/Aboutwebsite/Privacy-Policy",
+                    "attribution_required": True,
+                },
+                start_year=start_year,
+                end_year=end_year,
+                latest_only=latest_only,
+                default_content_type="application/zip",
+            )
+
+            validation_errors = manifest.validate()
+            if validation_errors:
+                logger.warning("Manifest validation warnings", errors=validation_errors)
+
+            previous_manifest = self.manifest_store.load_latest()
+            changes_detected = not manifest.has_same_files(previous_manifest)
+
+            manifest_path = self.manifest_store.save(manifest)
+            snapshot_digest = manifest.digest()
             
             result = {
                 "status": "success",
@@ -130,32 +145,41 @@ class ScraperCLI:
         
         try:
             # Load manifest if it exists
-            manifest = self._load_latest_manifest()
+            manifest = self.manifest_store.load_latest()
             if not manifest:
                 logger.warning("No manifest found, running discovery first")
                 discovery_result = await self.discovery_mode(start_year, end_year, latest_only)
                 if discovery_result["status"] != "success":
                     return discovery_result
-                manifest = self._load_latest_manifest()
+                manifest = self.manifest_store.load_latest()
+            if not manifest:
+                return {
+                    "status": "failed",
+                    "error": "Manifest could not be loaded after discovery",
+                    "files_downloaded": 0,
+                }
             
             # Download files using scraper
-            download_result = await self.scraper.download_files(manifest.get("files", []))
+            download_result = await self.scraper.download_files([entry.to_dict() for entry in manifest.files])
             
             # Handle quarantined downloads per DIS §3.2
             if download_result.get("files_failed", 0) > 0:
                 quarantine_summary = await self._quarantine_failed_downloads(
                     download_result, 
-                    manifest.get("batch_id", "unknown"),
-                    manifest.get("release_id", "unknown")
+                    manifest.metadata.get("batch_id", "unknown"),
+                    manifest.metadata.get("release_id", "unknown")
                 )
                 download_result["quarantine_summary"] = quarantine_summary
             
-            # Update manifest with download results
-            manifest["download_completed_at"] = datetime.now().isoformat()
-            manifest["download_result"] = download_result
-            
-            # Save updated manifest
-            manifest_path = self._save_manifest(manifest)
+            manifest.metadata["last_download"] = {
+                "completed_at": datetime.now().isoformat(),
+                "files_downloaded": download_result.get("files_downloaded", 0),
+                "files_failed": download_result.get("files_failed", 0),
+                "total_size_bytes": download_result.get("total_size_bytes", 0),
+            }
+            manifest.extras["download_result"] = download_result
+
+            manifest_path = self.manifest_store.save(manifest)
             
             result = {
                 "status": "success",
@@ -250,175 +274,6 @@ class ScraperCLI:
                 return 1900 + year_2digit
         
         return None
-    
-    def _generate_manifest(self, 
-                          files: List[Any], 
-                          start_year: int, 
-                          end_year: int,
-                          latest_only: bool) -> Dict[str, Any]:
-        """Generate manifest for discovered files per DIS §3.2"""
-        manifest = {
-            "source": "cms_rvu",
-            "discovered_at": datetime.now().isoformat(),
-            "fetched_at": datetime.now().isoformat(),
-            "start_year": start_year,
-            "end_year": end_year,
-            "latest_only": latest_only,
-            "source_url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files",
-            "discovered_from": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files",
-            "license": {
-                "name": "CMS Open Data",
-                "url": "https://www.cms.gov/About-CMS/Agency-Information/Aboutwebsite/Privacy-Policy",
-                "attribution_required": True
-            },
-            "files": [],
-            "metadata": {
-                "scraper_version": "1.0.0",
-                "discovery_method": "scraper",
-                "total_files": len(files),
-                "robots_compliant": True,
-                "user_agent": "CMS-Pricing-Scraper/1.0.0 (contact@example.com)"
-            }
-        }
-        
-        for file_info in files:
-            file_entry = {
-                "path": file_info.filename,
-                "filename": file_info.filename,
-                "url": file_info.url,
-                "sha256": getattr(file_info, 'checksum', None),
-                "size_bytes": getattr(file_info, 'size_bytes', None),
-                "content_type": "application/zip",
-                "year": getattr(file_info, 'year', None),
-                "quarter": getattr(file_info, 'quarter', None),
-                "file_type": getattr(file_info, 'file_type', 'zip'),
-                "last_modified": getattr(file_info, 'last_modified', None)
-            }
-            manifest["files"].append(file_entry)
-        
-        return manifest
-    
-    async def _check_for_changes(self, manifest: Dict[str, Any]) -> bool:
-        """Check if files have changed since last run"""
-        try:
-            # Load previous manifest
-            previous_manifest = self._load_latest_manifest()
-            if not previous_manifest:
-                logger.info("No previous manifest found, treating as new")
-                return True
-            
-            # Compare file lists
-            current_files = {f["url"]: f for f in manifest["files"]}
-            previous_files = {f["url"]: f for f in previous_manifest.get("files", [])}
-            
-            # Check for new or changed files
-            for url, file_info in current_files.items():
-                if url not in previous_files:
-                    logger.info("New file detected", url=url)
-                    return True
-                
-                # Check if file has changed (size, checksum, last_modified)
-                prev_file = previous_files[url]
-                if (file_info.get("size_bytes") != prev_file.get("size_bytes") or
-                    file_info.get("checksum") != prev_file.get("checksum") or
-                    file_info.get("last_modified") != prev_file.get("last_modified")):
-                    logger.info("File changed detected", url=url)
-                    return True
-            
-            # Check for removed files
-            for url in previous_files:
-                if url not in current_files:
-                    logger.info("File removed", url=url)
-                    return True
-            
-            logger.info("No changes detected")
-            return False
-            
-        except Exception as e:
-            logger.warning("Error checking for changes, treating as changed", error=str(e))
-            return True
-    
-    def _save_manifest(self, manifest: Dict[str, Any]) -> Path:
-        """Save manifest to file"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        manifest_path = self.manifest_dir / f"cms_rvu_manifest_{timestamp}.json"
-        
-        with open(manifest_path, 'w') as f:
-            json.dump(manifest, f, indent=2, default=str)
-        
-        logger.info("Manifest saved", path=str(manifest_path))
-        return manifest_path
-    
-    def _load_latest_manifest(self) -> Optional[Dict[str, Any]]:
-        """Load the most recent manifest"""
-        try:
-            manifest_files = list(self.manifest_dir.glob("cms_rvu_manifest_*.json"))
-            if not manifest_files:
-                return None
-            
-            # Sort by modification time and get the latest
-            latest_manifest = max(manifest_files, key=lambda p: p.stat().st_mtime)
-            
-            with open(latest_manifest, 'r') as f:
-                manifest = json.load(f)
-            
-            logger.info("Loaded latest manifest", path=str(latest_manifest))
-            return manifest
-            
-        except Exception as e:
-            logger.warning("Error loading manifest", error=str(e))
-            return None
-    
-    def _calculate_snapshot_digest(self, manifest: Dict[str, Any]) -> str:
-        """Calculate snapshot digest for idempotency"""
-        import hashlib
-        
-        # Create a deterministic string from manifest
-        manifest_str = json.dumps(manifest, sort_keys=True, default=str)
-        digest = hashlib.sha256(manifest_str.encode()).hexdigest()
-        
-        return f"sha256:{digest[:16]}"
-    
-    def _validate_manifest_schema(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate manifest against schema contract per DIS §3.1"""
-        try:
-            # Validate manifest structure
-            required_fields = ["source", "discovered_at", "files", "metadata"]
-            errors = []
-            
-            for field in required_fields:
-                if field not in manifest:
-                    errors.append(f"Required field '{field}' is missing from manifest")
-            
-            # Validate file entries
-            if "files" in manifest:
-                for i, file_entry in enumerate(manifest["files"]):
-                    file_required_fields = ["filename", "url", "sha256", "size_bytes", "content_type"]
-                    for field in file_required_fields:
-                        if field not in file_entry:
-                            errors.append(f"Required field '{field}' is missing from file {i}")
-            
-            # Validate against schema registry if available
-            schema_validation = {"valid": True, "errors": [], "warnings": []}
-            if hasattr(self.schema_registry, 'validate_data'):
-                try:
-                    schema_validation = self.schema_registry.validate_data("cms_rvu_manifest", manifest)
-                except Exception as e:
-                    schema_validation["warnings"].append(f"Schema validation failed: {str(e)}")
-            
-            return {
-                "valid": len(errors) == 0 and schema_validation["valid"],
-                "errors": errors + schema_validation["errors"],
-                "warnings": schema_validation["warnings"]
-            }
-            
-        except Exception as e:
-            logger.error("Manifest schema validation failed", error=str(e))
-            return {
-                "valid": False,
-                "errors": [f"Schema validation error: {str(e)}"],
-                "warnings": []
-            }
     
     async def _quarantine_failed_downloads(self, 
                                          download_result: Dict[str, Any], 

@@ -10,6 +10,10 @@
 - **STD-data-architecture-prd-v1.0.md:** Data ingestion lifecycle and storage patterns
 - **STD-qa-testing-prd-v1.0.md:** Testing requirements for MPFS ingestion
 - **REF-nearest-zip-resolver-prd-v1.0.md:** ZIP resolver for geography mapping
+- **REF-cms-pricing-source-map-prd-v1.0.md:** Source inventory & work-backwards checklist
+
+## Work-Backwards Checklist (Required)
+Every MPFS ingester or schema change **must** trace back to **REF-cms-pricing-source-map-prd-v1.0.md**. Confirm the source table entry, authoritative layout, and checklist completion before authoring code or submitting review.
 
 ## Data Classification & Stewardship
 - **Classification:** Public CMS release (Internal derived metrics and aggregations)  
@@ -28,6 +32,7 @@
 - **Outputs:** `/curated/mpfs/{vintage}/mpfs_rvu.parquet`, `mpfs_indicators_all.parquet`, `mpfs_locality.parquet`, `mpfs_gpci.parquet`, `mpfs_cf_vintage.parquet`, plus latest-effective views for API usage  
 - **SLAs:** Land + publish ≤7 business days from CMS posting; manifest digests recorded; backfills re-run through identical validations  
 - **Deviations:** None; any exceptions require ADR and update to this summary
+- **Discovery Manifest & Governance:** MPFS scraper emits manifests via `cms_pricing.ingestion.metadata.discovery_manifest` (`data/scraped/mpfs/manifests/`). CI runs `tools/verify_source_map.py` so `REF-cms-pricing-source-map-prd-v1.0.md` stays synchronized with discovered artifacts.
 
 ## API Readiness & Distribution
 - **Curated Views:** `mpfs_rvu_latest`, `mpfs_gpci_latest`, and `mpfs_cf_current` provide Latest-Effective semantics for pricing services  

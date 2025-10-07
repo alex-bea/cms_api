@@ -343,3 +343,5 @@ class IndexOptimizer:
         """Clean up resources"""
         self.db.close()
 
+
+

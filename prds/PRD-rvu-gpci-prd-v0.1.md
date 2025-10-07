@@ -10,6 +10,10 @@
 - **STD-data-architecture-prd-v1.0.md:** Data ingestion lifecycle and storage patterns
 - **STD-scraper-prd-v1.0.md:** Scraper requirements for RVU data discovery
 - **STD-qa-testing-prd-v1.0.md:** Testing requirements for RVU ingestion
+- **REF-cms-pricing-source-map-prd-v1.0.md:** Canonical CMS pricing source inventory
+
+## Work-Backwards Checklist (Required)
+Reference **REF-cms-pricing-source-map-prd-v1.0.md** before any RVU/GPCI ingestion change. Validate the mapped artifacts, layouts, and checklist items, then capture deltas here or in the linked reference prior to implementation.
 
 ## Data Classification & Stewardship
 - **Classification:** Public CMS release (Internal for enriched analytics outputs)  
@@ -28,6 +32,7 @@
 - **Outputs:** `/curated/rvu/{vintage}` parquet tables for RVU, GPCI, OPPSCAP, ANES, and locality crosswalk plus latest-effective warehouse views `vw_rvu_current`, `vw_gpci_current`  
 - **SLAs:** Land within 2 business days of CMS release; publish within 5 business days; all manifests record dataset digest for reproducibility  
 - **Deviations:** None currently; exceptions require ADR and PRD update
+- **Discovery Manifest & Governance:** CMS RVU scraper writes discovery manifests via `cms_pricing.ingestion.metadata.discovery_manifest` to `data/manifests/cms_rvu/`; CI executes `tools/verify_source_map.py` to ensure manifests stay aligned with `REF-cms-pricing-source-map-prd-v1.0.md`.
 
 ## API Readiness & Distribution
 - **Warehouse Views:** `vw_rvu_current`, `vw_gpci_current`, `vw_opps_cap_current`, `vw_anes_cf_current`, `vw_locality_county_current` follow Latest-Effective semantics  

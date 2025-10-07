@@ -411,3 +411,5 @@ class AnomalyDetector:
         """Clean up resources"""
         self.db.close()
 
+
+

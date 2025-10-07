@@ -66,3 +66,5 @@ class GeographyTraceSummary(BaseModel):
     unique_zips: int = Field(..., description="Number of unique ZIP codes resolved")
     unique_states: int = Field(..., description="Number of unique states")
 
+
+

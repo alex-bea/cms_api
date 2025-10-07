@@ -35,7 +35,7 @@ Change control: Follows Main Scraper Standard PRD; ADR for interface/selector ch
 ## Ingestion Summary (DIS v1.0)
 - **Discovery Cadence:** Weekly scheduled crawl + manual trigger; monitors CMS Quarterly Addenda Updates index for new or corrected quarters  
 - **Batch Identifier:** `opps_{year}q{quarter}_r{nn}` recorded in both discovery and download manifests  
-- **Manifest Requirements:** Emit dual manifests (`discovery_manifest.json`, `download_manifest.json`) with fields: intended artifacts, final URL, checksum, size, disclaimer mode, retries, content type, fetched timestamps  
+- **Manifest Requirements:** Emit dual manifests (`discovery_manifest.json`, `download_manifest.json`) with fields: intended artifacts, final URL, checksum, size, disclaimer mode, retries, content type, fetched timestamps. Discovery runs must also persist a shared `DiscoveryManifest` (`cms_pricing.ingestion.metadata.discovery_manifest`) under `data/scraped/opps/manifests/` so CI can enforce parity with `REF-cms-pricing-source-map-prd-v1.0.md` via `tools/verify_source_map.py`.  
 - **Storage Layout:** Artifacts persisted under `/raw/opps/{batch}/files/*` with `manifest.json` meeting DIS §3.2 requirements; manifests mirrored to `/ops/scraper/opps/{batch}/` for ops visibility  
 - **Validations & Gates:** Structural presence of Addendum A/B enforced, checksum verification, TLS + content-length sanity, disclaimer acceptance recorded; failures quarantine the batch (`/raw/opps/{batch}/quarantine/`) and surface via Ops alert  
 - **Hand-off to Ingester:** Successful batches notify OPPS ingester with manifest location + dataset digest; ingester re-validates before publish  

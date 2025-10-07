@@ -63,3 +63,5 @@ class GeographyResolutionTrace(Base):
     def __repr__(self):
         return f"<GeographyResolutionTrace(zip5='{self.zip5}', match_level='{self.match_level}', latency_ms={self.latency_ms})>"
 
+
+

@@ -25,3 +25,5 @@ class ValidationResult:
     actual_value: Any = None
     expected_value: Any = None
 
+
+

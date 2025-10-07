@@ -7,13 +7,12 @@ This document defines the **Data Architecture Standard** used across projects. I
 **Owners:** Platform/Data Engineering  
 **Consumers:** Product, Analytics, Services  
 **Change control:** ADR + PR review
-For complete index see [Master System Catalog](DOC-master-catalog-prd-v1.0.md).  
-
 
 **Cross-References:**
-- **STD-observability-monitoring-prd-v1.0:** Comprehensive monitoring standards, five-pillar framework, and unified SLAs
-- **STD-qa-testing-prd-v1.0:** Testing requirements for data pipelines and quality gates
-- **STD-api-security-and-auth-prd-v1.0:** Security requirements for data access and audit logging  
+- **DOC-master-catalog_prd_v1.0.md:** Master system catalog and dependency map
+- **STD-observability-monitoring_prd_v1.0:** Comprehensive monitoring standards, five-pillar framework, and unified SLAs
+- **STD-qa-testing_prd_v1.0:** Testing requirements for data pipelines and quality gates
+- **STD-api-security-and-auth_prd_v1.0:** Security requirements for data access and audit logging  
 
 ## 1. Goals & Non‑Goals
 **Goals**
@@ -45,7 +44,7 @@ We separate concerns into **Land → Validate → Normalize → Enrich → Publi
 
 ### 3.2 Land (Raw)
 - Download exact source files to immutable `/raw/<source>/<release_id>/files/`.
-- Write `manifest.json` with: `source_url`, `license`, `fetched_at`, `sha256`, `size_bytes`, `content_type`, `discovered_from` (for scraped links), and optional `release_notes_url`. Use the shared helper `cms_pricing.ingestion.metadata.discovery_manifest` so all scrapers emit the same schema and digest semantics (`data/manifests/<dataset>/<prefix>_*.json`).
+- Write `manifest.json` with: `source_url`, `license`, `fetched_at`, `sha256`, `size_bytes`, `content_type`, `discovered_from` (for scraped links), and optional `release_notes_url`.
 - Raw artifacts are **never mutated**.
 
 ### 3.3 Validate
@@ -87,22 +86,6 @@ We separate concerns into **Land → Validate → Normalize → Enrich → Publi
     docs/*.md                # data docs for this vintage
 ```
 
-### 4.1 Data Contracts — Discovery Manifests (required)
-- **Object:** `DiscoveryManifest` (one per discovery run) created via `cms_pricing.ingestion.metadata.discovery_manifest`.
-- **Must include:** `dataset` (`source`), `source_url`, `filename`, `content_type`, `size_bytes`, `sha256`, `discovered_at`, `downloaded_at` (null until download), `vintage`/`start_year`-`end_year`, optional `notes`, and `ingest_run_id` once ingestion completes.
-- **Store:** Write JSON-lines files under `data/manifests/<dataset>/<YYYYMMDD-HHMMSS>.jsonl` (or equivalent durable store). Each line is a manifest snapshot with deterministic digest (`sha256:…`).
-- **Hashing:** Use SHA-256 of the raw artifact; persist in the manifest and downstream parity/QA checks.
-- **Immutability:** Manifests are append-only. Corrections require a new discovery run with a pointer (`previous_manifest`) to the prior record.
-
-### 4.3 Provenance & Lineage
-- **Linkage:** Every `ingest_runs` record MUST cite the manifest(s) it consumed, and each manifest retains the ingest run identifiers that processed it.
-- **Exposure:** `/meta/vintage` endpoints (and internal catalogs) include the latest manifest digests per dataset for audit.
-
-### 4.5 Acceptance Criteria
-- Discovery pipelines fail CI if a manifest is missing, invalid, or absent from the source-map verification suite.
-- Manifests must validate against the shared helper (JSON schema checks) and pass `tools/verify_source_map.py` against reference PRDs.
-- PRs that add or modify source URLs, patterns, or vintages must update the relevant REF datasets and include a manifest sample in the PR body.
-
 ## 5. Naming & Conventions
 - Columns: `snake_case`; units explicitly suffixed (e.g., `*_usd`, `*_pct`, `*_km`).
 - Dates: ISO `YYYY-MM-DD`. Ranges are half‑open `[start, end)`.
@@ -130,7 +113,7 @@ We separate concerns into **Land → Validate → Normalize → Enrich → Publi
 - **Determinism:** Given the same inputs and schema version, outputs are bitwise-identical (content-addressed artifacts). Seed dedupe uses row content hashes where appropriate.
 
 ## 8. Observability & Monitoring
-- **References:** STD-observability-monitoring-prd-v1.0 for comprehensive monitoring standards
+- **References:** STD-observability-monitoring_prd_v1.0 for comprehensive monitoring standards
 - **Data-specific monitoring:** Freshness, volume, schema, quality, lineage for data pipelines
 - **Data SLAs:** Timeliness ≤ 24h, Completeness ≥ 99.5%, Accuracy ≥ 99.0%, Schema Stability 0 breaking changes, Availability ≥ 99.9%
 - **Dashboards:** One dashboard per dataset with five-pillar widgets and last three vintages
@@ -174,14 +157,11 @@ $1
 - Curated docs must include an **Attribution Note** when licenses require it.
 
 ## 13. Dataset Integration Contract
-Every dataset PRD must include an **Ingestion Summary** stating: source spec, schema contract & keys, semantics, validations (with thresholds), crosswalks & tie‑breakers, outputs, SLAs, and any deviations from DIS. **API surfaces or contracts derived from DIS-managed datasets must comply with the API-STD-Architecture-prd-v1.0**.
+Every dataset PRD must include an **Ingestion Summary** stating: source spec, schema contract & keys, semantics, validations (with thresholds), crosswalks & tie‑breakers, outputs, SLAs, and any deviations from DIS. **API surfaces or contracts derived from DIS-managed datasets must comply with the STD-api-architecture_prd_v1.0**.
 
 ## 14. Change Management
 - Changes to DIS require an ADR: context, decision, alternatives, impact, migration plan.
 - DIS version (e.g., v1.0) must be referenced by dataset PRDs.
-- CI must include a `verify_source_map` job that runs on PRs touching `cms_pricing/ingestion/**` or `prds/**`.
-- The verification job uploads an artifact highlighting manifest vs. PRD reference diffs for reviewer context.
-- If a source URL pattern changes, the PR **must** update `REF-cms-pricing-source-map-prd-v1.0.md` and/or `REF-geography-source-map-prd-v1.0.md` and attach a sample manifest (or link to artifact) in the description.
 
 ## 15. QA Summary (per QA & Testing Standard v1.0)
 | Item | Details |
@@ -261,9 +241,9 @@ def ingest_dataset():
 ### Appendix I — Cross-Reference Map
 
 **Related PRDs:**
-- **STD-observability-monitoring-prd-v1.0:** Comprehensive monitoring standards and unified SLAs
-- **STD-qa-testing-prd-v1.0:** Testing requirements for data pipelines and quality gates
-- **STD-api-security-and-auth-prd-v1.0:** Security requirements for data access and audit logging
+- **STD-observability-monitoring_prd_v1.0:** Comprehensive monitoring standards and unified SLAs
+- **STD-qa-testing_prd_v1.0:** Testing requirements for data pipelines and quality gates
+- **STD-api-security-and-auth_prd_v1.0:** Security requirements for data access and audit logging
 
 **Integration Points:**
 - **Observability:** DIS Section 8 → Observability PRD Section 2.1 (Data Pipeline Freshness), Section 3.1 (Data Pipeline SLAs), Section 4.1 (Data Pipeline Metrics)

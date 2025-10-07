@@ -32,6 +32,8 @@
 |---|---|---|---|
 | `REF-geography-mapping-cursor-prd-v1.0.md` | Draft v1.0 | Data Engineering | ZIP→locality ingestion/resolver pack |
 | `REF-nearest-zip-resolver-prd-v1.0.md` | Draft v1.0 | Data Engineering | Same-state nearest ZIP algorithm |
+| `REF-cms-pricing-source-map-prd-v1.0.md` | Draft v1.0 | Pricing Platform Engineering | CMS pricing datasets, links, work-backwards checklist |
+| `REF-geography-source-map-prd-v1.0.md` | Draft v1.0 | Pricing Platform Engineering | Geography dataset map & checklist |
 
 ---
 

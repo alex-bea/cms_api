@@ -22,6 +22,10 @@ Change control: ADR + Data Architecture Board sign-off
 - **STD-scraper-prd-v1.0.md:** Scraper requirements for OPPS data discovery
 - **STD-api-security-and-auth-prd-v1.0.md:** Security requirements for OPPS data access
 - **REF-geography-mapping-cursor-prd-v1.0.md:** Geography mapping for OPPS localities
+- **REF-cms-pricing-source-map-prd-v1.0.md:** CMS pricing dataset inventory & checklist
+
+## Work-Backwards Checklist (Required)
+Before altering the OPPS ingester or scraper, consult **REF-cms-pricing-source-map-prd-v1.0.md** to verify artifacts, layouts, and checklist completion. Capture discrepancies in the reference (or this PRD) prior to implementation.
 
 ## Data Classification & Stewardship
 - **Classification:** Public CMS release (Internal handling for enriched wage-index view)  
@@ -40,6 +44,7 @@ Change control: ADR + Data Architecture Board sign-off
 - **Outputs:** `/curated/opps/{vintage}/opps_apc_payment.parquet`, `/curated/opps/{vintage}/opps_hcpcs_crosswalk.parquet`, and enriched materialized view `opps_rates_enriched` with wage index multipliers  
 - **SLAs:** Land + publish within ≤5 business days of CMS posting; historical backfills honor same validations; digests recorded in manifest for reproducibility  
 - **Deviations:** None—ingester is required to remain DIS-compliant; any exceptions require ADR and update to this section
+- **Discovery Manifest & Governance:** OPPS scraper writes manifests with `cms_pricing.ingestion.metadata.discovery_manifest` under `data/scraped/opps/manifests/`; `tools/verify_source_map.py` enforces alignment with `REF-cms-pricing-source-map-prd-v1.0.md` during CI.
 
 ## API Readiness & Distribution
 - **Curated Views:** `opps_rates_enriched` and `opps_hcpcs_crosswalk_latest` expose Latest-Effective semantics keyed by `valuation_date`  

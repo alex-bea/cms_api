@@ -88,3 +88,10 @@ For the Master Catalog, also include `Review cadence:` and `Diagram standard:` i
 |------------|---------|--------|---------|
 | 2025-10-02 | v1.0    | Team   | Established Master Catalog filename and registration requirements. |
 | 2025-09-30 | v1.0    | Team   | Initial draft of documentation governance standard. |
+
+## Appendix M — GitHub Labels (reference)
+Use the following repository labels when triaging CI/doc-governance tasks:
+
+- `source-map-drift` — automation detected a mismatch between discovery manifests and reference documentation.
+- `manifest-schema-change` — updates to the discovery manifest format/schema that require downstream review.
+- `database-test-patterns` — database testing pattern or isolation improvements requiring coordination.

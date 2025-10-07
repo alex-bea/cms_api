@@ -485,3 +485,5 @@ class OperationalDashboard:
         self.manifest_generator.close()
         self.anomaly_detector.close()
 
+
+

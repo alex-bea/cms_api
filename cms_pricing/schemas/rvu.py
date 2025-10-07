@@ -144,3 +144,5 @@ class HealthResponse(BaseModel):
     database_connected: Optional[bool] = None
     uptime_seconds: Optional[float] = None
 
+
+

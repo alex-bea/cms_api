@@ -56,6 +56,13 @@ OLD_PRD_PATTERN = re.compile(r"_prd_v")
 CORRECT_PRD_PATTERN = re.compile(r"-prd-v")
 PRD_REFERENCE_PATTERN = re.compile(r"([A-Z]{3,4}-[a-z0-9\-]+(?:-prd-v[0-9]+\.[0-9]+)?\.md)")
 
+REQUIRED_REFERENCES = {
+    "PRD-mpfs-prd-v1.0.md": ["REF-cms-pricing-source-map-prd-v1.0.md"],
+    "PRD-rvu-gpci-prd-v0.1.md": ["REF-cms-pricing-source-map-prd-v1.0.md"],
+    "PRD-opps-prd-v1.0.md": ["REF-cms-pricing-source-map-prd-v1.0.md"],
+    "PRD-geography-locality-mapping-prd-v1.0.md": ["REF-geography-source-map-prd-v1.0.md"],
+}
+
 
 def extract_master_entries(text: str) -> set[str]:
     return set(DOC_PATTERN.findall(text))
@@ -168,6 +175,24 @@ def check_yaml_prd_patterns() -> List[Tuple[str, str]]:
     return violations
 
 
+def check_required_references() -> List[Tuple[str, str]]:
+    """Ensure key PRDs reference mandatory REF documents."""
+    violations: List[Tuple[str, str]] = []
+
+    for prd_name, required_refs in REQUIRED_REFERENCES.items():
+        prd_path = PRDS_DIR / prd_name
+        if not prd_path.exists():
+            violations.append((prd_name, "PRD file missing while enforcing required references"))
+            continue
+
+        content = read_path_text(prd_path)
+        for ref in required_refs:
+            if ref not in content:
+                violations.append((prd_name, f"Missing required reference to {ref}"))
+
+    return violations
+
+
 def main() -> int:
     logger = get_logger("audit.doc_catalog")
     issues: List[AuditIssue] = []
@@ -198,6 +223,9 @@ def main() -> int:
 
     for file_path, description in check_yaml_prd_patterns():
         issues.append(AuditIssue("error", description, doc=file_path))
+
+    for doc, description in check_required_references():
+        issues.append(AuditIssue("error", description, doc=doc))
 
     if not issues:
         logger.info("Documentation catalog audit passed.")
