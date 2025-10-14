@@ -33,4 +33,48 @@
 - **Digest Pinning:** APIs expose `X-Dataset-Digest`/`?digest` to guarantee reproducibility  
 - **Security:** Internal APIs only until compliance approves broader release; follow **STD-api-security-and-auth-prd-v1.0.md** for auth/logging
 
-> TODO: Populate full PRD content (objective, scope, data sources, validations, QA summary).
+## Objective  
+Ingest and persist CMS National Correct Coding Initiative (NCCI) reference tables—procedure-to-procedure (PTP) edits and Medically Unlikely Edits (MUEs)—to support downstream rule engines, claim validation, and analytics. This PRD focuses on authoritative storage and quality; adjudication logic lives downstream.
+
+## Scope  
+- **Included**  
+  - PTP edit tables with Column 1 / Column 2 code pairs, modifier indicators, and effective dating  
+  - MUE tables covering HCPCS, MUE counts, MAI indicators, provider-type qualifiers, and effective ranges  
+  - Supporting CMS documentation (PDFs, errata summaries) retained alongside manifests  
+- **Excluded (v1)**  
+  - Real-time adjudication logic (bundling enforcement, payer overrides)  
+  - Claim-level transformations or rule-evaluation services  
+
+## Sources & Cadence  
+- PTP edits refreshed quarterly by CMS, with ad hoc correction releases  
+- MUE tables published quarterly or annually depending on program area  
+- Monthly monitor job to detect late-breaking updates; retain ≥6 years of vintages for audit  
+
+## Schema / Data Model  
+
+### Raw tables  
+- `ncci_ptp_raw_YYYYQ` — direct ingestion of CMS PTP edit files  
+- `ncci_mue_raw_YYYYQ` — raw MUE tables per CMS release  
+
+### Curated views  
+- `ncci_ptp` — normalized PTP edits with `col1_code`, `col2_code`, `modifier_flag`, `effective_from`, `effective_to`, `notes`, `source_vintage`  
+- `ncci_mue` — normalized MUE entries capturing `hcpcs`, `modifier`, `provider_type`, `mue_value`, `mai_indicator`, and effective dating  
+
+## Keys & Joins  
+- PTP analytics join MPFS RVU data on `(hcpcs, modifier, quarter_vintage)` to evaluate bundling impacts  
+- MUE joins rely on `(hcpcs, modifier, provider_type, effective_from)`; always preserve original fields to avoid losing CMS semantics  
+- No business logic embedded in the ingester—downstream services enforce the edits  
+
+## Quality / QC & Diffing  
+- Ensure required columns are present for every vintage; fail ingest on schema drift  
+- Idempotent downloads with checksum + content-type verification  
+- Quarter-to-quarter diff reports highlighting newly added/retired PTP pairs and MUE value changes  
+- Store manifest metadata (source URLs, last-modified, license notes) for every release  
+
+## Licensing / ToS  
+CMS publishes the NCCI datasets as public program data—record attribution in manifests and note any license language from CMS distribution pages.
+
+## Roadmap / Extensions  
+- Link curated tables into downstream rule engines for automated adjudication  
+- Track CMS correction tables/errata and fold them into historical retention  
+- Explore support for payer-specific variants once CMS baselines are stable

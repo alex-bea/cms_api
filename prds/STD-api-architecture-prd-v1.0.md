@@ -382,7 +382,7 @@ class PricingService:
 - **STD-observability-monitoring-prd-v1.0:** API service monitoring, performance metrics, and alerting
 - **STD-api-security-and-auth-prd-v1.0:** Authentication, authorization, rate limiting, and security middleware
 - **STD-qa-testing-prd-v1.0:** API testing requirements, contract testing, and quality gates
-- **STD-Data-Architecture-prd-v1.0:** Data pipeline integration and data-backed response requirements
+- **STD-data-architecture-prd-v1.0.md:** Data pipeline integration and data-backed response requirements
 
 ### Integration Points
 - **API Observability:** This PRD Section 5.3 → Observability PRD Section 2.2 (API Service Volume)
