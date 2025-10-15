@@ -8,6 +8,7 @@
 **Cross-References:**
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
 - **STD-data-architecture-prd-v1.0.md:** Data ingestion lifecycle and storage patterns
+- **STD-parser-contracts-prd-v1.0.md:** Shared parser contracts for CMS data files
 - **STD-qa-testing-prd-v1.0.md:** Testing requirements for MPFS ingestion
 - **REF-nearest-zip-resolver-prd-v1.0.md:** ZIP resolver for geography mapping
 - **REF-cms-pricing-source-map-prd-v1.0.md:** Source inventory & work-backwards checklist

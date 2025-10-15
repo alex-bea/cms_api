@@ -1,6 +1,6 @@
 # Master System Catalog & Architectural Map
 
-**Status:** Adopted v1.0.3  
+**Status:** Adopted v1.0.4  
 **Owners:** Platform Architecture  
 **Consumers:** Engineering, Product, Data, QA, Ops, Compliance  
 **Change control:** ADR + Architecture Owner approval  
@@ -17,6 +17,7 @@
 | `STD-doc-governance-prd-v1.0.md` | Draft v1.0.1 | Platform | 2025-10-15 | Added companion doc conventions |
 | `STD-data-architecture-prd-v1.0.md` | Adopted 1.0 | Data Engineering | 2025-10-15 | Main standard |
 | `STD-data-architecture-impl-v1.0.md` | Draft v1.0 | Data Engineering | 2025-10-15 | Implementation guide (companion) |
+| `STD-parser-contracts-prd-v1.0.md` | Draft v1.0 | Data Platform Engineering | 2025-10-15 | Shared parser contracts, metadata injection, tiered validation |
 | `STD-api-contract-management-prd-v1.0.md` | Adopted v1.0 | Platform Engineering | 2025-09-30 | |
 | `STD-api-architecture-prd-v1.0.md` | Adopted v1.0 | Platform Engineering | 2025-09-30 | |
 | `STD-api-security-and-auth-prd-v1.0.md` | Draft v1.0 (for approval) | Security | 2025-09-30 | |
@@ -94,6 +95,7 @@ graph TD
     SB[STD-api-contract-management]
     SC[STD-api-security-and-auth]
     SD[STD-scraper]
+    SE[STD-parser-contracts]
   end
 
   subgraph References
@@ -122,6 +124,11 @@ graph TD
   end
 
   SA -.companion.-> SA_IMPL
+  SA --> SE
+  SE --> SA_IMPL
+  SE --> P1
+  SE --> P2
+  SE --> P5
   SA --> P1
   SA --> P4
   SA_IMPL -.-> P1
@@ -165,6 +172,7 @@ graph TD
 
 | Version | Date | Summary | PR |
 |---|---|---|---|
+| 1.0.4 | 2025-10-15 | Added STD-parser-contracts-prd-v1.0.md (shared parser infrastructure standard for CMS data ingestion); updated dependency graph showing parser contracts as foundation for MPFS, RVU, OPPS ingestors; establishes public contract requirements, metadata injection pattern, and tiered validation standards. | #TBD |
 | 1.0.3 | 2025-10-15 | Added REF-scraper-ingestor-integration-v1.0.md (scraper→ingestor handoff reference); updated STD-doc-governance to allow REF docs without `-prd` suffix; updated dependency graph with new REF document and integration relationships. | #TBD |
 | 1.0.2 | 2025-10-15 | Added STD-data-architecture-impl-v1.0.md (companion implementation guide); updated STD-doc-governance to v1.0.1 with companion document conventions; updated STD-scraper to v1.1; added companion relationships to dependency graph. | #TBD |
 | 1.0.1 | 2025-10-02 | Added automation notes, DOC/self entry, dependency refresh, and metadata alignment. | #TBD |
