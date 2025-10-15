@@ -18,7 +18,7 @@
 
 ## 1. Summary
 
-The Parser Core converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP) into canonical, schema-validated pandas DataFrames with deterministic outputs and full provenance. Parsers are selected by a filename-based router using an external layout registry. The normalize stage writes DataFrames to Arrow/Parquet format. Artifacts include the canonical Parquet table, rejects/quarantine set, metrics, and provenance metadata.
+Parsers return canonical pandas DataFrames; the ingestor writes Arrow/Parquet artifacts with deterministic outputs and full provenance. The system converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP) into schema-validated tabular datasets. Parsers are selected by a router using filename patterns and optional content sniffing. The normalize stage writes DataFrames to Arrow/Parquet format.
 
 **Why this matters**: Parsing quality is the single largest driver of downstream reliability and cost. Standardizing parser behavior, observability, and contracts prevents silent data drift, enables reproducible releases, and accelerates onboarding of new ingestors.
 
@@ -99,7 +99,7 @@ The Parser Core converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP) i
 
 ## 4. Key Decisions & Rationale
 
-1. **ParseResult return type** → Structured output (data, rejects, metrics) for cleaner separation; ingestor writes Arrow/Parquet for performance, zero-copy interchange, and strict dtype preservation on disk
+1. **ParseResult return type** → Parsers return pandas DataFrames; ingestor writes Arrow/Parquet artifacts on disk for performance, zero-copy interchange, and strict dtype preservation
 2. **Deterministic outputs** → Sort by stable composite key + 64-char `row_content_hash` for idempotency and collision avoidance
 3. **Content sniffing router** → filename + file_head (magic bytes, BOM) for robust format detection
 4. **External layout registry** (SemVer by year/quarter) → Decouple code from layout drift
@@ -119,7 +119,7 @@ The Parser Core converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP) i
 ### 5.1 Inputs
 
 **Primary inputs:**
-- `file_bytes` or stream (file object)
+- `file_obj` (binary stream/IO[bytes]) and filename
 - Optional sidecar files (codebooks, lookup tables, layout specifications)
 
 **Required metadata (injected by ingestor):**
@@ -265,6 +265,8 @@ def compute_row_hash(
 
 ### 5.3 Output Artifacts
 
+**IO Boundary:** The parser does not write files. The ingestor persists `parsed.parquet`, `rejects.parquet`, `metrics.json`, and `provenance.json` based on the parser's `ParseResult`.
+
 **Parser Responsibilities (v1.1):**
 
 Parsers **prepare data in-memory** and return `ParseResult` NamedTuple with:
@@ -348,45 +350,58 @@ Parsers **prepare data in-memory** and return `ParseResult` NamedTuple with:
 
 ### 6.1 Function Contract (Python)
 
-**Parser Function Signature (v1.0):**
+**Parser Function Signature (v1.1):**
 
 ```python
-from typing import IO, Dict, Any
+from typing import IO, Dict, Any, NamedTuple, Callable
 import pandas as pd
 
+class ParseResult(NamedTuple):
+    """Parser output per STD-parser-contracts v1.1 §5.3"""
+    data: pd.DataFrame           # canonical rows (pandas)
+    rejects: pd.DataFrame        # quarantine rows with error_code/context
+    metrics: Dict[str, Any]      # per-file metrics (rows_in/out, encoding, etc.)
+
+# Pure function requirement
+ParseFn = Callable[[IO[bytes], str, Dict[str, Any]], ParseResult]
+
+# Example signature for dataset-specific parser
 def parse_{dataset}(
-    file_obj: IO,
+    file_obj: IO[bytes],
     filename: str,
-    metadata: Dict[str, Any],
-    schema_version: str = "v1.0"
-) -> pd.DataFrame:
+    metadata: Dict[str, Any]
+) -> ParseResult:
     """
     Parse {dataset} file to canonical schema.
     
     Pure function: no filesystem writes, no global state.
-    Quarantine writes via helper function (ingestor-owned).
     
     Args:
-        file_obj: File object (bytes or text stream)
+        file_obj: Binary file stream
         filename: Filename for format detection
         metadata: Required metadata from ingestor (see §6.4)
-        schema_version: Schema contract version
+            - release_id, product_year, quarter_vintage, schema_id, 
+            - layout_version (fixed-width only), file_sha256, etc.
         
     Returns:
-        pandas DataFrame with canonical schema + metadata columns.
-        Ingestor writes to Parquet.
+        ParseResult with:
+            - data: pandas DataFrame (canonical rows with metadata)
+            - rejects: pandas DataFrame (validation failures)
+            - metrics: Dict (total_rows, valid_rows, reject_rows, parse_duration_sec, encoding_detected)
         
     Raises:
-        ParseError: If parsing fails
+        ParseError: If parsing fails critically
         ValueError: If required metadata missing
     
     Contract guarantees:
+        - Returns ParseResult (not bare DataFrame)
         - Explicit dtypes (no object for codes)
         - Sorted by natural key
-        - row_content_hash computed per spec v1 (§5.2)
+        - 64-char row_content_hash computed per spec v1.1 (§5.2)
         - Metadata columns injected
-        - Encoding/BOM handled
+        - Encoding/BOM handled with CP1252 support
         - Deterministic output (same input → same hash)
+        - No filesystem writes (ingestor persists artifacts)
     """
 ```
 
