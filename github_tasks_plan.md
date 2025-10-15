@@ -1426,6 +1426,379 @@ Run audit tools to verify governance compliance for new architecture PRDs and up
 **Total Estimated Time:** 12-18 hours across all tasks
 **Critical Path:** Tasks 1 → 2 → 3 → 4 → 5 (sequential dependencies)
 
+---
+
+## ✅ COMPLETED: Architecture Documentation
+
+**Status:** All 5 tasks completed on 2025-10-15
+
+**Delivered:**
+- ✅ `STD-data-architecture-impl-v1.0.md` - DIS implementation guide (1,200+ lines)
+- ✅ `REF-scraper-ingestor-integration-v1.0.md` - Integration patterns (1,050+ lines)
+- ✅ `STD-scraper-prd-v1.0.md` - Updated to v1.1 with pattern map (+453 lines)
+- ✅ `STD-doc-governance-prd-v1.0.md` - Updated to v1.0.1 with companion docs
+- ✅ `DOC-master-catalog-prd-v1.0.md` - Updated to v1.0.3 with new docs
+
+**Audit Tooling Enhancements (2025-10-15):**
+- ✅ Phase 1: Critical fixes (dynamic counts, JSON artifacts, strict mode, .PHONY)
+- ✅ Phase 2: CI enhancements (caching, concurrency, job summary)
+- ✅ New tool: `audit_makefile_phony.py` with auto-fix capability
+- ✅ Total: 7/8 audits passing (1 legitimate dependency graph issue)
+
+---
+
+## 🚀 CURRENT PRIORITY: MPFS Ingestor Implementation
+
+**Started:** 2025-10-15  
+**Estimated Completion:** 11-16 hours (5 phases)  
+**Status:** Phase 0 in progress
+
+### Overview
+
+Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-end physician pricing using the Discovery → Ingestion → Serving (DIS) architecture pattern.
+
+### Business Value
+
+- **Enable MPFS Pricing**: Complete implementation of physician fee schedule pricing
+- **DIS Pattern Compliance**: Follow established architecture patterns
+- **Production-Grade Quality**: Tiered validation, observability, reference data checks
+- **Reusable Components**: Shared parsers for RVU and MPFS ingestors
+
+### Implementation Phases
+
+#### Phase 0: Pre-Implementation Foundation (3-4 hours) ⏳ IN PROGRESS
+
+**Status:** Setting up contracts and shared infrastructure  
+**Commit:** `mpfs-phase0-shared-parsers`
+
+**Tasks:**
+1. ✅ Check database models (completed)
+2. ⏳ Extract RVU parsing logic to shared `parsers/` module
+3. ⏳ Create Schema Registry with SemVer contracts
+4. ⏳ Build file-name → parser routing table
+5. ⏳ Scaffold `ingest_runs` table with five pillar metrics
+
+**Deliverables:**
+- `cms_pricing/ingestion/parsers/` module (7 files, ~600 lines)
+  - `pprrvu_parser.py` - PPRRVU parsing contract
+  - `gpci_parser.py` - GPCI parsing contract
+  - `locality_parser.py` - Locality parsing contract
+  - `anes_parser.py` - Anesthesia CF parsing contract
+  - `oppscap_parser.py` - OPPS cap parsing contract
+  - `conversion_factor_parser.py` - CF parsing contract (NEW)
+  - `schema_registry.py` - Schema validation (SemVer)
+- `cms_pricing/models/ingest_runs.py` - Run tracking table
+- Parser routing table documented
+
+**Acceptance Criteria:**
+- [ ] All parsers extracted from RVU ingestor
+- [ ] Schema contracts registered for 6 file types
+- [ ] Parser routing table maps filenames → parsers
+- [ ] `ingest_runs` table created with 5 pillar metrics
+- [ ] Tests pass for all parsers
+- [ ] No breaking changes to RVU ingestor
+
+---
+
+#### Phase 1: Parsing Implementation (2-3 hours)
+
+**Status:** Pending Phase 0 completion  
+**Commit:** `mpfs-phase1-parsing`
+
+**Tasks:**
+1. Import shared parsers in MPFS ingestor
+2. Implement `normalize_stage()` using shared parsers
+3. Add schema validation gating
+4. Extract metadata (vintage_date, product_year, quarter_vintage)
+5. Update ingest_run metrics (rows_discovered, etc.)
+
+**Deliverables:**
+- Updated `mpfs_ingestor.py` (~200 lines)
+- Schema validation integration
+- Metadata extraction helpers
+
+**Acceptance Criteria:**
+- [ ] MPFS ingestor uses shared parsers (not private RVU methods)
+- [ ] Schema validation blocks on contract violations
+- [ ] All 3 vintage fields populated correctly
+- [ ] Pillar metrics tracked in ingest_run
+- [ ] Tests pass with sample data
+
+---
+
+#### Phase 2: Tiered Validation (2-3 hours)
+
+**Status:** Pending Phase 1 completion  
+**Commit:** `mpfs-phase2-validation`
+
+**Tasks:**
+1. Create `validators/` module with tiered constraints
+2. Implement BLOCK validators (HCPCS format, FIPS, locality key)
+3. Implement WARN validators (ZIP↔ZCTA, county mapping)
+4. Add reference data validation (HCPCS/CPT/POS against ref sets)
+5. Implement quarantine table writes
+6. Generate validation reports
+
+**Deliverables:**
+- `cms_pricing/ingestion/validators/` module (~300 lines)
+  - `tiered_validator.py` - Block/warn/quarantine logic
+  - `domain_validators.py` - HCPCS/FIPS/locality checks
+  - `reference_validators.py` - Ref data validation
+- Updated `validate_stage()` in MPFS ingestor
+
+**Acceptance Criteria:**
+- [ ] Blocking validation stops ingestion on critical errors
+- [ ] Warning validation quarantines rows with soft errors
+- [ ] Reference data validated (HCPCS exists in ref set)
+- [ ] Validation report generated with counts
+- [ ] Quarantine table populated with rejected rows
+- [ ] Tests cover block/warn scenarios
+
+---
+
+#### Phase 3: Curated Views Creation (2-3 hours)
+
+**Status:** Pending Phase 2 completion  
+**Commit:** `mpfs-phase3-curated-views`
+
+**Tasks:**
+1. Implement `_create_curated_views()` for 6 views:
+   - `mpfs_rvu` - Core RVUs + indicators
+   - `mpfs_indicators_all` - Exploded policy flags
+   - `mpfs_locality` - Locality dimension (or reference RVU table)
+   - `mpfs_gpci` - GPCI indices (or reference RVU table)
+   - `mpfs_cf_vintage` - Conversion factors (physician + anesthesia SEPARATE)
+   - `mpfs_link_keys` - Minimal join keys
+2. Add helper methods for indicator explosion
+3. Implement latest-effective view generation
+4. Add natural key validation (hcpcs, modifier, effective_from)
+
+**Deliverables:**
+- Updated `_create_curated_views()` (~350 lines)
+- Helper methods (`_explode_indicators`, `_extract_anes_cf`, etc.)
+- SQL for `v_latest_mpfs_rvu`, `v_latest_mpfs_gpci`, `v_latest_mpfs_link_keys`
+
+**Acceptance Criteria:**
+- [ ] All 6 curated views created successfully
+- [ ] Natural keys properly defined per PRD
+- [ ] Three vintage fields on all rows
+- [ ] Physician CF ≠ Anesthesia CF (separate records)
+- [ ] Latest-effective views return current data only
+- [ ] Tests verify view structure and content
+
+---
+
+#### Phase 4: Persistence & Diff Reports (2-3 hours)
+
+**Status:** Pending Phase 3 completion  
+**Commit:** `mpfs-phase4-persistence`
+
+**Tasks:**
+1. Implement delete-and-insert upsert strategy
+2. Add bulk insert to PostgreSQL (MPFSRVU, MPFSConversionFactor)
+3. Export Parquet files for all 6 views
+4. Generate vintage diff reports (compare to prior quarter)
+5. Update ingest_run with final metrics
+6. Create run summary artifact
+
+**Deliverables:**
+- Updated `_store_curated_data()` (~150 lines)
+- Diff report generation (~100 lines)
+- Parquet export logic
+- End-to-end integration test
+
+**Diff Report Contents:**
+- Added/removed HCPCS codes
+- RVU deltas by percentile (p50, p90, p99)
+- GPCI percent changes
+- Policy indicator churn
+- Row count comparisons
+
+**Acceptance Criteria:**
+- [ ] Delete-and-insert works correctly (no duplicates)
+- [ ] All data persisted to PostgreSQL
+- [ ] Parquet files exported to `data/curated/mpfs/{release_id}/`
+- [ ] Diff report generated comparing to prior vintage
+- [ ] Ingest run record complete with all 5 pillar metrics
+- [ ] End-to-end test passes with sample data
+- [ ] API can query persisted MPFS data
+
+---
+
+### Five Pillar Metrics Tracked
+
+**1. Freshness**
+- `source_published_at` - When CMS published the data
+- `data_lag_hours` - Time between publication and ingestion
+
+**2. Volume**
+- `rows_discovered` - Total rows found in source files
+- `rows_ingested` - Rows successfully stored
+- `rows_rejected` - Rows that failed validation
+- `rows_quarantined` - Rows with soft failures
+- `bytes_processed` - Total data processed
+
+**3. Schema**
+- `schema_version` - Schema contract version used
+- `schema_drift_detected` - Boolean flag for drift
+- `schema_drift_details` - JSON with drift details
+
+**4. Quality/Distribution**
+- `validation_errors` - Count of validation errors
+- `validation_warnings` - Count of warnings
+- `null_rate_max` - Highest null rate across columns
+- `distribution_drift_pct` - Statistical drift from prior
+
+**5. Lineage/Usage**
+- `source_urls` - List of CMS source URLs
+- `dependencies` - Upstream data dependencies
+- `downstream_notified` - Whether consumers notified
+
+---
+
+### Database Tables Created/Updated
+
+**New Tables:**
+- `ingest_runs` - Run tracking with five pillar metrics
+- Quarantine table (for validation failures)
+
+**Populated Tables:**
+- `mpfs_rvu` (~19,000 rows per quarter)
+- `mpfs_conversion_factor` (~2 rows per year)
+- `mpfs_abstract` (if national payment data available)
+
+**Reference Tables (reused):**
+- `locality_county` (from RVU ingestor)
+- `gpci_indices` or `gpci` (from RVU ingestor)
+
+**Views Created:**
+- `v_latest_mpfs_rvu`
+- `v_latest_mpfs_gpci`
+- `v_latest_mpfs_link_keys`
+
+---
+
+### Testing Strategy
+
+**Golden Fixtures:**
+- Sample PPRRVU data (100 rows representative)
+- Sample GPCI data (10 localities)
+- Sample conversion factor data
+- Expected curated view outputs
+
+**Test Coverage:**
+1. **Parser Tests** - Each parser independently
+2. **Schema Validation** - Contract enforcement
+3. **Domain Validation** - HCPCS/FIPS/locality format
+4. **Reference Validation** - Ref data existence checks
+5. **Quarantine Tests** - Warn-level validation
+6. **Upsert Tests** - Delete-and-insert idempotency
+7. **Diff Report Tests** - Vintage comparison
+8. **End-to-End Test** - Full pipeline with sample data
+
+---
+
+### Key Design Decisions (Per PRD Compliance)
+
+1. **No Price Calculation** - Ingestor stores data only, no pricing math
+2. **Three Vintage Fields** - `vintage_date`, `product_year`, `quarter_vintage`
+3. **Natural Keys** - `(hcpcs, modifier, effective_from)` per PRD
+4. **Tiered Validation** - Block on critical, warn+quarantine on soft
+5. **Shared Parsers** - Public contracts, not private methods
+6. **CF Separation** - Physician CF ≠ Anesthesia CF
+7. **Reference Tables** - Don't duplicate locality/GPCI (use RVU tables)
+8. **Upsert Strategy** - Delete-and-insert by `release_id`
+9. **Latest-Effective Views** - SQL views for current data
+10. **Diff Reports** - Compare curated vintages, not raw
+
+---
+
+### Success Metrics
+
+**Functional:**
+- ✅ All 6 curated views created
+- ✅ Data persisted to PostgreSQL
+- ✅ Parquet exports generated
+- ✅ API can query MPFS data
+- ✅ End-to-end test passes
+
+**Quality:**
+- ✅ Schema validation enforced
+- ✅ Reference data validated
+- ✅ Quarantine captures soft failures
+- ✅ Diff report shows data changes
+
+**Observability:**
+- ✅ Five pillar metrics tracked
+- ✅ Ingest run record complete
+- ✅ Validation report generated
+- ✅ Run summary artifact created
+
+**Performance:**
+- ✅ Ingestion completes in <5 minutes for quarterly data
+- ✅ Upsert strategy prevents duplicates
+- ✅ Latest-effective views return instantly
+
+---
+
+### Dependencies
+
+**Upstream:**
+- MPFS scraper (completed) - Provides discovery manifest
+- Sample data (available) - `sample_data/rvu25d_0/`
+- Database models (completed) - MPFSRVU, MPFSConversionFactor
+
+**Downstream:**
+- MPFS pricing API endpoints (future)
+- MPFS analytics dashboards (future)
+- Network adequacy analysis (future)
+
+---
+
+### Risk Mitigation
+
+**Risk 1: RVU Ingestor Changes**
+- Mitigation: Shared parsers with public contracts (SemVer)
+- Impact: Low (both ingestors use same parsers)
+
+**Risk 2: Schema Drift**
+- Mitigation: Schema registry with strict validation
+- Impact: Medium (blocks ingestion, requires schema update)
+
+**Risk 3: Reference Data Missing**
+- Mitigation: Tiered validation (warn, don't block)
+- Impact: Low (quarantine rows, continue processing)
+
+**Risk 4: Vintage Comparison Failure**
+- Mitigation: Graceful fallback if no prior vintage
+- Impact: Low (skip diff report, log warning)
+
+---
+
+### Related PRDs
+
+- **`PRD-mpfs-prd-v1.0.md`** - MPFS schema and requirements ✅
+- **`PRD-rvu-gpci-prd-v0.1.md`** - RVU parsing patterns ✅
+- **`STD-data-architecture-prd-v1.0.md`** - DIS architecture ✅
+- **`STD-data-architecture-impl-v1.0.md`** - DIS implementation guide ✅
+- **`REF-scraper-ingestor-integration-v1.0.md`** - Integration patterns ✅
+
+---
+
+### Commits Summary
+
+| Commit | Phase | Hours | Files | Lines | Status |
+|--------|-------|-------|-------|-------|--------|
+| `mpfs-phase0-shared-parsers` | Phase 0 | 3-4h | 9 | ~600 | ⏳ In Progress |
+| `mpfs-phase1-parsing` | Phase 1 | 2-3h | 2 | ~200 | ⏸️ Pending |
+| `mpfs-phase2-validation` | Phase 2 | 2-3h | 4 | ~300 | ⏸️ Pending |
+| `mpfs-phase3-curated-views` | Phase 3 | 2-3h | 2 | ~350 | ⏸️ Pending |
+| `mpfs-phase4-persistence` | Phase 4 | 2-3h | 3 | ~250 | ⏸️ Pending |
+
+**Total:** 11-16 hours, 20 files, ~1,700 lines
+
+---
+
 ## Notes
 
 - This plan includes 68 total tasks (63 original + 5 new architecture documentation tasks)
