@@ -18,17 +18,24 @@
 
 ## 1. Summary
 
-The Parser Core converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP/XML) into canonical, Arrow-backed, schema-validated tabular datasets with deterministic outputs and full provenance. Parsers are selected by a content-sniffing router using an external layout registry. Artifacts include the canonical table, rejects/quarantine set, metrics, and provenance metadata.
+The Parser Core converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP) into canonical, schema-validated pandas DataFrames with deterministic outputs and full provenance. Parsers are selected by a filename-based router using an external layout registry. The normalize stage writes DataFrames to Arrow/Parquet format. Artifacts include the canonical Parquet table, rejects/quarantine set, metrics, and provenance metadata.
 
 **Why this matters**: Parsing quality is the single largest driver of downstream reliability and cost. Standardizing parser behavior, observability, and contracts prevents silent data drift, enables reproducible releases, and accelerates onboarding of new ingestors.
 
+**v1.0 Implementation:**
+- Parsers return pandas DataFrames (not Arrow tables directly)
+- Metadata injected via dict parameter
+- Quarantine via helper functions (v1.1 will use ParseResult)
+- Python dict layouts (v1.1 will migrate to YAML)
+- Filename-based routing (v1.1 will add magic byte detection)
+
 **Key principles:**
-- Parsers are **public contracts**, not private methods
+- Parsers are **public contracts** (importable across ingestors), not private methods
 - **Metadata injection** by ingestor, not hardcoded in parsers
 - **Explicit dtypes** - no silent coercion of codes to floats
-- **Deterministic output** - sorted by natural key + content hash
+- **Deterministic output** - sorted by natural key + formal content hash spec
 - **Tiered validation** - block on critical, warn on soft failures
-- **Comprehensive provenance** - full audit trail
+- **Comprehensive provenance** - full audit trail via IngestRun model
 
 ---
 
@@ -88,7 +95,7 @@ The Parser Core converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP/XM
 
 ## 4. Key Decisions & Rationale
 
-1. **Arrow-backed canonical tables** → Performance, zero-copy interchange, strict dtypes
+1. **pandas DataFrames with Arrow/Parquet output** → Parsers return pandas DataFrames for flexibility and compatibility with existing code; normalize stage writes Arrow/Parquet for performance, zero-copy interchange, and strict dtype preservation on disk. (*v1.1 planned: ParseResult wrapper with rejects and metrics*)
 2. **Deterministic outputs** → Sort by stable composite key + `row_content_hash` for idempotency
 3. **Content sniffing router** → Don't rely on filenames; detect dialect, headers, magic bytes
 4. **External layout registry** (SemVer by year/quarter) → Decouple code from layout drift
@@ -170,26 +177,92 @@ The Parser Core converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP/XM
 - Compute `row_content_hash` for each row (excludes metadata columns)
 - Output format: Parquet with compression='snappy'
 
+**Row Hash Specification (v1):**
+
+Canonical algorithm for `row_content_hash` to ensure reproducibility:
+
+1. **Columns**: Use schema columns in declared order; exclude metadata columns (those starting with `source_`, `release_`, `vintage_`, `product_`, `quarter_`, `parsed_`, `row_`)
+2. **Normalize each value** to canonical string:
+   - `None` → `""` (empty string)
+   - strings → trimmed, exact case preserved
+   - decimals/floats → quantize to 6 decimals (e.g., `0.123456`), no scientific notation
+   - dates → ISO-8601 `YYYY-MM-DD`
+   - datetimes → ISO-8601 UTC `YYYY-MM-DDTHH:MM:SSZ`
+   - categorical → `.astype(str)` before hashing (avoid category code drift)
+   - booleans → `True` or `False`
+3. **Join** with `\x1f` (ASCII unit separator character)
+4. **Encode** as UTF-8 bytes
+5. **Hash** with SHA-256, take first 16 characters (64-bit hex)
+
+**Version stability:** Column order and delimiter are part of the spec. Any change requires **MAJOR** parser version bump.
+
+**Implementation example:**
+```python
+def compute_row_hash(row: pd.Series, schema_columns: List[str]) -> str:
+    """Compute deterministic row content hash per spec v1"""
+    parts = []
+    for col in schema_columns:  # Declared order from schema
+        val = row[col]
+        if pd.isna(val):
+            parts.append("")
+        elif isinstance(val, (float, Decimal)):
+            parts.append(f"{float(val):.6f}")
+        elif isinstance(val, datetime):
+            parts.append(val.strftime('%Y-%m-%dT%H:%M:%SZ'))
+        elif isinstance(val, date):
+            parts.append(val.isoformat())
+        elif hasattr(val, 'categories'):  # Categorical
+            parts.append(str(val).strip())
+        else:
+            parts.append(str(val).strip())
+    
+    content = '\x1f'.join(parts)
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()[:16]
+```
+
+**Categorical Type Handling:**
+- Use categorical dtype for memory efficiency and domain enforcement
+- Always hash on `.astype(str)` to avoid category code drift between pandas versions
+- Fix dictionary encoding at Parquet write time: `df.to_parquet(..., use_dictionary=True)`
+- Never rely on category internal codes for equality comparisons
+
 ### 5.3 Output Artifacts
 
+**Parser Responsibilities (v1.0):**
+
+Parsers **prepare data in-memory** and return pandas DataFrame with:
+- Canonical data columns (parsed and normalized)
+- Metadata columns injected (release_id, vintage_date, etc.)
+- Row content hash computed
+- Sorted by natural key
+
+**Parsers do NOT write files** - all artifact writes handled by normalize stage/ingestor.
+
+**Ingestor/Normalize Stage Writes (from parser output):**
+
 **Primary Output:**
-- `parsed.parquet` - Canonical data with metadata columns
+- `parsed.parquet` - Canonical data from parser DataFrame
 - Partitioned by: `dataset_id/release_id/schema_id/`
-- Format: Arrow/Parquet with explicit schema
+- Format: Arrow/Parquet with explicit schema, compression='snappy'
 
 **Quarantine Output:**
-- `rejects.parquet` - Rows that failed validation
-- Columns: All original columns + `error_code`, `error_message`, `raw_row`, `line_no`, `quarantined_at`
+- `rejects.parquet` - Rows flagged by parser (quarantine helper)
+- Columns: All original columns + `quarantine_reason`, `quarantine_rule_id`, `quarantined_at`, `source_line_num`
 - Created even in Phase 1 (minimal validation)
+- Location: `data/quarantine/{release_id}/{dataset}_{reason}.parquet`
 
 **Metrics Output:**
-- `metrics.json` - Per-file parse metrics (see §10)
+- `metrics.json` - Per-file parse metrics (aggregated by ingestor)
+- Location: `data/stage/{dataset}/{release_id}/metrics.json`
 
 **Provenance Output:**
 - `provenance.json` - Full metadata, library versions, git SHA
+- Location: `data/stage/{dataset}/{release_id}/provenance.json`
 
 **Optional:**
 - `sample_100.parquet` - First 100 rows for quick inspection
+
+**v1.1 Enhancement:** Parsers will return `ParseResult(df, rejects_df, metrics)` for cleaner separation. v1.0 uses in-place quarantine writes via helper functions.
 
 ### 5.4 CMS File Type Support
 
@@ -240,7 +313,7 @@ The Parser Core converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP/XM
 
 ### 6.1 Function Contract (Python)
 
-**Parser Function Signature:**
+**Parser Function Signature (v1.0):**
 
 ```python
 from typing import IO, Dict, Any
@@ -255,6 +328,9 @@ def parse_{dataset}(
     """
     Parse {dataset} file to canonical schema.
     
+    Pure function: no filesystem writes, no global state.
+    Quarantine writes via helper function (ingestor-owned).
+    
     Args:
         file_obj: File object (bytes or text stream)
         filename: Filename for format detection
@@ -262,31 +338,51 @@ def parse_{dataset}(
         schema_version: Schema contract version
         
     Returns:
-        DataFrame with canonical schema + metadata columns
+        pandas DataFrame with canonical schema + metadata columns.
+        Ingestor writes to Parquet.
         
     Raises:
         ParseError: If parsing fails
-        SchemaValidationError: If schema validation fails
+        ValueError: If required metadata missing
     
     Contract guarantees:
         - Explicit dtypes (no object for codes)
         - Sorted by natural key
-        - row_content_hash for idempotency
+        - row_content_hash computed per spec v1 (§5.2)
         - Metadata columns injected
         - Encoding/BOM handled
+        - Deterministic output (same input → same hash)
     """
 ```
 
 **All parsers MUST follow this signature.**
 
+**v1.1 Enhancement (Planned):**
+
+```python
+from typing import NamedTuple
+
+class ParseResult(NamedTuple):
+    df: pd.DataFrame           # Canonical rows
+    rejects: pd.DataFrame      # Quarantine rows with error metadata
+    metrics: Dict[str, Any]    # Per-file metrics (in-memory)
+
+def parse_{dataset}(...) -> ParseResult:
+    """Returns structured result for cleaner separation"""
+```
+
+This will eliminate helper-based quarantine writes and return metrics in-band.
+
 ### 6.2 Router Contract
 
-**Router Function Signature:**
+**Router Function Signature (v1.0):**
 
 ```python
 def route_to_parser(filename: str) -> Tuple[str, str, Callable]:
     """
     Route filename to parser configuration.
+    
+    v1.0: Uses filename regex patterns only.
     
     Args:
         filename: Source filename
@@ -303,6 +399,24 @@ def route_to_parser(filename: str) -> Tuple[str, str, Callable]:
 ```
 
 **Implementation:** `cms_pricing/ingestion/parsers/__init__.py`
+
+**v1.1 Enhancement (Planned):**
+
+```python
+def route_to_parser(
+    filename: str, 
+    file_head: Optional[bytes] = None
+) -> Tuple[str, str, Callable]:
+    """
+    Route using filename + optional file_head for magic byte/BOM detection.
+    
+    Args:
+        filename: Filename hint
+        file_head: First ~4KB for content sniffing
+    """
+```
+
+This will enable magic-byte inspection without reading full files, preventing filename-only misroutes.
 
 ### 6.3 Schema Contract Format
 
@@ -467,26 +581,54 @@ PARSER_ROUTING = {
 
 **Purpose:** Externalize fixed-width column specifications, SemVer by year/quarter
 
-**Implementation:** `cms_pricing/ingestion/parsers/layout_registry.py`
+**Implementation (v1.0):** `cms_pricing/ingestion/parsers/layout_registry.py`
 
-**Structure:**
+**Current Format (Python dicts in code):**
 ```python
 LAYOUT_REGISTRY = {
     ('pprrvu', '2025', 'Q4'): {
         'version': 'v2025.4.0',  # SemVer
         'min_line_length': 200,
+        'source_version': '2025D',
         'columns': {
-            'hcpcs': {'start': 0, 'end': 5, 'type': 'string'},
-            'work_rvu': {'start': 61, 'end': 65, 'type': 'decimal'},
-            # ... all columns
+            'hcpcs': {'start': 0, 'end': 5, 'type': 'string', 'nullable': False},
+            'work_rvu': {'start': 61, 'end': 65, 'type': 'decimal', 'nullable': True},
+            # ... all 20 columns for PPRRVU
         }
     }
 }
 ```
 
+**v1.0 Note:** Layouts are Python dicts in-code for simplicity and speed. Lookups via `get_layout(year, quarter, dataset)`.
+
+**v1.1 Enhancement (Planned - YAML Source of Truth):**
+
+```yaml
+# File: layout_registry/pprrvu/v2025.4.0.yaml
+dataset: pprrvu
+version: v2025.4.0
+year: "2025"
+quarter: "Q4"
+min_line_length: 200
+columns:
+  - name: hcpcs
+    start: 0
+    end: 5
+    type: string
+    nullable: false
+  - name: work_rvu
+    start: 61
+    end: 65
+    type: decimal(6,2)
+    nullable: true
+  # ... all columns
+```
+
+`layout_registry.py` will load and validate YAMLs for better governance and diff reviews.
+
 **Versioning:**
 - **Major version bump**: Column position/width changes, required field changes
-- **Minor version bump**: Optional field additions
+- **Minor version bump**: Optional field additions  
 - **Patch version bump**: Documentation updates, clarifications
 
 **Testing:**
@@ -618,7 +760,12 @@ LAYOUT_REGISTRY = {
 
 ### 10.1 Per-File Metrics
 
-Emit for each file parsed:
+**v1.0 Implementation:**
+Parsers log metrics during execution. Ingestor aggregates into `metrics.json` and IngestRun model.
+
+**v1.1 Enhancement:** Parsers will return metrics in ParseResult for cleaner separation.
+
+**Metrics emitted for each file parsed:**
 
 ```json
 {
@@ -754,8 +901,11 @@ logger.info(
 
 **Examples:**
 - `v1.0.0 → v1.0.1`: Fixed encoding bug
-- `v1.0.0 → v1.1.0`: Added row_content_hash column
+- `v1.0.0 → v1.1.0`: Added optional metadata column
 - `v1.0.0 → v2.0.0`: Changed primary key sort order
+- `v1.0.0 → v2.0.0`: Changed row hash algorithm or column order
+
+**Special case:** Any change to row-hash spec (column order in hash, delimiter, normalization rules per §5.2) requires **MAJOR** parser version bump to ensure cross-version reproducibility.
 
 ### 12.2 Schema Versioning (SemVer)
 
@@ -806,9 +956,10 @@ Backfills MUST pin all three versions:
 - Supply-chain: Record Docker image digest + git SHA in provenance
 
 **Access Control:**
-- Parser code is internal (not public API)
-- Schema contracts can be published (public CMS data)
-- Quarantine artifacts are internal only
+- Parser code is **public within monorepo** (stable, SemVer'd, importable across ingestors)
+- Parsers are NOT external HTTP APIs or customer-facing
+- Schema contracts can be published externally (based on public CMS data)
+- Quarantine artifacts are internal only (contain rejected data)
 
 ---
 
@@ -1060,19 +1211,42 @@ tests/fixtures/
 
 ## 20. Implementation Roadmap
 
-### Phase 1: Core Parsers (Current)
+### v1.0: Core Parsers (Current)
 
-**Goal:** Extract and standardize PPRRVU, GPCI, Locality, ANES, OPPSCAP parsers
+**Goal:** Extract and standardize PPRRVU, GPCI, Locality, ANES, OPPSCAP, CF parsers
+
+**v1.0 Features:**
+- pandas DataFrame return type
+- Metadata injection via dict parameter
+- In-place quarantine writes (helper functions)
+- Python dict-based layout registry
+- Filename-only routing
+- Formal row hash spec
+- IngestRun tracking integrated
 
 **Deliverables:**
-- 5 parser modules following contract
-- Metadata injection implemented
-- Quarantine artifacts created
-- IngestRun tracking integrated
+- 6 parser modules following v1.0 contract
+- Schema contracts for all file types
+- Layout registry with 2025 layouts
+- Metadata extractor utility
+- Unit and integration tests
 
 **Timeline:** 2-3 hours (in progress)
 
-### Phase 2: Enhanced Validation (Next)
+### v1.1: Enhanced Contracts (Future - ~6 months)
+
+**Goal:** Refine parser interface for cleaner separation
+
+**v1.1 Enhancements:**
+- ParseResult return type (df, rejects, metrics)
+- Router accepts file_head for magic byte detection
+- YAML-based layout registry
+- Eliminate helper-based quarantine writes
+- Return metrics in-band (not via logging)
+
+**Timeline:** 1-2 hours refactoring
+
+### Phase 2: Enhanced Validation (Next - After v1.0)
 
 **Goal:** Comprehensive reference validation, tiered constraints
 
@@ -1111,7 +1285,7 @@ tests/fixtures/
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
-| 1.0 | 2025-10-15 | Initial adoption of parser contracts standard. Defines public contract requirements, metadata injection pattern, tiered validation, three vintage fields requirement, SemVer for parsers/schemas/layouts, integration with DIS pipeline, and comprehensive testing strategy. Establishes governance for shared parser infrastructure used by MPFS, RVU, OPPS, and future ingestors. | #TBD |
+| 1.0 | 2025-10-15 | Initial adoption of parser contracts standard. Defines public contract requirements (pandas DataFrame return type), metadata injection pattern with three vintage fields, tiered validation (BLOCK/WARN/INFO), formal row hash specification for reproducibility, SemVer for parsers/schemas/layouts, integration with DIS normalize stage, and comprehensive testing strategy. Documents v1.0 implementation (pandas, helper-based quarantine, Python dict layouts, filename routing) and v1.1 enhancements (ParseResult, YAML layouts, magic byte routing). Establishes governance for shared parser infrastructure used by MPFS, RVU, OPPS, and future ingestors. | #TBD |
 
 ---
 
