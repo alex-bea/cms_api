@@ -9,6 +9,7 @@
 - **STD-scraper-prd-v1.0.md:** Scraper patterns and discovery standards
 - **STD-data-architecture-prd-v1.0.md:** DIS pipeline architecture and requirements
 - **STD-data-architecture-impl-v1.0.md:** Ingestor implementation guide
+- **STD-parser-contracts-prd-v1.0.md:** Parser contracts consume scraper discovery manifests
 - **REF-cms-pricing-source-map-prd-v1.0.md:** CMS dataset source mappings
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog
 

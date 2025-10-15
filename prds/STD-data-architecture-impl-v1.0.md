@@ -11,6 +11,7 @@
 
 **Cross-References:**
 - **STD-data-architecture-prd-v1.0.md:** Main standard (requirements, architecture, policies)
+- **STD-parser-contracts-prd-v1.0.md:** Parser contracts for normalize stage implementation
 - **STD-scraper-prd-v1.0.md:** Scraper patterns and discovery manifests
 - **STD-observability-monitoring-prd-v1.0.md:** Observability requirements
 - **STD-qa-testing-prd-v1.0.md:** Testing requirements
