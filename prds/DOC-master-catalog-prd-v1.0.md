@@ -1,6 +1,6 @@
 # Master System Catalog & Architectural Map
 
-**Status:** Adopted v1.0.2  
+**Status:** Adopted v1.0.3  
 **Owners:** Platform Architecture  
 **Consumers:** Engineering, Product, Data, QA, Ops, Compliance  
 **Change control:** ADR + Architecture Owner approval  
@@ -31,6 +31,7 @@
 
 | Document | Status | Owner | Notes |
 |---|---|---|---|
+| `REF-scraper-ingestor-integration-v1.0.md` | Draft v1.0 | Data Engineering | Scraper→ingestor handoff patterns, manifest contract |
 | `REF-geography-mapping-cursor-prd-v1.0.md` | Draft v1.0 | Data Engineering | ZIP→locality ingestion/resolver pack |
 | `REF-nearest-zip-resolver-prd-v1.0.md` | Draft v1.0 | Data Engineering | Same-state nearest ZIP algorithm |
 | `REF-cms-pricing-source-map-prd-v1.0.md` | Draft v1.0 | Pricing Platform Engineering | CMS pricing datasets, links, work-backwards checklist |
@@ -98,6 +99,9 @@ graph TD
   subgraph References
     RA[REF-nearest-zip-resolver]
     RB[REF-geography-mapping-cursor]
+    RC[REF-scraper-ingestor-integration]
+    RD[REF-cms-pricing-source-map]
+    RE[REF-geography-source-map]
   end
 
   subgraph Products
@@ -122,6 +126,11 @@ graph TD
   SA --> P4
   SA_IMPL -.-> P1
   SA_IMPL -.-> P2
+  SD --> RC
+  SA --> RC
+  RC --> P1
+  RC --> P2
+  RC --> P6
   SB --> P3
   SC --> P2
   SC --> P3
@@ -132,6 +141,9 @@ graph TD
   RA -.-> P1
   RB -.-> P2
   RB -.-> P4
+  RD -.-> P1
+  RD -.-> P2
+  RE -.-> P4
   P1 -.-> R1
   P2 -.-> R1
   SA -.-> D1
@@ -153,6 +165,7 @@ graph TD
 
 | Version | Date | Summary | PR |
 |---|---|---|---|
+| 1.0.3 | 2025-10-15 | Added REF-scraper-ingestor-integration-v1.0.md (scraper→ingestor handoff reference); updated STD-doc-governance to allow REF docs without `-prd` suffix; updated dependency graph with new REF document and integration relationships. | #TBD |
 | 1.0.2 | 2025-10-15 | Added STD-data-architecture-impl-v1.0.md (companion implementation guide); updated STD-doc-governance to v1.0.1 with companion document conventions; updated STD-scraper to v1.1; added companion relationships to dependency graph. | #TBD |
 | 1.0.1 | 2025-10-02 | Added automation notes, DOC/self entry, dependency refresh, and metadata alignment. | #TBD |
 | 1.0.0 | 2025-09-01 | Initial adoption of master catalog. | #TBD |

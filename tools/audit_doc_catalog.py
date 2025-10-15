@@ -51,7 +51,7 @@ from tools.shared.prd_helpers import (
 MASTER_LINK = MASTER_DOC_NAME
 EXEMPT_FROM_MASTER_LINK = {MASTER_DOC_NAME}
 
-DOC_PATTERN = re.compile(r"`([A-Z]{3,4}-[a-z0-9\-]+(?:-(?:prd|impl)-v[0-9]+\.[0-9]+)?\.md)`")
+DOC_PATTERN = re.compile(r"`([A-Z]{3,4}-[a-z0-9\-]+(?:-(?:prd|impl))?(?:-v[0-9]+\.[0-9]+)?\.md)`")
 OLD_PRD_PATTERN = re.compile(r"_prd_v")
 CORRECT_PRD_PATTERN = re.compile(r"-prd-v")
 PRD_REFERENCE_PATTERN = re.compile(r"([A-Z]{3,4}-[a-z0-9\-]+(?:-prd-v[0-9]+\.[0-9]+)?\.md)")

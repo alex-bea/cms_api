@@ -18,6 +18,7 @@ This standard defines how product requirement documents (PRDs), runbooks, and re
 - `STD-` — Standards (org-wide policy)
 - `BP-` — Blueprints / implementation packs
 - `PRD-` — Dataset or API product requirements
+- `REF-` — Reference architectures and integration patterns
 - `SCR-` — Scraper-specific PRDs (optional if included in PRD)
 - `RUN-` — Operational runbooks
 - `DOC-` — Misc guides/reference not covered above.
@@ -28,15 +29,23 @@ This standard defines how product requirement documents (PRDs), runbooks, and re
 - Avoid spaces, camel case, or underscores in the slug portion.
 
 ### 1.3 Version Suffix
-- Append `_vMAJOR.MINOR.md` (e.g., `_v1.0.md`).
+- Append `-vMAJOR.MINOR.md` (e.g., `-v1.0.md`).
 - Increment MAJOR for breaking structural/content changes; MINOR for additive updates.
+
+**Note on `-prd` suffix:**
+- `STD-`, `PRD-`, `RUN-`, `DOC-` documents: Include `-prd` before version (e.g., `STD-api-architecture-prd-v1.0.md`)
+- `REF-` documents: May omit `-prd` suffix (e.g., `REF-scraper-ingestor-integration-v1.0.md`)
+- Legacy `REF-*-prd-v*.md` files are acceptable and will migrate during next major revision
+- Companion implementation guides: Use `-impl` suffix (e.g., `STD-data-architecture-impl-v1.0.md`)
 
 ### 1.4 Examples
 - `STD-api-architecture-prd-v1.0.md` (main standard)
 - `STD-api-architecture-impl-v1.0.md` (companion implementation guide)
-- `PRD-opps-prd-v1.0.md`
-- `RUN-global-operations-prd-v1.0.md`
-- `DOC-master-catalog-prd-v1.0.md`
+- `PRD-opps-prd-v1.0.md` (product requirement)
+- `REF-scraper-ingestor-integration-v1.0.md` (reference architecture, no `-prd`)
+- `REF-cms-pricing-source-map-prd-v1.0.md` (reference architecture, legacy `-prd`)
+- `RUN-global-operations-prd-v1.0.md` (operational runbook)
+- `DOC-master-catalog-prd-v1.0.md` (master catalog)
 
 ### 1.5 Companion Documents (Implementation Guides)
 
@@ -84,15 +93,21 @@ For standards that require detailed implementation guidance, create a companion 
 
 **Main documents (PRD):**
 ```regex
-^(STD|REF|PRD|RUN|DOC)-[a-z0-9-]+-prd-v[0-9]+\.[0-9]+\.md$
+^(STD|PRD|RUN|DOC)-[a-z0-9-]+-prd-v[0-9]+\.[0-9]+\.md$
 ```
+
+**Reference architectures (REF):**
+```regex
+^REF-[a-z0-9-]+(-prd)?-v[0-9]+\.[0-9]+\.md$
+```
+Note: REF documents may include or omit `-prd` suffix. Legacy files with `-prd` are acceptable.
 
 **Companion implementation guides:**
 ```regex
 ^(STD|REF|PRD|RUN|DOC)-[a-z0-9-]+-impl-v[0-9]+\.[0-9]+\.md$
 ```
 
-Both patterns share the same `{prefix}-{slug}` portion, differing only in the suffix (`-prd` vs `-impl`).
+Companion patterns share the same `{prefix}-{slug}` portion, differing only in the suffix (`-prd` vs `-impl`).
 
 **Automated checks (via `tools/audit_doc_catalog.py`):**
 - Companion documents match naming pattern
@@ -154,7 +169,7 @@ For the Master Catalog, also include `Review cadence:` and `Diagram standard:` i
 ## 8. Change Log
 | Date       | Version | Author | Summary |
 |------------|---------|--------|---------|
-| 2025-10-15 | v1.0.1  | Team   | Added companion document conventions (§1.5-1.6): `-impl` suffix pattern, cross-referencing requirements, versioning rules, and automated validation checks. |
+| 2025-10-15 | v1.0.1  | Team   | Added companion document conventions (§1.5-1.6): `-impl` suffix pattern, cross-referencing requirements, versioning rules, and automated validation checks. Updated §1.3 to allow REF documents without `-prd` suffix (new pattern) while maintaining backward compatibility with legacy REF docs. |
 | 2025-10-02 | v1.0    | Team   | Established Master Catalog filename and registration requirements. |
 | 2025-09-30 | v1.0    | Team   | Initial draft of documentation governance standard. |
 
