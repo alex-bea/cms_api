@@ -1,0 +1,182 @@
+{
+  "dataset_name": "cms_conversion_factor",
+  "version": "1.0",
+  "generated_at": "2025-10-15T00:00:00Z",
+  "description": "CMS MPFS Conversion Factor schema (physician and anesthesia)",
+  "source": {
+    "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician",
+    "update_frequency": "Annual",
+    "authority": "CMS Final Rule",
+    "documentation": "https://www.cms.gov/newsroom/press-releases/hhs-finalizes-physician-payment-rule-strengthening-person-centered-care-and-health-quality-measures"
+  },
+  "columns": {
+    "cf_type": {
+      "name": "cf_type",
+      "type": "str",
+      "nullable": false,
+      "description": "Conversion factor type (physician or anesthesia)",
+      "unit": null,
+      "domain": [
+        "physician",
+        "anesthesia"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": ["physician", "anesthesia"]
+    },
+    "cf_value": {
+      "name": "cf_value",
+      "type": "float64",
+      "nullable": false,
+      "description": "Conversion factor value in USD",
+      "unit": "USD",
+      "domain": null,
+      "min_value": 0.0,
+      "max_value": 100.0,
+      "pattern": null,
+      "sample_values": [32.3465, 19.31]
+    },
+    "cf_description": {
+      "name": "cf_description",
+      "type": "str",
+      "nullable": true,
+      "description": "Description or notes about this conversion factor",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": ["CY 2025 Physician Fee Schedule", "CY 2025 Anesthesia Base Unit"]
+    },
+    "effective_from": {
+      "name": "effective_from",
+      "type": "datetime64[ns]",
+      "nullable": false,
+      "description": "Effective start date",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": ["2025-01-01"]
+    },
+    "effective_to": {
+      "name": "effective_to",
+      "type": "datetime64[ns]",
+      "nullable": true,
+      "description": "Effective end date (null if currently active)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": [null, "2025-12-31"]
+    },
+    "vintage_year": {
+      "name": "vintage_year",
+      "type": "str",
+      "nullable": false,
+      "description": "Valuation year (calendar year)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^20\\d{2}$",
+      "sample_values": ["2025", "2024", "2023"]
+    },
+    "release_id": {
+      "name": "release_id",
+      "type": "str",
+      "nullable": false,
+      "description": "Release identifier for traceability",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": ["mpfs_2025_annual_20251015"]
+    },
+    "source_url": {
+      "name": "source_url",
+      "type": "str",
+      "nullable": true,
+      "description": "Source URL where conversion factor was published",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": ["https://www.cms.gov/newsroom/press-releases/..."]
+    }
+  },
+  "primary_keys": [
+    "cf_type",
+    "effective_from"
+  ],
+  "partition_columns": [
+    "vintage_year"
+  ],
+  "business_rules": [
+    "Physician conversion factor must be present for each calendar year",
+    "Anesthesia conversion factor must be present for each calendar year",
+    "CF values must be positive (> 0)",
+    "Effective dates must not overlap for same cf_type",
+    "Physician CF typically ranges from 30-40 USD (as of 2020-2025)",
+    "Anesthesia CF typically ranges from 15-25 USD (as of 2020-2025)",
+    "Physician and anesthesia CFs must be tracked separately (different tables or cf_type field)"
+  ],
+  "quality_thresholds": {
+    "completeness": 1.0,
+    "uniqueness_pk": 1.0,
+    "validity_cf_value": 1.0,
+    "validity_effective_from": 1.0,
+    "null_rate_threshold": 0.0,
+    "duplicate_rate_threshold": 0.0
+  },
+  "validation_rules": {
+    "cf_type_domain": {
+      "rule": "cf_type must be 'physician' or 'anesthesia'",
+      "severity": "BLOCK",
+      "enforcement": "Pre-normalization"
+    },
+    "cf_value_positive": {
+      "rule": "cf_value must be greater than 0",
+      "severity": "BLOCK",
+      "enforcement": "Domain validation"
+    },
+    "cf_value_range": {
+      "rule": "cf_value should be between 0 and 100",
+      "severity": "WARN",
+      "enforcement": "Statistical validation"
+    },
+    "effective_from_required": {
+      "rule": "effective_from must be present",
+      "severity": "BLOCK",
+      "enforcement": "Pre-normalization"
+    },
+    "vintage_year_format": {
+      "rule": "vintage_year must be 4-digit year starting with 20",
+      "severity": "BLOCK",
+      "enforcement": "Domain validation"
+    },
+    "no_overlapping_dates": {
+      "rule": "Effective date ranges must not overlap for same cf_type",
+      "severity": "BLOCK",
+      "enforcement": "Referential validation"
+    },
+    "annual_completeness": {
+      "rule": "Both physician and anesthesia CFs must exist for each year",
+      "severity": "WARN",
+      "enforcement": "Post-ingestion validation"
+    }
+  },
+  "metadata": {
+    "created_by": "CMS API Data Engineering",
+    "created_at": "2025-10-15",
+    "prd_reference": "PRD-mpfs-prd-v1.0.md",
+    "compliance": "DIS v1.0",
+    "notes": "Physician CF and Anesthesia CF must be tracked separately. Physician CF is national (applies to all localities). Anesthesia CF varies by locality but is also tracked here for the base/national rate."
+  }
+}
+
