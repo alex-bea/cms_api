@@ -1,6 +1,6 @@
 # Parser Contracts Standard
 
-**Status:** Draft v1.0  
+**Status:** Draft v1.1  
 **Owners:** Data Platform Engineering  
 **Consumers:** Data Engineering, MPFS Ingestor, RVU Ingestor, OPPS Ingestor, API Teams, QA Guild  
 **Change control:** ADR + PR review  
@@ -22,12 +22,16 @@ The Parser Core converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP) i
 
 **Why this matters**: Parsing quality is the single largest driver of downstream reliability and cost. Standardizing parser behavior, observability, and contracts prevents silent data drift, enables reproducible releases, and accelerates onboarding of new ingestors.
 
-**v1.0 Implementation:**
-- Parsers return pandas DataFrames (not Arrow tables directly)
+**v1.1 Implementation:**
+- **ParseResult return type** - Structured output (data, rejects, metrics) for cleaner separation
+- **Content sniffing** - Router accepts filename + file_head (first 8KB) for magic byte detection
+- **64-char SHA-256 hash** - Full digest for collision avoidance and schema compliance
+- **Schema-driven precision** - Per-column decimal places for numeric hash stability
+- **CP1252 encoding support** - Windows encoding in detection cascade
+- **Explicit categorical validation** - Domain pre-check before conversion (no silent NaN)
+- **Pinned natural keys** - Exact sort columns per dataset including effective_from
 - Metadata injected via dict parameter
-- Quarantine via helper functions (v1.1 will use ParseResult)
-- Python dict layouts (v1.1 will migrate to YAML)
-- Filename-based routing (v1.1 will add magic byte detection)
+- Python dict layouts (YAML migration planned for v2.0)
 
 **Key principles:**
 - Parsers are **public contracts** (importable across ingestors), not private methods
@@ -95,9 +99,9 @@ The Parser Core converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP) i
 
 ## 4. Key Decisions & Rationale
 
-1. **pandas DataFrames with Arrow/Parquet output** → Parsers return pandas DataFrames for flexibility and compatibility with existing code; normalize stage writes Arrow/Parquet for performance, zero-copy interchange, and strict dtype preservation on disk. (*v1.1 planned: ParseResult wrapper with rejects and metrics*)
-2. **Deterministic outputs** → Sort by stable composite key + `row_content_hash` for idempotency
-3. **Content sniffing router** → Don't rely on filenames; detect dialect, headers, magic bytes
+1. **ParseResult return type** → Structured output (data, rejects, metrics) for cleaner separation; ingestor writes Arrow/Parquet for performance, zero-copy interchange, and strict dtype preservation on disk
+2. **Deterministic outputs** → Sort by stable composite key + 64-char `row_content_hash` for idempotency and collision avoidance
+3. **Content sniffing router** → filename + file_head (magic bytes, BOM) for robust format detection
 4. **External layout registry** (SemVer by year/quarter) → Decouple code from layout drift
 5. **Router returns parser_func** → Direct callable for clarity; no secondary lookup
 6. **Metadata injection by ingestor** → Pure function parsers, testable, no global state
@@ -145,10 +149,25 @@ The Parser Core converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP) i
 ### 5.2 Processing Requirements
 
 **Dialect & Encoding Detection:**
-- Detect encoding: UTF-8 (default) → Latin-1 (fallback) → CP1252
-- Strip BOM markers: UTF-8 BOM (0xEF 0xBB 0xBF), UTF-16 LE/BE
-- Detect CSV dialect: delimiter, quote char, escape char
-- Log encoding detection results for debugging
+
+**Encoding Priority Cascade:**
+1. **BOM detection** (highest priority):
+   - UTF-8-sig (0xEF 0xBB 0xBF)
+   - UTF-16 LE (0xFF 0xFE)
+   - UTF-16 BE (0xFE 0xFF)
+2. **UTF-8 strict decode** (no errors)
+3. **CP1252** (Windows default, common for CMS files with smart quotes, em-dashes)
+4. **Latin-1** (ISO-8859-1, always succeeds as final fallback)
+
+**Metrics Recording:**
+- `encoding_detected`: str (actual encoding used)
+- `encoding_fallback`: bool (true if not UTF-8)
+
+**CSV Dialect Detection:**
+- Delimiter: comma, tab, pipe
+- Quote char: double quote, single quote
+- Escape char: backslash
+- Log dialect detection results for debugging
 
 **Column Header Normalization:**
 - Trim whitespace from headers
@@ -177,7 +196,7 @@ The Parser Core converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP) i
 - Compute `row_content_hash` for each row (excludes metadata columns)
 - Output format: Parquet with compression='snappy'
 
-**Row Hash Specification (v1):**
+**Row Hash Specification (v1.1):**
 
 Canonical algorithm for `row_content_hash` to ensure reproducibility:
 
@@ -185,28 +204,45 @@ Canonical algorithm for `row_content_hash` to ensure reproducibility:
 2. **Normalize each value** to canonical string:
    - `None` → `""` (empty string)
    - strings → trimmed, exact case preserved
-   - decimals/floats → quantize to 6 decimals (e.g., `0.123456`), no scientific notation
+   - decimals/floats → quantize to **schema-defined precision** (read from schema contract `precision` field per column; defaults to 6 decimals if not specified), no scientific notation
    - dates → ISO-8601 `YYYY-MM-DD`
    - datetimes → ISO-8601 UTC `YYYY-MM-DDTHH:MM:SSZ`
    - categorical → `.astype(str)` before hashing (avoid category code drift)
    - booleans → `True` or `False`
 3. **Join** with `\x1f` (ASCII unit separator character)
 4. **Encode** as UTF-8 bytes
-5. **Hash** with SHA-256, take first 16 characters (64-bit hex)
+5. **Hash** with SHA-256, return **full 64-character hex digest** (collision avoidance, schema compliance)
 
-**Version stability:** Column order and delimiter are part of the spec. Any change requires **MAJOR** parser version bump.
+**Version stability:** Column order, delimiter, and precision are part of the spec. Any change requires **MAJOR** parser version bump.
 
 **Implementation example:**
 ```python
-def compute_row_hash(row: pd.Series, schema_columns: List[str]) -> str:
-    """Compute deterministic row content hash per spec v1"""
+def compute_row_hash(
+    row: pd.Series, 
+    schema_columns: List[str],
+    column_precision: Dict[str, int] = None
+) -> str:
+    """
+    Compute deterministic row content hash per spec v1.1
+    
+    Args:
+        row: DataFrame row
+        schema_columns: Columns in schema-declared order
+        column_precision: Per-column decimal places (e.g. {'work_rvu': 2, 'cf_value': 4})
+                         Read from schema contract; defaults to 6 if not specified
+    
+    Returns:
+        64-character SHA-256 hex digest
+    """
     parts = []
     for col in schema_columns:  # Declared order from schema
         val = row[col]
         if pd.isna(val):
             parts.append("")
         elif isinstance(val, (float, Decimal)):
-            parts.append(f"{float(val):.6f}")
+            # Schema-driven precision for hash stability
+            precision = column_precision.get(col, 6) if column_precision else 6
+            parts.append(f"{float(val):.{precision}f}")
         elif isinstance(val, datetime):
             parts.append(val.strftime('%Y-%m-%dT%H:%M:%SZ'))
         elif isinstance(val, date):
@@ -217,7 +253,8 @@ def compute_row_hash(row: pd.Series, schema_columns: List[str]) -> str:
             parts.append(str(val).strip())
     
     content = '\x1f'.join(parts)
-    return hashlib.sha256(content.encode('utf-8')).hexdigest()[:16]
+    # Return FULL 64-char digest (not truncated)
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()
 ```
 
 **Categorical Type Handling:**
@@ -228,41 +265,39 @@ def compute_row_hash(row: pd.Series, schema_columns: List[str]) -> str:
 
 ### 5.3 Output Artifacts
 
-**Parser Responsibilities (v1.0):**
+**Parser Responsibilities (v1.1):**
 
-Parsers **prepare data in-memory** and return pandas DataFrame with:
-- Canonical data columns (parsed and normalized)
-- Metadata columns injected (release_id, vintage_date, etc.)
-- Row content hash computed
-- Sorted by natural key
+Parsers **prepare data in-memory** and return `ParseResult` NamedTuple with:
+- `data`: pandas DataFrame with canonical data columns, metadata columns injected, row content hash computed, sorted by natural key
+- `rejects`: pandas DataFrame with rows that failed validation (empty if all valid)
+- `metrics`: Dict with parse metrics (total_rows, valid_rows, reject_rows, parse_duration_sec, encoding_detected, etc.)
 
 **Parsers do NOT write files** - all artifact writes handled by normalize stage/ingestor.
 
-**Ingestor/Normalize Stage Writes (from parser output):**
+**Ingestor/Normalize Stage Writes (from ParseResult):**
 
 **Primary Output:**
-- `parsed.parquet` - Canonical data from parser DataFrame
+- `parsed.parquet` - Canonical data from `ParseResult.data` DataFrame
 - Partitioned by: `dataset_id/release_id/schema_id/`
 - Format: Arrow/Parquet with explicit schema, compression='snappy'
 
 **Quarantine Output:**
-- `rejects.parquet` - Rows flagged by parser (quarantine helper)
-- Columns: All original columns + `quarantine_reason`, `quarantine_rule_id`, `quarantined_at`, `source_line_num`
-- Created even in Phase 1 (minimal validation)
+- `rejects.parquet` - Rows from `ParseResult.rejects` DataFrame
+- Columns: All original columns + `validation_error`, `validation_severity`, `validation_rule_id`, `source_line_num`
+- Created for any rejected rows (domain violations, schema mismatches, etc.)
 - Location: `data/quarantine/{release_id}/{dataset}_{reason}.parquet`
 
 **Metrics Output:**
-- `metrics.json` - Per-file parse metrics (aggregated by ingestor)
+- `metrics.json` - Aggregated from `ParseResult.metrics` across all files
 - Location: `data/stage/{dataset}/{release_id}/metrics.json`
+- Includes: total_rows, valid_rows, reject_rows, parse_duration_sec, encoding_detected, encoding_fallback, validation_summary
 
 **Provenance Output:**
 - `provenance.json` - Full metadata, library versions, git SHA
 - Location: `data/stage/{dataset}/{release_id}/provenance.json`
 
 **Optional:**
-- `sample_100.parquet` - First 100 rows for quick inspection
-
-**v1.1 Enhancement:** Parsers will return `ParseResult(df, rejects_df, metrics)` for cleaner separation. v1.0 uses in-place quarantine writes via helper functions.
+- `sample_100.parquet` - First 100 rows from `ParseResult.data` for quick inspection
 
 ### 5.4 CMS File Type Support
 
@@ -355,52 +390,60 @@ def parse_{dataset}(
     """
 ```
 
-**All parsers MUST follow this signature.**
+**All parsers MUST return ParseResult.**
 
-**v1.1 Enhancement (Planned):**
+**ParseResult Return Type (v1.1):**
 
 ```python
-from typing import NamedTuple
+from typing import NamedTuple, Dict, Any
+import pandas as pd
 
 class ParseResult(NamedTuple):
-    df: pd.DataFrame           # Canonical rows
-    rejects: pd.DataFrame      # Quarantine rows with error metadata
-    metrics: Dict[str, Any]    # Per-file metrics (in-memory)
+    """
+    Structured parser output per STD-parser-contracts §5.3
+    
+    Attributes:
+        data: Canonical DataFrame (valid rows with metadata + row_content_hash)
+        rejects: Rejected rows DataFrame (validation failures, empty if all valid)
+        metrics: Parse metrics dict (total_rows, valid_rows, reject_rows, parse_duration_sec, encoding_detected, etc.)
+    """
+    data: pd.DataFrame
+    rejects: pd.DataFrame
+    metrics: Dict[str, Any]
 
-def parse_{dataset}(...) -> ParseResult:
-    """Returns structured result for cleaner separation"""
+def parse_{dataset}(
+    file_obj: BinaryIO,
+    filename: str,
+    metadata: Dict[str, Any]
+) -> ParseResult:
+    """
+    Returns structured result for cleaner separation.
+    Ingestor handles all file writes from ParseResult components.
+    """
+    # ... parse logic ...
+    
+    # Separate valid rows from rejects
+    rejects = df[df['_validation_error'].notna()].copy()
+    data = df[df['_validation_error'].isna()].drop(columns=['_validation_error'])
+    
+    # Build metrics
+    metrics = {
+        'total_rows': len(df),
+        'valid_rows': len(data),
+        'reject_rows': len(rejects),
+        'parse_duration_sec': elapsed,
+        'encoding_detected': encoding,
+        'encoding_fallback': encoding != 'utf-8'
+    }
+    
+    return ParseResult(data=data, rejects=rejects, metrics=metrics)
 ```
 
-This will eliminate helper-based quarantine writes and return metrics in-band.
+This eliminates helper-based quarantine writes and returns metrics in-band for cleaner ingestor integration.
 
 ### 6.2 Router Contract
 
-**Router Function Signature (v1.0):**
-
-```python
-def route_to_parser(filename: str) -> Tuple[str, str, Callable]:
-    """
-    Route filename to parser configuration.
-    
-    v1.0: Uses filename regex patterns only.
-    
-    Args:
-        filename: Source filename
-        
-    Returns:
-        (dataset_name, schema_id, parser_func)
-        
-    Raises:
-        ValueError: If no parser found
-    
-    Note: Presence of parser_func IS the status.
-          No separate "status" string needed.
-    """
-```
-
-**Implementation:** `cms_pricing/ingestion/parsers/__init__.py`
-
-**v1.1 Enhancement (Planned):**
+**Router Function Signature (v1.1):**
 
 ```python
 def route_to_parser(
@@ -408,15 +451,41 @@ def route_to_parser(
     file_head: Optional[bytes] = None
 ) -> Tuple[str, str, Callable]:
     """
-    Route using filename + optional file_head for magic byte/BOM detection.
+    Route file to appropriate parser using filename + content sniffing.
     
     Args:
-        filename: Filename hint
-        file_head: First ~4KB for content sniffing
+        filename: Source filename (used for pattern matching)
+        file_head: First ~8KB of file for magic byte/BOM detection (optional but recommended)
+        
+    Returns:
+        (dataset_name, schema_id, parser_func)
+        
+    Raises:
+        ValueError: If no parser found for filename pattern
+    
+    Content Sniffing (when file_head provided):
+        - Magic bytes: ZIP (PK), Excel (PK + XML markers), PDF (%PDF)
+        - BOM detection: UTF-8-sig, UTF-16 LE/BE
+        - Format detection: Fixed-width vs CSV (column alignment, delimiters)
+        - Can override parser choice if filename extension misleading
+    
+    Note: Presence of parser_func IS the status.
+          No separate "status" string needed.
+    
+    Example:
+        # Caller passes first 8KB for content sniffing
+        with open(filepath, 'rb') as f:
+            file_head = f.read(8192)
+            f.seek(0)  # Reset for parser
+            
+            dataset, schema_id, parser_func = route_to_parser(filename, file_head)
+            result = parser_func(f, filename, metadata)
     """
 ```
 
-This will enable magic-byte inspection without reading full files, preventing filename-only misroutes.
+**Implementation:** `cms_pricing/ingestion/parsers/__init__.py`
+
+This enables robust format detection without filename-only misroutes (e.g., `.csv` files that are actually fixed-width).
 
 ### 6.3 Schema Contract Format
 
@@ -503,6 +572,12 @@ df['row_content_hash'] = df.apply(compute_row_hash, axis=1)
 - Ingestor: Extracts vintage from manifest, builds release_id
 - Parser: Accepts metadata, injects as columns
 - Benefit: Pure functions, easy to test, no global state
+
+**⚠️ Important - Avoid Vintage Field Duplication:**
+- `vintage_date`, `product_year`, `quarter_vintage` are **METADATA columns** (injected by parser)
+- Do NOT duplicate as data columns in schemas (e.g., don't add `vintage_year` as a data field)
+- If business logic requires a different vintage concept (e.g., "valuation year" for conversion factors), use distinct naming
+- Rationale: Prevents confusion between metadata vintage (when data was released) vs business vintage (what year data describes)
 
 ### 6.5 Integration with DIS Pipeline
 
@@ -668,6 +743,57 @@ columns:
 - Full reference table lookups
 - Effective date range validation
 - Cross-dataset consistency checks
+
+### 8.2.1 Categorical Domain Validation
+
+**Problem:** `CategoricalDtype(categories=[...])` silently converts unknown values to NaN, violating fail-loud principle.
+
+**Solution:** Pre-check domain before categorical conversion.
+
+**Implementation Pattern:**
+```python
+def enforce_categorical_dtypes(
+    df: pd.DataFrame,
+    categorical_domains: Dict[str, List[str]]
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Enforce categorical dtypes with explicit domain validation.
+    
+    Returns:
+        (valid_df, rejects_df) - Separated valid and out-of-domain rows
+    """
+    rejects_list = []
+    
+    for col, domain in categorical_domains.items():
+        if col not in df.columns:
+            continue
+        
+        # Check for out-of-domain values
+        invalid_mask = ~df[col].isin(domain + [None, pd.NA, ''])
+        
+        if invalid_mask.any():
+            # Move invalid rows to rejects
+            rejects = df[invalid_mask].copy()
+            rejects['validation_error'] = f"Invalid {col}: not in domain {domain}"
+            rejects['validation_severity'] = 'WARN'  # or BLOCK per business rule
+            rejects['validation_rule_id'] = f'DOMAIN_CHECK_{col.upper()}'
+            rejects_list.append(rejects)
+            
+            # Remove from main DF
+            df = df[~invalid_mask].copy()
+        
+        # Now safe to convert to categorical
+        df[col] = df[col].astype(pd.CategoricalDtype(categories=domain))
+    
+    rejects_df = pd.concat(rejects_list) if rejects_list else pd.DataFrame()
+    return df, rejects_df
+```
+
+**No Silent NaN Coercion:**
+- Invalid values MUST be rejected with explicit error
+- Never silently convert to NaN
+- Severity: WARN (quarantine but continue) or BLOCK (fail parse) per business rule
+- Audit trail: All domain violations tracked in rejects DataFrame
 
 ### 8.3 Validation Tiers
 
@@ -977,13 +1103,35 @@ Backfills MUST pin all three versions:
 **Example:**
 ```python
 def test_parse_pprrvu_csv():
+    """Parser unit test - assert on ParseResult only, NO file writes"""
     metadata = {'release_id': 'test', ...}
-    df = parse_pprrvu(sample_csv, "test.csv", metadata)
     
-    assert 'hcpcs' in df.columns
-    assert df['hcpcs'].dtype.name == 'category'
-    assert len(df) > 0
+    # Parser returns ParseResult
+    result = parse_pprrvu(sample_csv, "test.csv", metadata)
+    
+    # ✅ GOOD: Assert on ParseResult structure
+    assert isinstance(result, ParseResult)
+    assert isinstance(result.data, pd.DataFrame)
+    assert isinstance(result.rejects, pd.DataFrame)
+    assert isinstance(result.metrics, dict)
+    
+    # ✅ GOOD: Assert on data content
+    assert 'hcpcs' in result.data.columns
+    assert result.data['hcpcs'].dtype.name == 'category'
+    assert len(result.data) > 0
+    
+    # ✅ GOOD: Assert on metrics
+    assert result.metrics['total_rows'] == len(result.data) + len(result.rejects)
+    assert result.metrics['valid_rows'] == len(result.data)
+    
+    # ❌ BAD: Parser tests should NOT check file system
+    # assert Path("output/pprrvu.parquet").exists()  # DON'T DO THIS!
 ```
+
+**⚠️ IO Boundary Rule:**
+- **Parser tests**: Assert on `ParseResult` only (data, rejects, metrics)
+- **Ingestor E2E tests**: Assert on file artifacts (`.parquet`, `.json`, etc.)
+- Parsers do NOT write files - ingestor handles all IO
 
 ### 14.2 Golden-File Tests
 
@@ -1163,13 +1311,16 @@ tests/fixtures/
 
 **Parser Implementation:**
 - [ ] Parser follows function signature contract (§6.1)
+- [ ] Returns `ParseResult(data, rejects, metrics)` per v1.1 spec (§5.3)
 - [ ] Accepts metadata dict, injects metadata columns (§6.4)
 - [ ] Returns DataFrame with explicit dtypes (no object for codes)
-- [ ] Output sorted by natural key
-- [ ] Includes row_content_hash column
-- [ ] Handles encoding/BOM explicitly
-- [ ] Logs with release_id, file_sha256, schema_id
-- [ ] Creates quarantine artifact for WARN-level failures
+- [ ] Output sorted by natural key (pinned columns per dataset)
+- [ ] Includes 64-char row_content_hash column (schema-driven precision)
+- [ ] Handles encoding with CP1252 cascade (§5.2)
+- [ ] Content sniffing via file_head parameter (§6.2)
+- [ ] Logs with release_id, file_sha256, schema_id, encoding_detected
+- [ ] Pre-checks categorical domains before conversion (§8.2.1)
+- [ ] Separates valid/reject rows explicitly (no silent NaN coercion)
 - [ ] Validates against schema contract
 - [ ] Performance meets SLAs (§5.5)
 
@@ -1193,6 +1344,11 @@ tests/fixtures/
 - [ ] Deprecation notices added (if applicable)
 - [ ] CI passes all quality gates
 
+**Versioning:**
+- [ ] Changing hash spec (§5.2) or schema column order requires **MAJOR** parser version bump
+- [ ] Hash algorithm, delimiter (`\x1f`), or normalization rules are part of formal contract
+- [ ] Breaking changes properly documented with migration path
+
 ---
 
 ## 19. Risks & Mitigations
@@ -1211,14 +1367,18 @@ tests/fixtures/
 
 ## 20. Implementation Roadmap
 
-### v1.0: Core Parsers (Current)
+### v1.1: Enhanced Contracts (Current)
 
-**Goal:** Extract and standardize PPRRVU, GPCI, Locality, ANES, OPPSCAP, CF parsers
+**Goal:** Implement production-grade parser contracts with ParseResult, content sniffing, and robust validation
 
-**v1.0 Features:**
-- pandas DataFrame return type
+**v1.1 Features:**
+- **ParseResult return type** - Structured output (data, rejects, metrics)
+- **Content sniffing** - Router accepts file_head for magic byte detection
+- **64-char SHA-256 hash** - Full digest with schema-driven precision
+- **CP1252 encoding support** - Windows encoding in detection cascade  
+- **Categorical domain validation** - Pre-check before conversion (no silent NaN)
+- **Pinned natural keys** - Exact sort columns per dataset
 - Metadata injection via dict parameter
-- In-place quarantine writes (helper functions)
 - Python dict-based layout registry
 - Filename-only routing
 - Formal row hash spec
@@ -1285,6 +1445,7 @@ tests/fixtures/
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
+| 1.1 | 2025-10-15 | **Production-grade enhancements for MPFS implementation.** Upgraded parser return type to `ParseResult(data, rejects, metrics)` for cleaner separation (§5.3). Added content sniffing via `file_head` parameter for magic byte/BOM detection (§6.2). Changed row hash to full 64-char SHA-256 digest with schema-driven precision per column (§5.2). Added CP1252 to encoding cascade for Windows file support (§5.2). Implemented explicit categorical domain validation - pre-check before conversion to prevent silent NaN coercion (§8.2.1). Pinned exact natural keys per dataset including `effective_from` for time-variant data. Added vintage field duplication guidance (§6.4). Enhanced test strategy with explicit IO boundary rules - parsers return data, ingestors write files (§14.1). Updated acceptance criteria with all v1.1 requirements (§18). These changes prevent technical debt and enable immediate production deployment. | #TBD |
 | 1.0 | 2025-10-15 | Initial adoption of parser contracts standard. Defines public contract requirements (pandas DataFrame return type), metadata injection pattern with three vintage fields, tiered validation (BLOCK/WARN/INFO), formal row hash specification for reproducibility, SemVer for parsers/schemas/layouts, integration with DIS normalize stage, and comprehensive testing strategy. Documents v1.0 implementation (pandas, helper-based quarantine, Python dict layouts, filename routing) and v1.1 enhancements (ParseResult, YAML layouts, magic byte routing). Establishes governance for shared parser infrastructure used by MPFS, RVU, OPPS, and future ingestors. | #TBD |
 
 ---
