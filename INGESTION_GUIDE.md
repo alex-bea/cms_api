@@ -2,6 +2,15 @@
 
 This guide explains how to use the comprehensive data ingestion system for the CMS Pricing API.
 
+## 📚 **Architecture Documentation**
+
+For detailed architecture and implementation guidance, see:
+
+- **[STD-data-architecture-prd-v1.0.md](prds/STD-data-architecture-prd-v1.0.md)** - DIS pipeline architecture and requirements
+- **[STD-data-architecture-impl-v1.0.md](prds/STD-data-architecture-impl-v1.0.md)** - Implementation guide with code templates and examples
+- **[REF-scraper-ingestor-integration-v1.0.md](prds/REF-scraper-ingestor-integration-v1.0.md)** - Scraper→ingestor handoff patterns
+- **[STD-scraper-prd-v1.0.md](prds/STD-scraper-prd-v1.0.md)** - Scraper patterns and discovery manifests
+
 ## 🏗️ **System Overview**
 
 The ingestion system automatically fetches, normalizes, and validates CMS datasets with:
@@ -10,6 +19,8 @@ The ingestion system automatically fetches, normalizes, and validates CMS datase
 - **Data Validation** and quality checks
 - **Audit Trails** with manifest generation
 - **CLI Tools** for management and monitoring
+
+The system follows the **DIS (Discovery → Ingestion → Serving) pipeline** architecture defined in the standards above.
 
 ## 🚀 **Quick Start**
 

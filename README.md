@@ -181,6 +181,28 @@ The API supports ingestion from multiple CMS data sources:
 
 ## Architecture
 
+### Architecture Documentation
+
+The system architecture is comprehensively documented in PRDs following governance standards:
+
+**Core Standards:**
+- [STD-data-architecture-prd-v1.0.md](prds/STD-data-architecture-prd-v1.0.md) - DIS pipeline architecture and requirements
+- [STD-data-architecture-impl-v1.0.md](prds/STD-data-architecture-impl-v1.0.md) - Implementation guide (companion)
+- [STD-scraper-prd-v1.0.md](prds/STD-scraper-prd-v1.0.md) - Scraper patterns and discovery
+- [STD-api-architecture-prd-v1.0.md](prds/STD-api-architecture-prd-v1.0.md) - API design standards
+- [STD-qa-testing-prd-v1.0.md](prds/STD-qa-testing-prd-v1.0.md) - Testing standards
+- [STD-observability-monitoring-prd-v1.0.md](prds/STD-observability-monitoring-prd-v1.0.md) - Observability framework
+
+**Reference Architectures:**
+- [REF-scraper-ingestor-integration-v1.0.md](prds/REF-scraper-ingestor-integration-v1.0.md) - Scraper→ingestor handoff
+- [REF-cms-pricing-source-map-prd-v1.0.md](prds/REF-cms-pricing-source-map-prd-v1.0.md) - CMS data sources
+- [REF-geography-source-map-prd-v1.0.md](prds/REF-geography-source-map-prd-v1.0.md) - Geography data sources
+
+**Master Catalog:**
+- [DOC-master-catalog-prd-v1.0.md](prds/DOC-master-catalog-prd-v1.0.md) - Complete documentation index
+
+For governance and naming conventions, see [STD-doc-governance-prd-v1.0.md](prds/STD-doc-governance-prd-v1.0.md).
+
 ### Core Components
 
 - **FastAPI Application**: REST API with automatic OpenAPI documentation
@@ -189,7 +211,7 @@ The API supports ingestion from multiple CMS data sources:
 - **Geography Service**: ZIP code resolution with ambiguity handling
 - **Cache Manager**: LRU in-memory + disk caching with digest verification
 - **Trace Service**: Comprehensive audit trail and run tracking
-- **Data Ingestion**: Automated fetching and normalization of CMS datasets
+- **Data Ingestion**: Automated fetching and normalization of CMS datasets (DIS pipeline)
 
 ### Database Schema
 

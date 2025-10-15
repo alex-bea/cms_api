@@ -75,6 +75,27 @@ docs: ## Generate API documentation
 
 check: lint test ## Run all checks (lint + test)
 
+audit: ## Run all documentation audits
+	python tools/run_all_audits.py
+
+audit-with-tests: ## Run audits with documentation tests
+	python tools/run_all_audits.py --with-tests
+
+audit-quick: ## Run quick audits with fast tests
+	python tools/run_all_audits.py --with-tests --quick
+
+audit-companion: ## Audit companion documents only
+	python tools/audit_companion_docs.py
+
+audit-catalog: ## Audit documentation catalog only
+	python tools/audit_doc_catalog.py
+
+audit-links: ## Audit documentation links only
+	python tools/audit_doc_links.py
+
+audit-cross-refs: ## Audit cross-references only
+	python tools/audit_cross_references.py
+
 pre-commit: ## Install pre-commit hooks
 	poetry run pre-commit install
 
@@ -85,3 +106,4 @@ setup: install-dev pre-commit ## Complete development setup
 	@echo "Development environment setup complete!"
 	@echo "Run 'make dev' to start the development server"
 	@echo "Run 'make docker-up' to start with Docker Compose"
+	@echo "Run 'make audit' to run documentation audits"

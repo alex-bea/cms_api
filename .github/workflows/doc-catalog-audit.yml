@@ -3,6 +3,10 @@ name: Documentation Catalog Audit
 on:
   schedule:
     - cron: '0 12 * * *'  # Daily at 12:00 UTC
+  pull_request:
+    paths:
+      - 'prds/**'
+      - 'tools/**'
   workflow_dispatch:
 
 jobs:
@@ -13,9 +17,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
 
       - name: Run catalog consistency audit
         run: python tools/audit_doc_catalog.py
@@ -29,9 +37,25 @@ jobs:
       - name: Run advanced cross-reference analysis
         run: python tools/audit_cross_references.py
 
+      - name: Run companion document audit
+        run: python tools/audit_companion_docs.py
+
+      - name: Verify source maps
+        run: python tools/verify_source_map.py
+
+      - name: Run PRD documentation tests
+        run: pytest tests/prd_docs -v --tb=short --junit-xml=pytest-results.xml
+
       - name: Upload cross-reference report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: cross-reference-report
           path: cross_reference_report.md
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: pytest-results.xml
