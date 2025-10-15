@@ -7,7 +7,13 @@ on:
     paths:
       - 'prds/**'
       - 'tools/**'
+      - 'README.md'
+      - 'INGESTION_GUIDE.md'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   audit:
@@ -20,6 +26,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
@@ -46,16 +60,49 @@ jobs:
       - name: Run PRD documentation tests
         run: pytest tests/prd_docs -v --tb=short --junit-xml=pytest-results.xml
 
-      - name: Upload cross-reference report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: cross-reference-report
-          path: cross_reference_report.md
+      - name: Run comprehensive audit suite
+        run: python tools/run_all_audits.py
 
-      - name: Upload test results
+      - name: Generate GitHub Job Summary
+        if: always()
+        run: |
+          echo "## 📊 Audit Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f artifacts/audit_summary.json ]; then
+            PASSED=$(jq -r '.passed' artifacts/audit_summary.json)
+            TOTAL=$(jq -r '.total' artifacts/audit_summary.json)
+            FAILED=$(jq -r '.failed' artifacts/audit_summary.json)
+            
+            if [ "$FAILED" -eq 0 ]; then
+              echo "### ✅ All $TOTAL checks passed!" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "### ❌ $FAILED of $TOTAL checks failed" >> $GITHUB_STEP_SUMMARY
+              echo "### ✅ $PASSED of $TOTAL checks passed" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### Check Details" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+            
+            jq -r '.results[] | "| \(.name) | \(if .status == "passed" then "✅ PASS" else "❌ FAIL" end) |"' artifacts/audit_summary.json >> $GITHUB_STEP_SUMMARY
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "📄 Full reports available in workflow artifacts" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ No audit summary generated" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload audit artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-results
-          path: pytest-results.xml
+          name: audit-artifacts
+          path: |
+            artifacts/**
+            cross_reference_report.md
+            pytest-results.xml
