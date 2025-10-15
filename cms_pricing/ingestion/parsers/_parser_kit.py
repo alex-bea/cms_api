@@ -371,49 +371,6 @@ def inject_metadata(
     return df
 
 
-def enforce_categorical_dtypes(
-    df: pd.DataFrame,
-    categorical_spec: Dict[str, List[str]]
-) -> pd.DataFrame:
-    """
-    Enforce categorical dtypes with optional domain constraints.
-    
-    Prevents pandas from coercing codes to float.
-    Ensures memory efficiency and domain enforcement.
-    
-    Args:
-        df: DataFrame
-        categorical_spec: {col_name: [allowed_values] or None}
-                         None = infer categories from data
-    
-    Returns:
-        DataFrame with categorical dtypes
-        
-    Example:
-        >>> spec = {
-        ...     'status_code': ['A', 'R', 'T', 'I', 'N'],
-        ...     'hcpcs': None  # Infer from data
-        ... }
-        >>> df = enforce_categorical_dtypes(df, spec)
-    """
-    df = df.copy()
-    
-    for col, domain in categorical_spec.items():
-        if col not in df.columns:
-            continue
-        
-        if domain:
-            # Create categorical with specified domain
-            df[col] = df[col].astype(
-                pd.CategoricalDtype(categories=domain, ordered=False)
-            )
-        else:
-            # Infer categories from data
-            df[col] = df[col].astype('category')
-    
-    return df
-
-
 def finalize_parser_output(
     df: pd.DataFrame,
     natural_key_cols: List[str],

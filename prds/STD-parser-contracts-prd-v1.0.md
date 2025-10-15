@@ -765,43 +765,30 @@ columns:
 
 **Solution:** Pre-check domain before categorical conversion.
 
-**Implementation Pattern:**
+**Implementation Pattern (v1.1 - Phase 0 Commit 4):**
 ```python
-def enforce_categorical_dtypes(
-    df: pd.DataFrame,
-    categorical_domains: Dict[str, List[str]]
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Enforce categorical dtypes with explicit domain validation.
-    
-    Returns:
-        (valid_df, rejects_df) - Separated valid and out-of-domain rows
-    """
-    rejects_list = []
-    
-    for col, domain in categorical_domains.items():
-        if col not in df.columns:
-            continue
-        
-        # Check for out-of-domain values
-        invalid_mask = ~df[col].isin(domain + [None, pd.NA, ''])
-        
-        if invalid_mask.any():
-            # Move invalid rows to rejects
-            rejects = df[invalid_mask].copy()
-            rejects['validation_error'] = f"Invalid {col}: not in domain {domain}"
-            rejects['validation_severity'] = 'WARN'  # or BLOCK per business rule
-            rejects['validation_rule_id'] = f'DOMAIN_CHECK_{col.upper()}'
-            rejects_list.append(rejects)
-            
-            # Remove from main DF
-            df = df[~invalid_mask].copy()
-        
-        # Now safe to convert to categorical
-        df[col] = df[col].astype(pd.CategoricalDtype(categories=domain))
-    
-    rejects_df = pd.concat(rejects_list) if rejects_list else pd.DataFrame()
-    return df, rejects_df
+# See cms_pricing/ingestion/parsers/_parser_kit.py for full implementation
+
+from cms_pricing.ingestion.parsers._parser_kit import (
+    enforce_categorical_dtypes,
+    ValidationSeverity,
+    ValidationResult
+)
+
+# Usage
+result: ValidationResult = enforce_categorical_dtypes(
+    df=df,
+    schema_contract=schema,
+    natural_keys=['hcpcs', 'modifier'],
+    schema_id='cms_pprrvu_v1.0',
+    release_id='mpfs_2025_q1',
+    severity=ValidationSeverity.WARN
+)
+
+# Returns ValidationResult with:
+# - valid_df: Valid rows with categorical dtypes applied
+# - rejects_df: Rejected rows with row_id, schema_id, release_id, reason codes
+# - metrics: Validation metrics (reject_rate, columns_validated, reject_rate_by_column)
 ```
 
 **No Silent NaN Coercion:**
