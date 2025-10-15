@@ -51,10 +51,12 @@ from tools.shared.prd_helpers import (
 MASTER_LINK = MASTER_DOC_NAME
 EXEMPT_FROM_MASTER_LINK = {MASTER_DOC_NAME}
 
-DOC_PATTERN = re.compile(r"`([A-Z]{3,4}-[a-z0-9\-]+(?:-prd-v[0-9]+\.[0-9]+)?\.md)`")
+DOC_PATTERN = re.compile(r"`([A-Z]{3,4}-[a-z0-9\-]+(?:-(?:prd|impl)-v[0-9]+\.[0-9]+)?\.md)`")
 OLD_PRD_PATTERN = re.compile(r"_prd_v")
 CORRECT_PRD_PATTERN = re.compile(r"-prd-v")
 PRD_REFERENCE_PATTERN = re.compile(r"([A-Z]{3,4}-[a-z0-9\-]+(?:-prd-v[0-9]+\.[0-9]+)?\.md)")
+IMPL_PATTERN = re.compile(r"([A-Z]{3,4}-[a-z0-9\-]+)-impl-v[0-9]+\.[0-9]+\.md")
+PRD_SLUG_PATTERN = re.compile(r"([A-Z]{3,4}-[a-z0-9\-]+)-prd-v[0-9]+\.[0-9]+\.md")
 
 REQUIRED_REFERENCES = {
     "PRD-mpfs-prd-v1.0.md": ["REF-cms-pricing-source-map-prd-v1.0.md"],
@@ -193,6 +195,47 @@ def check_required_references() -> List[Tuple[str, str]]:
     return violations
 
 
+def check_companion_document_compliance() -> List[Tuple[str, str]]:
+    """Validate companion document naming and cross-references."""
+    violations = []
+    
+    # Find all -impl docs
+    impl_docs = list(PRDS_DIR.glob("*-impl-v*.md"))
+    
+    for impl_doc in impl_docs:
+        impl_name = impl_doc.name
+        
+        # Extract slug from impl doc
+        match = IMPL_PATTERN.match(impl_name)
+        if not match:
+            violations.append((impl_name, "Companion doc doesn't match naming pattern"))
+            continue
+        
+        slug = match.group(1)
+        
+        # Check if corresponding main doc exists
+        main_docs = list(PRDS_DIR.glob(f"{slug}-prd-v*.md"))
+        if not main_docs:
+            violations.append((impl_name, f"Companion doc has no main doc ({slug}-prd-v*.md)"))
+            continue
+        
+        main_doc = main_docs[0]
+        main_name = main_doc.name
+        
+        # Check impl doc references main doc
+        impl_content = read_path_text(impl_doc)
+        if main_name not in impl_content:
+            violations.append((impl_name, f"Companion doc doesn't reference main doc {main_name}"))
+        
+        # Check main doc references impl doc (warning only)
+        main_content = read_path_text(main_doc)
+        if impl_name not in main_content:
+            # This is a warning, not an error
+            violations.append((main_name, f"Main doc should reference companion {impl_name} (warning)"))
+    
+    return violations
+
+
 def main() -> int:
     logger = get_logger("audit.doc_catalog")
     issues: List[AuditIssue] = []
@@ -226,6 +269,13 @@ def main() -> int:
 
     for doc, description in check_required_references():
         issues.append(AuditIssue("error", description, doc=doc))
+
+    for doc, description in check_companion_document_compliance():
+        # Warnings for main docs not referencing companions
+        if "(warning)" in description:
+            issues.append(AuditIssue("warning", description, doc=doc))
+        else:
+            issues.append(AuditIssue("error", description, doc=doc))
 
     if not issues:
         logger.info("Documentation catalog audit passed.")

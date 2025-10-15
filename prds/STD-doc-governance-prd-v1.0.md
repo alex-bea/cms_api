@@ -1,11 +1,11 @@
-# Documentation Governance Standard (v1.0)
+# Documentation Governance Standard (v1.0.1)
 
 ## 0. Overview
 This standard defines how product requirement documents (PRDs), runbooks, and related governance artifacts are named, versioned, and organized within the repository. All new documents must comply; existing files should be renamed during their next major revision.
 
-**Master Catalog.** This repository’s canonical system catalog is `DOC-master-catalog-prd-v1.0.md` (the “Master PRD”). All new or modified documents (STD/BP/PRD/SCR/RUN/DOC) **must be registered** in the Master Catalog in the same pull request before merge. The Master Catalog is a catalog and dependency map only; no business logic or schema definitions live there.
+**Master Catalog.** This repository's canonical system catalog is `DOC-master-catalog-prd-v1.0.md` (the "Master PRD"). All new or modified documents (STD/BP/PRD/SCR/RUN/DOC) **must be registered** in the Master Catalog in the same pull request before merge. The Master Catalog is a catalog and dependency map only; no business logic or schema definitions live there.
 
-**Status:** Draft v1.0 (proposed)  
+**Status:** Draft v1.0.1 (proposed)  
 **Owners:** Platform/Product Operations  
 **Consumers:** Engineering, Product, QA, SRE  
 **Change control:** ADR + Docs Guild review  
@@ -32,10 +32,75 @@ This standard defines how product requirement documents (PRDs), runbooks, and re
 - Increment MAJOR for breaking structural/content changes; MINOR for additive updates.
 
 ### 1.4 Examples
-- `STD-api-architecture-prd-v1.0.md`
+- `STD-api-architecture-prd-v1.0.md` (main standard)
+- `STD-api-architecture-impl-v1.0.md` (companion implementation guide)
 - `PRD-opps-prd-v1.0.md`
 - `RUN-global-operations-prd-v1.0.md`
 - `DOC-master-catalog-prd-v1.0.md`
+
+### 1.5 Companion Documents (Implementation Guides)
+
+For standards that require detailed implementation guidance, create a companion document using the `-impl` suffix:
+
+**Naming Pattern:**
+- Main document: `{PREFIX}-{slug}-prd-v{X}.{Y}.md`
+- Companion guide: `{PREFIX}-{slug}-impl-v{X}.{Y}.md`
+
+**Purpose:**
+- Main document (`-prd`): Requirements, policies, architecture, standards
+- Companion guide (`-impl`): Templates, code examples, step-by-step guides, reference tables
+
+**Key Characteristics:**
+- Same prefix and slug ensure association
+- Different suffix (`-prd` vs `-impl`) indicates purpose
+- Alphabetically adjacent in file listings
+- Can version independently
+- Both must be registered in Master Catalog
+
+**Cross-Referencing Requirements:**
+- Main document MUST link to companion in a dedicated section (e.g., "Implementation Guide")
+- Companion MUST reference main document in header under "Companion to:"
+- Both MUST be registered in `DOC-master-catalog-prd-v*.md`
+
+**Versioning:**
+- Versions can evolve independently
+- Main document version bumps for policy/requirement changes
+- Companion version bumps for implementation updates, new examples, code changes
+- Breaking changes in main document may require companion update
+
+**When to Create Companion:**
+- Implementation requires >500 lines of code examples/templates
+- Multiple working examples needed
+- Step-by-step tutorials required
+- Reference tables and quick-start guides
+- Frequent code updates that shouldn't trigger policy reviews
+
+**Examples:**
+- `STD-data-architecture-prd-v1.0.md` + `STD-data-architecture-impl-v1.0.md`
+- `STD-scraper-prd-v1.0.md` + `STD-scraper-impl-v1.0.md` (future)
+- `STD-api-architecture-prd-v1.0.md` + `STD-api-architecture-impl-v1.0.md` (future)
+
+### 1.6 Automated Validation
+
+**Main documents (PRD):**
+```regex
+^(STD|REF|PRD|RUN|DOC)-[a-z0-9-]+-prd-v[0-9]+\.[0-9]+\.md$
+```
+
+**Companion implementation guides:**
+```regex
+^(STD|REF|PRD|RUN|DOC)-[a-z0-9-]+-impl-v[0-9]+\.[0-9]+\.md$
+```
+
+Both patterns share the same `{prefix}-{slug}` portion, differing only in the suffix (`-prd` vs `-impl`).
+
+**Automated checks (via `tools/audit_doc_catalog.py`):**
+- Companion documents match naming pattern
+- Companion documents have corresponding main document
+- Companion documents reference their main document
+- Main documents reference their companion (warning if missing)
+- Slug consistency between main and companion
+- Both registered in Master Catalog
 
 ## 2. Directory Expectations
 - All governance documents live under `/prds`.
@@ -79,13 +144,17 @@ For the Master Catalog, also include `Review cadence:` and `Diagram standard:` i
 
 ## 7. Compliance & Review
 - Docs Guild conducts quarterly audits; non-compliant files are flagged for remediation.
-- Automated lint blocks misnamed files during PR review (regex: `^(STD|BP|PRD|SCR|RUN|DOC)-[a-z0-9-]+_v[0-9]+\.[0-9]+\.md$`).
+- Automated lint blocks misnamed files during PR review:
+  - Main documents: `^(STD|BP|PRD|SCR|RUN|DOC)-[a-z0-9-]+-prd-v[0-9]+\.[0-9]+\.md$`
+  - Companion guides: `^(STD|BP|PRD|SCR|RUN|DOC)-[a-z0-9-]+-impl-v[0-9]+\.[0-9]+\.md$`
 - Pre-commit hook verifies that any new or renamed doc has a corresponding row in the Master Catalog tables; missing entries block merge.
+- Companion documents are validated for proper cross-references and slug consistency.
 - Status transitions (Draft → Adopted → Deprecated/Retired) must include evidence of approval by the designated Owner and Security (or delegate) in the PR.
 
 ## 8. Change Log
 | Date       | Version | Author | Summary |
 |------------|---------|--------|---------|
+| 2025-10-15 | v1.0.1  | Team   | Added companion document conventions (§1.5-1.6): `-impl` suffix pattern, cross-referencing requirements, versioning rules, and automated validation checks. |
 | 2025-10-02 | v1.0    | Team   | Established Master Catalog filename and registration requirements. |
 | 2025-09-30 | v1.0    | Team   | Initial draft of documentation governance standard. |
 

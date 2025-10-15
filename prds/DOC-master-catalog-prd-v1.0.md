@@ -1,10 +1,10 @@
 # Master System Catalog & Architectural Map
 
-**Status:** Adopted v1.0  
+**Status:** Adopted v1.0.2  
 **Owners:** Platform Architecture  
 **Consumers:** Engineering, Product, Data, QA, Ops, Compliance  
 **Change control:** ADR + Architecture Owner approval  
-**Review cadence:** Monthly (first business Monday) — **Last reviewed:** 2025-10-02  
+**Review cadence:** Monthly (first business Monday) — **Last reviewed:** 2025-10-15  
 
 > Core governance (`STD-doc-governance-prd-v1.0.md`) defines naming and metadata rules. This catalog is a navigational index and dependency map only.
 
@@ -12,17 +12,18 @@
 
 ## 1. Architectural Standards (`STD-*`)
 
-| Document | Status | Owner | Last Reviewed |
-|---|---|---|---|
-| `STD-doc-governance-prd-v1.0.md` | Draft v1.0 (proposed) | Platform | 2025-09-30 |
-| `STD-data-architecture-prd-v1.0.md` | Adopted 1.0 | Data Engineering | 2025-09-30 |
-| `STD-api-contract-management-prd-v1.0.md` | Adopted v1.0 | Platform Engineering | 2025-09-30 |
-| `STD-api-architecture-prd-v1.0.md` | Adopted v1.0 | Platform Engineering | 2025-09-30 |
-| `STD-api-security-and-auth-prd-v1.0.md` | Draft v1.0 (for approval) | Security | 2025-09-30 |
-| `STD-api-performance-scalability-prd-v1.0.md` | Adopted v1.0 | SRE | 2025-09-30 |
-| `STD-observability-monitoring-prd-v1.0.md` | Adopted v1.0 | SRE | 2025-09-30 |
-| `STD-qa-testing-prd-v1.0.md` | Draft v1.0 (proposed) | QA Guild | 2025-09-30 |
-| `STD-scraper-prd-v1.0.md` | Draft v1.0 | Data Engineering | 2025-09-30 |
+| Document | Status | Owner | Last Reviewed | Notes |
+|---|---|---|---|---|
+| `STD-doc-governance-prd-v1.0.md` | Draft v1.0.1 | Platform | 2025-10-15 | Added companion doc conventions |
+| `STD-data-architecture-prd-v1.0.md` | Adopted 1.0 | Data Engineering | 2025-10-15 | Main standard |
+| `STD-data-architecture-impl-v1.0.md` | Draft v1.0 | Data Engineering | 2025-10-15 | Implementation guide (companion) |
+| `STD-api-contract-management-prd-v1.0.md` | Adopted v1.0 | Platform Engineering | 2025-09-30 | |
+| `STD-api-architecture-prd-v1.0.md` | Adopted v1.0 | Platform Engineering | 2025-09-30 | |
+| `STD-api-security-and-auth-prd-v1.0.md` | Draft v1.0 (for approval) | Security | 2025-09-30 | |
+| `STD-api-performance-scalability-prd-v1.0.md` | Adopted v1.0 | SRE | 2025-09-30 | |
+| `STD-observability-monitoring-prd-v1.0.md` | Adopted v1.0 | SRE | 2025-09-30 | |
+| `STD-qa-testing-prd-v1.0.md` | Draft v1.0 (proposed) | QA Guild | 2025-09-30 | |
+| `STD-scraper-prd-v1.0.md` | Draft v1.1 | Data Engineering | 2025-10-15 | Updated with implementation patterns |
 
 ---
 
@@ -88,6 +89,7 @@
 graph TD
   subgraph Standards
     SA[STD-data-architecture]
+    SA_IMPL[STD-data-architecture-impl]
     SB[STD-api-contract-management]
     SC[STD-api-security-and-auth]
     SD[STD-scraper]
@@ -115,14 +117,18 @@ graph TD
   D1[DOC-test-patterns]
   end
 
+  SA -.companion.-> SA_IMPL
   SA --> P1
   SA --> P4
+  SA_IMPL -.-> P1
+  SA_IMPL -.-> P2
   SB --> P3
   SC --> P2
   SC --> P3
   SD --> P2
   SD --> P5
   SD --> P6
+  SD -.-> SA_IMPL
   RA -.-> P1
   RB -.-> P2
   RB -.-> P4
@@ -147,8 +153,8 @@ graph TD
 
 | Version | Date | Summary | PR |
 |---|---|---|---|
-| 1.0.2 | 2025-10-02 | Added automation notes, DOC/self entry, dependency refresh, and metadata alignment. | #TBD |
-| 1.0.1 | 2025-09-30 | Adopted automated audit workflow; aligned tables and dependencies. | #TBD |
+| 1.0.2 | 2025-10-15 | Added STD-data-architecture-impl-v1.0.md (companion implementation guide); updated STD-doc-governance to v1.0.1 with companion document conventions; updated STD-scraper to v1.1; added companion relationships to dependency graph. | #TBD |
+| 1.0.1 | 2025-10-02 | Added automation notes, DOC/self entry, dependency refresh, and metadata alignment. | #TBD |
 | 1.0.0 | 2025-09-01 | Initial adoption of master catalog. | #TBD |
 
 ---

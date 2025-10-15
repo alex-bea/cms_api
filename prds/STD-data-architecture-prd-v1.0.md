@@ -11,9 +11,11 @@ For complete index see [Master System Catalog](DOC-master-catalog-prd-v1.0.md).
 
 
 **Cross-References:**
+- **STD-data-architecture-impl-v1.0.md:** Implementation guide (companion document)
 - **STD-observability-monitoring-prd-v1.0:** Comprehensive monitoring standards, five-pillar framework, and unified SLAs
 - **STD-qa-testing-prd-v1.0:** Testing requirements for data pipelines and quality gates
-- **STD-api-security-and-auth-prd-v1.0:** Security requirements for data access and audit logging  
+- **STD-api-security-and-auth-prd-v1.0:** Security requirements for data access and audit logging
+- **STD-scraper-prd-v1.0:** Scraper patterns and discovery manifests  
 
 ## 1. Goals & Non‑Goals
 **Goals**
@@ -183,7 +185,26 @@ Every dataset PRD must include an **Ingestion Summary** stating: source spec, sc
 - The verification job uploads an artifact highlighting manifest vs. PRD reference diffs for reviewer context.
 - If a source URL pattern changes, the PR **must** update `REF-cms-pricing-source-map-prd-v1.0.md` and/or `REF-geography-source-map-prd-v1.0.md` and attach a sample manifest (or link to artifact) in the description.
 
-## 15. QA Summary (per QA & Testing Standard v1.0)
+## 15. Implementation Guide
+
+For detailed implementation patterns, code templates, and step-by-step guides, see the companion implementation guide:
+
+**[STD-data-architecture-impl-v1.0.md](STD-data-architecture-impl-v1.0.md)**
+
+The implementation guide provides:
+- `BaseDISIngestor` interface reference with line numbers to canonical code
+- Centralized component usage (factories, validators, observability collectors)
+- Schema contract and validation patterns with working examples
+- Operational guidance (configuration, logging, SLA enforcement)
+- Step-by-step ingestor creation tutorial (10 steps)
+- Working examples from MPFS, RVU, OPPS ingestors with file references
+- Code templates for ingestors, validation rules, schema contracts, and tests
+- Compliance certification checklist
+- Troubleshooting guide for common issues
+
+This separation keeps the main PRD focused on requirements and architecture while providing implementers with practical, code-level guidance that can evolve independently.
+
+## 16. QA Summary (per QA & Testing Standard v1.0)
 | Item | Details |
 | --- | --- |
 | **Scope & Ownership** | DIS applies to all ingestion pipelines; owned by Platform/Data Engineering with QA Guild stewardship; consumers include downstream product, analytics, and pricing teams. |
