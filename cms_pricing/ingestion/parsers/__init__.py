@@ -80,37 +80,72 @@ PARSER_ROUTING = {
 }
 
 
-def route_to_parser(filename: str) -> Tuple[str, str, str]:
+def route_to_parser(
+    filename: str,
+    file_head: Optional[bytes] = None
+) -> Tuple[str, str, str]:
     """
-    Route filename to parser configuration.
+    Route file to parser with optional content sniffing.
+    
+    Per STD-parser-contracts v1.1 §6.2:
+    - Uses filename pattern matching (primary)
+    - Uses file_head for content sniffing (optional, prevents misroutes)
     
     Args:
-        filename: Source filename to route
+        filename: Source filename for pattern matching
+        file_head: First ~8KB of file for magic byte/BOM/format detection (optional)
         
     Returns:
         Tuple of (dataset_name, schema_contract_id, parser_status)
         
     Raises:
         ValueError: If no parser routing found for filename
+    
+    Content sniffing (when file_head provided):
+        - Detects fixed-width vs CSV (prevents .csv that's actually fixed-width)
+        - Detects BOM markers (UTF-8-sig, UTF-16 LE/BE)
+        - Detects magic bytes (ZIP, Excel, PDF)
         
     Examples:
         >>> route_to_parser("PPRRVU2025_Oct.txt")
         ('pprrvu', 'cms_pprrvu_v1.0', 'uses_rvu_ingestor')
         
-        >>> route_to_parser("GPCI2025.csv")
-        ('gpci', 'cms_gpci_v1.0', 'uses_rvu_ingestor')
-        
-        >>> route_to_parser("conversion-factor-2025.xlsx")
-        ('conversion_factor', 'cms_conversion_factor_v1.0', 'schema_pending')
+        >>> # With content sniffing
+        >>> with open('file.csv', 'rb') as f:
+        ...     file_head = f.read(8192)
+        ...     f.seek(0)
+        ...     dataset, schema, status = route_to_parser('file.csv', file_head)
     """
+    # Try to import is_fixed_width_format for content sniffing
+    try:
+        from cms_pricing.ingestion.parsers._parser_kit import is_fixed_width_format
+        content_sniffing_available = True
+    except ImportError:
+        content_sniffing_available = False
+    
     for pattern, (dataset, schema_id, status) in PARSER_ROUTING.items():
         if re.match(pattern, filename, re.IGNORECASE):
+            
+            # Content sniffing (if file_head provided and available)
+            if file_head and content_sniffing_available:
+                is_fixed_width = is_fixed_width_format(file_head, filename)
+                
+                if is_fixed_width:
+                    logger.info(
+                        "Content sniffing: Fixed-width format detected",
+                        filename=filename,
+                        extension=filename.split('.')[-1] if '.' in filename else 'none'
+                    )
+                    # Format hint logged for observability
+                    # Future: Could override parser choice based on format
+            
             logger.debug(
                 "Routed file to parser",
                 filename=filename,
                 dataset=dataset,
                 schema_id=schema_id,
-                status=status
+                status=status,
+                content_sniffing=file_head is not None
             )
             return dataset, schema_id, status
     

@@ -273,3 +273,34 @@ def test_parse_result_structure():
     
     print("✅ ParseResult: Structure verified (data, rejects, metrics)")
 
+
+
+def test_router_content_sniffing():
+    """
+    Test 8: Verify route_to_parser accepts file_head for content sniffing.
+    
+    Per STD-parser-contracts v1.1 §6.2:
+    - Router accepts optional file_head parameter
+    - Uses content sniffing when provided
+    - Falls back to filename matching
+    """
+    from cms_pricing.ingestion.parsers import route_to_parser
+    
+    # Test 1: Without file_head (filename only)
+    dataset, schema_id, status = route_to_parser('PPRRVU2025.csv')
+    assert dataset == 'pprrvu'
+    assert 'cms_pprrvu' in schema_id
+    
+    # Test 2: With file_head (content sniffing enabled)
+    fake_csv = b'99213,Description,0.93\n99214,Another,1.50\n'
+    dataset2, schema_id2, status2 = route_to_parser('PPRRVU2025.csv', fake_csv)
+    assert dataset2 == 'pprrvu'
+    assert schema_id2 == schema_id  # Same result (filename match works)
+    
+    # Test 3: Fixed-width content with .csv extension
+    fixed_width = b'99213  Description here      0.93  \n99214  Another description  1.50  \n'
+    dataset3, schema_id3, status3 = route_to_parser('PPRRVU2025.csv', fixed_width)
+    assert dataset3 == 'pprrvu'  # Should still route to pprrvu
+    # Content sniffing logs fixed-width detection for observability
+    
+    print("✅ Router content sniffing: file_head parameter working")
