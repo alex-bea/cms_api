@@ -1,6 +1,6 @@
 # Scraper-Ingestor Integration Reference Architecture
 
-**Status:** Draft v1.0  
+**Status:** Draft v1.0.1  
 **Owners:** Data Engineering  
 **Consumers:** Scraper Implementers, Ingestor Implementers, Platform Engineering  
 **Change control:** PR review
@@ -8,8 +8,8 @@
 **Cross-References:**
 - **STD-scraper-prd-v1.0.md:** Scraper patterns and discovery standards
 - **STD-data-architecture-prd-v1.0.md:** DIS pipeline architecture and requirements
-- **STD-data-architecture-impl-v1.0.md:** Ingestor implementation guide
-- **STD-parser-contracts-prd-v1.0.md:** Parser contracts consume scraper discovery manifests
+- **STD-data-architecture-impl-v1.0.1.md:** Ingestor implementation guide with ParseResult examples
+- **STD-parser-contracts-prd-v1.1.md:** Parser contracts v1.1 (ParseResult return type, 64-char hashing, schema-driven precision, content sniffing)
 - **REF-cms-pricing-source-map-prd-v1.0.md:** CMS dataset source mappings
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog
 
@@ -1062,5 +1062,6 @@ Update this document when:
 
 | Date | Version | Author | Summary |
 |------|---------|--------|---------|
+| 2025-10-15 | v1.0.1 | Data Engineering | Updated cross-references to STD-parser-contracts v1.1 (ParseResult return type, 64-char hashing). Updated STD-data-architecture-impl to v1.0.1 with ParseResult examples. Reflects ingestor-owned artifact writes per parser contracts. |
 | 2025-10-15 | v1.0 | Data Engineering | Initial scraper-ingestor integration reference: RACI matrix, state machine, manifest contract, file path conventions, integration patterns (MPFS/RVU/OPPS), handoff protocols, error handling, testing patterns, Render deployment, anti-patterns, and maintenance guidance. |
 

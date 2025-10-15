@@ -1,6 +1,6 @@
 # Data Architecture Implementation Guide (v1.0)
 
-**Status:** Draft v1.0  
+**Status:** Draft v1.0.1  
 **Owners:** Platform/Data Engineering  
 **Consumers:** Ingestor Implementers, Data Engineers  
 **Change control:** PR review (no ADR required for code examples)
@@ -11,7 +11,7 @@
 
 **Cross-References:**
 - **STD-data-architecture-prd-v1.0.md:** Main standard (requirements, architecture, policies)
-- **STD-parser-contracts-prd-v1.0.md:** Parser contracts for normalize stage implementation
+- **STD-parser-contracts-prd-v1.1.md:** Parser contracts for normalize stage implementation (ParseResult return type, 64-char hashing, schema-driven precision)
 - **STD-scraper-prd-v1.0.md:** Scraper patterns and discovery manifests
 - **STD-observability-monitoring-prd-v1.0.md:** Observability requirements
 - **STD-qa-testing-prd-v1.0.md:** Testing requirements
@@ -958,34 +958,52 @@ async def validate_stage(self, raw_batch: RawBatch) -> Tuple[RawBatch, List[Dict
 
 ```python
 async def normalize_stage(self, raw_batch: RawBatch) -> AdaptedBatch:
-    """Normalize stage: Parse and canonicalize data"""
+    """
+    Normalize stage: Parse and canonicalize data
+    
+    Per STD-parser-contracts v1.1, parsers return ParseResult(data, rejects, metrics).
+    Ingestor handles all file writes (parsed.parquet, rejects.parquet, metrics.json).
+    """
     logger.info("Starting {DATASET} normalize stage")
     
     adapted_data = {}
+    all_rejects = []
+    all_metrics = []
     
     for filename, file_data in raw_batch.raw_data.items():
         try:
             logger.info("Normalizing file", filename=filename)
             
-            # Parse file based on type
-            if filename.endswith('.zip'):
-                parsed_data = await self._parse_zip_file(file_data)
-            elif filename.endswith('.csv'):
-                parsed_data = await self._parse_csv_file(file_data)
-            elif filename.endswith('.xlsx'):
-                parsed_data = await self._parse_excel_file(file_data)
-            else:
-                logger.warning("Unsupported file type", filename=filename)
-                continue
+            # Route to appropriate parser (v1.1: uses file_head for content sniffing)
+            from cms_pricing.ingestion.parsers import route_to_parser
             
-            # Canonicalize column names
-            parsed_data = self._canonicalize_columns(parsed_data)
+            file_head = file_data[:8192] if isinstance(file_data, bytes) else None
+            dataset, schema_id, parser_func = route_to_parser(filename, file_head)
             
-            # Apply schema contract
-            parsed_data = self._apply_schema_contract(parsed_data)
+            # Prepare metadata for parser
+            metadata = {
+                'release_id': self.current_release_id,
+                'vintage_date': self.vintage_date,
+                'product_year': self.product_year,
+                'quarter_vintage': self.quarter_vintage,
+                'source_uri': raw_batch.metadata.get('source_uri'),
+                'file_sha256': self._compute_file_hash(file_data),
+                'parser_version': 'v1.1.0',
+                'schema_id': schema_id
+            }
             
-            adapted_data[filename] = parsed_data
-            logger.info("File normalization completed", filename=filename)
+            # Parse file (returns ParseResult per v1.1)
+            result = parser_func(file_data, filename, metadata)
+            
+            # Ingestor writes artifacts
+            adapted_data[filename] = result.data  # Valid rows
+            all_rejects.append(result.rejects)    # Rejected rows
+            all_metrics.append(result.metrics)    # Parse metrics
+            
+            logger.info("File normalization completed", 
+                       filename=filename,
+                       valid_rows=len(result.data),
+                       rejected_rows=len(result.rejects))
             
         except Exception as e:
             logger.error("File normalization failed", filename=filename, error=str(e))
@@ -1512,5 +1530,6 @@ pytest tests/ingestors/test_{dataset}_ingestor_e2e.py --cov=cms_pricing.ingestio
 
 | Date | Version | Author | Summary |
 |------|---------|--------|---------|
+| 2025-10-15 | v1.0.1 | Data Engineering | Updated normalize stage example to show ParseResult return type per STD-parser-contracts v1.1. Parsers now return ParseResult(data, rejects, metrics); ingestor handles all file writes. Updated cross-reference to parser contracts v1.1 (64-char hashing, schema-driven precision, content sniffing). |
 | 2025-10-15 | v1.0 | Data Engineering | Initial implementation guide for DIS pipeline: interface reference, centralized components, schema contracts, operational patterns, implementation reference table, step-by-step guide, working examples, code templates, compliance checklist, and troubleshooting. |
 
