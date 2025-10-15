@@ -19,9 +19,79 @@ import pandas as pd
 from typing import List, Dict, Any, Tuple, NamedTuple, Optional
 from datetime import datetime, date
 from decimal import Decimal, ROUND_HALF_UP, ROUND_HALF_EVEN
+from enum import Enum
 import structlog
 
 logger = structlog.get_logger()
+
+
+# ============================================================================
+# Validation Enums (Phase 0 Commit 4)
+# ============================================================================
+
+class ValidationSeverity(str, Enum):
+    """
+    Validation severity levels per STD-parser-contracts v1.1 §8.3.
+    
+    Type-safe enum prevents string typos ("WARN" vs "warn").
+    
+    Severity Levels:
+        BLOCK: Raise exception, stop processing (critical errors)
+        WARN: Quarantine rows, continue processing (soft failures)
+        INFO: Log only, continue (statistical anomalies)
+    
+    Examples:
+        >>> severity = ValidationSeverity.WARN
+        >>> assert severity == "WARN"  # String comparison still works
+        >>> assert severity.value == "WARN"
+    """
+    BLOCK = "BLOCK"
+    WARN = "WARN"
+    INFO = "INFO"
+
+
+class CategoricalRejectReason(str, Enum):
+    """
+    Machine-readable reason codes for categorical validation failures.
+    
+    Enables precise error tracking, automated remediation, and metrics.
+    
+    Reason Codes:
+        UNKNOWN_VALUE: Value not in allowed enum list
+        NULL_NOT_ALLOWED: Null value when nullable=false
+        CASE_MISMATCH: Case differs from canonical (future)
+        NORMALIZED: Value was normalized (future)
+    
+    Examples:
+        >>> reason = CategoricalRejectReason.UNKNOWN_VALUE
+        >>> assert reason == "CAT_UNKNOWN_VALUE"
+    """
+    UNKNOWN_VALUE = "CAT_UNKNOWN_VALUE"
+    NULL_NOT_ALLOWED = "CAT_NULL_NOT_ALLOWED"
+    CASE_MISMATCH = "CAT_CASE_MISMATCH"
+    NORMALIZED = "CAT_NORMALIZED"
+
+
+class ValidationResult(NamedTuple):
+    """
+    Categorical validation output per Phase 0 Commit 4.
+    
+    Structured result with full provenance and metrics.
+    Replaces bare tuple return for type safety and clarity.
+    
+    Attributes:
+        valid_df: DataFrame with valid rows (categorical dtypes applied)
+        rejects_df: DataFrame with rejected rows (validation failures with metadata)
+        metrics: Dict with validation metrics (reject_rate, columns, etc.)
+    
+    Examples:
+        >>> result = enforce_categorical_dtypes(df, schema, ValidationSeverity.WARN)
+        >>> print(f"Valid: {len(result.valid_df)}, Rejects: {len(result.rejects_df)}")
+        >>> print(f"Reject rate: {result.metrics['reject_rate']:.2%}")
+    """
+    valid_df: pd.DataFrame
+    rejects_df: pd.DataFrame
+    metrics: Dict[str, Any]
 
 # Rounding mode mapping
 ROUNDING_MODES = {
@@ -689,3 +759,197 @@ def check_natural_key_uniqueness(
         return unique_df, duplicates
     
     return df, pd.DataFrame()
+
+
+def get_categorical_columns(schema_contract: Dict) -> Dict[str, Dict[str, Any]]:
+    """
+    Extract categorical column specifications from schema contract.
+    
+    Per Phase 0 Commit 4: Schema-driven categorical validation.
+    
+    Args:
+        schema_contract: Loaded JSON schema contract
+        
+    Returns:
+        {column_name: {enum: [...], nullable: bool}}
+        
+    Examples:
+        >>> schema = json.load(open('cms_pprrvu_v1.0.json'))
+        >>> cats = get_categorical_columns(schema)
+        >>> print(cats['modifier']['enum'])
+        ['', '26', 'TC', '53', ...]
+    """
+    categorical = {}
+    for col_name, col_spec in schema_contract.get("columns", {}).items():
+        if col_spec.get("type") == "categorical":
+            categorical[col_name] = {
+                "enum": col_spec.get("enum", []),
+                "nullable": col_spec.get("nullable", True)
+            }
+    return categorical
+
+
+def enforce_categorical_dtypes(
+    df: pd.DataFrame,
+    schema_contract: Dict,
+    natural_keys: List[str],
+    schema_id: Optional[str] = None,
+    release_id: Optional[str] = None,
+    severity: ValidationSeverity = ValidationSeverity.WARN
+) -> ValidationResult:
+    """
+    Enforce categorical dtypes with spec-driven validation.
+    
+    **NO SILENT NaN COERCION** per STD-parser-contracts v1.1 §8.2.1
+    
+    Per Phase 0 Commit 4 (Enhanced):
+    - Reads enum/nullable from schema contract
+    - Returns ValidationResult (not bare tuple)
+    - Adds row_id, schema_id, release_id to rejects for provenance
+    - Deterministic ordering (column, reason_code, row_id)
+    - Comprehensive metrics
+    
+    Args:
+        df: Input DataFrame
+        schema_contract: Loaded schema contract (contains enum values, nullable)
+        natural_keys: Natural key columns (for row_id computation)
+        schema_id: Schema contract ID (for provenance)
+        release_id: Release ID (for provenance)
+        severity: BLOCK (raise) or WARN (quarantine) - uses enum!
+        
+    Returns:
+        ValidationResult with:
+            - valid_df: Valid rows with categorical dtypes applied
+            - rejects_df: Rejected rows with full metadata
+            - metrics: Validation metrics
+        
+    Raises:
+        ValueError: If severity=BLOCK and invalid values found
+        
+    Rejects Schema:
+        - row_id: SHA-256 of natural keys (for tracking)
+        - schema_id: Schema contract identifier
+        - release_id: Release identifier
+        - validation_error: Human-readable message
+        - validation_severity: BLOCK/WARN/INFO
+        - validation_rule_id: Machine-readable reason code
+        - validation_column: Column name
+        - validation_context: Invalid value captured
+        
+    Examples:
+        >>> schema = json.load(open('cms_pprrvu_v1.0.json'))
+        >>> result = enforce_categorical_dtypes(
+        ...     df, schema, ['hcpcs', 'modifier'],
+        ...     schema_id='cms_pprrvu_v1.0',
+        ...     release_id='mpfs_2025_q1',
+        ...     severity=ValidationSeverity.WARN
+        ... )
+        >>> print(f"Valid: {len(result.valid_df)}, Rejects: {len(result.rejects_df)}")
+        >>> print(result.rejects_df[['validation_rule_id', 'validation_context']])
+    """
+    rejects_list = []
+    valid_df = df.copy()
+    reject_counts_by_column = {}
+    
+    # Extract categorical columns from schema contract
+    categorical_cols = get_categorical_columns(schema_contract)
+    
+    for col_name, col_spec in categorical_cols.items():
+        if col_name not in valid_df.columns:
+            continue
+        
+        allowed_values = col_spec["enum"]
+        nullable = col_spec["nullable"]
+        
+        # Check 1: Null constraint
+        if not nullable:
+            null_mask = valid_df[col_name].isna()
+            if null_mask.any():
+                rejects = valid_df[null_mask].copy()
+                rejects['validation_error'] = f"{col_name}: null not allowed"
+                rejects['validation_severity'] = severity.value
+                rejects['validation_rule_id'] = CategoricalRejectReason.NULL_NOT_ALLOWED.value
+                rejects['validation_column'] = col_name
+                rejects['validation_context'] = None  # No value to show
+                rejects_list.append(rejects)
+                valid_df = valid_df[~null_mask].copy()
+                
+                reject_counts_by_column[col_name] = reject_counts_by_column.get(col_name, 0) + null_mask.sum()
+        
+        # Check 2: Domain constraint
+        invalid_mask = ~valid_df[col_name].isin(allowed_values + [None, pd.NA, ''])
+        
+        if invalid_mask.any():
+            rejects = valid_df[invalid_mask].copy()
+            rejects['validation_error'] = f"{col_name}: not in allowed values"
+            rejects['validation_severity'] = severity.value
+            rejects['validation_rule_id'] = CategoricalRejectReason.UNKNOWN_VALUE.value
+            rejects['validation_column'] = col_name
+            rejects['validation_context'] = rejects[col_name].astype(str)  # Capture invalid value
+            rejects_list.append(rejects)
+            valid_df = valid_df[~invalid_mask].copy()
+            
+            reject_counts_by_column[col_name] = reject_counts_by_column.get(col_name, 0) + invalid_mask.sum()
+            
+            # BLOCK severity raises immediately
+            if severity == ValidationSeverity.BLOCK:
+                raise ValueError(
+                    f"Categorical validation failed on {col_name}: "
+                    f"{invalid_mask.sum()} invalid values. "
+                    f"Expected domain: {allowed_values[:10]}..."
+                )
+        
+        # NOW safe to convert to categorical (after removing invalid rows)
+        if len(allowed_values) > 0:  # Only if enum defined
+            valid_df[col_name] = valid_df[col_name].astype(
+                pd.CategoricalDtype(categories=allowed_values)
+            )
+    
+    # Combine rejects
+    if rejects_list:
+        rejects_df = pd.concat(rejects_list, ignore_index=True)
+        
+        # Add provenance columns
+        if natural_keys:
+            rejects_df['row_id'] = rejects_df.apply(lambda r: compute_row_id(r, natural_keys), axis=1)
+        if schema_id:
+            rejects_df['schema_id'] = schema_id
+        if release_id:
+            rejects_df['release_id'] = release_id
+        
+        # Deterministic ordering: sort by (column, reason_code, row_id)
+        sort_cols = ['validation_column', 'validation_rule_id']
+        if 'row_id' in rejects_df.columns:
+            sort_cols.append('row_id')
+        rejects_df = rejects_df.sort_values(sort_cols).reset_index(drop=True)
+    else:
+        rejects_df = pd.DataFrame()
+    
+    # Build metrics
+    total_rows = len(df)
+    valid_rows = len(valid_df)
+    reject_rows = len(rejects_df)
+    
+    metrics = {
+        "total_rows": total_rows,
+        "valid_rows": valid_rows,
+        "reject_rows": reject_rows,
+        "reject_rate": reject_rows / total_rows if total_rows > 0 else 0.0,
+        "columns_validated": len(categorical_cols),
+        "reject_rate_by_column": {
+            col: count / total_rows if total_rows > 0 else 0.0
+            for col, count in reject_counts_by_column.items()
+        }
+    }
+    
+    # Emit metrics
+    if reject_rows > 0:
+        logger.warning(
+            "Categorical validation rejects",
+            total_rejects=reject_rows,
+            columns=list(reject_counts_by_column.keys()),
+            severity=severity.value,
+            reject_rate=f"{metrics['reject_rate']:.2%}"
+        )
+    
+    return ValidationResult(valid_df=valid_df, rejects_df=rejects_df, metrics=metrics)

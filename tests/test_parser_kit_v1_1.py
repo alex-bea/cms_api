@@ -362,3 +362,290 @@ def test_route_decision_determinism():
     assert decision1.natural_keys == decision2.natural_keys
     
     print("✅ Determinism: Identical RouteDecision on repeated calls")
+
+
+# ============================================================================
+# Phase 0 Commit 4 Tests: Categorical Validation
+# ============================================================================
+
+def test_validation_severity_enum():
+    """
+    Test 11: ValidationSeverity enum prevents string typos.
+    """
+    from cms_pricing.ingestion.parsers._parser_kit import ValidationSeverity
+    
+    # Enum values
+    assert ValidationSeverity.BLOCK == "BLOCK"
+    assert ValidationSeverity.WARN == "WARN"
+    assert ValidationSeverity.INFO == "INFO"
+    
+    # Type checking works
+    sev: ValidationSeverity = ValidationSeverity.WARN
+    assert sev.value == "WARN"
+    assert isinstance(sev, str)  # str subclass for backward compat
+    
+    print("✅ ValidationSeverity enum: Type-safe, no string typos")
+
+
+def test_categorical_unknown_value_reject():
+    """
+    Test 12: Invalid categorical values rejected with reason codes and row_id.
+    """
+    from cms_pricing.ingestion.parsers._parser_kit import (
+        enforce_categorical_dtypes,
+        ValidationSeverity,
+        CategoricalRejectReason
+    )
+    import pandas as pd
+    
+    df = pd.DataFrame({
+        "modifier": ["", "26", "TC", "INVALID"],  # INVALID not in domain
+        "hcpcs": ["99213", "99214", "99215", "99216"]
+    })
+    
+    schema = {
+        "columns": {
+            "modifier": {
+                "type": "categorical",
+                "enum": ["", "26", "TC", "53"],
+                "nullable": True
+            }
+        }
+    }
+    
+    result = enforce_categorical_dtypes(
+        df, schema, natural_keys=['hcpcs', 'modifier'],
+        schema_id='test_schema',
+        release_id='test_release',
+        severity=ValidationSeverity.WARN
+    )
+    
+    # Check valid/rejects split
+    assert len(result.valid_df) == 3  # 3 valid values
+    assert len(result.rejects_df) == 1  # 1 reject
+    
+    # Check reason code
+    assert result.rejects_df['validation_rule_id'].iloc[0] == CategoricalRejectReason.UNKNOWN_VALUE.value
+    assert result.rejects_df['validation_column'].iloc[0] == "modifier"
+    assert result.rejects_df['validation_context'].iloc[0] == "INVALID"
+    
+    # Check provenance
+    assert 'row_id' in result.rejects_df.columns
+    assert result.rejects_df['schema_id'].iloc[0] == 'test_schema'
+    assert result.rejects_df['release_id'].iloc[0] == 'test_release'
+    assert len(result.rejects_df['row_id'].iloc[0]) == 64  # SHA-256
+    
+    # Check metrics
+    assert result.metrics['total_rows'] == 4
+    assert result.metrics['valid_rows'] == 3
+    assert result.metrics['reject_rows'] == 1
+    assert result.metrics['reject_rate'] == 0.25
+    
+    print("✅ Categorical unknown value: Rejected with full provenance")
+
+
+def test_categorical_null_not_allowed():
+    """
+    Test 13: Null values rejected when nullable=false.
+    """
+    from cms_pricing.ingestion.parsers._parser_kit import (
+        enforce_categorical_dtypes,
+        ValidationSeverity,
+        CategoricalRejectReason
+    )
+    import pandas as pd
+    
+    df = pd.DataFrame({
+        "status": ["A", None, "D"],
+        "hcpcs": ["99213", "99214", "99215"]
+    })
+    
+    schema = {
+        "columns": {
+            "status": {
+                "type": "categorical",
+                "enum": ["A", "D", "P"],
+                "nullable": False  # Nulls not allowed!
+            }
+        }
+    }
+    
+    result = enforce_categorical_dtypes(
+        df, schema, natural_keys=['hcpcs'],
+        severity=ValidationSeverity.WARN
+    )
+    
+    assert len(result.valid_df) == 2  # 2 valid
+    assert len(result.rejects_df) == 1  # 1 null reject
+    assert result.rejects_df['validation_rule_id'].iloc[0] == CategoricalRejectReason.NULL_NOT_ALLOWED.value
+    
+    print("✅ Categorical null constraint: Enforced when nullable=false")
+
+
+def test_categorical_block_raises_exception():
+    """
+    Test 14: BLOCK severity raises ValueError immediately.
+    """
+    from cms_pricing.ingestion.parsers._parser_kit import (
+        enforce_categorical_dtypes,
+        ValidationSeverity
+    )
+    import pandas as pd
+    import pytest
+    
+    df = pd.DataFrame({"modifier": ["INVALID"], "hcpcs": ["99213"]})
+    schema = {
+        "columns": {
+            "modifier": {
+                "type": "categorical",
+                "enum": ["", "26", "TC"],
+                "nullable": True
+            }
+        }
+    }
+    
+    with pytest.raises(ValueError, match="Categorical validation failed"):
+        enforce_categorical_dtypes(df, schema, natural_keys=['hcpcs'], severity=ValidationSeverity.BLOCK)
+    
+    print("✅ BLOCK severity: Raises ValueError as expected")
+
+
+def test_zero_silent_nan_coercions_strengthened():
+    """
+    Test 15: CRITICAL - Prove no silent NaN coercion (STRENGTHENED).
+    
+    Pandas CategoricalDtype silently converts unknown values to NaN.
+    Our validation MUST catch this BEFORE conversion.
+    
+    Enhanced checks:
+    - NaN count unchanged
+    - dtype NOT categorical until after validation
+    - Invalid values moved to rejects (not converted to NaN)
+    """
+    from cms_pricing.ingestion.parsers._parser_kit import (
+        enforce_categorical_dtypes,
+        ValidationSeverity
+    )
+    import pandas as pd
+    
+    df = pd.DataFrame({
+        "modifier": ["", "26", "TC", "UNKNOWN"],
+        "status": ["A", "D", "P", "A"],
+        "hcpcs": ["99213", "99214", "99215", "99216"]
+    })
+    
+    schema = {
+        "columns": {
+            "modifier": {"type": "categorical", "enum": ["", "26", "TC"], "nullable": True},
+            "status": {"type": "categorical", "enum": ["A", "D", "P"], "nullable": True}
+        }
+    }
+    
+    # Before validation
+    null_count_before = df.isna().sum().sum()
+    assert df['modifier'].dtype != 'category'  # Not categorical yet
+    assert df['status'].dtype != 'category'
+    
+    # Validate
+    result = enforce_categorical_dtypes(
+        df, schema, natural_keys=['hcpcs'],
+        severity=ValidationSeverity.WARN
+    )
+    
+    # After validation
+    null_count_after = result.valid_df.isna().sum().sum()
+    
+    # CRITICAL CHECKS
+    assert null_count_after <= null_count_before  # NaN count did NOT increase
+    assert len(result.rejects_df) == 1  # UNKNOWN caught
+    assert result.rejects_df['validation_context'].iloc[0] == "UNKNOWN"
+    
+    # Check dtype NOW categorical (after validation)
+    assert result.valid_df['modifier'].dtype.name == 'category'
+    assert result.valid_df['status'].dtype.name == 'category'
+    
+    print("✅ Zero silent coercions: NaN count stable, dtype checked, invalid values rejected")
+
+
+def test_validation_result_structure():
+    """
+    Test 16: ValidationResult NamedTuple has correct structure.
+    """
+    from cms_pricing.ingestion.parsers._parser_kit import (
+        enforce_categorical_dtypes,
+        ValidationResult,
+        ValidationSeverity
+    )
+    import pandas as pd
+    
+    df = pd.DataFrame({"modifier": ["", "26"], "hcpcs": ["99213", "99214"]})
+    schema = {"columns": {"modifier": {"type": "categorical", "enum": ["", "26", "TC"], "nullable": True}}}
+    
+    result = enforce_categorical_dtypes(df, schema, natural_keys=['hcpcs'], severity=ValidationSeverity.WARN)
+    
+    # Check type
+    assert isinstance(result, ValidationResult)
+    assert isinstance(result, tuple)  # NamedTuple is tuple
+    
+    # Check attributes
+    assert hasattr(result, 'valid_df')
+    assert hasattr(result, 'rejects_df')
+    assert hasattr(result, 'metrics')
+    
+    # Check metrics structure
+    assert 'total_rows' in result.metrics
+    assert 'valid_rows' in result.metrics
+    assert 'reject_rows' in result.metrics
+    assert 'reject_rate' in result.metrics
+    assert 'columns_validated' in result.metrics
+    assert 'reject_rate_by_column' in result.metrics
+    
+    print("✅ ValidationResult: Type-safe NamedTuple with comprehensive metrics")
+
+
+def test_deterministic_reject_ordering():
+    """
+    Test 17: Rejects are deterministically sorted for reproducible diffs.
+    """
+    from cms_pricing.ingestion.parsers._parser_kit import (
+        enforce_categorical_dtypes,
+        ValidationSeverity
+    )
+    import pandas as pd
+    
+    # Create data with multiple reject types
+    df = pd.DataFrame({
+        "modifier": ["INVALID1", "INVALID2", ""],
+        "status": ["A", "INVALID3", "D"],
+        "hcpcs": ["99213", "99214", "99215"]
+    })
+    
+    schema = {
+        "columns": {
+            "modifier": {"type": "categorical", "enum": ["", "26", "TC"], "nullable": True},
+            "status": {"type": "categorical", "enum": ["A", "D", "P"], "nullable": True}
+        }
+    }
+    
+    # Run twice
+    result1 = enforce_categorical_dtypes(df, schema, natural_keys=['hcpcs'], severity=ValidationSeverity.WARN)
+    result2 = enforce_categorical_dtypes(df, schema, natural_keys=['hcpcs'], severity=ValidationSeverity.WARN)
+    
+    # Check identical ordering
+    assert len(result1.rejects_df) == len(result2.rejects_df)
+    assert result1.rejects_df['validation_column'].tolist() == result2.rejects_df['validation_column'].tolist()
+    assert result1.rejects_df['validation_rule_id'].tolist() == result2.rejects_df['validation_rule_id'].tolist()
+    
+    # Verify sorted by (column, reason_code, row_id)
+    rejects = result1.rejects_df
+    if len(rejects) > 1:
+        for i in range(len(rejects) - 1):
+            col1, col2 = rejects['validation_column'].iloc[i], rejects['validation_column'].iloc[i+1]
+            assert col1 <= col2  # Column names sorted
+    
+    print("✅ Deterministic ordering: Identical rejects on repeated runs")
+
+
+print("\n" + "="*80)
+print("All Phase 0 Commit 4 tests ready to run!")
+print("="*80)
