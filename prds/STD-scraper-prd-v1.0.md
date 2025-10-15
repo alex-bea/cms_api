@@ -1,6 +1,6 @@
-Scraper Platform PRD (MVP → v1)
+Scraper Platform PRD (MVP → v1.1)
 
-**Status:** Draft v1.0  
+**Status:** Draft v1.1  
 **Owners:** Data Engineering / Platform Tooling  
 **Consumers:** Ingestion Engineers, QA Guild, Ops  
 **Change control:** ADR + PR review
@@ -9,6 +9,7 @@ Scraper Platform PRD (MVP → v1)
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
 - **STD-data-architecture-prd-v1.0:** Data ingestion lifecycle and storage patterns
 - **STD-observability-monitoring-prd-v1.0:** Scraper monitoring and alerting
+- **REF-cms-pricing-source-map-prd-v1.0.md:** Authoritative source map for all CMS datasets
 
 0) Summary
 
@@ -337,3 +338,452 @@ D. Alert payload (example)
 	•	Audit & compliance: attribution flags (attribution_required); audit logs persisted with run metadata.
 
 (retains 6‑year retention and bronze/silver/gold data zones as previously defined)
+
+⸻
+
+23) CMS Scraper Pattern Implementations
+
+This section provides concrete implementation patterns and templates for all CMS data source scrapers.
+
+## 23.1 Universal Scraper Pattern
+
+All CMS scrapers follow the same **Discovery → Metadata → Manifest** pattern:
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Navigate   │────▶│   Extract    │────▶│   Generate   │────▶│    Store     │
+│  CMS Website │     │   Metadata   │     │   Manifest   │     │   Manifest   │
+└──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
+       │                     │                     │                     │
+    HTTP GET           Parse HTML/Links      Create JSONL          Save to disk
+   Follow links         Extract URLs        Standard schema      Version control
+```
+
+**What Scrapers DO:**
+- ✅ Navigate CMS website structures
+- ✅ Discover file URLs and metadata
+- ✅ Generate discovery manifests
+- ✅ Track checksums and versions
+
+**What Scrapers DON'T DO:**
+- ❌ Download the actual data (that's the ingestor)
+- ❌ Parse or validate content
+- ❌ Transform data structures
+- ❌ Write to the database
+
+## 23.2 Scraper Pattern Matrix
+
+| Data Type | Scraper Class | Base URL | Discovery Pattern | File Types | Cadence | Status |
+|-----------|---------------|----------|-------------------|------------|---------|--------|
+| **MPFS** | `CMSMPFSScraper` | `/physicianfeesched` | Composes RVU + MPFS patterns | ZIP (RVU bundle + CF) | Annual | ✅ Implemented |
+| **RVU** | `CMSRVUScraper` | `/pfs-relative-value-files` | Direct file links | ZIP/TXT/CSV/XLSX | Quarterly | ✅ Implemented |
+| **OPPS** | `CMSOPPSScraper` | `/hospital-outpatient-pps` | Quarterly addenda navigation | ZIP/CSV/XLSX | Quarterly | ✅ Implemented |
+| **ASC** | `CMSASCScraper` | `/ambulatory-surgical-centers` | Quarterly payment page | ZIP/CSV/XLSX | Quarterly | 🔄 **TO CREATE** |
+| **IPPS** | `CMSIPPSScraper` | `/inpatient-prospective-payment-system` | Annual impact files | ZIP/XLSX | Annual | 🔄 **TO CREATE** |
+| **CLFS** | `CMSCLFSScraper` | `/clinical-laboratory-fee-schedule` | Quarterly updates | ZIP/CSV/XLSX | Quarterly | 🔄 **TO CREATE** |
+| **DMEPOS** | `CMSDMEPOSScraper` | `/durable-medical-equipment` | Quarterly fee schedules | ZIP/CSV/XLSX | Quarterly | 🔄 **TO CREATE** |
+| **ASP** | `CMSASPScraper` | `/asp-payment-allowance-limits` | Quarterly drug pricing | ZIP/CSV/XLSX | Quarterly | 🔄 **TO CREATE** |
+| **NADAC** | `CMSNADACScraper` | `/national-average-drug-acquisition-cost` | Weekly/monthly updates | CSV/XLSX | Weekly | 🔄 **TO CREATE** |
+| **Geography** | `CMSGeographyScraper` | `/payment/fee-schedules` | ZIP locality files | ZIP/TXT/XLSX | Quarterly | 🟡 Partial |
+
+## 23.3 Implemented Scrapers (Detailed)
+
+### 23.3.1 MPFS (Medicare Physician Fee Schedule)
+
+**Implementation:** `cms_pricing/ingestion/scrapers/cms_mpfs_scraper.py`
+
+**Source URL:** https://www.cms.gov/medicare/medicare-fee-for-service-payment/physicianfeesched/downloads
+
+**Discovery Strategy:**
+- Composition pattern: Reuses RVU scraper for shared files
+- Discovers MPFS-specific files (conversion factors, abstracts)
+- Generates unified manifest covering all MPFS artifacts
+
+**Files Discovered:**
+- RVU bundle (via composition): `RVU25D.zip` containing:
+  - PPRRVU2025_Oct.txt (~19,000 HCPCS codes with RVUs)
+  - GPCI2025.txt (~115 localities with geographic adjustments)
+  - 25LOCCO.txt (~150 county-to-locality mappings)
+  - ANES2025.txt (~115 anesthesia conversion factors)
+  - OPPSCAP_Oct.txt (~19,000 OPPS cap amounts)
+  - RVU25D.pdf (~200 pages of policy documentation)
+- Conversion factors: `cf-2025.xlsx`
+- Abstracts: `pfs-abstract-2025.pdf`
+- National payment: `national-payment-2025.xlsx`
+
+**Manifest Output:** `data/scraped/mpfs/manifests/cms_mpfs_manifest_YYYYMMDD_HHMMSS.jsonl`
+
+### 23.3.2 RVU (Relative Value Units)
+
+**Implementation:** `cms_pricing/ingestion/scrapers/cms_rvu_scraper.py`
+
+**Source URL:** https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files
+
+**Discovery Strategy:**
+- Direct link pattern: Extracts quarterly release links from main page
+- Identifies revision packages (e.g., RVU24AR for corrections)
+- Supports multiple formats per release
+
+**Files Discovered:**
+- Quarterly releases: `RVU24A`, `RVU24B`, `RVU24C`, `RVU24D`
+- Revision packages: `RVU24AR`, `RVU24BR`, etc.
+- Multiple formats: `.zip`, `.txt`, `.csv`, `.xlsx`
+
+**Manifest Output:** `data/manifests/cms_rvu/cms_rvu_manifest_YYYYMMDD_HHMMSS.jsonl`
+
+### 23.3.3 OPPS (Outpatient Prospective Payment System)
+
+**Implementation:** `cms_pricing/ingestion/scrapers/cms_opps_scraper.py`
+
+**Source URL:** https://www.cms.gov/medicare/payment/prospective-payment-systems/hospital-outpatient-pps/quarterly-addenda-updates
+
+**Discovery Strategy:**
+- Quarterly navigation pattern: Navigates quarterly update pages
+- Extracts Addendum A (APC payments) and B (HCPCS crosswalk) links
+- Handles AMA license interstitial automatically
+
+**Files Discovered:**
+- Addendum A (APC payments): `january-2025-addendum-a.zip`
+- Addendum B (HCPCS crosswalk): `january-2025-addendum-b.zip`
+- Quarterly releases for Q1-Q4
+
+**Special Handling:**
+- AMA license interstitial detection
+- Automatic disclaimer acceptance
+- Redirect URL tracking
+
+**Manifest Output:** `data/scraped/opps/manifests/cms_opps_manifest_YYYYMMDD_HHMMSS.jsonl`
+
+## 23.4 Scraper Templates (To Be Implemented)
+
+### 23.4.1 ASC (Ambulatory Surgical Center) Template
+
+**Planned File:** `cms_pricing/ingestion/scrapers/cms_asc_scraper.py`
+
+**Source URL:** https://www.cms.gov/medicare/payment/prospective-payment-systems/ambulatory-surgical-centers
+
+**Expected Files:**
+- Addendum AA: ASC payment rates by HCPCS (~3,500 procedures)
+- Addendum BB: HCPCS to payment indicator mapping
+- Addendum DD1: Surgical procedures by payment group
+- Quarterly impact files
+
+**Discovery Strategy:** Similar to OPPS (quarterly navigation pattern)
+
+### 23.4.2 IPPS (Inpatient Prospective Payment System) Template
+
+**Planned File:** `cms_pricing/ingestion/scrapers/cms_ipps_scraper.py`
+
+**Source URL:** https://www.cms.gov/medicare/payment/prospective-payment-systems/acute-inpatient-pps
+
+**Expected Files:**
+- Impact file: Provider-level payment impacts (~3,000 hospitals)
+- Wage index: Geographic wage adjustments
+- MS-DRG: Diagnosis-related group weights (~750 MS-DRGs)
+- Operating standardized amounts
+- Capital standardized amounts
+
+**Discovery Strategy:** Annual impact files pattern (fiscal year navigation)
+
+**Cadence:** Annual (October 1 fiscal year)
+
+### 23.4.3 Other Templates (CLFS, DMEPOS, ASP, NADAC)
+
+**CLFS (Clinical Laboratory Fee Schedule):**
+- Source: https://www.cms.gov/medicare/payment/fee-schedules/clinical-laboratory-fee-schedule
+- Files: National limitation amounts, local fee schedules, gapfill amounts (~1,500 lab test codes)
+- Pattern: Quarterly updates
+
+**DMEPOS (Durable Medical Equipment):**
+- Source: https://www.cms.gov/medicare/payment/fee-schedules/dmepos
+- Files: DMEPOS fee schedule, competitive bidding amounts (~5,000 HCPCS codes)
+- Pattern: Quarterly fee schedules
+
+**ASP (Average Sales Price):**
+- Source: https://www.cms.gov/medicare/payment/part-b-drugs/asp-payment-allowance-limits
+- Files: ASP pricing file (quarterly), payment limits by NDC (~500-800 drugs per quarter)
+- Pattern: Quarterly drug pricing
+
+**NADAC (National Average Drug Acquisition Cost):**
+- Source: https://data.medicaid.gov/Drug-Pricing-and-Payment/NADAC-National-Average-Drug-Acquisition-Cost
+- Files: Weekly NADAC CSV updates, monthly comparison files (~25,000 drugs)
+- Pattern: Weekly updates (different domain - external API)
+
+⸻
+
+24) Implementation Checklist
+
+For each new scraper, follow this 4-phase checklist:
+
+**Phase 1: Discovery Strategy**
+- [ ] Identify CMS landing page URL
+- [ ] Map navigation structure (direct links vs. multi-page)
+- [ ] Define file name patterns (regex)
+- [ ] Define quarterly/annual cadence patterns
+- [ ] Document special handling (licenses, redirects, etc.)
+
+**Phase 2: Scraper Implementation**
+- [ ] Create scraper class inheriting base patterns
+- [ ] Implement `discover_files()` method
+- [ ] Implement page navigation helpers
+- [ ] Implement file extraction logic
+- [ ] Add checksum/metadata extraction
+- [ ] Implement manifest generation
+- [ ] Add logging and observability
+
+**Phase 3: Testing**
+- [ ] Unit tests for pattern matching
+- [ ] Integration tests for discovery
+- [ ] Test with historical data (2+ years)
+- [ ] Validate manifest schema compliance
+- [ ] Performance testing (should complete in <5 minutes)
+
+**Phase 4: Integration**
+- [ ] Update `REF-cms-pricing-source-map-prd-v1.0.md`
+- [ ] Create schema contracts (`.json` files)
+- [ ] Link to corresponding ingestor
+- [ ] Add CI/CD workflow for discovery
+- [ ] Document in this PRD
+
+⸻
+
+25) Scraper Code Template
+
+The following template provides a standard structure for new CMS scrapers:
+
+```python
+#!/usr/bin/env python3
+"""
+CMS {DATA_TYPE} Scraper
+=======================
+
+Discovers and tracks {DATA_TYPE} files from CMS.gov.
+Follows DIS discovery standard with manifest generation.
+
+Author: CMS Pricing Platform Team
+Version: 1.0.0
+"""
+
+import asyncio
+import hashlib
+import re
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
+from urllib.parse import urljoin
+
+import httpx
+from bs4 import BeautifulSoup
+from structlog import get_logger
+
+from ..metadata.discovery_manifest import DiscoveryManifest, DiscoveryManifestStore
+
+logger = get_logger()
+
+SCRAPER_VERSION = "1.0.0"
+
+
+class CMS{DataType}Scraper:
+    """
+    CMS {DATA_TYPE} Scraper for {cadence} file discovery.
+    
+    Discovers {DATA_TYPE} files from the CMS {page description},
+    extracts metadata, and generates discovery manifests.
+    """
+    
+    def __init__(self, output_dir: Path = None):
+        self.base_url = "https://www.cms.gov/{path}"
+        self.output_dir = output_dir or Path("data/scraped/{data_type}")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.manifest_store = DiscoveryManifestStore(
+            self.output_dir / "manifests",
+            prefix="cms_{data_type}_manifest"
+        )
+        
+        # File patterns
+        self.file_patterns = {
+            'main_file': re.compile(r'pattern.*\.(csv|xlsx|zip)', re.IGNORECASE),
+            # Add more patterns
+        }
+        
+        # Quarterly/annual patterns
+        self.cadence_patterns = {
+            'q1': re.compile(r'january|jan|q1', re.IGNORECASE),
+            # Add more patterns
+        }
+    
+    async def discover_files(
+        self, 
+        start_period: int, 
+        end_period: int
+    ) -> List[ScrapedFileInfo]:
+        """
+        Discover {DATA_TYPE} files for the given period range.
+        
+        Args:
+            start_period: Starting year/quarter/month
+            end_period: Ending year/quarter/month
+            
+        Returns:
+            List of discovered file information
+        """
+        logger.info("Starting {DATA_TYPE} file discovery")
+        
+        all_files = []
+        
+        # 1. Navigate to main page
+        main_page = await self._fetch_page(self.base_url)
+        
+        # 2. Extract period-specific links
+        period_links = self._extract_period_links(main_page)
+        
+        # 3. For each period, extract file links
+        for period_link in period_links:
+            if start_period <= period_link.period <= end_period:
+                period_files = await self._discover_period_files(period_link)
+                all_files.extend(period_files)
+        
+        # 4. Generate manifest
+        await self.manifest_store.save_manifest(all_files)
+        
+        logger.info("{DATA_TYPE} file discovery completed", 
+                   total_files=len(all_files))
+        
+        return all_files
+    
+    async def _fetch_page(self, url: str) -> str:
+        """Fetch and return page HTML"""
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.text
+    
+    def _extract_period_links(self, page_html: str) -> List[PeriodLink]:
+        """Extract period-specific links from main page"""
+        soup = BeautifulSoup(page_html, 'html.parser')
+        period_links = []
+        
+        for link in soup.find_all('a', href=True):
+            # Extract period info from link text/href
+            period_info = self._parse_period_info(link)
+            if period_info:
+                period_links.append(period_info)
+        
+        return period_links
+    
+    async def _discover_period_files(
+        self, 
+        period_link: PeriodLink
+    ) -> List[ScrapedFileInfo]:
+        """Discover files for a specific period"""
+        files = []
+        
+        # Navigate to period page
+        period_page = await self._fetch_page(period_link.url)
+        
+        # Extract file links
+        soup = BeautifulSoup(period_page, 'html.parser')
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            text = link.get_text(strip=True)
+            
+            # Match against file patterns
+            for pattern_name, pattern in self.file_patterns.items():
+                if pattern.search(text) or pattern.search(href):
+                    file_info = ScrapedFileInfo(
+                        url=urljoin(self.base_url, href),
+                        filename=Path(href).name,
+                        file_type=pattern_name,
+                        batch_id=str(uuid.uuid4()),
+                        discovered_at=datetime.utcnow(),
+                        source_page=period_link.url,
+                        metadata={
+                            'period': period_link.period,
+                            'file_type': pattern_name,
+                            # Add more metadata
+                        }
+                    )
+                    files.append(file_info)
+        
+        return files
+
+
+# CLI for testing
+async def main():
+    """Test the scraper"""
+    scraper = CMS{DataType}Scraper()
+    files = await scraper.discover_files(2024, 2025)
+    
+    print(f"Discovered {len(files)} files:")
+    for f in files:
+        print(f"  - {f.filename} ({f.file_type})")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+⸻
+
+26) Common Pattern Reference
+
+### Pattern A: Direct File Links (RVU)
+CMS publishes files at predictable URLs. Extract and validate.
+
+**Example:**
+- Navigate to RVU files page
+- Extract all links matching `/rvu\d{2}[A-D]/i`
+- Generate manifest with URLs
+
+### Pattern B: Quarterly Navigation (OPPS, ASC)
+Navigate to quarterly update pages, then extract addenda.
+
+**Example:**
+- Get quarterly links from main page
+- For each quarter, navigate to quarter-specific page
+- Extract Addendum A/B links
+- Generate manifest
+
+### Pattern C: Annual Impact Files (IPPS)
+Navigate to fiscal year pages, extract impact/parameter files.
+
+**Example:**
+- Navigate to FY-specific page
+- Extract impact file, wage index, MS-DRG
+- Generate manifest
+
+### Pattern D: Composition (MPFS)
+Reuse existing scrapers + add dataset-specific files.
+
+**Example:**
+- Call RVU scraper for shared files
+- Discover MPFS-specific files
+- Merge into unified manifest
+
+### Pattern E: External Data API (NADAC)
+Different domain, API-based discovery instead of web scraping.
+
+**Example:**
+- Use data.medicaid.gov API
+- Query for weekly updates
+- Generate manifest from API response
+
+⸻
+
+27) Success Metrics
+
+Each scraper should achieve:
+- ✅ Discovery completeness: 100% of published files
+- ✅ Manifest accuracy: All URLs valid and accessible
+- ✅ Performance: <5 minutes for full historical discovery
+- ✅ Reliability: <1% failure rate over 90 days
+- ✅ Observability: Structured logging for all operations
+
+⸻
+
+28) Change Log
+
+| Date | Version | Author | Summary |
+|------|---------|--------|---------|
+| 2025-10-15 | v1.1 | Data Engineering | Added CMS scraper pattern implementations (§23-27): pattern matrix, detailed mappings for MPFS/RVU/OPPS, templates for ASC/IPPS/CLFS/DMEPOS/ASP/NADAC, implementation checklist, code template, and common patterns reference. |
+| 2025-09-30 | v1.0 | Data Engineering | Initial draft of scraper platform PRD. |
