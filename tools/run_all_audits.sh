@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Comprehensive audit suite runner
 # Runs all documentation audits and optionally tests
 
-set -e
+set -Eeuo pipefail
 
 echo "=========================================="
 echo "CMS API Documentation Audit Suite"
@@ -76,8 +76,10 @@ run_audit "Documentation Catalog" "python tools/audit_doc_catalog.py"
 run_audit "Documentation Links" "python tools/audit_doc_links.py"
 run_audit "Cross-References" "python tools/audit_cross_references.py"
 run_audit "Documentation Metadata" "python tools/audit_doc_metadata.py"
+run_audit "Documentation Dependencies" "python tools/audit_doc_dependencies.py"
 run_audit "Companion Documents" "python tools/audit_companion_docs.py"
 run_audit "Source Map Verification" "python tools/verify_source_map.py"
+run_audit "Makefile .PHONY" "python tools/audit_makefile_phony.py"
 
 # Run tests if requested
 if [ "$WITH_TESTS" = true ]; then

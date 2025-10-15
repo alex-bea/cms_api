@@ -13,10 +13,11 @@ Usage:
 """
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Any
 
 
 class AuditRunner:
@@ -55,8 +56,10 @@ class AuditRunner:
             ("Documentation Links", ["python", "tools/audit_doc_links.py"], "audit"),
             ("Cross-References", ["python", "tools/audit_cross_references.py"], "audit"),
             ("Documentation Metadata", ["python", "tools/audit_doc_metadata.py"], "audit"),
+            ("Documentation Dependencies", ["python", "tools/audit_doc_dependencies.py"], "audit"),
             ("Companion Documents", ["python", "tools/audit_companion_docs.py"], "audit"),
             ("Source Map Verification", ["python", "tools/verify_source_map.py"], "audit"),
+            ("Makefile .PHONY", ["python", "tools/audit_makefile_phony.py"], "audit"),
         ]
         
         # Run documentation tests if requested
@@ -122,12 +125,44 @@ class AuditRunner:
         print(f"\n{'='*60}")
         if failures:
             print(f"❌ {len(failures)}/{total} checks failed")
+            print(f"✅ {passed}/{total} checks passed")
             print(f"\nFailed checks:")
             for name, _, _, category in failures:
                 print(f"  - [{category}] {name}")
         else:
-            print(f"✅ All {total} checks passed!")
+            print(f"✅ All {passed}/{total} checks passed!")
         print(f"{'='*60}\n")
+    
+    def write_json_summary(self) -> None:
+        """Write machine-readable audit summary for CI"""
+        failures = [r for r in self.results if r[1] != 0]
+        total = len(self.results)
+        passed = total - len(failures)
+        
+        summary = {
+            "passed": passed,
+            "total": total,
+            "failed": len(failures),
+            "results": [
+                {
+                    "name": name,
+                    "category": category,
+                    "status": "passed" if exit_code == 0 else "failed",
+                    "exit_code": exit_code
+                }
+                for name, exit_code, _, category in self.results
+            ]
+        }
+        
+        # Create artifacts directory
+        artifacts_dir = Path("artifacts")
+        artifacts_dir.mkdir(exist_ok=True)
+        
+        # Write summary
+        summary_file = artifacts_dir / "audit_summary.json"
+        summary_file.write_text(json.dumps(summary, indent=2))
+        
+        print(f"📄 Audit summary written to: {summary_file}")
 
 
 def main():
@@ -156,6 +191,9 @@ def main():
     
     runner = AuditRunner(with_tests=args.with_tests, quick=args.quick)
     exit_code = runner.run_all()
+    
+    # Write JSON summary for CI
+    runner.write_json_summary()
     
     sys.exit(exit_code)
 

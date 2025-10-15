@@ -1,0 +1,55 @@
+{
+  "passed": 7,
+  "total": 8,
+  "failed": 1,
+  "results": [
+    {
+      "name": "Documentation Catalog",
+      "category": "audit",
+      "status": "passed",
+      "exit_code": 0
+    },
+    {
+      "name": "Documentation Links",
+      "category": "audit",
+      "status": "passed",
+      "exit_code": 0
+    },
+    {
+      "name": "Cross-References",
+      "category": "audit",
+      "status": "passed",
+      "exit_code": 0
+    },
+    {
+      "name": "Documentation Metadata",
+      "category": "audit",
+      "status": "passed",
+      "exit_code": 0
+    },
+    {
+      "name": "Documentation Dependencies",
+      "category": "audit",
+      "status": "failed",
+      "exit_code": 1
+    },
+    {
+      "name": "Companion Documents",
+      "category": "audit",
+      "status": "passed",
+      "exit_code": 0
+    },
+    {
+      "name": "Source Map Verification",
+      "category": "audit",
+      "status": "passed",
+      "exit_code": 0
+    },
+    {
+      "name": "Makefile .PHONY",
+      "category": "audit",
+      "status": "passed",
+      "exit_code": 0
+    }
+  ]
+}

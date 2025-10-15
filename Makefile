@@ -1,6 +1,10 @@
 # CMS Pricing API Makefile
 
-.PHONY: help install test lint format clean docker-build docker-up docker-down migrate
+.PHONY: help install install-dev test test-golden test-cov lint format clean
+.PHONY: docker-build docker-up docker-down docker-logs migrate migrate-create migrate-downgrade
+.PHONY: dev worker shell docs check
+.PHONY: audit audit-with-tests audit-quick audit-companion audit-catalog audit-links audit-cross-refs audit-makefile audit-makefile-fix
+.PHONY: pre-commit pre-commit-run setup
 
 help: ## Show this help message
 	@echo "CMS Pricing API - Available commands:"
@@ -95,6 +99,12 @@ audit-links: ## Audit documentation links only
 
 audit-cross-refs: ## Audit cross-references only
 	python tools/audit_cross_references.py
+
+audit-makefile: ## Audit Makefile .PHONY declarations
+	python tools/audit_makefile_phony.py
+
+audit-makefile-fix: ## Auto-fix missing .PHONY declarations
+	python tools/audit_makefile_phony.py --fix
 
 pre-commit: ## Install pre-commit hooks
 	poetry run pre-commit install
