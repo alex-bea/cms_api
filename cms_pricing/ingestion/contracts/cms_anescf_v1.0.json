@@ -1,7 +1,10 @@
 {
   "dataset_name": "cms_anescf",
-  "version": "1.0",
-  "generated_at": "2025-09-30T20:15:34.438236",
+  "version": "1.1",
+  "generated_at": "2025-10-15T00:00:00Z",
+  "hash_spec_version": "1",
+  "column_order": ["locality_code", "state_fips", "anesthesia_cf_usd", "effective_from"],
+  "hash_metadata_exclusions": ["release_id", "vintage_date", "product_year", "quarter_vintage", "source_filename", "source_file_sha256", "source_uri", "parsed_at", "row_content_hash", "effective_to"],
   "columns": {
     "locality_code": {
       "name": "locality_code",
@@ -30,6 +33,10 @@
     "anesthesia_cf_usd": {
       "name": "anesthesia_cf_usd",
       "type": "float64",
+      "precision": 4,
+      "scale": 4,
+      "rounding_mode": "HALF_UP",
+      "multipleOf": 0.0001,
       "nullable": false,
       "description": "Anesthesia conversion factor in USD",
       "unit": null,
@@ -62,6 +69,18 @@
       "max_value": null,
       "pattern": null,
       "sample_values": null
+    },
+    "row_content_hash": {
+      "name": "row_content_hash",
+      "type": "str",
+      "nullable": false,
+      "description": "64-character SHA-256 hex digest of row content per STD-parser-contracts v1.1 §5.2. Computed from columns in declared order excluding metadata fields. Uses schema-defined precision for numeric normalization.",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^[a-f0-9]{64}$",
+      "sample_values": ["a1b2c3d4e5f6789012345678901234567890123456789012345678901234"]
     }
   },
   "primary_keys": [
@@ -80,5 +99,23 @@
   "quality_thresholds": {
     "null_rate_threshold": 0.0,
     "duplicate_rate_threshold": 0.0
-  }
+  },
+  "storage_note": "Stored as float64 in Parquet for efficiency. Canonicalized to Decimal with schema-defined precision before hashing to ensure determinism.",
+  "changelog": [
+    {
+      "version": "1.1",
+      "date": "2025-10-15",
+      "changes": [
+        "Added precision (4dp), rounding_mode (HALF_UP), scale, multipleOf to anesthesia_cf_usd for hash stability",
+        "Updated row_content_hash pattern from 16-char to 64-char SHA-256 digest",
+        "Added hash_spec_version, column_order, hash_metadata_exclusions for deterministic hashing",
+        "Enables schema-driven numeric precision per STD-parser-contracts v1.1"
+      ]
+    },
+    {
+      "version": "1.0",
+      "date": "2025-09-30",
+      "changes": ["Initial anesthesia CF schema contract"]
+    }
+  ]
 }

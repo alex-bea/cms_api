@@ -1,7 +1,7 @@
 {
   "dataset_name": "cms_zip9_overrides",
   "name": "cms_zip9_overrides",
-  "version": "1.0",
+  "version": "1.1",
   "description": "CMS ZIP9 overrides for precise locality mapping",
   "source": "CMS.gov - Zip Codes Requiring 4 Extension files",
   "classification": "public",
@@ -19,17 +19,25 @@
       "pattern": "^[0-9]{9}$",
       "min_length": 9,
       "max_length": 9,
-      "sample_values": ["902100000", "100010000", "606010000"]
+      "sample_values": [
+        "902100000",
+        "100010000",
+        "606010000"
+      ]
     },
     "zip9_high": {
       "name": "zip9_high",
-      "type": "string", 
+      "type": "string",
       "nullable": false,
       "description": "High end of ZIP9 range (9 digits)",
       "pattern": "^[0-9]{9}$",
       "min_length": 9,
       "max_length": 9,
-      "sample_values": ["902109999", "100019999", "606019999"]
+      "sample_values": [
+        "902109999",
+        "100019999",
+        "606019999"
+      ]
     },
     "state": {
       "name": "state",
@@ -39,8 +47,71 @@
       "pattern": "^[A-Z]{2}$",
       "min_length": 2,
       "max_length": 2,
-      "domain": ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC", "PR", "VI", "GU", "AS", "MP"],
-      "sample_values": ["CA", "NY", "IL", "TX", "FL"]
+      "domain": [
+        "AL",
+        "AK",
+        "AZ",
+        "AR",
+        "CA",
+        "CO",
+        "CT",
+        "DE",
+        "FL",
+        "GA",
+        "HI",
+        "ID",
+        "IL",
+        "IN",
+        "IA",
+        "KS",
+        "KY",
+        "LA",
+        "ME",
+        "MD",
+        "MA",
+        "MI",
+        "MN",
+        "MS",
+        "MO",
+        "MT",
+        "NE",
+        "NV",
+        "NH",
+        "NJ",
+        "NM",
+        "NY",
+        "NC",
+        "ND",
+        "OH",
+        "OK",
+        "OR",
+        "PA",
+        "RI",
+        "SC",
+        "SD",
+        "TN",
+        "TX",
+        "UT",
+        "VT",
+        "VA",
+        "WA",
+        "WV",
+        "WI",
+        "WY",
+        "DC",
+        "PR",
+        "VI",
+        "GU",
+        "AS",
+        "MP"
+      ],
+      "sample_values": [
+        "CA",
+        "NY",
+        "IL",
+        "TX",
+        "FL"
+      ]
     },
     "locality": {
       "name": "locality",
@@ -50,7 +121,13 @@
       "pattern": "^[0-9]{2}$",
       "min_length": 2,
       "max_length": 2,
-      "sample_values": ["01", "02", "03", "04", "05"]
+      "sample_values": [
+        "01",
+        "02",
+        "03",
+        "04",
+        "05"
+      ]
     },
     "rural_flag": {
       "name": "rural_flag",
@@ -60,8 +137,15 @@
       "pattern": "^[AB]$",
       "min_length": 1,
       "max_length": 1,
-      "domain": ["A", "B"],
-      "sample_values": ["A", "B", null]
+      "domain": [
+        "A",
+        "B"
+      ],
+      "sample_values": [
+        "A",
+        "B",
+        null
+      ]
     },
     "effective_from": {
       "name": "effective_from",
@@ -69,7 +153,9 @@
       "nullable": false,
       "description": "Effective start date",
       "format": "YYYY-MM-DD",
-      "sample_values": ["2025-08-14"]
+      "sample_values": [
+        "2025-08-14"
+      ]
     },
     "effective_to": {
       "name": "effective_to",
@@ -77,7 +163,9 @@
       "nullable": true,
       "description": "Effective end date (null for ongoing)",
       "format": "YYYY-MM-DD",
-      "sample_values": [null]
+      "sample_values": [
+        null
+      ]
     },
     "vintage": {
       "name": "vintage",
@@ -85,21 +173,27 @@
       "nullable": false,
       "description": "Data vintage (YYYY-MM-DD)",
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
-      "sample_values": ["2025-08-14"]
+      "sample_values": [
+        "2025-08-14"
+      ]
     },
     "source_filename": {
       "name": "source_filename",
       "type": "string",
       "nullable": true,
       "description": "Source filename",
-      "sample_values": ["ZIP9_OCT2025.txt"]
+      "sample_values": [
+        "ZIP9_OCT2025.txt"
+      ]
     },
     "ingest_run_id": {
       "name": "ingest_run_id",
       "type": "uuid",
       "nullable": true,
       "description": "Ingestion run ID",
-      "sample_values": ["550e8400-e29b-41d4-a716-446655440000"]
+      "sample_values": [
+        "550e8400-e29b-41d4-a716-446655440000"
+      ]
     },
     "data_quality_score": {
       "name": "data_quality_score",
@@ -108,14 +202,24 @@
       "description": "Data quality score (0.0-1.0)",
       "min_value": 0.0,
       "max_value": 1.0,
-      "sample_values": [0.95, 0.98, 1.0]
+      "sample_values": [
+        0.95,
+        0.98,
+        1.0
+      ],
+      "precision": 2,
+      "scale": 2,
+      "rounding_mode": "HALF_UP",
+      "multipleOf": 0.01
     },
     "validation_results": {
       "name": "validation_results",
       "type": "json",
       "nullable": true,
       "description": "Validation results JSON",
-      "sample_values": ["{\"status\": \"validated\", \"rules_passed\": 8, \"quality_score\": 0.95}"]
+      "sample_values": [
+        "{\"status\": \"validated\", \"rules_passed\": 8, \"quality_score\": 0.95}"
+      ]
     },
     "processing_timestamp": {
       "name": "processing_timestamp",
@@ -123,7 +227,9 @@
       "nullable": true,
       "description": "Processing timestamp",
       "format": "ISO 8601",
-      "sample_values": ["2025-09-29T12:34:56Z"]
+      "sample_values": [
+        "2025-09-29T12:34:56Z"
+      ]
     },
     "file_checksum": {
       "name": "file_checksum",
@@ -131,7 +237,9 @@
       "nullable": true,
       "description": "Source file SHA256 checksum",
       "pattern": "^[a-f0-9]{64}$",
-      "sample_values": ["1a52c0f879724f55a12e5a645493a108903a0f703db550ccef4a0e25ef06b072"]
+      "sample_values": [
+        "1a52c0f879724f55a12e5a645493a108903a0f703db550ccef4a0e25ef06b072"
+      ]
     },
     "record_count": {
       "name": "record_count",
@@ -139,29 +247,50 @@
       "nullable": true,
       "description": "Number of records in source file",
       "min_value": 0,
-      "sample_values": [1000, 5000, 10000]
+      "sample_values": [
+        1000,
+        5000,
+        10000
+      ]
     },
     "schema_version": {
       "name": "schema_version",
       "type": "string",
       "nullable": true,
       "description": "Schema version",
-      "sample_values": ["1.0"]
+      "sample_values": [
+        "1.0"
+      ]
     },
     "business_rules_applied": {
       "name": "business_rules_applied",
       "type": "json",
       "nullable": true,
       "description": "Business rules applied during processing",
-      "sample_values": ["[\"zip9_format_validation\", \"state_code_validation\", \"locality_code_validation\", \"range_validation\"]"]
+      "sample_values": [
+        "[\"zip9_format_validation\", \"state_code_validation\", \"locality_code_validation\", \"range_validation\"]"
+      ]
+    },
+    "row_content_hash": {
+      "name": "row_content_hash",
+      "type": "str",
+      "nullable": false,
+      "description": "64-character SHA-256 hex digest of row content per STD-parser-contracts v1.1 \u00a75.2",
+      "pattern": "^[a-f0-9]{64}$"
     }
   },
   "constraints": {
-    "primary_key": ["zip9_low", "zip9_high"],
+    "primary_key": [
+      "zip9_low",
+      "zip9_high"
+    ],
     "unique_constraints": [
       {
         "name": "zip9_range_unique",
-        "columns": ["zip9_low", "zip9_high"]
+        "columns": [
+          "zip9_low",
+          "zip9_high"
+        ]
       }
     ],
     "check_constraints": [
@@ -170,7 +299,7 @@
         "expression": "zip9_low ~ '^[0-9]{9}$'"
       },
       {
-        "name": "zip9_high_format", 
+        "name": "zip9_high_format",
         "expression": "zip9_high ~ '^[0-9]{9}$'"
       },
       {
@@ -198,32 +327,45 @@
   "indexes": [
     {
       "name": "idx_zip9_low",
-      "columns": ["zip9_low"],
+      "columns": [
+        "zip9_low"
+      ],
       "type": "btree"
     },
     {
-      "name": "idx_zip9_high", 
-      "columns": ["zip9_high"],
+      "name": "idx_zip9_high",
+      "columns": [
+        "zip9_high"
+      ],
       "type": "btree"
     },
     {
       "name": "idx_zip9_state",
-      "columns": ["state"],
+      "columns": [
+        "state"
+      ],
       "type": "btree"
     },
     {
       "name": "idx_zip9_locality",
-      "columns": ["locality"],
+      "columns": [
+        "locality"
+      ],
       "type": "btree"
     },
     {
       "name": "idx_zip9_vintage",
-      "columns": ["vintage"],
+      "columns": [
+        "vintage"
+      ],
       "type": "btree"
     },
     {
       "name": "idx_zip9_range",
-      "columns": ["zip9_low", "zip9_high"],
+      "columns": [
+        "zip9_low",
+        "zip9_high"
+      ],
       "type": "btree"
     }
   ],
@@ -237,7 +379,7 @@
     {
       "name": "zip9_range_validation",
       "description": "ZIP9 low must be less than or equal to ZIP9 high",
-      "severity": "critical", 
+      "severity": "critical",
       "expression": "zip9_low <= zip9_high"
     },
     {
@@ -283,7 +425,7 @@
       "description": "At least 95% of records must have all required fields"
     },
     "accuracy": {
-      "threshold": 0.90,
+      "threshold": 0.9,
       "description": "At least 90% of records must pass validation rules"
     },
     "consistency": {
@@ -321,5 +463,45 @@
         "severity": "warning"
       }
     ]
-  }
+  },
+  "hash_spec_version": "1",
+  "column_order": [
+    "zip9_low",
+    "zip9_high",
+    "state",
+    "locality",
+    "rural_flag",
+    "effective_from",
+    "ingest_run_id",
+    "data_quality_score",
+    "validation_results",
+    "processing_timestamp",
+    "file_checksum",
+    "record_count",
+    "schema_version",
+    "business_rules_applied"
+  ],
+  "hash_metadata_exclusions": [
+    "release_id",
+    "vintage_date",
+    "product_year",
+    "quarter_vintage",
+    "source_filename",
+    "source_file_sha256",
+    "source_uri",
+    "parsed_at",
+    "row_content_hash",
+    "effective_to"
+  ],
+  "changelog": [
+    {
+      "version": "1.1",
+      "date": "2025-10-15",
+      "changes": [
+        "Updated row_content_hash pattern to 64-char SHA-256 digest",
+        "Added hash_spec_version, column_order, hash_metadata_exclusions",
+        "Aligned with STD-parser-contracts v1.1"
+      ]
+    }
+  ]
 }

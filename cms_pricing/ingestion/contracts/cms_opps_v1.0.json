@@ -1,7 +1,7 @@
 {
   "schema_id": "cms_opps_v1.0",
   "dataset_name": "cms_opps",
-  "version": "1.0.0",
+  "version": "1.1",
   "description": "CMS OPPS (Hospital Outpatient Prospective Payment System) quarterly releases including APC payment rates and HCPCS crosswalks",
   "dis_compliance": "v1.0",
   "qts_compliance": "v1.0",
@@ -26,7 +26,12 @@
           "description": "Quarter (1-4)",
           "domain": "quarter_enum",
           "validation": {
-            "enum": [1, 2, 3, 4]
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ]
           }
         },
         "apc_code": {
@@ -80,7 +85,11 @@
           "domain": "packaging_flag",
           "validation": {
             "max_length": 1,
-            "enum": ["Y", "N", null]
+            "enum": [
+              "Y",
+              "N",
+              null
+            ]
           }
         },
         "effective_from": {
@@ -111,8 +120,16 @@
           "domain": "batch_id"
         }
       },
-      "primary_key": ["year", "quarter", "apc_code", "effective_from"],
-      "natural_key": ["apc_code", "effective_from"],
+      "primary_key": [
+        "year",
+        "quarter",
+        "apc_code",
+        "effective_from"
+      ],
+      "natural_key": [
+        "apc_code",
+        "effective_from"
+      ],
       "business_rules": {
         "payment_rate_usd": {
           "description": "Payment rates must be non-negative",
@@ -148,7 +165,12 @@
           "description": "Quarter (1-4)",
           "domain": "quarter_enum",
           "validation": {
-            "enum": [1, 2, 3, 4]
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ]
           }
         },
         "hcpcs_code": {
@@ -178,7 +200,32 @@
           "description": "Status indicator",
           "domain": "status_indicator",
           "validation": {
-            "enum": ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "E",
+              "F",
+              "G",
+              "H",
+              "J",
+              "K",
+              "L",
+              "M",
+              "N",
+              "P",
+              "Q",
+              "R",
+              "S",
+              "T",
+              "U",
+              "V",
+              "W",
+              "X",
+              "Y",
+              "Z"
+            ]
           }
         },
         "apc_code": {
@@ -229,8 +276,18 @@
           "domain": "batch_id"
         }
       },
-      "primary_key": ["year", "quarter", "hcpcs_code", "modifier", "effective_from"],
-      "natural_key": ["hcpcs_code", "modifier", "effective_from"],
+      "primary_key": [
+        "year",
+        "quarter",
+        "hcpcs_code",
+        "modifier",
+        "effective_from"
+      ],
+      "natural_key": [
+        "hcpcs_code",
+        "modifier",
+        "effective_from"
+      ],
       "business_rules": {
         "apc_reference": {
           "description": "APC codes referenced must exist in Addendum A",
@@ -262,7 +319,12 @@
           "description": "Quarter (1-4)",
           "domain": "quarter_enum",
           "validation": {
-            "enum": [1, 2, 3, 4]
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ]
           }
         },
         "apc_code": {
@@ -362,8 +424,18 @@
           "domain": "batch_id"
         }
       },
-      "primary_key": ["year", "quarter", "apc_code", "ccn", "effective_from"],
-      "natural_key": ["apc_code", "ccn", "effective_from"],
+      "primary_key": [
+        "year",
+        "quarter",
+        "apc_code",
+        "ccn",
+        "effective_from"
+      ],
+      "natural_key": [
+        "apc_code",
+        "ccn",
+        "effective_from"
+      ],
       "business_rules": {
         "wage_adjustment": {
           "description": "Wage-adjusted rate should be calculated when wage index is present",
@@ -416,5 +488,39 @@
     "data_classification": "public",
     "pii_handling": "none",
     "retention_policy": "7_years"
-  }
+  },
+  "hash_spec_version": "1",
+  "column_order": [],
+  "hash_metadata_exclusions": [
+    "release_id",
+    "vintage_date",
+    "product_year",
+    "quarter_vintage",
+    "source_filename",
+    "source_file_sha256",
+    "source_uri",
+    "parsed_at",
+    "row_content_hash",
+    "effective_to"
+  ],
+  "columns": {
+    "row_content_hash": {
+      "name": "row_content_hash",
+      "type": "str",
+      "nullable": false,
+      "description": "64-character SHA-256 hex digest of row content per STD-parser-contracts v1.1 \u00a75.2",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "changelog": [
+    {
+      "version": "1.1",
+      "date": "2025-10-15",
+      "changes": [
+        "Updated row_content_hash pattern to 64-char SHA-256 digest",
+        "Added hash_spec_version, column_order, hash_metadata_exclusions",
+        "Aligned with STD-parser-contracts v1.1"
+      ]
+    }
+  ]
 }

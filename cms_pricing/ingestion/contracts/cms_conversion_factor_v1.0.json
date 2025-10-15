@@ -1,7 +1,10 @@
 {
   "dataset_name": "cms_conversion_factor",
-  "version": "1.0",
+  "version": "2.0",
   "generated_at": "2025-10-15T00:00:00Z",
+  "hash_spec_version": "1",
+  "column_order": ["cf_type", "cf_value", "cf_description", "effective_from"],
+  "hash_metadata_exclusions": ["release_id", "vintage_date", "product_year", "quarter_vintage", "source_filename", "source_file_sha256", "source_uri", "parsed_at", "row_content_hash", "effective_to", "source_url"],
   "description": "CMS MPFS Conversion Factor schema (physician and anesthesia)",
   "source": {
     "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician",
@@ -28,6 +31,10 @@
     "cf_value": {
       "name": "cf_value",
       "type": "float64",
+      "precision": 4,
+      "scale": 4,
+      "rounding_mode": "HALF_UP",
+      "multipleOf": 0.0001,
       "nullable": false,
       "description": "Conversion factor value in USD",
       "unit": "USD",
@@ -73,50 +80,24 @@
       "pattern": null,
       "sample_values": [null, "2025-12-31"]
     },
-    "vintage_year": {
-      "name": "vintage_year",
+    "row_content_hash": {
+      "name": "row_content_hash",
       "type": "str",
       "nullable": false,
-      "description": "Valuation year (calendar year)",
+      "description": "64-character SHA-256 hex digest of row content per STD-parser-contracts v1.1 §5.2. Computed from columns in declared order excluding metadata fields. Uses schema-defined precision for numeric normalization.",
       "unit": null,
       "domain": null,
       "min_value": null,
       "max_value": null,
-      "pattern": "^20\\d{2}$",
-      "sample_values": ["2025", "2024", "2023"]
-    },
-    "release_id": {
-      "name": "release_id",
-      "type": "str",
-      "nullable": false,
-      "description": "Release identifier for traceability",
-      "unit": null,
-      "domain": null,
-      "min_value": null,
-      "max_value": null,
-      "pattern": null,
-      "sample_values": ["mpfs_2025_annual_20251015"]
-    },
-    "source_url": {
-      "name": "source_url",
-      "type": "str",
-      "nullable": true,
-      "description": "Source URL where conversion factor was published",
-      "unit": null,
-      "domain": null,
-      "min_value": null,
-      "max_value": null,
-      "pattern": null,
-      "sample_values": ["https://www.cms.gov/newsroom/press-releases/..."]
+      "pattern": "^[a-f0-9]{64}$",
+      "sample_values": ["a1b2c3d4e5f6789012345678901234567890123456789012345678901234"]
     }
   },
   "primary_keys": [
     "cf_type",
     "effective_from"
   ],
-  "partition_columns": [
-    "vintage_year"
-  ],
+  "partition_columns": [],
   "business_rules": [
     "Physician conversion factor must be present for each calendar year",
     "Anesthesia conversion factor must be present for each calendar year",
@@ -155,11 +136,6 @@
       "severity": "BLOCK",
       "enforcement": "Pre-normalization"
     },
-    "vintage_year_format": {
-      "rule": "vintage_year must be 4-digit year starting with 20",
-      "severity": "BLOCK",
-      "enforcement": "Domain validation"
-    },
     "no_overlapping_dates": {
       "rule": "Effective date ranges must not overlap for same cf_type",
       "severity": "BLOCK",
@@ -171,12 +147,44 @@
       "enforcement": "Post-ingestion validation"
     }
   },
+  "storage_note": "Stored as float64 in Parquet for efficiency. Canonicalized to Decimal with schema-defined precision before hashing to ensure determinism.",
   "metadata": {
     "created_by": "CMS API Data Engineering",
     "created_at": "2025-10-15",
     "prd_reference": "PRD-mpfs-prd-v1.0.md",
-    "compliance": "DIS v1.0",
-    "notes": "Physician CF and Anesthesia CF must be tracked separately. Physician CF is national (applies to all localities). Anesthesia CF varies by locality but is also tracked here for the base/national rate."
-  }
+    "compliance": "DIS v1.0, STD-parser-contracts v1.1",
+    "notes": "Physician CF and Anesthesia CF must be tracked separately. Physician CF is national (applies to all localities). Anesthesia CF varies by locality but is also tracked here for the base/national rate. Vintage tracking uses metadata fields (product_year, quarter_vintage) not data columns."
+  },
+  "changelog": [
+    {
+      "version": "2.0",
+      "date": "2025-10-15",
+      "breaking_changes": [
+        "REMOVED vintage_year column (duplicates metadata fields product_year/quarter_vintage per STD-parser-contracts v1.1 §6.4)",
+        "REMOVED vintage_year_format validation rule (no longer applicable)"
+      ],
+      "migration": {
+        "from_version": "1.0",
+        "steps": [
+          "Remove vintage_year from all queries and mappings",
+          "Use product_year or quarter_vintage metadata columns instead",
+          "Re-ingest existing data with new schema to populate metadata fields",
+          "Update any downstream consumers expecting vintage_year column"
+        ],
+        "impact": "Breaking change for consumers reading vintage_year. Metadata fields provide equivalent information."
+      },
+      "changes": [
+        "Added precision (4dp), rounding_mode (HALF_UP), scale, multipleOf to cf_value for hash stability",
+        "Updated row_content_hash pattern from 16-char to 64-char SHA-256 digest",
+        "Added hash_spec_version, column_order, hash_metadata_exclusions for deterministic hashing",
+        "Removed partition_columns (vintage_year removed)",
+        "Added storage_note explaining Parquet/Decimal canonicalization"
+      ]
+    },
+    {
+      "version": "1.0",
+      "date": "2025-10-15",
+      "changes": ["Initial conversion factor schema contract"]
+    }
+  ]
 }
-

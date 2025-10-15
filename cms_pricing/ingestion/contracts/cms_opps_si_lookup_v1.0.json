@@ -1,7 +1,7 @@
 {
   "schema_id": "cms_opps_si_lookup_v1.0",
   "dataset_name": "cms_opps_si_lookup",
-  "version": "1.0.0",
+  "version": "1.1",
   "description": "Status Indicator lookup reference data for OPPS HCPCS crosswalks",
   "dis_compliance": "v1.0",
   "qts_compliance": "v1.0",
@@ -16,7 +16,32 @@
           "description": "Status indicator code",
           "domain": "status_indicator",
           "validation": {
-            "enum": ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"],
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "E",
+              "F",
+              "G",
+              "H",
+              "J",
+              "K",
+              "L",
+              "M",
+              "N",
+              "P",
+              "Q",
+              "R",
+              "S",
+              "T",
+              "U",
+              "V",
+              "W",
+              "X",
+              "Y",
+              "Z"
+            ],
             "min_length": 1,
             "max_length": 1
           }
@@ -38,7 +63,18 @@
           "domain": "payment_category",
           "validation": {
             "max_length": 100,
-            "enum": ["Separately Payable", "Packaged", "Not Payable", "Special Payment", "Device Pass-Through", "Drug Pass-Through", "Biosimilar Pass-Through", "New Technology", "Clinical Trial", "Other"]
+            "enum": [
+              "Separately Payable",
+              "Packaged",
+              "Not Payable",
+              "Special Payment",
+              "Device Pass-Through",
+              "Drug Pass-Through",
+              "Biosimilar Pass-Through",
+              "New Technology",
+              "Clinical Trial",
+              "Other"
+            ]
           }
         },
         "effective_from": {
@@ -54,8 +90,14 @@
           "domain": "date_effective"
         }
       },
-      "primary_key": ["status_indicator", "effective_from"],
-      "natural_key": ["status_indicator", "effective_from"],
+      "primary_key": [
+        "status_indicator",
+        "effective_from"
+      ],
+      "natural_key": [
+        "status_indicator",
+        "effective_from"
+      ],
       "business_rules": {
         "effective_dates": {
           "description": "Effective from must be before effective to",
@@ -194,5 +236,39 @@
     "data_classification": "public",
     "pii_handling": "none",
     "retention_policy": "indefinite"
-  }
+  },
+  "hash_spec_version": "1",
+  "column_order": [],
+  "hash_metadata_exclusions": [
+    "release_id",
+    "vintage_date",
+    "product_year",
+    "quarter_vintage",
+    "source_filename",
+    "source_file_sha256",
+    "source_uri",
+    "parsed_at",
+    "row_content_hash",
+    "effective_to"
+  ],
+  "columns": {
+    "row_content_hash": {
+      "name": "row_content_hash",
+      "type": "str",
+      "nullable": false,
+      "description": "64-character SHA-256 hex digest of row content per STD-parser-contracts v1.1 \u00a75.2",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "changelog": [
+    {
+      "version": "1.1",
+      "date": "2025-10-15",
+      "changes": [
+        "Updated row_content_hash pattern to 64-char SHA-256 digest",
+        "Added hash_spec_version, column_order, hash_metadata_exclusions",
+        "Aligned with STD-parser-contracts v1.1"
+      ]
+    }
+  ]
 }

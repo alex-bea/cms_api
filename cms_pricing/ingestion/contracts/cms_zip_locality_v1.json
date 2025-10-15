@@ -1,6 +1,6 @@
 {
   "dataset_name": "cms_zip_locality",
-  "version": "1.0.0",
+  "version": "1.1",
   "generated_at": "2025-09-30T03:30:00Z",
   "schema_type": "json_schema",
   "description": "CMS ZIP Code Carrier Locality mapping with full DIS compliance",
@@ -40,12 +40,62 @@
       "business_glossary": "US state or territory abbreviation",
       "pii_classification": "none",
       "domain_values": [
-        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-        "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-        "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-        "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-        "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
-        "DC", "PR", "VI", "AS", "GU", "MP"
+        "AL",
+        "AK",
+        "AZ",
+        "AR",
+        "CA",
+        "CO",
+        "CT",
+        "DE",
+        "FL",
+        "GA",
+        "HI",
+        "ID",
+        "IL",
+        "IN",
+        "IA",
+        "KS",
+        "KY",
+        "LA",
+        "ME",
+        "MD",
+        "MA",
+        "MI",
+        "MN",
+        "MS",
+        "MO",
+        "MT",
+        "NE",
+        "NV",
+        "NH",
+        "NJ",
+        "NM",
+        "NY",
+        "NC",
+        "ND",
+        "OH",
+        "OK",
+        "OR",
+        "PA",
+        "RI",
+        "SC",
+        "SD",
+        "TN",
+        "TX",
+        "UT",
+        "VT",
+        "VA",
+        "WA",
+        "WV",
+        "WI",
+        "WY",
+        "DC",
+        "PR",
+        "VI",
+        "AS",
+        "GU",
+        "MP"
       ],
       "validation_rules": [
         "required",
@@ -96,7 +146,10 @@
       "description": "Rural area indicator",
       "business_glossary": "Indicates if ZIP code is in a rural area for CMS pricing",
       "pii_classification": "none",
-      "domain_values": [true, false],
+      "domain_values": [
+        true,
+        false
+      ],
       "validation_rules": [
         "optional",
         "boolean_type"
@@ -173,15 +226,33 @@
         "optional",
         "uuid_format"
       ]
+    },
+    "row_content_hash": {
+      "name": "row_content_hash",
+      "type": "str",
+      "nullable": false,
+      "description": "64-character SHA-256 hex digest of row content per STD-parser-contracts v1.1 \u00a75.2",
+      "pattern": "^[a-f0-9]{64}$"
     }
   },
-  "primary_keys": ["zip5"],
-  "business_keys": ["zip5", "effective_from"],
-  "partition_columns": ["state", "vintage"],
+  "primary_keys": [
+    "zip5"
+  ],
+  "business_keys": [
+    "zip5",
+    "effective_from"
+  ],
+  "partition_columns": [
+    "state",
+    "vintage"
+  ],
   "constraints": {
     "unique_zip5_per_release": {
       "type": "unique",
-      "columns": ["zip5", "vintage"],
+      "columns": [
+        "zip5",
+        "vintage"
+      ],
       "description": "Each ZIP5 can only appear once per vintage"
     },
     "effective_date_range": {
@@ -236,12 +307,48 @@
       "Load to database"
     ],
     "dependencies": [],
-    "outputs": ["cms_zip_locality table", "nearest_zip_resolver API"]
+    "outputs": [
+      "cms_zip_locality table",
+      "nearest_zip_resolver API"
+    ]
   },
   "sla_requirements": {
     "freshness_hours": 24,
     "availability_percent": 99.9,
     "quality_threshold": 0.95,
     "processing_time_minutes": 30
-  }
+  },
+  "hash_spec_version": "1",
+  "column_order": [
+    "zip5",
+    "state",
+    "locality",
+    "carrier_mac",
+    "rural_flag",
+    "effective_from",
+    "ingest_run_id"
+  ],
+  "hash_metadata_exclusions": [
+    "release_id",
+    "vintage_date",
+    "product_year",
+    "quarter_vintage",
+    "source_filename",
+    "source_file_sha256",
+    "source_uri",
+    "parsed_at",
+    "row_content_hash",
+    "effective_to"
+  ],
+  "changelog": [
+    {
+      "version": "1.1",
+      "date": "2025-10-15",
+      "changes": [
+        "Updated row_content_hash pattern to 64-char SHA-256 digest",
+        "Added hash_spec_version, column_order, hash_metadata_exclusions",
+        "Aligned with STD-parser-contracts v1.1"
+      ]
+    }
+  ]
 }
