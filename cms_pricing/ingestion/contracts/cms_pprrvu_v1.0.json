@@ -3,6 +3,7 @@
   "version": "1.1",
   "generated_at": "2025-10-15T00:00:00Z",
   "hash_spec_version": "1",
+  "natural_keys": ["hcpcs", "modifier", "effective_from"],
   "column_order": ["hcpcs", "modifier", "status_code", "rvu_work", "rvu_pe_nonfac", "rvu_pe_fac", "rvu_malp", "global_days", "na_indicator", "opps_cap_applicable", "effective_from"],
   "hash_metadata_exclusions": ["release_id", "vintage_date", "product_year", "quarter_vintage", "source_filename", "source_file_sha256", "source_uri", "parsed_at", "row_content_hash"],
   "columns": {

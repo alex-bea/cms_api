@@ -3,8 +3,31 @@
   "version": "1.1",
   "generated_at": "2025-10-15T00:00:00Z",
   "hash_spec_version": "1",
-  "column_order": ["hcpcs", "modifier", "opps_cap_applies", "cap_amount_usd", "cap_method", "effective_from"],
-  "hash_metadata_exclusions": ["release_id", "vintage_date", "product_year", "quarter_vintage", "source_filename", "source_file_sha256", "source_uri", "parsed_at", "row_content_hash", "effective_to"],
+  "natural_keys": [
+    "hcpcs",
+    "modifier",
+    "effective_from"
+  ],
+  "column_order": [
+    "hcpcs",
+    "modifier",
+    "opps_cap_applies",
+    "cap_amount_usd",
+    "cap_method",
+    "effective_from"
+  ],
+  "hash_metadata_exclusions": [
+    "release_id",
+    "vintage_date",
+    "product_year",
+    "quarter_vintage",
+    "source_filename",
+    "source_file_sha256",
+    "source_uri",
+    "parsed_at",
+    "row_content_hash",
+    "effective_to"
+  ],
   "columns": {
     "hcpcs": {
       "name": "hcpcs",
@@ -102,13 +125,15 @@
       "name": "row_content_hash",
       "type": "str",
       "nullable": false,
-      "description": "64-character SHA-256 hex digest of row content per STD-parser-contracts v1.1 §5.2. Computed from columns in declared order excluding metadata fields. Uses schema-defined precision for numeric normalization.",
+      "description": "64-character SHA-256 hex digest of row content per STD-parser-contracts v1.1 \u00a75.2. Computed from columns in declared order excluding metadata fields. Uses schema-defined precision for numeric normalization.",
       "unit": null,
       "domain": null,
       "min_value": null,
       "max_value": null,
       "pattern": "^[a-f0-9]{64}$",
-      "sample_values": ["a1b2c3d4e5f6789012345678901234567890123456789012345678901234"]
+      "sample_values": [
+        "a1b2c3d4e5f6789012345678901234567890123456789012345678901234"
+      ]
     }
   },
   "primary_keys": [
@@ -143,7 +168,9 @@
     {
       "version": "1.0",
       "date": "2025-09-30",
-      "changes": ["Initial OPPSCAP schema contract"]
+      "changes": [
+        "Initial OPPSCAP schema contract"
+      ]
     }
   ]
 }

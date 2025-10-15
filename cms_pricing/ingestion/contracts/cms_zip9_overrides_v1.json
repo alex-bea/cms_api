@@ -465,6 +465,10 @@
     ]
   },
   "hash_spec_version": "1",
+  "natural_keys": [
+    "zip9",
+    "effective_from"
+  ],
   "column_order": [
     "zip9_low",
     "zip9_high",

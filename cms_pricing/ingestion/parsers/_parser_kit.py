@@ -598,3 +598,94 @@ __all__ = [
 ]
 
 
+
+
+def compute_row_id(row: pd.Series, natural_keys: List[str]) -> str:
+    """
+    Compute deterministic row_id from natural keys for deduplication and lineage.
+    
+    Per Phase 0 Commit 3: Schema-driven natural keys + row_id.
+    
+    Used for:
+    - Uniqueness checking (duplicate detection)
+    - Change detection (compare across vintages)
+    - Lineage tracking (row-level provenance)
+    
+    Args:
+        row: DataFrame row
+        natural_keys: Columns forming natural key (from schema contract)
+        
+    Returns:
+        64-char SHA-256 hex digest of natural key values
+        
+    Examples:
+        >>> row_id = compute_row_id(row, ['hcpcs', 'modifier', 'effective_from'])
+        >>> len(row_id)
+        64
+    """
+    from datetime import datetime, date
+    
+    parts = []
+    for col in natural_keys:
+        val = row[col]
+        if pd.isna(val):
+            parts.append("")
+        elif isinstance(val, datetime):
+            parts.append(val.strftime('%Y-%m-%d'))
+        elif isinstance(val, date):
+            parts.append(val.isoformat())
+        else:
+            parts.append(str(val).strip())
+    
+    content = '\x1f'.join(parts)
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()
+
+
+def check_natural_key_uniqueness(
+    df: pd.DataFrame,
+    natural_keys: List[str]
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Check for duplicate natural keys and compute row_id.
+    
+    Per Phase 0 Commit 3:
+    - Computes row_id for all rows (SHA-256 of natural keys)
+    - Detects duplicates (same natural key)
+    - Returns (unique_df, duplicates_df)
+    
+    Args:
+        df: Input DataFrame
+        natural_keys: Columns forming natural key
+        
+    Returns:
+        (unique_df, duplicates_df) - Separated unique and duplicate rows
+        
+    Examples:
+        >>> unique_df, dupes_df = check_natural_key_uniqueness(df, ['hcpcs', 'modifier'])
+        >>> print(f"Found {len(dupes_df)} duplicates")
+    """
+    # Compute row_id for all rows
+    df = df.copy()
+    df['row_id'] = df.apply(lambda r: compute_row_id(r, natural_keys), axis=1)
+    
+    # Find duplicates
+    duplicate_mask = df.duplicated(subset='row_id', keep=False)
+    
+    if duplicate_mask.any():
+        duplicates = df[duplicate_mask].copy()
+        duplicates['validation_error'] = 'Duplicate natural key'
+        duplicates['validation_severity'] = 'WARN'
+        duplicates['validation_rule_id'] = 'NATURAL_KEY_DUPLICATE'
+        duplicates['validation_context'] = duplicates[natural_keys].astype(str).to_dict('records')
+        
+        unique_df = df[~duplicate_mask].copy()
+        
+        logger.warning(
+            f"Natural key duplicates found: {duplicate_mask.sum()} rows",
+            natural_keys=natural_keys,
+            duplicate_count=duplicate_mask.sum()
+        )
+        
+        return unique_df, duplicates
+    
+    return df, pd.DataFrame()

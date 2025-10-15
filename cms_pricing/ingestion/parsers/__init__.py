@@ -14,10 +14,37 @@ Per PRD-mpfs-prd-v1.0.md line 26:
 """
 
 import re
-from typing import Tuple, Optional, Dict, Any
+import json
+from pathlib import Path
+from typing import Tuple, Optional, Dict, Any, List, NamedTuple, Literal
 import structlog
 
 logger = structlog.get_logger()
+
+
+class RouteDecision(NamedTuple):
+    """
+    Router decision output per STD-parser-contracts v1.1 §6.2.
+    
+    Production-grade routing result with schema-driven natural keys.
+    
+    Attributes:
+        dataset: Dataset identifier (e.g., 'pprrvu', 'gpci')
+        schema_id: Schema contract identifier (e.g., 'cms_pprrvu_v1.0')
+        status: Routing status ('ok', 'quarantine', 'reject')
+        natural_keys: Sort/primary key columns from schema contract (single source of truth)
+    
+    Examples:
+        >>> decision = route_to_parser("PPRRVU2025.csv")
+        >>> decision.dataset
+        'pprrvu'
+        >>> decision.natural_keys
+        ['hcpcs', 'modifier', 'effective_from']
+    """
+    dataset: str
+    schema_id: str
+    status: Literal["ok", "quarantine", "reject"]
+    natural_keys: List[str]
 
 
 # File pattern → (dataset_name, schema_contract_id, parser_status)
@@ -83,20 +110,21 @@ PARSER_ROUTING = {
 def route_to_parser(
     filename: str,
     file_head: Optional[bytes] = None
-) -> Tuple[str, str, str]:
+) -> RouteDecision:
     """
-    Route file to parser with optional content sniffing.
+    Route file to parser with schema-driven natural keys.
     
-    Per STD-parser-contracts v1.1 §6.2:
-    - Uses filename pattern matching (primary)
-    - Uses file_head for content sniffing (optional, prevents misroutes)
+    Production-grade routing per STD-parser-contracts v1.1 §6.2:
+    - Pattern matching (filename regex)
+    - Content sniffing (optional file_head for format detection)
+    - Natural keys from schema contract (single source of truth)
     
     Args:
         filename: Source filename for pattern matching
         file_head: First ~8KB of file for magic byte/BOM/format detection (optional)
         
     Returns:
-        Tuple of (dataset_name, schema_contract_id, parser_status)
+        RouteDecision NamedTuple with dataset, schema_id, status, natural_keys
         
     Raises:
         ValueError: If no parser routing found for filename
@@ -107,14 +135,11 @@ def route_to_parser(
         - Detects magic bytes (ZIP, Excel, PDF)
         
     Examples:
-        >>> route_to_parser("PPRRVU2025_Oct.txt")
-        ('pprrvu', 'cms_pprrvu_v1.0', 'uses_rvu_ingestor')
-        
-        >>> # With content sniffing
-        >>> with open('file.csv', 'rb') as f:
-        ...     file_head = f.read(8192)
-        ...     f.seek(0)
-        ...     dataset, schema, status = route_to_parser('file.csv', file_head)
+        >>> decision = route_to_parser("PPRRVU2025_Oct.txt")
+        >>> decision.dataset
+        'pprrvu'
+        >>> decision.natural_keys
+        ['hcpcs', 'modifier', 'effective_from']
     """
     # Try to import is_fixed_width_format for content sniffing
     try:
@@ -123,31 +148,75 @@ def route_to_parser(
     except ImportError:
         content_sniffing_available = False
     
-    for pattern, (dataset, schema_id, status) in PARSER_ROUTING.items():
+    for pattern, (dataset, schema_id, parser_status) in PARSER_ROUTING.items():
         if re.match(pattern, filename, re.IGNORECASE):
+            
+            # Fetch natural_keys from schema contract (single source of truth)
+            try:
+                contracts_dir = Path(__file__).parent.parent / "contracts"
+                schema_path = contracts_dir / f"{schema_id}.json"
+                
+                with open(schema_path, 'r') as f:
+                    schema_contract = json.load(f)
+                    natural_keys = schema_contract.get("natural_keys", [])
+                    
+                    # Handle nested schemas (OPPS has multiple tables)
+                    if isinstance(natural_keys, dict):
+                        # For nested schemas, use first table's keys as default
+                        # Parsers will handle table-specific routing
+                        natural_keys = list(natural_keys.values())[0] if natural_keys else []
+                    
+            except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+                logger.error(
+                    "Failed to load natural_keys from schema contract",
+                    schema_id=schema_id,
+                    error=str(e)
+                )
+                # Quarantine if schema contract missing or invalid
+                return RouteDecision(
+                    dataset=dataset,
+                    schema_id=schema_id,
+                    status="quarantine",
+                    natural_keys=[]
+                )
             
             # Content sniffing (if file_head provided and available)
             if file_head and content_sniffing_available:
-                is_fixed_width = is_fixed_width_format(file_head, filename)
-                
-                if is_fixed_width:
-                    logger.info(
-                        "Content sniffing: Fixed-width format detected",
+                try:
+                    is_fixed_width = is_fixed_width_format(file_head, filename)
+                    
+                    if is_fixed_width:
+                        logger.info(
+                            "Content sniffing: Fixed-width format detected",
+                            filename=filename,
+                            extension=filename.split('.')[-1] if '.' in filename else 'none',
+                            dataset=dataset
+                        )
+                        # Format hint logged for observability
+                        # Future Phase 2: Could override parser choice based on format
+                except Exception as e:
+                    logger.warning(
+                        "Content sniffing failed, using filename only",
                         filename=filename,
-                        extension=filename.split('.')[-1] if '.' in filename else 'none'
+                        error=str(e)
                     )
-                    # Format hint logged for observability
-                    # Future: Could override parser choice based on format
             
             logger.debug(
                 "Routed file to parser",
                 filename=filename,
                 dataset=dataset,
                 schema_id=schema_id,
-                status=status,
-                content_sniffing=file_head is not None
+                status="ok",
+                natural_keys=natural_keys,
+                content_sniffing_used=file_head is not None
             )
-            return dataset, schema_id, status
+            
+            return RouteDecision(
+                dataset=dataset,
+                schema_id=schema_id,
+                status="ok",
+                natural_keys=natural_keys
+            )
     
     # No match found
     logger.error("No parser routing found", filename=filename)
@@ -227,12 +296,13 @@ def validate_routing_coverage(filenames: list) -> Dict[str, Any]:
     
     for filename in filenames:
         try:
-            dataset, schema_id, status = route_to_parser(filename)
+            decision = route_to_parser(filename)
             routed.append({
                 "filename": filename,
-                "dataset": dataset,
-                "schema_id": schema_id,
-                "status": status
+                "dataset": decision.dataset,
+                "schema_id": decision.schema_id,
+                "status": decision.status,
+                "natural_keys": decision.natural_keys
             })
         except ValueError:
             unrouted.append(filename)

@@ -287,20 +287,78 @@ def test_router_content_sniffing():
     from cms_pricing.ingestion.parsers import route_to_parser
     
     # Test 1: Without file_head (filename only)
-    dataset, schema_id, status = route_to_parser('PPRRVU2025.csv')
-    assert dataset == 'pprrvu'
-    assert 'cms_pprrvu' in schema_id
+    decision = route_to_parser('PPRRVU2025.csv')
+    assert decision.dataset == 'pprrvu'
+    assert 'cms_pprrvu' in decision.schema_id
     
     # Test 2: With file_head (content sniffing enabled)
     fake_csv = b'99213,Description,0.93\n99214,Another,1.50\n'
-    dataset2, schema_id2, status2 = route_to_parser('PPRRVU2025.csv', fake_csv)
-    assert dataset2 == 'pprrvu'
-    assert schema_id2 == schema_id  # Same result (filename match works)
+    decision2 = route_to_parser('PPRRVU2025.csv', fake_csv)
+    assert decision2.dataset == 'pprrvu'
+    assert decision2.schema_id == decision.schema_id  # Same result (filename match works)
     
     # Test 3: Fixed-width content with .csv extension
     fixed_width = b'99213  Description here      0.93  \n99214  Another description  1.50  \n'
-    dataset3, schema_id3, status3 = route_to_parser('PPRRVU2025.csv', fixed_width)
-    assert dataset3 == 'pprrvu'  # Should still route to pprrvu
+    decision3 = route_to_parser('PPRRVU2025.csv', fixed_width)
+    assert decision3.dataset == 'pprrvu'  # Should still route to pprrvu
     # Content sniffing logs fixed-width detection for observability
     
-    print("✅ Router content sniffing: file_head parameter working")
+    print("✅ Router content sniffing: file_head parameter working with RouteDecision")
+
+
+def test_route_decision_namedtuple():
+    """
+    Test 9: RouteDecision NamedTuple structure and schema-driven natural_keys.
+    
+    Per STD-parser-contracts v1.1 Commit 3:
+    - Router returns RouteDecision (not raw tuple)
+    - Natural keys fetched from schema contract (single source of truth)
+    - Deterministic and type-safe
+    """
+    from cms_pricing.ingestion.parsers import route_to_parser, RouteDecision
+    
+    # Test 1: PPRRVU routing
+    decision = route_to_parser('PPRRVU2025.csv')
+    
+    assert isinstance(decision, RouteDecision)
+    assert decision.dataset == 'pprrvu'
+    assert 'cms_pprrvu' in decision.schema_id
+    assert decision.status == 'ok'
+    assert decision.natural_keys == ['hcpcs', 'modifier', 'effective_from']
+    
+    # Test 2: Conversion Factor (unique natural keys)
+    decision_cf = route_to_parser('conversion-factor-2025.xlsx')
+    assert decision_cf.dataset == 'conversion_factor'
+    assert decision_cf.natural_keys == ['cf_type', 'effective_from']  # UNIQUE!
+    
+    # Test 3: GPCI
+    decision_gpci = route_to_parser('GPCI2025.txt')
+    assert decision_gpci.dataset == 'gpci'
+    assert decision_gpci.natural_keys == ['locality_code', 'effective_from']
+    
+    # Test 4: Locality County (composite key with 3 columns)
+    decision_locco = route_to_parser('LOCCO2025.csv')
+    assert decision_locco.dataset == 'locality'  # Router uses 'locality' dataset name
+    assert len(decision_locco.natural_keys) == 3  # Complex composite key
+    
+    print("✅ RouteDecision: Type-safe NamedTuple with schema-driven natural_keys")
+
+
+def test_route_decision_determinism():
+    """
+    Test 10: Verify routing is deterministic (same input → identical output).
+    """
+    from cms_pricing.ingestion.parsers import route_to_parser
+    
+    # Route same file twice
+    decision1 = route_to_parser('PPRRVU2025.csv')
+    decision2 = route_to_parser('PPRRVU2025.csv')
+    
+    # Should be identical
+    assert decision1 == decision2
+    assert decision1.dataset == decision2.dataset
+    assert decision1.schema_id == decision2.schema_id
+    assert decision1.status == decision2.status
+    assert decision1.natural_keys == decision2.natural_keys
+    
+    print("✅ Determinism: Identical RouteDecision on repeated calls")

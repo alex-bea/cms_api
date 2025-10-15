@@ -270,5 +270,10 @@
         "Aligned with STD-parser-contracts v1.1"
       ]
     }
-  ]
+  ],
+  "natural_keys": {
+    "ref_si_lookup": [
+      "status_indicator"
+    ]
+  }
 }

@@ -522,5 +522,17 @@
         "Aligned with STD-parser-contracts v1.1"
       ]
     }
-  ]
+  ],
+  "natural_keys": {
+    "opps_apc_payment": [
+      "apc",
+      "quarter_vintage",
+      "effective_from"
+    ],
+    "opps_hcpcs_crosswalk": [
+      "hcpcs",
+      "quarter_vintage",
+      "effective_from"
+    ]
+  }
 }
