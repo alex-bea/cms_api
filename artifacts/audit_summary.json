@@ -1,7 +1,7 @@
 {
-  "passed": 7,
-  "total": 8,
-  "failed": 1,
+  "passed": 10,
+  "total": 12,
+  "failed": 2,
   "results": [
     {
       "name": "Documentation Catalog",
@@ -30,8 +30,8 @@
     {
       "name": "Documentation Dependencies",
       "category": "audit",
-      "status": "failed",
-      "exit_code": 1
+      "status": "passed",
+      "exit_code": 0
     },
     {
       "name": "Companion Documents",
@@ -46,7 +46,31 @@
       "exit_code": 0
     },
     {
+      "name": "Schema/API Mapper Alignment",
+      "category": "audit",
+      "status": "passed",
+      "exit_code": 0
+    },
+    {
+      "name": "Layout/Schema Alignment",
+      "category": "audit",
+      "status": "failed",
+      "exit_code": 1
+    },
+    {
       "name": "Makefile .PHONY",
+      "category": "audit",
+      "status": "passed",
+      "exit_code": 0
+    },
+    {
+      "name": "Changelog Compliance",
+      "category": "audit",
+      "status": "failed",
+      "exit_code": 1
+    },
+    {
+      "name": "Code Pattern Check",
       "category": "audit",
       "status": "passed",
       "exit_code": 0

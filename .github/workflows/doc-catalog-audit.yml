@@ -51,6 +51,12 @@ jobs:
       - name: Run advanced cross-reference analysis
         run: python tools/audit_cross_references.py
 
+      - name: Audit schema/API mapper alignment
+        run: python tools/audit_schema_api_mappers.py
+
+      - name: Audit layout/schema alignment
+        run: python tools/audit_layout_schema_alignment.py
+
       - name: Run companion document audit
         run: python tools/audit_companion_docs.py
 

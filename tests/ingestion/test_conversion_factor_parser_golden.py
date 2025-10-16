@@ -16,10 +16,16 @@ FIXTURES = Path(__file__).parent.parent / "fixtures" / "conversion_factor" / "go
 
 
 def build_test_metadata(schema_version="v2.0"):
-    """Build minimal test metadata for CF parser."""
+    """
+    Build minimal test metadata for CF parser.
+    
+    Note: schema_version="v2.0" refers to internal version.
+    Filename is cms_conversion_factor_v1.0.json (major version container).
+    Parser will strip minor to find file per §14.6 pattern.
+    """
     return {
         'release_id': 'mpfs_2025_annual_test',
-        'schema_id': f'cms_conversion_factor_{schema_version}',
+        'schema_id': f'cms_conversion_factor_{schema_version}',  # Will load v1.0.json file
         'product_year': '2025',
         'quarter_vintage': '2025_annual',
         'vintage_date': pd.Timestamp('2025-01-01'),
@@ -384,9 +390,12 @@ def test_cf_encoding_robustness():
         "No BOM characters in column names (Anti-Pattern 6)"
     
     # Test 2: CP1252 encoding (Windows smart quotes in description)
-    csv_cp1252 = "cf_type,cf_value,cf_description,effective_from,effective_to\n"
-    csv_cp1252 += "physician,32.3465,CY 2025 \x93Final\x94 Rule,2025-01-01,\n"  # Smart quotes
-    csv_cp1252_bytes = csv_cp1252.encode('cp1252')
+    # Use actual CP1252 byte sequences (not Python string escapes)
+    # \x93 = left smart quote, \x94 = right smart quote in CP1252
+    csv_cp1252_bytes = (
+        b"cf_type,cf_value,cf_description,effective_from,effective_to\n"
+        b"physician,32.3465,CY 2025 \x93Final\x94 Rule,2025-01-01,\n"
+    )
     
     result_cp1252 = parse_conversion_factor(
         BytesIO(csv_cp1252_bytes),

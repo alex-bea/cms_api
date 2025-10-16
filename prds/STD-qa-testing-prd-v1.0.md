@@ -1,14 +1,15 @@
-# QA & Testing Standard PRD (v1.0)
+# QA & Testing Standard PRD (v1.2)
 
 ## 0. Overview
 This document defines the **QA & Testing Standard (QTS)** that governs validation across ingestion, services, and user-facing experiences. It specifies the canonical lifecycle for tests, minimum coverage and gating rules, artifact expectations, observability, and operational playbooks. Every product or dataset PRD must reference this standard and include a scope-specific **QA Summary** derived from §12.
 
-**Status:** Draft v1.0 (proposed)  
+**Status:** Draft v1.2 (proposed)  
 **Owners:** Quality Engineering & Platform Reliability  
 **Consumers:** Product, Engineering, Data, Ops  
 **Change control:** ADR + QA guild review + PR sign-off
 
 **Cross-References:**
+- **STD-parser-contracts-prd-v1.0.md (v1.7):** Parser validation phases, error enrichment, and implementation patterns (§21.2, Anti-Pattern 11)
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
 - **DOC-test-patterns-prd-v1.0.md:** Test patterns and best practices guide
 - **RUN-global-operations-prd-v1.0.md:** Operational runbooks and test harness procedures
@@ -698,6 +699,224 @@ C. Business glossary (starter)
 	•	Conversion Factor (CF): Payment multiplier applied to RVUs.
 	•	Locality: Geographic payment area used in MPFS.
 
+D-F. (Reserved for future appendices)
+
+G. Parser Testing Patterns (v1.2)
+
+This appendix documents test expectations and patterns discovered during parser implementation, specifically from the CF parser debug session (2025-10-16).
+
+**Cross-Reference:** STD-parser-contracts-prd-v1.0.md v1.7 §21.2 "Validation Phases & Rejects Handling"
+
+### G.1 Error Message Testing
+
+**Requirement:** Tests expect **rich, actionable error messages** with example values from actual data.
+
+**Test Pattern:**
+```python
+# Test expects detailed error with examples
+with pytest.raises(DuplicateKeyError) as exc_info:
+    parse_conversion_factor(...)
+
+error_msg = str(exc_info.value)
+assert 'physician' in error_msg  # Must include example value
+assert 'Example duplicate:' in error_msg  # Must have context
+```
+
+**Implementation Pattern:**
+```python
+# ❌ BAD: Generic error (test will fail)
+raise DuplicateKeyError(f"Duplicate natural keys detected: {count} duplicates")
+
+# ✅ GOOD: Rich error with examples (test will pass)
+example_dupe = duplicate_keys[0] if duplicate_keys else {}
+raise DuplicateKeyError(
+    f"Duplicate natural keys detected: {count} duplicates. "
+    f"Example duplicate: {example_dupe}"
+)
+```
+
+**Why this matters:**
+- Tests validate error quality, not just error presence
+- Operators need actionable context for debugging
+- Example values help identify root cause quickly
+
+**Coverage:** All parser exception types (ParseError, DuplicateKeyError, CategoryValidationError, etc.)
+
+### G.2 Metrics Structure Testing
+
+**Requirement:** Tests expect specific metric keys and structures.
+
+**Test Pattern:**
+```python
+result = parse_conversion_factor(...)
+
+# Tests look for specific keys in metrics
+assert 'guardrail_warnings' in result.metrics
+assert 'cf_value_deviation_count' in result.metrics['guardrail_warnings']
+assert result.metrics['guardrail_warnings']['cf_value_deviation_count'] >= 0
+
+# Tests expect warning counts + details
+assert 'physician_value_deviation' in result.metrics['guardrail_warnings']
+assert 'expected' in result.metrics['guardrail_warnings']['physician_value_deviation']
+```
+
+**Implementation Pattern:**
+```python
+def _apply_guardrails(df: pd.DataFrame, metadata: Dict) -> Dict:
+    """Apply guardrails and return structured warnings."""
+    warnings = {
+        'deviation_count': 0,  # ← Count for test assertions
+        'future_date_count': 0
+    }
+    details = {}
+    
+    # Detect deviations
+    if deviation_found:
+        warnings['deviation_count'] += 1
+        details['physician_value_deviation'] = {  # ← Details for debugging
+            'expected': 32.3465,
+            'actual': 99.0,
+            'deviation': 66.6535
+        }
+    
+    # Merge counts + details
+    warnings.update(details)
+    return warnings
+
+# In main parser
+metrics['guardrail_warnings'] = _apply_guardrails(final_df, metadata)
+```
+
+**Why this matters:**
+- Tests validate observability quality
+- Consistent structure enables automated alerting
+- Counts enable trend analysis in dashboards
+
+**Coverage:** All parser metrics (guardrails, performance, quality)
+
+### G.3 Rejects Structure Testing
+
+**Requirement:** Tests expect validation details in rejects DataFrame.
+
+**Test Pattern:**
+```python
+result = parse_conversion_factor(...)
+
+# Tests check rejects structure
+assert len(result.rejects) > 0, "Should have rejects"
+assert 'validation_error' in result.rejects.columns
+assert 'validation_severity' in result.rejects.columns
+assert 'validation_rule' in result.rejects.columns
+
+# Tests check validation details
+reject_row = result.rejects.iloc[0]
+assert reject_row['validation_severity'] == 'BLOCK'
+assert 'out of range' in reject_row['validation_error']
+```
+
+**Implementation Pattern:**
+```python
+# Create rejects with full validation context
+rejects = df[invalid_mask].copy()
+rejects['validation_error'] = 'cf_value out of range (0, 200]'
+rejects['validation_severity'] = 'BLOCK'
+rejects['validation_rule'] = 'cf_value_range'
+rejects['validation_column'] = 'cf_value'
+rejects['validation_context'] = rejects['cf_value'].astype(str)
+```
+
+**Why this matters:**
+- Rejects must be machine-readable for downstream processing
+- Severity determines retry behavior
+- Context enables root cause analysis
+
+**Coverage:** All validation phases (range, categorical, uniqueness)
+
+### G.4 String/Numeric Validation Pattern
+
+**Critical Issue:** When testing parsers that use `canonicalize_numeric_col()`:
+
+**Problem:**
+```python
+# canonicalize_numeric_col() returns strings for hash stability
+df['cf_value'] = canonicalize_numeric_col(df['cf_value'], precision=4)  # → "32.3465"
+
+# Range validation on string column FAILS
+if (df['cf_value'] <= 0).any():  # TypeError!
+```
+
+**Test Pattern:**
+```python
+def test_cf_range_validation():
+    """Test that out-of-range values are rejected."""
+    csv_bad = "cf_type,cf_value\nphysician,-1.00\n"
+    
+    result = parse_conversion_factor(BytesIO(csv_bad.encode()), ...)
+    
+    # Should reject negative value
+    assert len(result.rejects) > 0
+    assert 'out of range' in result.rejects['validation_error'].iloc[0]
+```
+
+**Implementation Pattern:**
+```python
+# Step 1: Canonicalize (returns strings)
+df['cf_value'] = canonicalize_numeric_col(df['cf_value'], precision=4)
+
+# Step 2: Range validation (convert back to numeric)
+cf_numeric = pd.to_numeric(df['cf_value'], errors='coerce')
+invalid_range = (cf_numeric <= 0) | (cf_numeric > 200)
+
+if invalid_range.any():
+    # Create rejects...
+```
+
+**Why this matters:**
+- Subtle type handling issue causes TypeErrors
+- Tests verify both hash stability (strings) AND validation logic (numbers)
+- Pattern must be consistent across all parsers
+
+**See also:** STD-parser-contracts v1.7 Anti-Pattern 11, §21.2
+
+### G.5 Test Development Workflow
+
+**Recommended:** Test-driven development with implementation analysis
+
+**Workflow:**
+1. **Analyze Implementation First**
+   ```bash
+   # Understand actual behavior
+   python -c "from parser import parse_cf; print(parse_cf(...))"
+   ```
+
+2. **Write Golden Test**
+   - Test expected structure and values
+   - Include hash determinism check
+   - Run (will fail - no implementation yet)
+
+3. **Implement Parser**
+   - Follow STD-parser-contracts §21.1 template
+   - Use parser kit utilities
+   - Test iteratively
+
+4. **Add Negative Tests**
+   - Error messages with examples
+   - Metrics structure validation
+   - Rejects structure validation
+   - Edge cases (BOM, encoding, empty files)
+
+5. **Verify Coverage**
+   - ≥90% line coverage
+   - All validation branches tested
+   - All error paths tested
+
+**Benefits:**
+- ✅ Prevents test-implementation mismatch
+- ✅ Ensures tests validate actual behavior
+- ✅ Catches subtle issues early (string/numeric handling)
+
+**Real-world impact:** Prevents 1-2 hours debugging per parser from test expectation mismatches.
+
 ⸻
 
 9. Acceptance Criteria (Ready‑to‑Adopt)
@@ -715,4 +934,14 @@ C. Business glossary (starter)
 
 ⸻
 
-End of v1.1
+10. Change Log
+
+| Version | Date | Summary | PR |
+|---------|------|---------|-----|
+| **1.2** | **2025-10-16** | **Parser testing patterns (CF parser learnings).** Type: Non-breaking (guidance). **Added:** Appendix G "Parser Testing Patterns" with 5 subsections: G.1 Error Message Testing (rich messages with examples), G.2 Metrics Structure Testing (guardrail warnings structure), G.3 Rejects Structure Testing (validation context requirements), G.4 String/Numeric Validation Pattern (canonicalize_numeric_col handling), G.5 Test Development Workflow (implementation-first approach). **Cross-Reference:** STD-parser-contracts v1.7 §21.2. **Motivation:** CF parser debug session revealed critical test expectation patterns that weren't documented. **Impact:** Prevents 1-2 hours debugging per parser from test-implementation mismatch; standardizes test quality across all parsers. **Source:** CF parser debug session 2025-10-16. | TBD |
+| **1.1** | **2025-10-16** | **DIS enhancements & implementation analysis requirements.** Type: Non-breaking (guidance). **Added:** Section 2.1.1 Implementation Analysis Before Testing (REQUIRED), Section 2.2.1 Real Data Structure Analysis (REQUIRED), Section 2.3.1 Mocking Strategy Analysis (REQUIRED), Section 2.4 Test-First Discovery Process, Section 2.5 Test Accuracy Metrics. **Enhanced:** Scraper method unit tests, coverage requirements, test infrastructure, performance & load testing, DIS metadata requirements, observability. **Motivation:** Prevent test-implementation mismatches discovered during OPPS scraper testing. **Impact:** 100% test accuracy requirement prevents costly test rewrites. | TBD |
+| 1.0 | 2025-10-15 | Initial QTS standard with test lifecycle, environment matrix, quality gates, observability requirements, and compliance procedures. | TBD |
+
+⸻
+
+End of v1.2

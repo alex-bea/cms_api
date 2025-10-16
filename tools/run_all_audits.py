@@ -59,6 +59,8 @@ class AuditRunner:
             ("Documentation Dependencies", ["python", "tools/audit_doc_dependencies.py"], "audit"),
             ("Companion Documents", ["python", "tools/audit_companion_docs.py"], "audit"),
             ("Source Map Verification", ["python", "tools/verify_source_map.py"], "audit"),
+            ("Schema/API Mapper Alignment", ["python", "tools/audit_schema_api_mappers.py"], "audit"),
+            ("Layout/Schema Alignment", ["python", "tools/audit_layout_schema_alignment.py"], "audit"),
             ("Makefile .PHONY", ["python", "tools/audit_makefile_phony.py"], "audit"),
             ("Changelog Compliance", ["python", "tools/audit_changelog.py"], "audit"),
             ("Code Pattern Check", ["python", "tools/audit_code_patterns.py"], "audit"),
@@ -202,4 +204,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

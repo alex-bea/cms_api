@@ -781,8 +781,11 @@ def check_natural_key_uniqueness(
         # If BLOCK severity, raise exception
         if severity == ValidationSeverity.BLOCK:
             duplicate_keys = duplicates[natural_keys].drop_duplicates().to_dict(orient='records')
+            # Fix #3: Include sample duplicate values in error message
+            example_dupe = duplicate_keys[0] if duplicate_keys else {}
             raise DuplicateKeyError(
-                f"Duplicate natural keys detected: {duplicate_mask.sum()} duplicates",
+                f"Duplicate natural keys detected: {duplicate_mask.sum()} duplicates. "
+                f"Example duplicate: {example_dupe}",
                 duplicates=duplicate_keys
             )
         
@@ -988,6 +991,88 @@ def enforce_categorical_dtypes(
 # ============================================================================
 # Task B: Metadata Preflight Validation (STD-parser-contracts v1.6)
 # ============================================================================
+
+def normalize_string_columns(
+    df: pd.DataFrame,
+    columns: Optional[List[str]] = None,
+    strip_whitespace: bool = True,
+    strip_nbsp: bool = True,
+    empty_to_null: bool = False
+) -> pd.DataFrame:
+    """
+    Normalize string columns by stripping whitespace and handling edge cases.
+    
+    Per DIS §3.4 Normalize Stage: "Canonicalize column names, zero-pad codes,
+    standardize units and time semantics." This function handles string value
+    normalization as part of the normalize stage.
+    
+    Common data quality issues addressed:
+    - Leading/trailing whitespace (e.g., "physician " → "physician")
+    - Non-breaking spaces \\xa0 (common in Excel/PDF extracts)
+    - Empty strings that should be NULL (optional)
+    
+    Args:
+        df: Input DataFrame
+        columns: List of column names to normalize. If None, normalizes all string columns.
+        strip_whitespace: Strip leading/trailing whitespace (default: True)
+        strip_nbsp: Replace non-breaking spaces with regular spaces (default: True)
+        empty_to_null: Convert empty strings to None (default: False)
+        
+    Returns:
+        DataFrame with normalized string columns
+        
+    Examples:
+        >>> df = pd.DataFrame({'cf_type': ['physician ', ' anesthesia', 'physician\\xa0']})
+        >>> df_clean = normalize_string_columns(df)
+        >>> df_clean['cf_type'].tolist()
+        ['physician', 'anesthesia', 'physician']
+        
+        >>> # Normalize specific columns only
+        >>> df_clean = normalize_string_columns(df, columns=['cf_type', 'description'])
+        
+        >>> # Convert empty strings to None
+        >>> df_clean = normalize_string_columns(df, empty_to_null=True)
+    
+    See also:
+        - STD-parser-contracts v1.7 Anti-Pattern 9: "Whitespace & NBSP in Codes"
+        - STD-data-architecture §3.4 Normalize Stage
+    """
+    df = df.copy()
+    
+    # Determine which columns to normalize
+    if columns is None:
+        # Auto-detect string columns
+        columns = df.select_dtypes(include=['object', 'string']).columns.tolist()
+    
+    for col in columns:
+        if col not in df.columns:
+            continue
+            
+        # Skip if column is not string-like
+        if df[col].dtype not in ['object', 'string']:
+            continue
+        
+        # Convert to string type for processing
+        series = df[col].astype(str)
+        
+        # Strip non-breaking spaces (NBSP: \\xa0)
+        if strip_nbsp:
+            series = series.str.replace('\\xa0', ' ', regex=False)
+            series = series.str.replace('\\u00a0', ' ', regex=False)
+        
+        # Strip leading/trailing whitespace
+        if strip_whitespace:
+            series = series.str.strip()
+        
+        # Convert empty strings to None
+        if empty_to_null:
+            series = series.replace('', None)
+            series = series.replace('nan', None)  # Handle string 'nan'
+        
+        df[col] = series
+    
+    return df
+
 
 def validate_required_metadata(
     metadata: Dict[str, Any],

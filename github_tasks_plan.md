@@ -2188,3 +2188,289 @@ def test_golden_parquet_comparison():
 
 ---
 
+## 🔧 Parser Shared Utilities Refactor (v2.0 - Future)
+
+**Added:** 2025-10-16  
+**Status:** 📋 Deferred to Phase 2 (after all 6 Phase 1 parsers complete)  
+**Effort:** 3-4 hours (refactor all parsers + comprehensive testing)
+
+### Overview
+
+Consolidate duplicated parser logic into shared utilities to reduce code drift and improve maintainability. Currently each parser (PPRRVU, CF) has internal helpers that could be shared.
+
+### Current Duplication (Phase 1 Pattern)
+
+**What's duplicated across parsers:**
+
+Each parser has its own:
+- `_parse_csv()` - CSV dialect detection, header normalization
+- `_parse_xlsx()` - Excel dtype=str handling
+- `_parse_zip()` - ZIP member extraction and routing
+- `_normalize_column_names()` - Column alias mapping
+- `_cast_dtypes()` - Type coercion with precision
+- `_is_fixed_width()` - Format detection heuristic
+
+**Used by:**
+- PPRRVU parser: All 6 helpers ✅
+- CF parser: 4 helpers (no fixed-width) ✅
+- Future parsers: Will duplicate again
+
+**Pros (current approach):**
+- ✅ Each parser self-contained and testable
+- ✅ Easy to customize per-dataset quirks
+- ✅ No cross-parser dependencies
+- ✅ Ship parsers independently
+
+**Cons:**
+- ❌ ~150 lines duplicated per parser × 6 = 900 lines
+- ❌ Bug fixes need propagation across 6 files
+- ❌ Testing coverage duplication
+- ❌ Harder to maintain consistency
+
+### Proposed Refactor (v2.0)
+
+**Create Shared Module:** `cms_pricing/ingestion/parsers/_io_kit.py`
+
+**Shared Functions:**
+
+```python
+# _io_kit.py - Shared I/O utilities for all parsers
+
+def read_tabular(
+    file_obj: IO[bytes],
+    filename: str,
+    file_mime: Optional[str] = None,
+    expected_columns: Optional[List[str]] = None
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Unified tabular file reader with format sniffing.
+    
+    Handles:
+    - CSV/TSV (delimiter detection, BOM stripping)
+    - XLSX (dtype=str to avoid Excel coercion)
+    - ZIP (single-member extraction, multi-file validation)
+    - Encoding cascade (UTF-8 → CP1252 → Latin-1)
+    
+    Args:
+        file_obj: Binary stream
+        filename: For format hints
+        file_mime: Optional MIME type (e.g., 'text/csv')
+        expected_columns: For validation (optional)
+        
+    Returns:
+        (DataFrame, io_metrics_dict)
+        
+    Raises:
+        ParseError: If format unreadable or multi-file ZIP without pattern match
+        
+    Per user feedback (2025-10-16 Phase 5 Workstream A).
+    """
+    io_metrics = {
+        'encoding_detected': None,
+        'dialect_detected': None,
+        'skiprows_dynamic': 0,
+        'zip_members': None
+    }
+    
+    # 1. Format detection (MIME → filename → content sniff)
+    # 2. ZIP handling (single member or pattern match)
+    # 3. Encoding detection (BOM → UTF-8 → CP1252 → Latin-1)
+    # 4. Parse with appropriate reader
+    # 5. Return DataFrame + io_metrics
+    
+    # ... implementation ...
+
+
+def normalize_column_headers(
+    df: pd.DataFrame,
+    alias_map: Dict[str, str]
+) -> pd.DataFrame:
+    """
+    Normalize column headers with alias mapping.
+    
+    Steps:
+    1. Lowercase, trim, collapse whitespace
+    2. Apply dataset-specific alias map
+    3. Verify expected columns present
+    
+    Args:
+        df: Raw DataFrame
+        alias_map: {'Conversion Factor': 'cf_value', ...}
+        
+    Returns:
+        DataFrame with normalized column names
+    """
+    # ... implementation ...
+
+
+def normalize_currency_value(
+    series: pd.Series,
+    precision: int = 2,
+    rounding_mode: str = 'HALF_UP'
+) -> pd.Series:
+    """
+    Normalize currency values (strip $, commas).
+    
+    Per user feedback (2025-10-16 Phase 5 Workstream B).
+    
+    Steps:
+    1. Strip '$', ','
+    2. Cast to float64
+    3. Round to precision with rounding_mode
+    
+    Returns:
+        Normalized numeric series
+    """
+    # ... implementation ...
+
+
+def validate_date_range(
+    df: pd.DataFrame,
+    date_col: str,
+    product_year: str,
+    future_threshold_months: int = 15
+) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Validate date ranges and warn on future dates.
+    
+    Per user feedback (2025-10-16 Phase 5 Workstream D).
+    
+    Warns if effective_date > product_year + 15 months (year+1-03-31).
+    
+    Returns:
+        (valid_df, warnings_list)
+    """
+    # ... implementation ...
+```
+
+**Parser Skeleton Becomes:**
+
+```python
+# pprrvu_parser.py (refactored)
+
+from cms_pricing.ingestion.parsers._io_kit import (
+    read_tabular,
+    normalize_column_headers,
+    normalize_currency_value,
+    validate_date_range
+)
+
+ALIAS_MAP = {
+    'HCPCS_CODE': 'hcpcs',
+    'WORK_RVU': 'rvu_work',
+    # ... PPRRVU-specific aliases
+}
+
+def parse_pprrvu(file_obj, filename, metadata) -> ParseResult:
+    # Step 1: Read tabular (shared utility)
+    df, io_metrics = read_tabular(file_obj, filename)
+    
+    # Step 2: Normalize headers (shared + dataset-specific aliases)
+    df = normalize_column_headers(df, ALIAS_MAP)
+    
+    # Step 3-9: Dataset-specific logic (schema, validation, etc.)
+    # ...
+```
+
+### Implementation Checklist
+
+**Phase 1: Shared Module** (60 min)
+- [ ] Create `cms_pricing/ingestion/parsers/_io_kit.py`
+- [ ] Implement `read_tabular()` with CSV/XLSX/ZIP/TSV support
+- [ ] Implement `normalize_column_headers()` with alias mapping
+- [ ] Implement `normalize_currency_value()` for money fields
+- [ ] Implement `validate_date_range()` with future date warnings
+- [ ] Add comprehensive tests (`tests/ingestion/test_io_kit.py`)
+
+**Phase 2: Refactor Parsers** (120 min)
+- [ ] Refactor PPRRVU to use `_io_kit` (30 min)
+- [ ] Refactor CF to use `_io_kit` (20 min)
+- [ ] Refactor GPCI to use `_io_kit` (20 min)
+- [ ] Refactor ANES to use `_io_kit` (20 min)
+- [ ] Refactor OPPSCAP to use `_io_kit` (15 min)
+- [ ] Refactor Locality to use `_io_kit` (15 min)
+
+**Phase 3: Verification** (30 min)
+- [ ] All parser tests still pass (no regressions)
+- [ ] New `_io_kit` tests pass (80% coverage target)
+- [ ] Performance benchmarks unchanged
+- [ ] Code reduction: ~900 lines → ~150 lines (shared) + ~100/parser
+
+**Phase 4: Documentation** (10 min)
+- [ ] Update STD-parser-contracts v2.0 §16 (directory layout)
+- [ ] Add §21.1.1 "Shared I/O Utilities" subsection
+- [ ] Document migration pattern
+- [ ] Update CHANGELOG.md
+
+### Benefits
+
+**Code Quality:**
+- ✅ 750+ lines removed (duplication eliminated)
+- ✅ Bug fixes propagate automatically
+- ✅ Consistent behavior across parsers
+- ✅ Easier to add new parsers (less boilerplate)
+
+**Maintenance:**
+- ✅ Single place for CSV dialect logic
+- ✅ Single place for ZIP handling
+- ✅ Single place for encoding cascade
+- ✅ Centralized testing
+
+**Future-Proofing:**
+- ✅ Foundation for Parquet golden snapshots (v2.0)
+- ✅ Foundation for streaming large files
+- ✅ Foundation for parallel parsing
+
+### Risks & Mitigations
+
+**Risk 1: Breaking Changes**
+- Mitigation: Comprehensive test suite (all existing tests must pass)
+- Impact: Medium (caught by CI)
+
+**Risk 2: Dataset-Specific Quirks**
+- Mitigation: Preserve override hooks in each parser
+- Impact: Low (shared utilities are baseline, parsers can extend)
+
+**Risk 3: Performance Regression**
+- Mitigation: Benchmark before/after
+- Impact: Low (kit is already vectorized)
+
+### Success Criteria
+
+**Before merging v2.0:**
+- [ ] All 6 parsers use `_io_kit` shared utilities
+- [ ] All existing tests pass (0 regressions)
+- [ ] New `_io_kit` tests pass (≥80% coverage)
+- [ ] Code reduction ≥700 lines
+- [ ] Performance benchmarks unchanged (±5%)
+- [ ] STD-parser-contracts v2.0 documents pattern
+
+### Timeline
+
+**Target:** STD-parser-contracts v2.0 (after all Phase 1 parsers complete)  
+**Effort:** 3-4 hours total (220 min breakdown above)  
+**Impact:** 750+ lines removed, 6× easier maintenance, foundation for v2.0 enhancements
+
+### Related
+
+- User feedback (2025-10-16): Phase 5 Workstream A (shared read_tabular)
+- PPRRVU parser: Current baseline pattern (internal helpers)
+- CF parser: Will follow PPRRVU pattern, refactor in v2.0
+- STD-parser-contracts v2.0: Will document shared utilities pattern
+
+### Notes
+
+**Why defer to v2.0:**
+1. Ship Phase 1 parsers faster (proven PPRRVU pattern)
+2. Learn from 6 parser implementations before abstracting
+3. Avoid premature abstraction (might miss edge cases)
+4. Refactor all 6 together for consistency
+
+**Why do it in v2.0:**
+1. Clear duplication pattern by then (6 parsers)
+2. Known edge cases from real implementations
+3. Can test migration thoroughly (all parsers at once)
+4. Combines well with Parquet golden migration
+
+---
+

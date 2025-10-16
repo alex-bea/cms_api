@@ -87,8 +87,8 @@ PARSER_ROUTING = {
     # Conversion factor files (MPFS-specific, NEW)
     r"(conversion-factor|cf-).*\.(xlsx|zip)$": (
         "conversion_factor",
-        "cms_conversion_factor_v1.0",
-        "schema_pending"  # Schema contract needs to be created
+        "cms_conversion_factor_v2.0",
+        "schema_pending"  # Will be replaced with parse_conversion_factor
     ),
     
     # OPPS Addendum files

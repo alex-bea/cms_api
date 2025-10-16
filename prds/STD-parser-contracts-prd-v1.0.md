@@ -1,6 +1,6 @@
 # Parser Contracts Standard
 
-**Status:** Draft v1.6  
+**Status:** Draft v1.7  
 **Owners:** Data Platform Engineering  
 **Consumers:** Data Engineering, MPFS Ingestor, RVU Ingestor, OPPS Ingestor, API Teams, QA Guild  
 **Change control:** ADR + PR review  
@@ -2286,6 +2286,60 @@ def detect_data_start(file_obj, layout):
 
 ---
 
+### Anti-Pattern 11: Range Validation Before Type Casting
+
+**Problem:**
+```python
+# canonicalize_numeric_col() returns strings for hash stability
+df['cf_value'] = canonicalize_numeric_col(df['cf_value'], precision=4)  # Returns "32.3465"
+
+# Range validation on string column FAILS
+if (df['cf_value'] <= 0).any():  # TypeError: '<=' not supported between str and int
+    raise ParseError("Invalid range")
+```
+
+**Why it happens:**
+- `canonicalize_numeric_col()` returns strings like `"32.3465"` for deterministic hashing
+- String comparison fails with TypeError
+- Parsers need numbers for business rule validation but strings for hashing
+
+**Fix:**
+```python
+# Step 1: Cast to canonical string (for hashing)
+df['cf_value'] = canonicalize_numeric_col(df['cf_value'], precision=4)
+
+# Step 2: Range validation AFTER canonicalization
+# Convert back to numeric for comparison
+cf_numeric = pd.to_numeric(df['cf_value'], errors='coerce')
+invalid_range = (cf_numeric <= 0) | (cf_numeric > 200)
+
+if invalid_range.any():
+    # Create rejects DataFrame
+    rejects = df[invalid_range].copy()
+    rejects['validation_error'] = 'cf_value out of range (0, 200]'
+    rejects['validation_severity'] = 'BLOCK'
+    rejects['validation_rule'] = 'cf_value_range'
+    
+    # Remove invalid rows from main DataFrame
+    df = df[~invalid_range].copy()
+    
+    logger.error("Range validation failed", 
+                 reject_count=len(rejects),
+                 examples=rejects[['cf_type', 'cf_value']].head(3).to_dict('records'))
+```
+
+**Key Principle:** Validation phases must respect data type requirements:
+1. **Type Coercion Phase** - Convert to canonical types (strings for hash stability)
+2. **Post-Cast Validation Phase** - Business rules on numeric values (convert back if needed)
+3. **Categorical Validation Phase** - Domain checks
+4. **Uniqueness Phase** - Natural key duplicate detection
+
+**See also:** §21.2 "Validation Phases & Rejects Handling" for complete pattern.
+
+**Real-world impact:** Prevents 30-60 min debugging when adding range validation to parsers. Discovered during CF parser implementation (2025-10-16).
+
+---
+
 **More Issues?** See PPRRVU parser commit history (7ea293e) for full debugging trail.
 
 ---
@@ -2294,6 +2348,7 @@ def detect_data_start(file_obj, layout):
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
+| **1.7** | **2025-10-16** | **Validation phases + error enrichment + string normalization (CF parser learnings).** Type: Non-breaking (implementation guidance). **Added:** §21.2 "Validation Phases & Rejects Handling" (4-phase pattern: coercion → post-cast validation → categorical → uniqueness); Anti-Pattern 11 "Range Validation Before Type Casting" (canonicalize_numeric_col returns strings, need pd.to_numeric for range checks); `normalize_string_columns()` utility in parser kit (strips whitespace/NBSP before validation); Step 3.5 in §21.1 template (string normalization). **Enhanced:** Error message enrichment requirements (include example bad values); Guardrail warnings metrics structure (counts + details dict). **Motivation:** CF parser implementation revealed critical string/numeric handling pattern + test expectation patterns + whitespace data quality issues. **Impact:** Prevents 30-60 min debugging per parser when adding range validation; standardizes error messages across parsers for better DX; ensures whitespace is stripped globally across all parsers. **Source:** CF parser debug session 2025-10-16. | TBD |
 | **1.6** | **2025-10-16** | **Package safety + CI guards.** Type: Non-breaking (implementation guidance). **Fixed:** §14.6 schema loader (importlib.resources for package-safe loading); §6.1 ParseResult example (join invariant assert). **Added:** §7.4 CI guard #5 (layout-schema column name alignment test). **Motivation:** Package installation support + prevent layout-schema drift. **Impact:** Prevents import errors in installed packages + 1-2h debugging per parser. | TBD |
 | **1.5** | **2025-10-16** | **Production hardening: 10 surgical fixes.** Type: Non-breaking (implementation guidance). **Fixed:** §6.5 normalize example (ParseResult consumption + file writes); §21.1 Step 1 (head-sniff + seek pattern); row-hash impl (Decimal quantization not float); §5.3 rejects/quarantine naming consistency; §21.1 join invariant (assert total = valid + rejects); §20.1 duplicate header guard; §21.1 Excel/ZIP guidance; §14.6 schema loader path (relative to module); §7.2 layout names = schema names (cross-ref §7.3). **Motivation:** User feedback pre-CF parser - eliminate last gotchas. **Impact:** 10 fixes prevent 2-3 hours debugging per parser × 4 = 8-12 hours saved. | TBD |
 | **1.4** | **2025-10-16** | **Template hardening + CMS-specific pitfalls.** Type: Non-breaking (guidance). **Added:** §20.1 Anti-Patterns 6-10 (BOM in headers, duplicate headers, Excel coercion, whitespace/NBSP, CRLF leftovers) - real issues from CMS file parsing. **Fixed:** §1 summary consistency (ParseResult not DataFrame); §7.2 example layout (rvu_work not work_rvu per §7.3 requirement); YAML section tagged as "Future (informative)" with current=dicts note. **Motivation:** Pre-document common CMS file issues before GPCI/ANES/OPPSCAP parsers to prevent 1-2 hours debugging each. **Impact:** 5 new pitfalls × 4 parsers = 4-8 hours saved. | ffae4e9 |
@@ -2366,6 +2421,9 @@ def parse_{dataset}(
     # Step 3: Normalize column names (canonical snake_case)
     df = _normalize_column_names(df)
     
+    # Step 3.5: Normalize string values (DIS §3.4 - strip whitespace, NBSP)
+    df = normalize_string_columns(df)
+    
     # Step 4: Cast dtypes (explicit, no coercion)
     df = _cast_dtypes(df)
     
@@ -2417,7 +2475,142 @@ def parse_{dataset}(
     )
 ```
 
-### 21.2 Per-Parser Acceptance Checklist
+### 21.2 Validation Phases & Rejects Handling
+
+**Critical Pattern:** Validation MUST happen in distinct phases with proper type handling.
+
+#### Phase Order (MUST)
+
+1. **Type Coercion** - Convert strings to canonical types
+2. **Post-Cast Validation** - Range checks, business rules (AFTER canonicalization)
+3. **Categorical Validation** - Enum/domain checks
+4. **Natural Key Uniqueness** - Duplicate detection
+
+#### String vs Numeric Handling (CRITICAL)
+
+**Problem:** `canonicalize_numeric_col()` returns **strings** for hash stability, but range validation needs **numbers**.
+
+**Solution:** Convert back to numeric for validation:
+
+```python
+# ❌ ANTI-PATTERN: Validate before or during canonicalization
+df['cf_value'] = canonicalize_numeric_col(df['cf_value'], precision=4)
+if (df['cf_value'] <= 0).any():  # FAILS: comparing strings!
+
+# ✅ CORRECT: Validate after canonicalization with numeric conversion
+df['cf_value'] = canonicalize_numeric_col(df['cf_value'], precision=4)
+cf_numeric = pd.to_numeric(df['cf_value'], errors='coerce')
+invalid_range = (cf_numeric <= 0) | (cf_numeric > 200)
+if invalid_range.any():
+    # Move invalid rows to rejects...
+```
+
+**Why this matters:**
+- `canonicalize_numeric_col()` returns strings like `"32.3465"` for deterministic hashing
+- String comparison `"32.3465" <= 0` fails with TypeError
+- Must convert to numeric AFTER canonicalization for business rule validation
+
+#### Rejects Aggregation Pattern
+
+Multiple validation phases produce separate rejects DataFrames. Aggregate them:
+
+```python
+# Step 5.5: Range validation (post-cast)
+range_rejects = pd.DataFrame()
+cf_numeric = pd.to_numeric(df['cf_value'], errors='coerce')
+invalid_range = (cf_numeric <= 0) | (cf_numeric > 200)
+if invalid_range.any():
+    invalid = df[invalid_range].copy()
+    invalid['validation_error'] = 'cf_value out of range (0, 200]'
+    invalid['validation_severity'] = 'BLOCK'
+    invalid['validation_rule'] = 'cf_value_range'
+    range_rejects = pd.concat([range_rejects, invalid], ignore_index=True)
+    df = df[~invalid_range].copy()  # Remove from main DataFrame
+
+# Step 6: Categorical validation
+cat_result = enforce_categorical_dtypes(df, schema, ...)
+
+# Aggregate all rejects
+all_rejects = pd.concat([
+    range_rejects,
+    cat_result.rejects_df
+], ignore_index=True)
+```
+
+#### Error Message Enrichment (MUST)
+
+Tests and operators expect **rich, actionable error messages** with examples.
+
+**Requirements:**
+- Include example bad values from actual data
+- Provide context (which rows, which values)
+- Use consistent format across all parsers
+
+**Examples:**
+
+```python
+# ❌ POOR: Generic message
+raise ParseError("cf_value out of range")
+
+# ✅ GOOD: Rich message with examples
+raise ParseError(
+    f"cf_value out of valid range (0, 200]: {len(bad_rows)} rows. "
+    f"Examples: {bad_rows[['cf_type', 'cf_value']].head().to_dict('records')}"
+)
+
+# ❌ POOR: No context
+raise DuplicateKeyError(f"Duplicate natural keys detected: {count} duplicates")
+
+# ✅ GOOD: Include example duplicate
+example_dupe = duplicate_keys[0] if duplicate_keys else {}
+raise DuplicateKeyError(
+    f"Duplicate natural keys detected: {count} duplicates. "
+    f"Example duplicate: {example_dupe}"
+)
+```
+
+#### Guardrail Warnings in Metrics
+
+Statistical validations (WARN level) should be captured in metrics for observability:
+
+```python
+def _apply_guardrails(df: pd.DataFrame, metadata: Dict) -> Dict:
+    """Apply statistical guardrails (WARN only, don't block)."""
+    warnings = {
+        'deviation_count': 0,
+        'future_date_count': 0
+    }
+    details = {}
+    
+    # Check for deviations
+    for key, expected in KNOWN_VALUES.items():
+        actual = df.loc[df['key'] == key, 'value'].iloc[0]
+        if abs(actual - expected) > TOLERANCE:
+            warnings['deviation_count'] += 1
+            details[f'{key}_deviation'] = {
+                'expected': expected,
+                'actual': float(actual),
+                'deviation': float(abs(actual - expected))
+            }
+    
+    # Merge counts + details
+    warnings.update(details)
+    return warnings
+
+# In main parser
+guardrail_warnings = _apply_guardrails(final_df, metadata)
+metrics['guardrail_warnings'] = guardrail_warnings  # Add to metrics dict
+```
+
+**Test expectations:**
+```python
+# Tests look for specific keys
+assert 'guardrail_warnings' in result.metrics
+assert 'deviation_count' in result.metrics['guardrail_warnings']
+assert result.metrics['guardrail_warnings']['deviation_count'] >= 0
+```
+
+### 21.3 Per-Parser Acceptance Checklist
 
 Copy/paste this checklist for each parser PR/commit:
 
