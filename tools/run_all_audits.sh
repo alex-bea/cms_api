@@ -114,3 +114,4 @@ else
     exit 1
 fi
 
+    python tools/audit_changelog.py || ((fails+=1))

@@ -649,3 +649,31 @@ def test_deterministic_reject_ordering():
 print("\n" + "="*80)
 print("All Phase 0 Commit 4 tests ready to run!")
 print("="*80)
+
+
+def test_compressed_file_routing():
+    """
+    Test 18: Compression suffix stripping for routing.
+    
+    Per Phase 0 Lockdown: Router strips .gz, .gzip, .bz2, .zip before matching.
+    """
+    from cms_pricing.ingestion.parsers import route_to_parser
+    
+    # Test .gz suffix
+    decision_gz = route_to_parser("PPRRVU2025.csv.gz")
+    assert decision_gz.dataset == "pprrvu"
+    assert decision_gz.natural_keys == ["hcpcs", "modifier", "effective_from"]
+    
+    # Test .gzip suffix
+    decision_gzip = route_to_parser("GPCI2025.txt.gzip")
+    assert decision_gzip.dataset == "gpci"
+    
+    # Test .bz2 suffix
+    decision_bz2 = route_to_parser("conversion-factor-2025.xlsx.bz2")
+    assert decision_bz2.dataset == "conversion_factor"
+    
+    # Test no suffix (should still work)
+    decision_plain = route_to_parser("PPRRVU2025.csv")
+    assert decision_plain.dataset == "pprrvu"
+    
+    print("✅ Compressed file routing: .gz/.gzip/.bz2/.zip suffixes stripped correctly")

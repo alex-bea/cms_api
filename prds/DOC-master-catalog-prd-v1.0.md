@@ -1,6 +1,6 @@
 # Master System Catalog & Architectural Map
 
-**Status:** Adopted v1.0.4  
+**Status:** Adopted v1.0.5  
 **Owners:** Platform Architecture  
 **Consumers:** Engineering, Product, Data, QA, Ops, Compliance  
 **Change control:** ADR + Architecture Owner approval  
@@ -68,6 +68,7 @@
 |---|---|---|---|
 | `DOC-master-catalog-prd-v1.0.md` | Adopted v1.0 | Architecture | Master index (this document) |
 | `DOC-test-patterns-prd-v1.0.md` | Draft v1.0 (proposed) | QA Guild | Test patterns and best practices guide |
+| `CHANGELOG.md` | Active | Platform Engineering | Project release notes (Keep a Changelog format) |
 
 ---
 
@@ -172,6 +173,7 @@ graph TD
 
 | Version | Date | Summary | PR |
 |---|---|---|---|
+| 1.0.5 | 2025-10-16 | Added CHANGELOG.md to §5 Documentation & Meta (project release notes following Keep a Changelog format); Updated STD-doc-governance to v1.0.2 with CHANGELOG.md requirement (§5.1); Added automated validation via tools/audit_changelog.py. Supports Phase 0 lockdown milestone (v0.1.0-phase0). | #TBD |
 | 1.0.4 | 2025-10-15 | Added STD-parser-contracts-prd-v1.0.md (shared parser infrastructure standard for CMS data ingestion); updated dependency graph showing parser contracts as foundation for MPFS, RVU, OPPS ingestors; establishes public contract requirements, metadata injection pattern, and tiered validation standards. | #TBD |
 | 1.0.3 | 2025-10-15 | Added REF-scraper-ingestor-integration-v1.0.md (scraper→ingestor handoff reference); updated STD-doc-governance to allow REF docs without `-prd` suffix; updated dependency graph with new REF document and integration relationships. | #TBD |
 | 1.0.2 | 2025-10-15 | Added STD-data-architecture-impl-v1.0.md (companion implementation guide); updated STD-doc-governance to v1.0.1 with companion document conventions; updated STD-scraper to v1.1; added companion relationships to dependency graph. | #TBD |

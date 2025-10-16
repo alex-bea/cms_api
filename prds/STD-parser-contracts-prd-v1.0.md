@@ -1,6 +1,6 @@
 # Parser Contracts Standard
 
-**Status:** Draft v1.1  
+**Status:** Draft v1.2  
 **Owners:** Data Platform Engineering  
 **Consumers:** Data Engineering, MPFS Ingestor, RVU Ingestor, OPPS Ingestor, API Teams, QA Guild  
 **Change control:** ADR + PR review  
@@ -1447,8 +1447,169 @@ tests/fixtures/
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
+| 1.2 | 2025-10-16 | **Phase 1 readiness: Parser implementation template and acceptance criteria.** Added §21 Parser Implementation Template with standardized 9-step structure (detect encoding → parse format → normalize → cast → validate → inject metadata → finalize → metrics → return ParseResult). Includes per-parser acceptance checklist with routing, validation, precision, performance, and testing requirements. Added golden-first development workflow (extract fixture → write test → implement → verify → commit). Provides copy/paste checklist for parser PRs. Supports Phase 1 parser implementations (PPRRVU, CF, GPCI, ANES, OPPSCAP, Locality). | #TBD |
 | 1.1 | 2025-10-15 | **Production-grade enhancements for MPFS implementation.** Upgraded parser return type to `ParseResult(data, rejects, metrics)` for cleaner separation (§5.3). Added content sniffing via `file_head` parameter for magic byte/BOM detection (§6.2). Changed row hash to full 64-char SHA-256 digest with schema-driven precision per column (§5.2). Added CP1252 to encoding cascade for Windows file support (§5.2). Implemented explicit categorical domain validation - pre-check before conversion to prevent silent NaN coercion (§8.2.1). Pinned exact natural keys per dataset including `effective_from` for time-variant data. Added vintage field duplication guidance (§6.4). Enhanced test strategy with explicit IO boundary rules - parsers return data, ingestors write files (§14.1). Updated acceptance criteria with all v1.1 requirements (§18). These changes prevent technical debt and enable immediate production deployment. | #TBD |
 | 1.0 | 2025-10-15 | Initial adoption of parser contracts standard. Defines public contract requirements (pandas DataFrame return type), metadata injection pattern with three vintage fields, tiered validation (BLOCK/WARN/INFO), formal row hash specification for reproducibility, SemVer for parsers/schemas/layouts, integration with DIS normalize stage, and comprehensive testing strategy. Documents v1.0 implementation (pandas, helper-based quarantine, Python dict layouts, filename routing) and v1.1 enhancements (ParseResult, YAML layouts, magic byte routing). Establishes governance for shared parser infrastructure used by MPFS, RVU, OPPS, and future ingestors. | #TBD |
+
+---
+
+## 21. Parser Implementation Template (Phase 1 Guide)
+
+### 21.1 Standard Parser Structure
+
+Every parser MUST follow this 9-step structure for consistency and maintainability:
+
+```python
+def parse_{dataset}(
+    file_obj: IO[bytes],
+    filename: str,
+    metadata: Dict[str, Any]
+) -> ParseResult:
+    """
+    Parse {dataset} file to canonical schema.
+    
+    Per STD-parser-contracts v1.1 §6.1.
+    
+    Args:
+        file_obj: Binary file stream
+        filename: Filename for format detection
+        metadata: Required metadata from ingestor
+        
+    Returns:
+        ParseResult(data, rejects, metrics)
+    """
+    import time
+    start_time = time.perf_counter()
+    
+    # Step 1: Detect encoding (use parser kit)
+    encoding, content_clean = detect_encoding(file_obj.read())
+    logger.info("Encoding detected", encoding=encoding)
+    
+    # Step 2: Parse format (fixed-width via layout OR CSV)
+    if _is_fixed_width(content_clean):
+        layout = get_layout(dataset, metadata['product_year'], metadata['quarter'])
+        df = _parse_fixed_width(content_clean, encoding, layout)
+    else:
+        df = _parse_csv(content_clean, encoding)
+    
+    # Step 3: Normalize column names (canonical snake_case)
+    df = _normalize_column_names(df)
+    
+    # Step 4: Cast dtypes (explicit, no coercion)
+    df = _cast_dtypes(df)
+    
+    # Step 5: Load schema contract
+    schema = load_schema(metadata['schema_id'])
+    
+    # Step 6: Categorical validation (use parser kit)
+    cat_result = enforce_categorical_dtypes(
+        df, schema,
+        natural_keys=schema['natural_keys'],
+        schema_id=metadata['schema_id'],
+        release_id=metadata['release_id'],
+        severity=ValidationSeverity.WARN
+    )
+    
+    # Step 7: Inject metadata columns
+    for col in ['release_id', 'vintage_date', 'product_year', 'quarter_vintage']:
+        cat_result.valid_df[col] = metadata[col]
+    cat_result.valid_df['source_filename'] = filename
+    cat_result.valid_df['parsed_at'] = pd.Timestamp.utcnow()
+    
+    # Step 8: Finalize (hash + sort via parser kit)
+    final_df = finalize_parser_output(
+        cat_result.valid_df,
+        schema['natural_keys'],
+        schema
+    )
+    
+    # Step 9: Build comprehensive metrics
+    parse_duration = time.perf_counter() - start_time
+    metrics = {
+        **cat_result.metrics,
+        'parser_version': PARSER_VERSION,
+        'encoding_detected': encoding,
+        'parse_duration_sec': parse_duration,
+        'schema_id': metadata['schema_id']
+    }
+    
+    logger.info("Parse completed", rows=len(final_df), rejects=len(cat_result.rejects_df))
+    
+    return ParseResult(
+        data=final_df,
+        rejects=cat_result.rejects_df,
+        metrics=metrics
+    )
+```
+
+### 21.2 Per-Parser Acceptance Checklist
+
+Copy/paste this checklist for each parser PR/commit:
+
+**Routing & Natural Keys:**
+- [ ] Correct dataset, schema_id, natural_keys from route_to_parser()
+- [ ] Routing latency p95 ≤ 20ms
+- [ ] Natural keys: uniqueness enforced, duplicates → NATURAL_KEY_DUPLICATE
+
+**Validation:**
+- [ ] Categoricals: unknowns/nulls handled per policy
+- [ ] Rejects include: row_id, schema_id, release_id, validation_rule_id, validation_column, validation_context
+- [ ] Join invariant: len(valid) + len(rejects) == len(input)
+
+**Precision & Determinism:**
+- [ ] Numerics: precision preserved (schema-driven rounding)
+- [ ] Determinism: repeat → identical row_content_hash
+- [ ] Chunked vs single-shot: identical outputs
+
+**Performance:**
+- [ ] 10K rows: validate ≤ 300ms
+- [ ] E2E soft guard ≤ 1.5s (hard fail at 2s)
+
+**Testing:**
+- [ ] Golden fixture created with SHA-256 documented
+- [ ] 5 unit tests: golden, schema, encoding, error, empty
+- [ ] Integration test: route → parse → validate → finalize
+
+**Documentation:**
+- [ ] Comprehensive docstring with examples
+- [ ] Golden fixture README with source + hash
+- [ ] Parser version constant (SemVer)
+
+### 21.3 Golden-First Development Workflow
+
+**Recommended approach for new parsers:**
+
+1. **Extract golden fixture** (15 min)
+   ```bash
+   head -101 sample_data/source.txt > tests/fixtures/{dataset}/golden/sample.txt
+   shasum -a 256 tests/fixtures/{dataset}/golden/sample.txt
+   ```
+
+2. **Write golden test first** (15 min)
+   - Assert expected row count
+   - Assert schema compliance
+   - Assert deterministic hash
+   - Run test (will fail - parser doesn't exist)
+
+3. **Implement parser** (60-90 min)
+   - Follow 9-step template
+   - Use parser kit utilities (no duplication)
+   - Test iteratively until golden test passes
+
+4. **Add remaining tests** (20 min)
+   - Schema compliance
+   - Encoding variations
+   - Error handling
+   - Empty files
+
+5. **Commit** (5 min)
+   - Small, atomic commit
+   - Link to golden fixture
+
+**Benefits:**
+- ✅ Test-driven (spec before code)
+- ✅ Determinism built-in (hash verification)
+- ✅ Regression prevention (any change breaks hash)
 
 ---
 

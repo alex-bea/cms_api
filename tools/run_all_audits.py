@@ -60,6 +60,8 @@ class AuditRunner:
             ("Companion Documents", ["python", "tools/audit_companion_docs.py"], "audit"),
             ("Source Map Verification", ["python", "tools/verify_source_map.py"], "audit"),
             ("Makefile .PHONY", ["python", "tools/audit_makefile_phony.py"], "audit"),
+            ("Changelog Compliance", ["python", "tools/audit_changelog.py"], "audit"),
+            ("Code Pattern Check", ["python", "tools/audit_code_patterns.py"], "audit"),
         ]
         
         # Run documentation tests if requested

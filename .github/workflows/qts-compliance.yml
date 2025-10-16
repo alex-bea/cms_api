@@ -67,6 +67,18 @@ jobs:
       run: |
         pytest tests/prd_docs -m prd_docs -q --maxfail=5
     
+    - name: Run Phase 0 Parser Tests
+      run: |
+        pytest tests/test_parser_kit_v1_1.py tests/test_parser_integration_phase0.py -v --tb=short --cov=cms_pricing/ingestion/parsers --cov-append
+    
+    - name: Check for deprecated code patterns
+      run: |
+        python tools/audit_code_patterns.py
+    
+    - name: Validate CHANGELOG.md
+      run: |
+        python tools/audit_changelog.py
+    
     - name: Run ingestor suites
       run: |
         # Use PostgreSQL test harness for database-backed tests (see DOC-test-patterns-prd-v1.0.md)

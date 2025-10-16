@@ -369,9 +369,16 @@ For questions, issues, or contributions:
 
 This project is licensed under the MIT License. See LICENSE file for details.
 
+## Release Notes
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed release history, version notes, and migration guides.
+
+**Latest Release:** [v0.1.0-phase0](CHANGELOG.md#010-phase0---2025-10-16) - Parser Infrastructure Foundation
+
 ---
 
 **Note**: This API is designed for healthcare pricing analysis and should not be used for actual claims processing without proper validation and compliance review.
+
 ## PRD Catalog
 
 This project follows comprehensive Product Requirements Documents (PRDs) that define standards, architecture, and best practices across all components:

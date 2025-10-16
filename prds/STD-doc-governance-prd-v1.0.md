@@ -1,11 +1,11 @@
-# Documentation Governance Standard (v1.0.1)
+# Documentation Governance Standard (v1.0.2)
 
 ## 0. Overview
 This standard defines how product requirement documents (PRDs), runbooks, and related governance artifacts are named, versioned, and organized within the repository. All new documents must comply; existing files should be renamed during their next major revision.
 
 **Master Catalog.** This repository's canonical system catalog is `DOC-master-catalog-prd-v1.0.md` (the "Master PRD"). All new or modified documents (STD/BP/PRD/SCR/RUN/DOC) **must be registered** in the Master Catalog in the same pull request before merge. The Master Catalog is a catalog and dependency map only; no business logic or schema definitions live there.
 
-**Status:** Draft v1.0.1 (proposed)  
+**Status:** Draft v1.0.2 (proposed)  
 **Owners:** Platform/Product Operations  
 **Consumers:** Engineering, Product, QA, SRE  
 **Change control:** ADR + Docs Guild review  
@@ -146,10 +146,47 @@ Each document must include a governance header immediately after the title with 
 For the Master Catalog, also include `Review cadence:` and `Diagram standard:` in the header.
 
 ## 5. Version Control & Change Log
+
+### 5.1 Project-Level CHANGELOG.md
+
+The repository MUST maintain a `CHANGELOG.md` file at the project root following [Keep a Changelog](https://keepachangelog.com) format:
+
+**Requirements:**
+- **Format:** Keep a Changelog v1.0.0 standard
+- **Versioning:** Semantic Versioning (MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-label)
+- **Sections:** Added, Changed, Deprecated, Removed, Fixed, Security
+- **Dates:** ISO 8601 format (YYYY-MM-DD)
+- **Links:** Commit hashes, PR numbers, git tags
+- **Cross-references:** Link to relevant PRDs for each release
+
+**Structure:**
+```markdown
+## [Unreleased]
+### Added
+- New features in progress
+
+## [X.Y.Z] - YYYY-MM-DD
+### Added
+- Feature descriptions with [commit links]
+### Changed
+- Breaking changes with migration notes
+### References
+- [STD-parser-contracts-prd-v1.0.md]
+- [PRD-mpfs-prd-v1.0.md]
+```
+
+**Maintenance:**
+- Updated on every release/milestone
+- Git tags MUST match changelog versions
+- Unreleased section tracks work in progress
+- Automated via `tools/audit_changelog.py`
+
+### 5.2 Document-Level Change Logs
+
 - Major updates require a dated changelog table inside the document.
 - Minor updates can be captured in Git history but should still update the changelog when BC behavior changes.
 - The Master Catalog version **must bump** whenever a linked document is added, adopted, deprecated, or retired.
-- Git history serves as the source of truth for diffs; the Master Catalog’s Change Log references the PR that introduced each change.
+- Git history serves as the source of truth for diffs; the Master Catalog's Change Log references the PR that introduced each change.
 
 ## 6. Cross-Referencing Guidelines
 - Refer to documents by prefix + slug (e.g., "see `STD-api-architecture-prd-v1.0.md`").
@@ -169,6 +206,7 @@ For the Master Catalog, also include `Review cadence:` and `Diagram standard:` i
 ## 8. Change Log
 | Date       | Version | Author | Summary |
 |------------|---------|--------|---------|
+| 2025-10-16 | v1.0.2  | Team   | Added project-level CHANGELOG.md requirement (§5.1): Keep a Changelog format, SemVer, ISO 8601 dates, automated validation via `tools/audit_changelog.py`. Requires changelog for all releases with commit links, PRD cross-references, and migration notes. |
 | 2025-10-15 | v1.0.1  | Team   | Added companion document conventions (§1.5-1.6): `-impl` suffix pattern, cross-referencing requirements, versioning rules, and automated validation checks. Updated §1.3 to allow REF documents without `-prd` suffix (new pattern) while maintaining backward compatibility with legacy REF docs. |
 | 2025-10-02 | v1.0    | Team   | Established Master Catalog filename and registration requirements. |
 | 2025-09-30 | v1.0    | Team   | Initial draft of documentation governance standard. |

@@ -141,6 +141,20 @@ def route_to_parser(
         >>> decision.natural_keys
         ['hcpcs', 'modifier', 'effective_from']
     """
+    # Strip compression suffixes for pattern matching
+    clean_filename = filename
+    compression_suffixes = ['.gz', '.gzip', '.bz2', '.zip']
+    for suffix in compression_suffixes:
+        if clean_filename.lower().endswith(suffix):
+            clean_filename = clean_filename[:-len(suffix)]
+            logger.debug(
+                "Stripped compression suffix",
+                original=filename,
+                cleaned=clean_filename,
+                suffix=suffix
+            )
+            break
+    
     # Try to import is_fixed_width_format for content sniffing
     try:
         from cms_pricing.ingestion.parsers._parser_kit import is_fixed_width_format
@@ -149,7 +163,7 @@ def route_to_parser(
         content_sniffing_available = False
     
     for pattern, (dataset, schema_id, parser_status) in PARSER_ROUTING.items():
-        if re.match(pattern, filename, re.IGNORECASE):
+        if re.match(pattern, clean_filename, re.IGNORECASE):
             
             # Fetch natural_keys from schema contract (single source of truth)
             try:
