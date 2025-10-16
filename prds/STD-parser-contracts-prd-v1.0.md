@@ -704,8 +704,8 @@ async def get_rvu(hcpcs: str):
 
 **Code - PPRRVU:**
 ```python
-# Transformation layer (outside parser):
-# Location: cms_pricing/mappers/__init__.py
+# Transformation layer (NOT in parser, NOT in schema)
+# Location: cms_pricing/mappers/__init__.py (API adapter only)
 
 PPRRVU_SCHEMA_TO_API = {
     'rvu_work': 'work_rvu',
@@ -831,11 +831,15 @@ layout = get_layout(product_year="2025", quarter_vintage="2025Q4", dataset="pprr
 - **`end` is EXCLUSIVE** - For `read_fwf(colspecs=[(start, end)])` and `line[start:end]` slicing
 - **Dict order ≠ positional order** - MUST sort columns by `start` before building colspecs
 - **Column names MUST match schema** - See §7.3 for alignment requirements
+- **`min_line_length`** = minimum observed data-line length (excluding `\n`); parsers MUST treat as heuristic for header detection only, NOT a hard requirement
 
 **Common Pitfalls:**
 - ❌ Positional args: `get_layout("2025", "pprrvu", "Q4")` swaps dataset/quarter → returns None
 - ❌ Inclusive end: `{'start': 0, 'end': 5}` expecting 6 chars (only gets 5: indices 0-4)
 - ❌ Hardcoded skiprows: CMS headers vary by release; detect data start dynamically
+
+**CI Enforcement:**
+- CI MUST verify `end` is exclusive by reconstructing a synthetic line and ensuring `read_fwf` reproduces exact boundaries (see §7.4 for test snippets)
 
 **v1.1 Enhancement (Planned - YAML Source of Truth):**
 
@@ -881,6 +885,7 @@ columns:
 2. **MUST** treat layout `end` as EXCLUSIVE for `read_fwf()` and `line[start:end]` slicing
 3. **MUST** detect data start dynamically (no hardcoded skiprows; use pattern matching + min_line_length)
 4. **MUST** call `get_layout(product_year=..., quarter_vintage=..., dataset=...)` using keyword arguments
+5. **MUST** use explicit data-line detection pattern - default: `^[A-Z0-9]{5}$` at first natural key colspec (e.g., HCPCS for PPRRVU/GPCI); dataset-specific patterns SHOULD be documented in layout metadata `data_start_pattern` field
 
 **Alignment Checklist (Pre-Implementation):**
 
@@ -974,6 +979,88 @@ def validate_layout_schema_alignment(layout: Dict, schema: Dict) -> None:
             "Layout uses 'work_rvu' but schema expects 'rvu_work'. "
             "Layout must use schema column names, not API names."
         )
+```
+
+### 7.4 CI Test Snippets (v1.3 - Copy/Paste Guards)
+
+**Purpose:** Enforce Hard Rules from §7.3 with automated tests.
+
+**1. Colspecs Sorted by Start:**
+
+```python
+def test_layout_colspecs_sorted(layout):
+    """Verify columns are sorted by start position."""
+    cols = list(layout['columns'].items())
+    for i in range(1, len(cols)):
+        prev_start = cols[i-1][1]['start']
+        curr_start = cols[i][1]['start']
+        assert prev_start <= curr_start, \
+            f"Columns not sorted: {cols[i-1][0]} @ {prev_start} vs {cols[i][0]} @ {curr_start}"
+```
+
+**2. End Exclusive Sanity (Synthetic Probe):**
+
+```python
+def test_layout_end_exclusive(layout):
+    """Verify end is exclusive by synthetic line test."""
+    from io import StringIO
+    import pandas as pd
+    
+    # Build synthetic line with sentinel at each end-1 position
+    max_end = max(spec['end'] for spec in layout['columns'].values())
+    line = [' '] * max_end
+    for name, spec in layout['columns'].items():
+        if spec['end'] > 0:
+            line[spec['end'] - 1] = 'X'  # Sentinel at last included char
+    synthetic = ''.join(line)
+    
+    # Parse with read_fwf
+    colspecs = [(s['start'], s['end']) for s in layout['columns'].values()]
+    names = list(layout['columns'].keys())
+    df = pd.read_fwf(StringIO(synthetic), colspecs=colspecs, names=names, header=None)
+    
+    # Verify each column ends with sentinel
+    for col in df.columns:
+        val = str(df[col].iloc[0]).strip()
+        assert val.endswith('X') or val == '', \
+            f"Column {col} did not capture sentinel (end may not be exclusive)"
+```
+
+**3. Key Columns Present After FWF:**
+
+```python
+def test_parser_natural_keys_present(df, schema):
+    """Verify natural key columns exist in parsed DataFrame."""
+    required = set(schema['natural_keys'])
+    actual = set(df.columns)
+    missing = required - actual
+    assert not missing, f"Missing natural key columns: {sorted(missing)}"
+```
+
+**4. Dynamic Data Start Enforced:**
+
+```python
+def test_parser_reports_dynamic_skiprows(metrics):
+    """Verify parser reports dynamic header detection."""
+    assert 'skiprows_dynamic' in metrics, \
+        "Parser must report skiprows_dynamic in metrics"
+    assert metrics['skiprows_dynamic'] >= 0, \
+        f"skiprows_dynamic must be non-negative, got {metrics['skiprows_dynamic']}"
+    assert 'data_start_pattern' in metrics, \
+        "Parser must report data_start_pattern used for detection"
+```
+
+**Usage:**
+```python
+# In tests/ingestion/test_layout_compliance.py
+@pytest.mark.parametrize("dataset,year,quarter", [
+    ("pprrvu", "2025", "Q4"),
+    ("gpci", "2025", "Q1"),
+])
+def test_layout_ci_guards(dataset, year, quarter):
+    layout = get_layout(dataset=dataset, product_year=year, quarter_vintage=f"{year}{quarter}")
+    test_layout_colspecs_sorted(layout)
+    test_layout_end_exclusive(layout)
 ```
 
 ---
@@ -1106,6 +1193,8 @@ All parsers use these default severities unless explicitly overridden:
 
 | Error Code | Default Severity | Parser Action | Artifact | Notes |
 |------------|------------------|---------------|----------|-------|
+| `ENCODING_ERROR` | **BLOCK** | Raise `UnicodeDecodeError` | — | Cannot decode file with any codec |
+| `DIALECT_UNDETECTED` | **BLOCK** | Raise `ParseError` | — | CSV/TSV/delimiter ambiguity unresolved |
 | `LAYOUT_MISMATCH` | **BLOCK** | Raise `LayoutMismatchError` | — | Cannot continue parsing |
 | `FIELD_MISSING` | **BLOCK** | Raise `SchemaRegressionError` | — | Required column absent |
 | `TYPE_CAST_ERROR` | **BLOCK** | Raise `ValueError` | — | Cannot cast to required type |
@@ -1114,7 +1203,7 @@ All parsers use these default severities unless explicitly overridden:
 | `CATEGORY_UNKNOWN` | **WARN** | Quarantine | `rejects.parquet` | Unknown categorical value |
 | `REFERENCE_MISS` | **WARN** | Quarantine | `rejects.parquet` | Code not in ref set |
 | `OUT_OF_RANGE` | **WARN** | Quarantine | `rejects.parquet` | Value outside bounds |
-| `BOM_DETECTED` | **INFO** | Log + metric only | — | BOM stripped |
+| `BOM_DETECTED` | **INFO** | Log + metric only | — | BOM stripped successfully |
 | `ENCODING_FALLBACK` | **INFO** | Log + metric only | — | Fell back to CP1252/Latin-1 |
 
 **Severity Precedence:** Dataset override > Global default > Function default parameter
@@ -1876,25 +1965,27 @@ tests/fixtures/
 
 **Top 5 Issues from PPRRVU Implementation (Real Debugging - commit 7ea293e)**
 
-### Anti-Pattern 1: min_line_length Too High
+### Anti-Pattern 1: Positional get_layout() Arguments
 
 **Problem:**
 ```python
-'min_line_length': 200  # Assumption, not measurement!
+layout = get_layout("2025", "pprrvu", "Q4")  # ❌ Wrong parameter order!
 ```
-Actual data is 173 chars → All 94 rows skipped → Empty DataFrame → `KeyError: 'hcpcs'`
+Swaps `dataset` and `quarter` → returns `None` → `LayoutMismatchError`.
 
 **Fix:**
-```bash
-# Measure actual data first:
-head -20 data.txt | tail -10 | awk '{print length}'
-# Output: 173, 173, 173, ...
-
-# Set conservatively (with margin):
-'min_line_length': 165  # Allows 173-char lines + 8-char margin
+```python
+# Use keyword arguments (self-documenting):
+layout = get_layout(
+    product_year="2025",
+    quarter_vintage="2025Q4",
+    dataset="pprrvu"
+)
 ```
 
-**Debugging time:** 30 minutes
+**Why #1:** Easiest to regress; happens during copy/paste from examples.
+
+**See:** §7.2 Layout Registry API for signature.
 
 ---
 
@@ -1925,7 +2016,29 @@ assert schema_cols.issubset(layout_cols), f"Missing: {schema_cols - layout_cols}
 
 ---
 
-### Anti-Pattern 3: Category Validation After Cast
+### Anti-Pattern 3: min_line_length Too High
+
+**Problem:**
+```python
+'min_line_length': 200  # Assumption, not measurement!
+```
+Actual data is 173 chars → All 94 rows skipped → Empty DataFrame → `KeyError: 'hcpcs'`
+
+**Fix:**
+```bash
+# Measure actual data first:
+head -20 data.txt | tail -10 | awk '{print length}'
+# Output: 173, 173, 173, ...
+
+# Set conservatively (with margin):
+'min_line_length': 165  # Allows 173-char lines + 8-char margin
+```
+
+**Debugging time:** 30 minutes
+
+---
+
+### Anti-Pattern 4: Category Validation After Cast
 
 **Problem:**
 ```python
@@ -1949,7 +2062,7 @@ df['status'] = df['status'].astype(CategoricalDtype(['A', 'B']))
 
 ---
 
-### Anti-Pattern 4: Hash Includes Metadata
+### Anti-Pattern 5: Hash Includes Metadata
 
 **Problem:**
 ```python
@@ -1974,28 +2087,6 @@ final_df = finalize_parser_output(df, natural_keys, schema)  # Handles exclusion
 
 ---
 
-### Anti-Pattern 5: Positional get_layout() Arguments
-
-**Problem:**
-```python
-layout = get_layout("2025", "pprrvu", "Q4")  # ❌ Wrong parameter order!
-```
-Swaps `dataset` and `quarter` → returns `None` → `LayoutMismatchError`.
-
-**Fix:**
-```python
-# Use keyword arguments (self-documenting):
-layout = get_layout(
-    product_year="2025",
-    quarter_vintage="2025Q4",
-    dataset="pprrvu"
-)
-```
-
-**See:** §7.2 Layout Registry API for signature.
-
----
-
 **More Issues?** See PPRRVU parser commit history (7ea293e) for full debugging trail.
 
 ---
@@ -2004,7 +2095,7 @@ layout = get_layout(
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
-| **1.3** | **2025-10-16** | **Normative clarifications from PPRRVU implementation.** Type: Non-breaking (guidance, enforcement rules). **Added (Normative):** §7.3 Layout-Schema Alignment with 4 MUST rules and validation guard; §8.5 Error Code Severity Table with per-dataset policies; §20.1 Common Pitfalls (top 5 anti-patterns with fixes). **Added (Guidance):** §6.6 Schema vs API Naming Convention (DB canonical vs presentation); §14.6 Schema File Naming & Loading (version stripping). **Enhanced:** §7.2 Layout Registry API (signature, semantics, end=EXCLUSIVE); §9.1 Exception Hierarchy (custom error types); §21.1 Implementation Template (validation guard). **Motivation:** PPRRVU parser (commit 7ea293e) hit 3 major issues: layout-schema column mismatch (2h debug), missing natural keys (1h debug), min_line_length too strict (30min debug). **Impact:** Prevents 3-4 hours debugging per parser × 5 remaining = 15-20 hours saved. | 7ea293e |
+| **1.3** | **2025-10-16** | **Normative clarifications from PPRRVU implementation.** Type: Non-breaking (guidance, enforcement rules). **Added (Normative):** §7.3 Layout-Schema Alignment with 5 MUST rules (colspec sorting, end exclusivity, dynamic header detection, keyword args, explicit data-line pattern) and validation guard; §8.5 Error Code Severity Table (12 codes) with per-dataset policies; §20.1 Common Pitfalls (top 5 anti-patterns with fixes, reordered by frequency). **Added (Guidance):** §6.6 Schema vs API Naming Convention (DB canonical vs presentation, mapper location); §14.6 Schema File Naming & Loading (version stripping pattern); §7.4 CI Test Snippets (colspec order, end exclusivity, key columns, dynamic skiprows). **Enhanced:** §7.2 Layout Registry API (signature, semantics, end=EXCLUSIVE, min_line_length as heuristic, CI enforcement); §9.1 Exception Hierarchy (custom error types); §21.1 Implementation Template (validation guard). **CI Evolution:** New validations for layout exclusivity, colspec sorting, data-start detection (pattern-based), key-column guard. **Motivation:** PPRRVU parser (commit 7ea293e) hit 3 major issues: layout-schema column mismatch (2h debug), missing natural keys (1h debug), min_line_length too strict (30min debug). **Impact:** Prevents 3-4 hours debugging per parser × 5 remaining = 15-20 hours saved. | 5fd7fd4 |
 | 1.2 | 2025-10-16 | **Phase 1 readiness: Parser implementation template and acceptance criteria.** Added §21 Parser Implementation Template with standardized 9-step structure (detect encoding → parse format → normalize → cast → validate → inject metadata → finalize → metrics → return ParseResult). Includes per-parser acceptance checklist with routing, validation, precision, performance, and testing requirements. Added golden-first development workflow (extract fixture → write test → implement → verify → commit). Provides copy/paste checklist for parser PRs. Supports Phase 1 parser implementations (PPRRVU, CF, GPCI, ANES, OPPSCAP, Locality). | #TBD |
 | 1.1 | 2025-10-15 | **Production-grade enhancements for MPFS implementation.** Upgraded parser return type to `ParseResult(data, rejects, metrics)` for cleaner separation (§5.3). Added content sniffing via `file_head` parameter for magic byte/BOM detection (§6.2). Changed row hash to full 64-char SHA-256 digest with schema-driven precision per column (§5.2). Added CP1252 to encoding cascade for Windows file support (§5.2). Implemented explicit categorical domain validation - pre-check before conversion to prevent silent NaN coercion (§8.2.1). Pinned exact natural keys per dataset including `effective_from` for time-variant data. Added vintage field duplication guidance (§6.4). Enhanced test strategy with explicit IO boundary rules - parsers return data, ingestors write files (§14.1). Updated acceptance criteria with all v1.1 requirements (§18). These changes prevent technical debt and enable immediate production deployment. | #TBD |
 | 1.0 | 2025-10-15 | Initial adoption of parser contracts standard. Defines public contract requirements (pandas DataFrame return type), metadata injection pattern with three vintage fields, tiered validation (BLOCK/WARN/INFO), formal row hash specification for reproducibility, SemVer for parsers/schemas/layouts, integration with DIS normalize stage, and comprehensive testing strategy. Documents v1.0 implementation (pandas, helper-based quarantine, Python dict layouts, filename routing) and v1.1 enhancements (ParseResult, YAML layouts, magic byte routing). Establishes governance for shared parser infrastructure used by MPFS, RVU, OPPS, and future ingestors. | #TBD |
