@@ -29,9 +29,9 @@ from typing import List, Dict, Tuple, Optional, Any
 
 CHANGELOG_PATH = Path("CHANGELOG.md")
 REQUIRED_SECTIONS = ["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"]
-VERSION_PATTERN = re.compile(r"^##\s+\[(\d+\.\d+\.\d+.*?)\]\s*-\s*(\d{4}-\d{2}-\d{2})$")
+VERSION_PATTERN = re.compile(r"^##\s+\[(v?\d+\.\d+\.\d+(?:-[^\]]+)?)\]\s*-\s*(\d{4}-\d{2}-\d{2})$")
 UNRELEASED_PATTERN = re.compile(r"^\[Unreleased\]", re.IGNORECASE)
-COMMIT_LINK_PATTERN = re.compile(r"\[#?([a-f0-9]{7,40})\]")
+COMMIT_LINK_PATTERN = re.compile(r"\[#?([a-f0-9]{7,40})\](?:\([^)]+\))?")  # Handles both [hash] and [hash](url)
 PR_LINK_PATTERN = re.compile(r"\[#(\d+)\]")
 PRD_LINK_PATTERN = re.compile(r"\b([A-Z]{3}-[a-z-]+-(?:prd|impl)-v\d+\.\d+\.md)\b")
 
@@ -60,7 +60,7 @@ def get_git_tags() -> List[Tuple[str, str]]:
 
 
 def get_commits_since_tag(tag: str) -> List[Dict[str, str]]:
-    """Get commits since specified tag."""
+    """Get commits since specified tag, excluding CHANGELOG-only commits."""
     try:
         result = subprocess.run(
             ["git", "log", f"{tag}..HEAD", "--pretty=format:%H|%s|%ad", "--date=short"],
@@ -72,6 +72,18 @@ def get_commits_since_tag(tag: str) -> List[Dict[str, str]]:
         for line in result.stdout.strip().split('\n'):
             if line and '|' in line:
                 hash_val, subject, date = line.split('|', 2)
+                
+                # Check if commit only touched CHANGELOG.md (self-referential loop guard)
+                files_changed = subprocess.run(
+                    ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", hash_val],
+                    capture_output=True,
+                    text=True
+                ).stdout.strip().split('\n')
+                
+                # Skip commits that only modify CHANGELOG.md
+                if files_changed == ['CHANGELOG.md']:
+                    continue
+                
                 commits.append({
                     "hash": hash_val,
                     "short_hash": hash_val[:7],
@@ -224,8 +236,12 @@ def check_unreleased_commits(parsed: Dict) -> Tuple[bool, str]:
             if c["short_hash"] not in documented_commits and c["hash"] not in documented_commits
         ]
         
-        if undocumented and len(undocumented) > 3:  # Allow up to 3 minor commits
-            return False, f"⚠️  {len(undocumented)} commits since {latest_tag} not in Unreleased: {undocumented[:3]}..."
+        # Tolerance for self-referential CHANGELOG updates (1-2 commits acceptable)
+        if undocumented:
+            if len(undocumented) <= 2:
+                return True, f"⚠️  {len(undocumented)} recent commit(s) not documented (acceptable for CHANGELOG updates)"
+            else:
+                return False, f"❌ {len(undocumented)} commits since {latest_tag} not in Unreleased: {undocumented[:3]}..."
         
         return True, f"✅ Recent commits documented ({len(recent_commits)} since {latest_tag})"
     
@@ -239,7 +255,9 @@ def check_version_format(parsed: Dict) -> Tuple[bool, str]:
     invalid_versions = []
     for version_info in parsed["versions"]:
         version = version_info["version"]
-        if not semver_pattern.match(version):
+        # Strip leading 'v' before validation (consistent with version parsing)
+        version_to_check = version.lstrip('v')
+        if not semver_pattern.match(version_to_check):
             invalid_versions.append(version)
     
     if invalid_versions:
@@ -383,4 +401,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
