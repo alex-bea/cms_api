@@ -9,8 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Planned
-- Phase 1: Parser implementations (PPRRVU, Conversion Factor, GPCI, ANES, OPPSCAP, Locality)
+### Added (Phase 1 - In Progress)
+- Custom parser error types: `ParseError`, `DuplicateKeyError`, `CategoryValidationError`, `LayoutMismatchError`, `SchemaRegressionError`
+- Configurable natural key uniqueness severity (BLOCK/WARN) in `check_natural_key_uniqueness()`
+- PPRRVU parser implementation (90% complete, debugging fixed-width parsing)
+- PPRRVU golden fixture (94 rows, SHA-256: `b4437f4534b999e1764a4bbb4c13f05dc7e18e256bdbc9cd87e82a8caed05e1e`)
+- 4 negative test fixtures for parser validation (bad_layout, bad_dup_keys, bad_category, bad_schema_regression)
+- 7 comprehensive PPRRVU tests (written, debugging in progress)
+- `README_PPRRVU.md` parser-specific documentation
+- `ingestor` pytest marker for parser/ingestor tests
+
+### Changed
+- `check_natural_key_uniqueness()` enhanced with configurable `severity` parameter (BLOCK/WARN)
+- Schema loading logic strips minor version from schema_id (e.g., `cms_pprrvu_v1.1` → `cms_pprrvu_v1.0.json`)
+- `pyproject.toml` pytest markers updated to include `ingestor`
+
+### In Progress
+- PPRRVU parser fixed-width parsing (KeyError: 'hcpcs' - debugging column mapping)
+- Layout registry integration (parameter order resolved, column creation debugging)
+- Test suite validation (7 tests written, awaiting parser fix)
+
+### Technical Debt
+- Layout registry API needs documentation (signature, lookup patterns, fallback behavior)
+- Schema file naming convention should be in STD-parser-contracts PRD
+- Fixed-width parsing helpers should be extracted to parser kit for reuse
+
+### Planned (Next Sessions)
+- Complete PPRRVU parser debugging
+- Conversion Factor parser
+- GPCI, ANES, OPPSCAP, Locality parsers
 - Phase 2: Advanced routing (weighted voting, confidence scoring, PII detection)
 - Phase 2: Vocabulary registry with normalizers
 - Phase 2: Telemetry and observability metrics

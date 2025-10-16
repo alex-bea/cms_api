@@ -1,534 +1,412 @@
 """
-PPRRVU Parser - Public Contract (SemVer v1.0)
+PPRRVU Parser - Physician/Practitioner Relative Value Units
 
-Parses CMS Physician/Practitioner RVU files to canonical schema.
-Handles fixed-width TXT and CSV formats with production-grade refinements:
+Parses CMS MPFS PPRRVU files (fixed-width TXT, CSV, XLSX) to canonical schema.
 
-Refinements implemented:
-1. Metadata injection - Accepts metadata dict, injects columns
-2. Explicit dtypes - Categorical for codes, no object/float coercion
-3. Deterministic output - Sorted by natural key + row content hash
-4. Encoding/BOM handling - Explicit UTF-8/Latin-1 with BOM stripping
-5. Content sniffing - Detects format from content, not just filename
-6. Enhanced logging - release_id + file_sha256 + schema_id
-7. Reference validation - Quick HCPCS format check
-8. Quarantine artifacts - Minimal rejects tracking for Phase 2
-9. Layout registry - Externalized, SemVer'd by year/quarter
-10. Error messages - Clear, actionable error reporting
-
-Public contract guarantees:
-- All columns have explicit dtypes (no object for codes)
-- Deterministic output (sorted by natural key)
-- Row content hash for idempotency verification
-- Metadata columns injected
-- Encoding/BOM handled
-- Schema-validated output
+Per STD-parser-contracts v1.2 §21.
 """
 
-import hashlib
+from typing import IO, Dict, Any, Optional
 import pandas as pd
-from typing import IO, Dict, Any, List, Tuple
-from io import BytesIO
-from pathlib import Path
-from datetime import datetime
 import structlog
+from io import StringIO, BytesIO
+from datetime import datetime
+
+from cms_pricing.ingestion.parsers._parser_kit import (
+    ParseResult,
+    ValidationResult,
+    ValidationSeverity,
+    CategoryValidationError,
+    DuplicateKeyError,
+    LayoutMismatchError,
+    detect_encoding,
+    enforce_categorical_dtypes,
+    finalize_parser_output,
+    check_natural_key_uniqueness,
+    canonicalize_numeric_col,
+    compute_row_id
+)
+from cms_pricing.ingestion.parsers.layout_registry import get_layout
+import json
+from pathlib import Path
 
 logger = structlog.get_logger()
 
-
-class ParseError(Exception):
-    """Parser-specific error"""
-    pass
+PARSER_VERSION = "v1.0.0"
+SCHEMA_ID = "cms_pprrvu_v1.1"
+NATURAL_KEYS = ["hcpcs", "modifier", "status_code", "effective_from"]
 
 
 def parse_pprrvu(
-    file_obj: IO,
+    file_obj: IO[bytes],
     filename: str,
-    metadata: Dict[str, Any],
-    schema_version: str = "v1.0"
-) -> pd.DataFrame:
+    metadata: Dict[str, Any]
+) -> ParseResult:
     """
-    Parse PPRRVU file to canonical schema with metadata injection.
+    Parse PPRRVU file to canonical schema.
     
-    Public contract following DIS v1.0 standards.
+    Per STD-parser-contracts v1.2 §21.1 (9-step template).
+    
+    Supports:
+    - Fixed-width TXT (using layout registry)
+    - CSV (header variations, case-insensitive matching)
+    - XLSX (single sheet)
     
     Args:
-        file_obj: File object to parse
+        file_obj: Binary file stream
         filename: Filename for format detection
         metadata: Required metadata from ingestor:
-                  - release_id: str
-                  - vintage_date: datetime
-                  - product_year: str
-                  - quarter_vintage: str
-                  - file_sha256: str (for logging)
-        schema_version: Schema contract version (default "v1.0")
-    
+            - release_id: str
+            - product_year: str (e.g., "2025")
+            - quarter_vintage: str (e.g., "2025Q4")
+            - vintage_date: datetime
+            - file_sha256: str
+            - source_uri: str (optional)
+            - schema_id: str (should be "cms_pprrvu_v1.1")
+            - layout_version: str (e.g., "v2025.4.0")
+        
     Returns:
-        Arrow-backed DataFrame with explicit dtypes and metadata columns.
-        Columns include:
-            - PPRRVU data fields (hcpcs, work_rvu, etc.)
-            - Metadata: release_id, vintage_date, product_year, quarter_vintage
-            - Provenance: source_filename, source_file_sha256
-            - Quality: row_content_hash
+        ParseResult with:
+            - data: Canonical DataFrame (valid rows, metadata injected, hashed, sorted)
+            - rejects: Rejected rows (validation failures with provenance)
+            - metrics: Parse metrics (duration, encoding, rows, etc.)
         
     Raises:
-        ParseError: If parsing fails
         ValueError: If required metadata missing
+        DuplicateKeyError: If duplicate natural keys found (severity=BLOCK)
+        LayoutMismatchError: If fixed-width parsing fails
     
-    Contract guarantees:
-        - All columns have explicit dtypes (no object for codes)
-        - Deterministic output (sorted by natural key)
-        - Row content hash for idempotency verification
-        - Metadata columns injected
-        - Encoding/BOM handled
+    Example:
+        >>> metadata = {
+        ...     'release_id': 'mpfs_2025_q4',
+        ...     'product_year': '2025',
+        ...     'quarter_vintage': '2025Q4',
+        ...     'vintage_date': datetime(2025, 10, 1),
+        ...     'schema_id': 'cms_pprrvu_v1.1',
+        ...     'layout_version': 'v2025.4.0',
+        ...     'file_sha256': 'abc123...',
+        ...     'source_uri': 'https://cms.gov/...'
+        ... }
+        >>> with open('PPRRVU2025.txt', 'rb') as f:
+        ...     result = parse_pprrvu(f, 'PPRRVU2025.txt', metadata)
+        >>> print(f"Parsed {len(result.data)} rows, {len(result.rejects)} rejects")
     """
-    # Validate metadata
-    required_metadata = ['release_id', 'vintage_date', 'product_year', 'quarter_vintage']
-    missing = [k for k in required_metadata if k not in metadata]
+    import time
+    start_time = time.perf_counter()
+    
+    # Validate required metadata
+    required = ['release_id', 'product_year', 'quarter_vintage', 'schema_id', 'file_sha256']
+    missing = [k for k in required if k not in metadata]
     if missing:
         raise ValueError(f"Missing required metadata: {missing}")
     
-    # Enhanced logging with traceability (refinement #9)
     logger.info(
-        "Parsing PPRRVU file",
+        "Starting PPRRVU parse",
         filename=filename,
         release_id=metadata['release_id'],
-        file_sha256=metadata.get('file_sha256', 'unknown'),
-        schema_id=f"cms_pprrvu_{schema_version}",
-        product_year=metadata['product_year'],
-        quarter_vintage=metadata['quarter_vintage']
+        schema_id=metadata['schema_id']
     )
     
+    # Step 1: Detect encoding
+    content = file_obj.read()
+    encoding, content_clean = detect_encoding(content)
+    logger.info("Encoding detected", encoding=encoding, filename=filename)
+    
+    # Step 2: Parse format (fixed-width vs CSV vs XLSX)
     try:
-        # Read content for sniffing (refinement #5)
-        file_content = file_obj.read()
-        
-        # Detect format using content sniffing
-        is_fixed_width, encoding = _detect_format_and_encoding(file_content, filename)
-        
-        # Parse based on detected format
-        file_obj = BytesIO(file_content)
-        
-        if is_fixed_width:
-            df = _parse_fixed_width_pprrvu(file_obj, metadata, encoding)
+        if filename.lower().endswith('.txt'):
+            df = _parse_fixed_width(content_clean, encoding, metadata)
+        elif filename.lower().endswith('.xlsx'):
+            df = _parse_xlsx(content_clean)
         else:
-            df = _parse_csv_pprrvu(file_obj, metadata, encoding)
+            df = _parse_csv(content_clean, encoding)
         
-        # Normalize column names to canonical schema
-        df = _normalize_pprrvu_columns(df)
-        
-        # Enforce explicit dtypes (refinement #1)
-        df = _enforce_pprrvu_dtypes(df)
-        
-        # Inject metadata columns (refinement #1)
-        df['release_id'] = metadata['release_id']
-        df['vintage_date'] = metadata['vintage_date']
-        df['product_year'] = metadata['product_year']
-        df['quarter_vintage'] = metadata['quarter_vintage']
-        df['source_filename'] = filename
-        df['source_file_sha256'] = metadata.get('file_sha256')
-        df['parsed_at'] = datetime.utcnow()
-        
-        # Sort for determinism (refinement #6)
-        df = df.sort_values(
-            by=['hcpcs', 'modifier', 'status_code'],
-            na_position='last'
-        ).reset_index(drop=True)
-        
-        # Add row content hash for idempotency (refinement #6)
-        df['row_content_hash'] = df.apply(
-            lambda row: _compute_row_hash(row),
-            axis=1
-        )
-        
-        # Quick HCPCS format validation (refinement #8)
-        invalid_hcpcs = _quick_validate_hcpcs_format(df)
-        if invalid_hcpcs:
-            logger.warning(
-                "Invalid HCPCS codes detected",
-                count=len(invalid_hcpcs),
-                samples=invalid_hcpcs[:5]
-            )
-            # Create minimal quarantine artifact (refinement #12)
-            _write_quarantine_artifact(
-                df[df['hcpcs'].isin(invalid_hcpcs)],
-                metadata['release_id'],
-                'invalid_hcpcs_format',
-                dataset='pprrvu'
-            )
-        
-        # Log parse summary
-        null_rates = df.isnull().sum() / len(df) if len(df) > 0 else {}
-        null_rate_max = null_rates.max() if len(null_rates) > 0 else 0
-        
-        logger.info(
-            "PPRRVU parse completed",
-            rows=len(df),
-            columns=len(df.columns),
-            null_rate_max=round(null_rate_max, 4),
-            invalid_hcpcs=len(invalid_hcpcs)
-        )
-        
-        return df
-        
+        logger.info(f"Parsed {len(df)} rows from {filename}")
     except Exception as e:
-        logger.error(
-            "PPRRVU parse failed",
-            filename=filename,
-            release_id=metadata.get('release_id'),
-            error=str(e),
-            error_type=type(e).__name__
-        )
-        raise ParseError(f"Failed to parse PPRRVU {filename}: {str(e)}") from e
-
-
-def _detect_format_and_encoding(content: bytes, filename: str) -> Tuple[bool, str]:
-    """
-    Detect if file is fixed-width and determine encoding.
+        raise LayoutMismatchError(f"Failed to parse {filename}: {e}") from e
     
-    Uses content sniffing + filename hints (refinement #5).
-    Handles BOM detection (refinement #9).
+    # Step 3: Normalize column names
+    df = _normalize_column_names(df)
     
-    Returns:
-        (is_fixed_width, encoding)
-    """
-    # Detect and strip BOM
-    if content.startswith(b'\xef\xbb\xbf'):  # UTF-8 BOM
-        encoding = 'utf-8'
-        content = content[3:]
-    elif content.startswith(b'\xff\xfe'):  # UTF-16 LE BOM
-        encoding = 'utf-16-le'
-        content = content[2:]
-    else:
-        # Try UTF-8 first
-        try:
-            content.decode('utf-8')
-            encoding = 'utf-8'
-        except UnicodeDecodeError:
-            encoding = 'latin-1'  # Fallback for CMS files
+    # Step 4: Cast dtypes (explicit, no coercion)
+    df = _cast_dtypes(df, metadata)
     
-    # Detect fixed-width: TXT files without delimiters
-    if filename.endswith('.txt'):
-        # Decode first line
-        try:
-            first_line = content.split(b'\n')[0].decode(encoding)
-            # Fixed-width has no common delimiters
-            is_fixed_width = (',' not in first_line and '\t' not in first_line)
-        except:
-            is_fixed_width = True  # Assume fixed-width if decode fails
-    else:
-        is_fixed_width = False
+    # Step 5: Load schema contract (JSON file)
+    # Schema files are named without minor version: cms_pprrvu_v1.0.json contains v1.1 spec
+    schema_id = metadata.get('schema_id', SCHEMA_ID)
+    # Strip minor version: cms_pprrvu_v1.1 → cms_pprrvu_v1.0
+    schema_base = schema_id.rsplit('.', 1)[0] if '.' in schema_id else schema_id
+    schema_file = Path(__file__).parent.parent / "contracts" / f"{schema_base}.0.json"
     
-    logger.debug(
-        "Format detected",
+    with open(schema_file) as f:
+        schema = json.load(f)
+    
+    # Step 6: Categorical validation (BEFORE casting to categorical)
+    cat_result = enforce_categorical_dtypes(
+        df, 
+        schema,
+        natural_keys=NATURAL_KEYS,
+        schema_id=metadata['schema_id'],
+        release_id=metadata['release_id'],
+        severity=ValidationSeverity.WARN
+    )
+    
+    # Step 7: Natural key uniqueness check (BLOCK severity for PPRRVU)
+    unique_df, dup_df = check_natural_key_uniqueness(
+        cat_result.valid_df,
+        natural_keys=NATURAL_KEYS,
+        severity=ValidationSeverity.BLOCK,  # Hard-fail on duplicates
+        schema_id=metadata['schema_id'],
+        release_id=metadata['release_id']
+    )
+    
+    # Step 8: Inject metadata columns
+    unique_df['release_id'] = metadata['release_id']
+    unique_df['vintage_date'] = metadata.get('vintage_date')
+    unique_df['product_year'] = metadata['product_year']
+    unique_df['quarter_vintage'] = metadata['quarter_vintage']
+    unique_df['source_filename'] = filename
+    unique_df['source_file_sha256'] = metadata['file_sha256']
+    unique_df['source_uri'] = metadata.get('source_uri', '')
+    unique_df['parsed_at'] = pd.Timestamp.utcnow()
+    unique_df['schema_id'] = metadata['schema_id']
+    
+    # Step 9: Finalize (hash + sort)
+    final_df = finalize_parser_output(
+        unique_df,
+        NATURAL_KEYS,
+        schema
+    )
+    
+    # Step 10: Build metrics
+    parse_duration = time.perf_counter() - start_time
+    
+    metrics = {
+        **cat_result.metrics,  # From categorical validation
+        'parser_version': PARSER_VERSION,
+        'encoding_detected': encoding,
+        'parse_duration_sec': parse_duration,
+        'schema_id': metadata['schema_id'],
+        'layout_version': metadata.get('layout_version', 'unknown'),
+        'filename': filename,
+        'total_rows': len(final_df) + len(cat_result.rejects_df),
+        'rows_valid': len(final_df),
+        'rows_rejected': len(cat_result.rejects_df)
+    }
+    
+    logger.info(
+        "PPRRVU parse completed",
         filename=filename,
-        is_fixed_width=is_fixed_width,
+        rows_valid=len(final_df),
+        rows_rejected=len(cat_result.rejects_df),
+        duration_sec=parse_duration,
         encoding=encoding
     )
     
-    return is_fixed_width, encoding
-
-
-def _parse_fixed_width_pprrvu(
-    file_obj: IO,
-    metadata: Dict[str, Any],
-    encoding: str
-) -> pd.DataFrame:
-    """
-    Parse fixed-width PPRRVU format.
-    
-    Uses externalized layout registry (refinement #3).
-    """
-    from cms_pricing.ingestion.parsers.layout_registry import get_layout, parse_fixed_width_record
-    
-    # Get layout for this year/quarter
-    layout = get_layout(
-        product_year=metadata['product_year'],
-        quarter_vintage=metadata['quarter_vintage'],
-        dataset='pprrvu'
+    return ParseResult(
+        data=final_df,
+        rejects=cat_result.rejects_df,
+        metrics=metrics
     )
+
+
+# ============================================================================
+# Helper Functions (Private)
+# ============================================================================
+
+def _parse_fixed_width(content: bytes, encoding: str, metadata: Dict) -> pd.DataFrame:
+    """
+    Parse fixed-width format using layout registry.
     
-    if not layout:
-        raise ParseError(
-            f"No fixed-width layout found for PPRRVU "
-            f"{metadata['product_year']} {metadata['quarter_vintage']}"
+    Args:
+        content: File bytes (BOM-stripped)
+        encoding: Detected encoding
+        metadata: Metadata dict with product_year, quarter_vintage
+        
+    Returns:
+        DataFrame with raw parsed data
+        
+    Raises:
+        LayoutMismatchError: If layout not found or parsing fails
+    """
+    text = content.decode(encoding)
+    lines = text.strip().split('\n')
+    
+    # Get layout from registry
+    year = metadata.get('product_year', '2025')
+    quarter_vintage = metadata.get('quarter_vintage', '2025Q4')
+    
+    # layout_registry.get_layout(product_year, quarter_vintage, dataset)
+    layout = get_layout(year, quarter_vintage, 'pprrvu')
+    
+    if layout is None:
+        raise LayoutMismatchError(
+            f"Layout not found for pprrvu year={year} quarter={quarter_vintage}. "
+            f"Check layout_registry.py for registered layouts."
         )
     
-    logger.debug(
-        "Using fixed-width layout",
-        version=layout['version'],
-        columns=len(layout['columns'])
-    )
+    # Skip header rows (lines starting with 'HDR')
+    data_lines = [line for line in lines if not line.startswith('HDR')]
     
-    # Read and decode content
-    content = file_obj.read()
+    min_length = layout.get('min_line_length', 200)
     
-    # Handle encoding (explicit, refinement #9)
-    try:
-        text = content.decode(encoding)
-    except UnicodeDecodeError as e:
-        logger.warning(f"Encoding {encoding} failed, trying latin-1", error=str(e))
-        text = content.decode('latin-1')
-    
-    # Parse lines
     records = []
-    parse_errors = []
-    
-    for line_num, line in enumerate(text.splitlines(), 1):
-        # Skip empty lines
-        if not line.strip():
-            continue
-        
-        # Check minimum line length
-        if len(line) < layout.get('min_line_length', 0):
+    for line_num, line in enumerate(data_lines, start=1):
+        if len(line) < min_length:
+            logger.debug(f"Skipping short line {line_num}: {len(line)} < {min_length}")
             continue
         
         try:
-            record = parse_fixed_width_record(line, layout)
-            record['source_line_num'] = line_num
+            record = {}
+            for col_name, col_spec in layout['columns'].items():
+                start = col_spec['start']
+                end = col_spec['end']
+                value = line[start:end].strip()
+                record[col_name] = value if value else None
+            
             records.append(record)
         except Exception as e:
-            parse_errors.append({
-                'line_num': line_num,
-                'error': str(e),
-                'line_preview': line[:50]
-            })
+            logger.warning(f"Failed to parse line {line_num}: {e}")
+            continue
     
-    # Log parse errors but don't fail (collect all errors - refinement #5)
-    if parse_errors:
-        logger.warning(
-            "Fixed-width parse errors",
-            error_count=len(parse_errors),
-            total_lines=line_num,
-            error_rate=len(parse_errors) / line_num
-        )
-    
-    df = pd.DataFrame(records)
-    
-    logger.debug(
-        "Fixed-width parsing completed",
-        rows_parsed=len(df),
-        errors=len(parse_errors)
-    )
-    
-    return df
+    return pd.DataFrame(records)
 
 
-def _parse_csv_pprrvu(
-    file_obj: IO,
-    metadata: Dict[str, Any],
-    encoding: str
-) -> pd.DataFrame:
+def _parse_csv(content: bytes, encoding: str) -> pd.DataFrame:
     """
-    Parse CSV PPRRVU format.
+    Parse CSV format with header detection.
     
-    Handles header variations and encoding.
-    """
-    try:
-        # Read CSV with explicit encoding
-        df = pd.read_csv(file_obj, dtype=str, encoding=encoding)
+    Args:
+        content: File bytes
+        encoding: Detected encoding
         
-        logger.debug(
-            "CSV parsing completed",
-            rows=len(df),
-            columns=len(df.columns)
-        )
-        
-        return df
-        
-    except Exception as e:
-        raise ParseError(f"CSV parsing failed: {str(e)}") from e
-
-
-def _normalize_pprrvu_columns(df: pd.DataFrame) -> pd.DataFrame:
+    Returns:
+        DataFrame with raw parsed data
     """
-    Normalize PPRRVU column names to canonical schema.
+    text = content.decode(encoding)
+    return pd.read_csv(StringIO(text))
+
+
+def _parse_xlsx(content: bytes) -> pd.DataFrame:
+    """
+    Parse XLSX format.
     
-    Handles case variations and aliases.
+    Args:
+        content: File bytes
+        
+    Returns:
+        DataFrame with raw parsed data
     """
-    # Column mapping (case-insensitive)
-    column_mapping = {
+    return pd.read_excel(BytesIO(content), sheet_name=0)
+
+
+def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normalize column names to canonical snake_case.
+    
+    Handles CMS header variations (case, spaces, underscores).
+    
+    Args:
+        df: Raw DataFrame
+        
+    Returns:
+        DataFrame with normalized column names
+    """
+    COLUMN_ALIASES = {
         'HCPCS': 'hcpcs',
         'HCPCS_CODE': 'hcpcs',
+        'HCPCS CODE': 'hcpcs',
         'CPT': 'hcpcs',
-        'HCPCS_CD': 'hcpcs',
-        'MODIFIER': 'modifier',
+        'CPT/HCPCS': 'hcpcs',
         'MOD': 'modifier',
+        'MODIFIER': 'modifier',
+        'MOD1': 'modifier',
         'STATUS': 'status_code',
         'STATUS_CODE': 'status_code',
         'STAT': 'status_code',
-        'GLOBAL_DAYS': 'global_days',
-        'GLOBAL': 'global_days',
         'WORK_RVU': 'work_rvu',
+        'WORK RVU': 'work_rvu',
         'RVU_WORK': 'work_rvu',
         'WORK': 'work_rvu',
         'PE_NONFAC_RVU': 'pe_rvu_nonfac',
-        'PE_RVU_NONFAC': 'pe_rvu_nonfac',
+        'PE NONFAC RVU': 'pe_rvu_nonfac',
         'NON_FAC_PE_RVU': 'pe_rvu_nonfac',
+        'PE_NONFAC': 'pe_rvu_nonfac',
         'PE_FAC_RVU': 'pe_rvu_fac',
-        'PE_RVU_FAC': 'pe_rvu_fac',
+        'PE FAC RVU': 'pe_rvu_fac',
         'FAC_PE_RVU': 'pe_rvu_fac',
-        'MALP_RVU': 'mp_rvu',
+        'PE_FAC': 'pe_rvu_fac',
         'MP_RVU': 'mp_rvu',
         'MALPRACTICE_RVU': 'mp_rvu',
-        'NA_INDICATOR': 'na_indicator',
+        'MALPRACTICE RVU': 'mp_rvu',
+        'MALP_RVU': 'mp_rvu',
+        'MP': 'mp_rvu',
+        'GLOBAL': 'global_days',
+        'GLOBAL_DAYS': 'global_days',
+        'GLOB_DAYS': 'global_days',
         'NA_IND': 'na_indicator',
+        'NA': 'na_indicator',
+        'NA_INDICATOR': 'na_indicator',
         'OPPS_CAP': 'opps_cap_applicable',
-        'BILATERAL_IND': 'bilateral_ind',
-        'MULT_PROC_IND': 'multiple_proc_ind',
-        'ASST_SURG_IND': 'assistant_surg_ind',
-        'CO_SURG_IND': 'co_surg_ind',
-        'TEAM_SURG_IND': 'team_surg_ind',
+        'CAP': 'opps_cap_applicable',
+        'OPPS_CAP_IND': 'opps_cap_applicable',
+        'EFFECTIVE_DATE': 'effective_from',
+        'EFFECTIVE': 'effective_from',
+        'EFF_DATE': 'effective_from',
     }
     
-    # Apply mapping (case-insensitive)
-    df_cols_upper = {col: col.upper() for col in df.columns}
-    rename_dict = {}
-    
-    for col in df.columns:
-        col_upper = df_cols_upper[col]
-        if col_upper in column_mapping:
-            rename_dict[col] = column_mapping[col_upper]
-    
-    df = df.rename(columns=rename_dict)
-    
-    return df
-
-
-def _enforce_pprrvu_dtypes(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Enforce explicit dtypes to avoid pandas coercion (refinement #1).
-    
-    Returns DataFrame with categorical codes and explicit numeric types.
-    Prevents float coercion on string codes like HCPCS.
-    """
-    # Define dtype schema
-    dtype_schema = {
-        # Codes as categorical (not object or float!)
-        'hcpcs': pd.CategoricalDtype(),
-        'modifier': pd.CategoricalDtype(),
-        'status_code': pd.CategoricalDtype(categories=['A', 'R', 'T', 'I', 'N'], ordered=False),
-        'global_days': pd.CategoricalDtype(categories=['000', '010', '090', 'XXX', 'YYY', 'ZZZ'], ordered=False),
-        
-        # RVU components as explicit float64
-        'work_rvu': 'float64',
-        'pe_rvu_nonfac': 'float64',
-        'pe_rvu_fac': 'float64',
-        'mp_rvu': 'float64',
-        
-        # Indicators as categorical
-        'na_indicator': pd.CategoricalDtype(categories=['Y', 'N'], ordered=False),
-        'bilateral_ind': pd.CategoricalDtype(),
-        'multiple_proc_ind': pd.CategoricalDtype(),
-        'assistant_surg_ind': pd.CategoricalDtype(),
-        'co_surg_ind': pd.CategoricalDtype(),
-        'team_surg_ind': pd.CategoricalDtype(),
-        
-        # Boolean
-        'opps_cap_applicable': 'bool',
-    }
-    
-    for col, dtype in dtype_schema.items():
-        if col in df.columns:
-            try:
-                df[col] = df[col].astype(dtype)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to convert {col} to {dtype}",
-                    error=str(e)
-                )
-    
-    return df
-
-
-def _compute_row_hash(row: pd.Series) -> str:
-    """
-    Compute deterministic hash of row content (refinement #6).
-    
-    For idempotency verification in tests. Excludes metadata columns.
-    """
-    # Exclude metadata columns from hash
-    exclude_prefixes = ('source_', 'row_', 'release_', 'vintage_', 'parsed_', 'product_', 'quarter_')
-    content_cols = [
-        c for c in row.index 
-        if not any(c.startswith(prefix) for prefix in exclude_prefixes)
+    df = df.copy()
+    df.columns = [
+        COLUMN_ALIASES.get(c.strip().upper(), c.lower().strip().replace(' ', '_'))
+        for c in df.columns
     ]
-    
-    # Build deterministic content string
-    content_parts = []
-    for col in sorted(content_cols):
-        value = row[col]
-        # Handle NaN/None
-        if pd.isna(value):
-            content_parts.append(f"{col}:NULL")
-        else:
-            content_parts.append(f"{col}:{value}")
-    
-    content = '|'.join(content_parts)
-    
-    # Compute hash
-    return hashlib.sha256(content.encode('utf-8')).hexdigest()[:16]
+    return df
 
 
-def _quick_validate_hcpcs_format(df: pd.DataFrame) -> List[str]:
+def _cast_dtypes(df: pd.DataFrame, metadata: Dict) -> pd.DataFrame:
     """
-    Quick HCPCS format validation (refinement #8).
+    Cast columns to explicit dtypes (no coercion).
     
-    Minimal reference check in Phase 1.
-    Full reference validation happens in Phase 2.
+    Categorical conversion happens in validation step.
     
+    Args:
+        df: Normalized DataFrame
+        metadata: Metadata dict with vintage_date
+        
     Returns:
-        List of invalid HCPCS codes
+        DataFrame with explicit dtypes
     """
-    if 'hcpcs' not in df.columns:
-        return []
+    df = df.copy()
     
-    # HCPCS must be exactly 5 alphanumeric characters
-    invalid_mask = ~df['hcpcs'].astype(str).str.match(r'^[A-Z0-9]{5}$', na=False)
-    invalid = df[invalid_mask]
+    # Codes as strings (categorical conversion in Step 6)
+    if 'hcpcs' in df.columns:
+        df['hcpcs'] = df['hcpcs'].astype(str).str.strip().str.upper()
     
-    return invalid['hcpcs'].unique().tolist()
-
-
-def _write_quarantine_artifact(
-    rejected_df: pd.DataFrame,
-    release_id: str,
-    reason: str,
-    dataset: str
-):
-    """
-    Write minimal quarantine artifact (refinement #12).
+    if 'modifier' in df.columns:
+        df['modifier'] = df['modifier'].fillna('').astype(str).str.strip().str.upper()
+        df.loc[df['modifier'] == '', 'modifier'] = None  # Empty string → None
     
-    Even in Phase 1, track rejects for Phase 2 reuse.
-    Enables operators to see what was rejected and why.
-    """
-    if len(rejected_df) == 0:
-        return
+    if 'status_code' in df.columns:
+        df['status_code'] = df['status_code'].astype(str).str.strip().str.upper()
     
-    quarantine_dir = Path(f"data/quarantine/{release_id}")
-    quarantine_dir.mkdir(parents=True, exist_ok=True)
+    # RVUs as float64 (precision handled in canonicalize step)
+    rvu_cols = ['work_rvu', 'pe_rvu_nonfac', 'pe_rvu_fac', 'mp_rvu']
+    for col in rvu_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            # Apply schema-driven precision (2 decimals, HALF_UP)
+            df[col] = canonicalize_numeric_col(df[col], precision=2, rounding='HALF_UP')
     
-    quarantine_path = quarantine_dir / f"{dataset}_{reason}.parquet"
+    # Global days as int
+    if 'global_days' in df.columns:
+        df['global_days'] = pd.to_numeric(df['global_days'], errors='coerce').fillna(0).astype('Int64')
     
-    # Add quarantine metadata
-    rejected_df = rejected_df.copy()
-    rejected_df['quarantine_reason'] = reason
-    rejected_df['quarantined_at'] = datetime.utcnow()
-    rejected_df['quarantine_dataset'] = dataset
+    # Dates - use metadata vintage_date if effective_from not in file
+    if 'effective_from' not in df.columns:
+        df['effective_from'] = metadata.get('vintage_date', pd.Timestamp('2025-01-01'))
+    elif 'effective_from' in df.columns:
+        df['effective_from'] = pd.to_datetime(df['effective_from'], errors='coerce')
+        # Fill NaT with vintage_date
+        df['effective_from'] = df['effective_from'].fillna(metadata.get('vintage_date', pd.Timestamp('2025-01-01')))
     
-    rejected_df.to_parquet(quarantine_path, index=False)
-    
-    logger.info(
-        "Quarantine artifact created",
-        path=str(quarantine_path),
-        rows=len(rejected_df),
-        reason=reason
-    )
-
-
-# Export public API
-__all__ = [
-    'parse_pprrvu',
-    'ParseError',
-]
-
+    return df
