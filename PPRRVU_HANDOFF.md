@@ -195,6 +195,73 @@ def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
 
 ---
 
+## 🏗️ Architecture: DB Contract vs API Surface
+
+### Why Two Naming Conventions?
+
+The codebase uses **two different column naming patterns** for a strategic reason:
+
+**Schema/DB Format (Internal, Canonical):**
+- Column names: `rvu_work`, `rvu_pe_nonfac`, `rvu_pe_fac`, `rvu_malp`
+- Rationale: Prefixed naming groups related fields logically
+- Used by: Parsers, DB tables, schema contracts, ingestors
+- Example: All RVU fields start with `rvu_*`
+
+**API Format (External, Presentation):**
+- Column names: `work_rvu`, `pe_rvu_nonfac`, `pe_rvu_fac`, `mp_rvu`
+- Rationale: Suffixed naming is more intuitive for API consumers
+- Used by: API responses, Pydantic schemas, external docs
+- Example: Field type as suffix (`*_rvu`)
+
+### Data Flow & Transformation
+
+```
+CMS Raw Data (TXT/CSV/XLSX)
+         ↓
+    [Parser] ← Outputs SCHEMA format (rvu_work)
+         ↓
+  Database ← Stores SCHEMA format
+         ↓
+  [Ingestor] ← No transformation
+         ↓
+ API Router ← schema_to_api() transform
+         ↓
+API Response ← Consumer sees PRESENTATION format (work_rvu)
+```
+
+**Critical Decision:** Transform at **API serialization boundary**, NOT in parser.
+
+### Column Mapper Usage
+
+Located: `cms_pricing/mappers/__init__.py`
+
+```python
+from cms_pricing.mappers import schema_to_api, api_to_schema
+
+# Reading from DB for API response:
+df_api = schema_to_api(df_from_db)  # rvu_work → work_rvu
+
+# Writing to DB from API input:
+df_schema = api_to_schema(df_from_api)  # work_rvu → rvu_work
+```
+
+### For Future Parsers
+
+**DO:**
+- ✅ Output schema format (rvu_work, rvu_pe_nonfac, etc.)
+- ✅ Align layout with schema contract (exact column names)
+- ✅ Add dataset mapping to column mapper
+- ✅ Test: Parser outputs schema columns
+- ✅ Test: API responses have presentation columns
+
+**DON'T:**
+- ❌ Output API format from parser (work_rvu)
+- ❌ Transform in parser or ingestor
+- ❌ Hard-code ad-hoc renames
+- ❌ Assume layout and schema match without verification
+
+---
+
 ## 📚 References
 
 **Contracts:**

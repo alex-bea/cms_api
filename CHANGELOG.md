@@ -9,33 +9,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added (Phase 1 - In Progress)
-- Custom parser error types: `ParseError`, `DuplicateKeyError`, `CategoryValidationError`, `LayoutMismatchError`, `SchemaRegressionError`
-- Configurable natural key uniqueness severity (BLOCK/WARN) in `check_natural_key_uniqueness()`
-- PPRRVU parser implementation (90% complete, debugging fixed-width parsing)
-- PPRRVU golden fixture (94 rows, SHA-256: `b4437f4534b999e1764a4bbb4c13f05dc7e18e256bdbc9cd87e82a8caed05e1e`)
-- 4 negative test fixtures for parser validation (bad_layout, bad_dup_keys, bad_category, bad_schema_regression)
-- 7 comprehensive PPRRVU tests (written, debugging in progress)
-- `README_PPRRVU.md` parser-specific documentation
-- `ingestor` pytest marker for parser/ingestor tests
+### Added (Phase 1)
+- **PPRRVU Parser (COMPLETE)**: Full implementation with schema-aligned fixed-width, CSV, XLSX support
+  - Natural keys: `['hcpcs', 'modifier', 'status_code', 'effective_from']`
+  - Schema: `cms_pprrvu_v1.1` (precision=2, HALF_UP rounding)
+  - 7 comprehensive tests (all passing)
+  - Golden fixture: 94 rows, SHA-256 pinned
+  - 4 negative test fixtures for failure modes
+  - `README_PPRRVU.md` parser documentation
+- **Custom Parser Error Types**: Production-grade exception hierarchy
+  - `ParseError` (base), `DuplicateKeyError`, `CategoryValidationError`, `LayoutMismatchError`, `SchemaRegressionError`
+  - 8 error type tests (all passing)
+- **Column Mapper Infrastructure**: `cms_pricing/mappers/` for schema↔API transformations
+  - Schema format (DB canonical): `rvu_work`, `rvu_pe_nonfac`, `rvu_pe_fac`, `rvu_malp`
+  - API format (presentation): `work_rvu`, `pe_rvu_nonfac`, `pe_rvu_fac`, `mp_rvu`
+  - Centralized transformation functions
+- **Configurable Natural Key Uniqueness**: BLOCK/WARN severity in `check_natural_key_uniqueness()`
+- **`ingestor` pytest marker** for parser/ingestor tests
 
 ### Changed
-- `check_natural_key_uniqueness()` enhanced with configurable `severity` parameter (BLOCK/WARN)
-- Schema loading logic strips minor version from schema_id (e.g., `cms_pprrvu_v1.1` → `cms_pprrvu_v1.0.json`)
-- `pyproject.toml` pytest markers updated to include `ingestor`
+- **Layout Registry (v2025.4.0 → v2025.4.1)**: PPRRVU layout aligned with schema contract
+  - Renamed columns: `work_rvu` → `rvu_work`, `mp_rvu` → `rvu_malp`, etc.
+  - Added missing natural key: `modifier`
+  - Added schema field: `opps_cap_applicable`
+  - Fixed `min_line_length`: 200 → 165 (actual data is ~173 chars)
+- **Parser Normalization**: Conditional - skip if columns already canonical (from layout)
+- **Schema Loading**: Strips minor version from schema_id (e.g., `cms_pprrvu_v1.1` → `cms_pprrvu_v1.0.json`)
+- **`pyproject.toml`**: Added `ingestor` pytest marker
 
-### In Progress
-- PPRRVU parser fixed-width parsing (KeyError: 'hcpcs' - debugging column mapping)
-- Layout registry integration (parameter order resolved, column creation debugging)
-- Test suite validation (7 tests written, awaiting parser fix)
+### Fixed
+- Schema-layout column name alignment (prevented KeyError in categorical validation)
+- Missing natural key columns in layout (modifier, effective_from)
+- Over-strict min_line_length filtering out valid data rows
+- Parameter name: `canonicalize_numeric_col(rounding_mode=...)` not `rounding`
 
-### Technical Debt
-- Layout registry API needs documentation (signature, lookup patterns, fallback behavior)
-- Schema file naming convention should be in STD-parser-contracts PRD
-- Fixed-width parsing helpers should be extracted to parser kit for reuse
+### Architecture
+- **Schema vs API Naming**: Established clean separation
+  - Parsers output schema format (DB canonical)
+  - API transforms to presentation format (user-friendly)
+  - Transformation boundary: Serialization layer
+  - Single source of truth: Schema contract
+
+### Technical Debt Resolved
+- ✅ Layout-schema alignment documented
+- ✅ Column mapper pattern established
+- ✅ Error taxonomy implemented
 
 ### Planned (Next Sessions)
-- Complete PPRRVU parser debugging
+- Update STD-parser-contracts v1.3 (document learnings)
 - Conversion Factor parser
 - GPCI, ANES, OPPSCAP, Locality parsers
 - Phase 2: Advanced routing (weighted voting, confidence scoring, PII detection)
