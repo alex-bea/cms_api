@@ -26,6 +26,45 @@ logger = structlog.get_logger()
 
 
 # ============================================================================
+# Custom Exceptions (Phase 1 Enhancement)
+# ============================================================================
+
+class ParseError(Exception):
+    """Base exception for parser errors."""
+    pass
+
+
+class DuplicateKeyError(ParseError):
+    """Raised when duplicate natural keys are detected."""
+    def __init__(self, message: str, duplicates: Optional[List[Dict]] = None):
+        super().__init__(message)
+        self.duplicates = duplicates or []
+
+
+class CategoryValidationError(ParseError):
+    """Raised when categorical validation fails (unknown values)."""
+    def __init__(self, field: str, invalid_values: List[Any]):
+        self.field = field
+        self.invalid_values = invalid_values
+        super().__init__(
+            f"Categorical validation failed for field '{field}': "
+            f"invalid values {invalid_values}"
+        )
+
+
+class LayoutMismatchError(ParseError):
+    """Raised when fixed-width layout doesn't match file structure."""
+    pass
+
+
+class SchemaRegressionError(ParseError):
+    """Raised when schema contains unexpected/banned fields."""
+    def __init__(self, message: str, unexpected_fields: Optional[List[str]] = None):
+        super().__init__(message)
+        self.unexpected_fields = unexpected_fields or []
+
+
+# ============================================================================
 # Validation Enums (Phase 0 Commit 4)
 # ============================================================================
 
@@ -670,26 +709,46 @@ def compute_row_id(row: pd.Series, natural_keys: List[str]) -> str:
 
 def check_natural_key_uniqueness(
     df: pd.DataFrame,
-    natural_keys: List[str]
+    natural_keys: List[str],
+    severity: ValidationSeverity = ValidationSeverity.WARN,
+    schema_id: Optional[str] = None,
+    release_id: Optional[str] = None
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Check for duplicate natural keys and compute row_id.
     
-    Per Phase 0 Commit 3:
+    Per Phase 0 Commit 3 + Phase 1 Enhancement:
     - Computes row_id for all rows (SHA-256 of natural keys)
     - Detects duplicates (same natural key)
-    - Returns (unique_df, duplicates_df)
+    - Returns (unique_df, duplicates_df) if severity=WARN
+    - Raises DuplicateKeyError if severity=BLOCK
     
     Args:
         df: Input DataFrame
         natural_keys: Columns forming natural key
+        severity: BLOCK (raise error) or WARN (return rejects) - default WARN
+        schema_id: Schema ID for reject provenance (optional)
+        release_id: Release ID for reject provenance (optional)
         
     Returns:
         (unique_df, duplicates_df) - Separated unique and duplicate rows
         
+    Raises:
+        DuplicateKeyError: If severity=BLOCK and duplicates found
+        
     Examples:
+        >>> # Soft failure (default):
         >>> unique_df, dupes_df = check_natural_key_uniqueness(df, ['hcpcs', 'modifier'])
         >>> print(f"Found {len(dupes_df)} duplicates")
+        
+        >>> # Hard failure:
+        >>> unique_df, dupes_df = check_natural_key_uniqueness(
+        ...     df, ['hcpcs', 'modifier'], 
+        ...     severity=ValidationSeverity.BLOCK,
+        ...     schema_id='cms_pprrvu_v1.1',
+        ...     release_id='mpfs_2025_q4'
+        ... )
+        DuplicateKeyError: Duplicate natural keys detected: 5 duplicates
     """
     # Compute row_id for all rows
     df = df.copy()
@@ -701,17 +760,31 @@ def check_natural_key_uniqueness(
     if duplicate_mask.any():
         duplicates = df[duplicate_mask].copy()
         duplicates['validation_error'] = 'Duplicate natural key'
-        duplicates['validation_severity'] = 'WARN'
+        duplicates['validation_severity'] = severity.value
         duplicates['validation_rule_id'] = 'NATURAL_KEY_DUPLICATE'
         duplicates['validation_context'] = duplicates[natural_keys].astype(str).to_dict('records')
+        
+        if schema_id:
+            duplicates['schema_id'] = schema_id
+        if release_id:
+            duplicates['release_id'] = release_id
         
         unique_df = df[~duplicate_mask].copy()
         
         logger.warning(
             f"Natural key duplicates found: {duplicate_mask.sum()} rows",
             natural_keys=natural_keys,
-            duplicate_count=duplicate_mask.sum()
+            duplicate_count=duplicate_mask.sum(),
+            severity=severity.value
         )
+        
+        # If BLOCK severity, raise exception
+        if severity == ValidationSeverity.BLOCK:
+            duplicate_keys = duplicates[natural_keys].drop_duplicates().to_dict(orient='records')
+            raise DuplicateKeyError(
+                f"Duplicate natural keys detected: {duplicate_mask.sum()} duplicates",
+                duplicates=duplicate_keys
+            )
         
         return unique_df, duplicates
     

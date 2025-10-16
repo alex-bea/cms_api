@@ -1,0 +1,15 @@
+HDR CPT CODES AND DESCRIPTIONS ONLY ARE COPYRIGHT 
+HDR 2026 AMERICAN MEDICAL ASSOCIATION.  ALL RIGHTS
+HDR RESERVED.  APPLICABLE FARS/DFARS APPLY.       
+HDR THE FOLLOWING STATEMENT APPLIES TO ALL DENTAL 
+HDR CODES (HCPCS START WITH LETTER D):  COPYRIGHT 
+HDR 2025/26 AMERICAN DENTAL ASSOCIATION.  ALL RIGH
+HDR RESERVED.                                     
+0001F  Heart failure composite                           Z   0.00   0.00     0.00    0.00   0.00  0.009XXX.00.00.0099999             32.3465 090 99      0.00   0.00   0.00
+0005F  Osteoarthritis composite                          I   0.00   0.00     0.00    0.00   0.00  0.009XXX.00.00.0099999             32.3465 090 99      0.00   0.00   0.00
+00100  Anesth salivary gland                             J   0.00   0.00     0.00    0.00   0.00  0.009XXX.00.00.0099999             32.3465 090 99      0.00   0.00   0.00
+00102  Anesth repair of cleft lip                        J   0.00   0.00     0.00    0.00   0.00  0.009XXX.00.00.0099999             32.3465 090 99      0.00   0.00   0.00
+00103  Anesth blepharoplasty                             J   0.00   0.00     0.00    0.00   0.00  0.009XXX.00.00.0099999             32.3465 090 99      0.00   0.00   0.00
+00104  Anesth electroshock                               J   0.00   0.00     0.00    0.00   0.00  0.009XXX.00.00.0099999             32.3465 090 99      0.00   0.00   0.00
+00120  Anesth ear surgery                                J   0.00   0.00     0.00    0.00   0.00  0.009XXX.00.00.0099999             32.3465 090 99      0.00   0.00   0.00
+00124  Anesth ear exam                                   J   0.00   0.00     0.00    0.00   0.00  0.009XXX.00.00.0099999             32.3465 090 99      0.00   0.00   0.00
