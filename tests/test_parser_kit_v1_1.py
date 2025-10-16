@@ -677,3 +677,181 @@ def test_compressed_file_routing():
     assert decision_plain.dataset == "pprrvu"
     
     print("✅ Compressed file routing: .gz/.gzip/.bz2/.zip suffixes stripped correctly")
+
+
+# ============================================================================
+# Task B & C Tests (STD-parser-contracts v1.6)
+# ============================================================================
+
+def test_validate_required_metadata_success():
+    """validate_required_metadata() passes with all required fields."""
+    from cms_pricing.ingestion.parsers._parser_kit import validate_required_metadata
+    
+    metadata = {
+        'release_id': 'test_release',
+        'schema_id': 'cms_test_v1.0',
+        'product_year': '2025',
+        'quarter_vintage': '2025Q4',
+        'file_sha256': 'abc123'
+    }
+    
+    # Should not raise
+    validate_required_metadata(metadata)
+    
+    # Should work with custom fields
+    validate_required_metadata(metadata, ['release_id', 'schema_id'])
+    
+    print("✅ validate_required_metadata: passes with valid metadata")
+
+
+def test_validate_required_metadata_missing_fields():
+    """validate_required_metadata() raises clear error on missing fields."""
+    from cms_pricing.ingestion.parsers._parser_kit import validate_required_metadata
+    
+    metadata = {
+        'release_id': 'test_release',
+        # Missing: schema_id, product_year, quarter_vintage, file_sha256
+    }
+    
+    with pytest.raises(ValueError) as exc_info:
+        validate_required_metadata(metadata)
+    
+    error_msg = str(exc_info.value)
+    assert 'Missing required metadata fields' in error_msg
+    assert 'schema_id' in error_msg
+    assert 'product_year' in error_msg
+    assert 'Ingestor must provide' in error_msg
+    
+    print("✅ validate_required_metadata: fails fast with clear error on missing fields")
+
+
+def test_validate_layout_schema_alignment_success():
+    """validate_layout_schema_alignment() passes when columns match."""
+    from cms_pricing.ingestion.parsers._parser_kit import validate_layout_schema_alignment
+    
+    layout = {
+        'columns': {
+            'hcpcs': {'start': 0, 'end': 5},
+            'rvu_work': {'start': 10, 'end': 15},  # Schema-canonical name
+            'rvu_malp': {'start': 20, 'end': 25},
+        }
+    }
+    
+    schema = {
+        'columns': {
+            'hcpcs': {'type': 'str'},
+            'rvu_work': {'type': 'float64'},
+            'rvu_malp': {'type': 'float64'},
+        }
+    }
+    
+    # Should not raise
+    validate_layout_schema_alignment(layout, schema)
+    
+    print("✅ validate_layout_schema_alignment: passes when columns match")
+
+
+def test_validate_layout_schema_alignment_missing_columns():
+    """validate_layout_schema_alignment() catches missing schema columns."""
+    from cms_pricing.ingestion.parsers._parser_kit import (
+        validate_layout_schema_alignment,
+        LayoutMismatchError
+    )
+    
+    layout = {
+        'columns': {
+            'hcpcs': {'start': 0, 'end': 5},
+            # Missing: rvu_work, rvu_malp
+        }
+    }
+    
+    schema = {
+        'columns': {
+            'hcpcs': {'type': 'str'},
+            'rvu_work': {'type': 'float64'},
+            'rvu_malp': {'type': 'float64'},
+        }
+    }
+    
+    with pytest.raises(LayoutMismatchError) as exc_info:
+        validate_layout_schema_alignment(layout, schema)
+    
+    error_msg = str(exc_info.value)
+    assert 'Layout missing required schema columns' in error_msg
+    assert 'rvu_work' in error_msg
+    assert 'rvu_malp' in error_msg
+    
+    print("✅ validate_layout_schema_alignment: catches missing columns")
+
+
+def test_validate_layout_schema_alignment_api_naming_detected():
+    """validate_layout_schema_alignment() detects API naming anti-pattern."""
+    from cms_pricing.ingestion.parsers._parser_kit import (
+        validate_layout_schema_alignment,
+        LayoutMismatchError
+    )
+    
+    layout = {
+        'columns': {
+            'hcpcs': {'start': 0, 'end': 5},
+            'work_rvu': {'start': 10, 'end': 15},  # ❌ API name (should be rvu_work)
+            'mp_rvu': {'start': 20, 'end': 25},    # ❌ API name (should be rvu_malp)
+        }
+    }
+    
+    schema = {
+        'columns': {
+            'hcpcs': {'type': 'str'},
+            'rvu_work': {'type': 'float64'},
+            'rvu_malp': {'type': 'float64'},
+        }
+    }
+    
+    with pytest.raises(LayoutMismatchError) as exc_info:
+        validate_layout_schema_alignment(layout, schema)
+    
+    error_msg = str(exc_info.value)
+    assert 'API naming' in error_msg
+    assert 'work_rvu' in error_msg or 'mp_rvu' in error_msg
+    assert 'schema-canonical names' in error_msg
+    
+    print("✅ validate_layout_schema_alignment: detects API naming anti-pattern")
+
+
+def test_build_parser_metrics_with_skiprows():
+    """build_parser_metrics() includes skiprows_dynamic per Task D."""
+    from cms_pricing.ingestion.parsers._parser_kit import build_parser_metrics
+    
+    metrics = build_parser_metrics(
+        total_rows=100,
+        valid_rows=98,
+        reject_rows=2,
+        encoding_detected='utf-8',
+        parse_duration_sec=0.05,
+        parser_version='v1.0.0',
+        schema_id='cms_test_v1.0',
+        skiprows_dynamic=0  # CSV with header
+    )
+    
+    assert 'skiprows_dynamic' in metrics
+    assert metrics['skiprows_dynamic'] == 0
+    assert metrics['total_rows'] == 100
+    assert metrics['reject_rate'] == 0.02
+    
+    # Test with data_start_pattern (fixed-width)
+    metrics_fwf = build_parser_metrics(
+        total_rows=50,
+        valid_rows=50,
+        reject_rows=0,
+        encoding_detected='utf-8',
+        parse_duration_sec=0.03,
+        parser_version='v1.0.0',
+        schema_id='cms_test_v1.0',
+        skiprows_dynamic=3,
+        data_start_pattern=r'^[A-Z0-9]{5}$'
+    )
+    
+    assert metrics_fwf['skiprows_dynamic'] == 3
+    assert metrics_fwf['data_start_pattern'] == r'^[A-Z0-9]{5}$'
+    
+    print("✅ build_parser_metrics: includes skiprows_dynamic and data_start_pattern")

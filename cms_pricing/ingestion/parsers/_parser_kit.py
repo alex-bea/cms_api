@@ -983,3 +983,164 @@ def enforce_categorical_dtypes(
         )
     
     return ValidationResult(valid_df=valid_df, rejects_df=rejects_df, metrics=metrics)
+
+
+# ============================================================================
+# Task B: Metadata Preflight Validation (STD-parser-contracts v1.6)
+# ============================================================================
+
+def validate_required_metadata(
+    metadata: Dict[str, Any],
+    required_fields: Optional[List[str]] = None
+) -> None:
+    """
+    Validate required metadata fields are present.
+    
+    Per STD-parser-contracts v1.6 Task B - fail fast on missing metadata.
+    
+    Args:
+        metadata: Metadata dict from ingestor
+        required_fields: Fields to check (defaults to standard DIS set)
+        
+    Raises:
+        ValueError: If required fields missing with clear error message
+        
+    Example:
+        >>> validate_required_metadata(metadata)  # Uses default fields
+        >>> validate_required_metadata(metadata, ['release_id', 'schema_id'])
+    """
+    if required_fields is None:
+        required_fields = [
+            'release_id',
+            'schema_id', 
+            'product_year',
+            'quarter_vintage',
+            'file_sha256'
+        ]
+    
+    missing = [f for f in required_fields if f not in metadata]
+    if missing:
+        raise ValueError(
+            f"Missing required metadata fields: {missing}. "
+            f"Ingestor must provide: {required_fields}. "
+            f"Got: {list(metadata.keys())}"
+        )
+
+
+# ============================================================================
+# Task C: Layout-Schema Alignment Validator (STD-parser-contracts v1.6)
+# ============================================================================
+
+def validate_layout_schema_alignment(
+    layout: Dict[str, Any],
+    schema: Dict[str, Any]
+) -> None:
+    """
+    Validate fixed-width layout column names match schema contract exactly.
+    
+    Per STD-parser-contracts v1.6 §7.3 and Task C.
+    Prevents 2-hour debugging sessions from layout-schema mismatches (PPRRVU lesson).
+    
+    Args:
+        layout: Layout dict from layout_registry.get_layout()
+        schema: Schema contract dict from SchemaRegistry
+        
+    Raises:
+        LayoutMismatchError: If columns don't align or API naming detected
+        
+    Example:
+        >>> layout = get_layout(product_year="2025", quarter_vintage="2025Q4", dataset="pprrvu")
+        >>> schema = registry.get_schema("cms_pprrvu_v1.1")
+        >>> validate_layout_schema_alignment(layout, schema)  # Raises if mismatch
+    """
+    schema_cols = set(schema['columns'].keys())
+    layout_cols = set(layout['columns'].keys())
+    
+    # Anti-pattern check FIRST: API names in layout (work_rvu vs rvu_work)
+    # Check before missing columns because API naming is more specific diagnosis
+    # Per §6.6, layouts MUST use schema-canonical names, not API presentation names
+    api_patterns = ['work_rvu', 'mp_rvu', 'pe_rvu']
+    found_api = [p for p in api_patterns if p in layout_cols]
+    if found_api:
+        raise LayoutMismatchError(
+            f"Layout uses API naming: {found_api}. "
+            f"Must use schema-canonical names (e.g., rvu_work not work_rvu, rvu_malp not mp_rvu). "
+            f"See STD-parser-contracts §6.6 Schema vs API Naming Convention."
+        )
+    
+    # Check for missing columns (after API naming check)
+    missing = schema_cols - layout_cols
+    if missing:
+        raise LayoutMismatchError(
+            f"Layout missing required schema columns: {sorted(missing)}. "
+            f"Layout has: {sorted(layout_cols)}, "
+            f"Schema expects: {sorted(schema_cols)}. "
+            f"See STD-parser-contracts §7.3 for alignment requirements."
+        )
+
+
+# ============================================================================
+# Task D: Dynamic Header Detection Metrics (STD-parser-contracts v1.6)
+# ============================================================================
+
+def build_parser_metrics(
+    total_rows: int,
+    valid_rows: int,
+    reject_rows: int,
+    encoding_detected: str,
+    parse_duration_sec: float,
+    parser_version: str,
+    schema_id: str,
+    skiprows_dynamic: int = 0,
+    data_start_pattern: Optional[str] = None,
+    **extra_metrics
+) -> Dict[str, Any]:
+    """
+    Build standardized parser metrics dict per STD-parser-contracts v1.6.
+    
+    Per Task D: Includes skiprows_dynamic for CI observability.
+    
+    Args:
+        total_rows: Total rows in input
+        valid_rows: Rows passing validation
+        reject_rows: Rows failing validation
+        encoding_detected: Detected encoding (utf-8, cp1252, latin-1)
+        parse_duration_sec: Parse elapsed time
+        parser_version: Parser SemVer version
+        schema_id: Schema contract ID
+        skiprows_dynamic: Number of header rows detected (0 for CSV with header)
+        data_start_pattern: Regex pattern used for data detection (optional)
+        **extra_metrics: Additional parser-specific metrics
+        
+    Returns:
+        Standardized metrics dict for ParseResult
+        
+    Example:
+        >>> metrics = build_parser_metrics(
+        ...     total_rows=100, valid_rows=98, reject_rows=2,
+        ...     encoding_detected='utf-8', parse_duration_sec=0.05,
+        ...     parser_version='v1.0.0', schema_id='cms_pprrvu_v1.1',
+        ...     skiprows_dynamic=0  # CSV with header
+        ... )
+    """
+    metrics = {
+        'total_rows': total_rows,
+        'valid_rows': valid_rows,
+        'reject_rows': reject_rows,
+        'reject_rate': reject_rows / total_rows if total_rows > 0 else 0.0,
+        'encoding_detected': encoding_detected,
+        'encoding_fallback': encoding_detected not in ['utf-8', 'utf-8-sig'],
+        'parse_duration_sec': parse_duration_sec,
+        'parser_version': parser_version,
+        'schema_id': schema_id,
+        'skiprows_dynamic': skiprows_dynamic,  # Task D: CI can assert presence
+    }
+    
+    # Optional: data start pattern for fixed-width files
+    if data_start_pattern:
+        metrics['data_start_pattern'] = data_start_pattern
+    
+    # Merge any extra parser-specific metrics
+    metrics.update(extra_metrics)
+    
+    return metrics
