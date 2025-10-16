@@ -2091,3 +2091,100 @@ def parse_{dataset}(...):
 
 ---
 
+## 🔬 Parser Testing Enhancement (v2.0 - Future)
+
+**Added:** 2025-10-16  
+**Status:** 📋 Deferred to STD-parser-contracts v2.0  
+**Effort:** 2-3 hours (apply to all parsers for consistency)
+
+### Overview
+
+Upgrade golden test pattern from manual assertions to Parquet snapshot comparison for all parsers. This provides stricter schema/dtype regression detection and reduces snapshot brittleness.
+
+### Current Pattern (v1.0-v1.6)
+
+**What we do now:**
+- Manual assertions (row count, columns, hash length)
+- Parse twice for determinism testing
+- Fixture integrity via SHA-256
+
+**Used by:**
+- PPRRVU parser ✅
+- CF parser ✅ (following PPRRVU pattern)
+
+**Pros:**
+- Simple, clear assertions
+- Works well for small datasets
+- No dependencies on Parquet storage
+
+**Cons:**
+- Doesn't catch dtype drift (float64 → object)
+- Doesn't verify column order
+- Doesn't check categorical codes
+- Manual maintenance for each assertion
+
+### Proposed Pattern (v2.0)
+
+**Parquet Golden Snapshots:**
+
+```python
+# tests/fixtures/{dataset}/golden/{dataset}_expected.parquet
+# Stores the EXPECTED parser output with exact dtypes
+
+def test_golden_parquet_comparison():
+    """Compare actual vs expected using Parquet snapshot."""
+    expected_df = pd.read_parquet(FIXTURES / "expected_output.parquet")
+    
+    result = parse_{dataset}(fixture_file, filename, metadata)
+    
+    # Strict comparison (dtypes, categorical codes, column order)
+    pd.testing.assert_frame_equal(
+        result.data[data_cols],  # Exclude timestamp columns
+        expected_df[data_cols],
+        check_dtype=True,
+        check_categorical=True,
+        check_column_type=True,
+        check_exact=True  # For precision fields
+    )
+```
+
+**Benefits:**
+- ✅ Catches dtype regressions (float64 → object)
+- ✅ Verifies column order (schema contract compliance)
+- ✅ Checks categorical codes (domain enforcement)
+- ✅ Single assertion (less maintenance)
+- ✅ Parquet = no whitespace/newline churn
+
+**Implementation Checklist:**
+- [ ] Add §14.2.1 to STD-parser-contracts v1.7 (document pattern)
+- [ ] Create Parquet golden for PPRRVU
+- [ ] Create Parquet golden for CF
+- [ ] Create Parquet golden for GPCI
+- [ ] Create Parquet golden for ANES
+- [ ] Create Parquet golden for OPPSCAP
+- [ ] Create Parquet golden for Locality
+- [ ] Update all golden tests to use `assert_frame_equal()`
+- [ ] Add CI check that Parquet goldens match manual assertions
+
+### Success Criteria
+
+**Before v2.0 release:**
+- [ ] All 6 parsers use Parquet golden pattern
+- [ ] STD-parser-contracts §14.2.1 documents pattern
+- [ ] CI enforces Parquet golden freshness
+- [ ] All tests passing (backward compatible migration)
+
+### Related
+
+- CF parser user feedback (2025-10-16): Parquet snapshots + assert_frame_equal
+- PPRRVU parser: Current manual assertion baseline
+- STD-parser-contracts v1.6 §14.2: Current golden test requirements
+
+### Timeline
+
+**Target:** STD-parser-contracts v2.0 (Q1 2026 or when all Phase 1 parsers complete)  
+**Effort:** 2-3 hours to migrate all 6 parsers  
+**Impact:** Catches 90% more regressions, reduces maintenance
+
+---
+
