@@ -6,7 +6,12 @@ This document defines the **Data Architecture Standard** used across projects. I
 **Status:** Adopted 1.0  
 **Owners:** Platform/Data Engineering  
 **Consumers:** Product, Analytics, Services  
-**Change control:** ADR + PR review
+**Change control:** ADR + PR review  
+**Companion Docs:** [STD-data-architecture-impl-v1.0.md](STD-data-architecture-impl-v1.0.md)
+
+> **For Implementers:** See the companion [Implementation Guide](STD-data-architecture-impl-v1.0.md)
+> for detailed patterns, code examples, mapper guardrails, and schema-vs-API naming strategies.
+
 For complete index see [Master System Catalog](DOC-master-catalog-prd-v1.0.md).  
 
 

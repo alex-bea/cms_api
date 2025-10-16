@@ -4,7 +4,11 @@
 **Owners:** Data Platform Engineering  
 **Consumers:** Data Engineering, MPFS Ingestor, RVU Ingestor, OPPS Ingestor, API Teams, QA Guild  
 **Change control:** ADR + PR review  
-**Review cadence:** Quarterly (first business Monday)
+**Review cadence:** Quarterly (first business Monday)  
+**Companion Docs:** _(Planned for v2.0)_
+
+> **For Implementers:** Parser implementation patterns are documented inline (§21). 
+> A dedicated companion implementation guide is planned for v2.0.
 
 **Cross-References:**
 - **STD-data-architecture-prd-v1.0.md:** DIS pipeline and normalize stage requirements

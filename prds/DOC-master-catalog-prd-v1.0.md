@@ -146,14 +146,84 @@ graph TD
   SB -.-> D1
 ```
 
+### 7.1 Companion Relationships
+
+Standards may have companion implementation guides providing detailed patterns, code examples,
+and integration guardrails. These are **not dependencies** but supplemental "how-to" documentation.
+
+**Key Principle:** Main dependency graph shows hard dependencies only. Companion relationships
+are documented separately to maintain signal clarity and prevent graph clutter.
+
+```mermaid
+graph TD
+  subgraph "Companion Guides"
+    STD_data_arch[STD-data-architecture-prd]
+    STD_data_arch_impl[STD-data-architecture-impl]
+    STD_parser[STD-parser-contracts-prd]
+    STD_parser_impl[STD-parser-contracts-impl]
+    
+    STD_data_arch -.companion.-> STD_data_arch_impl
+    STD_parser -.future companion.-> STD_parser_impl
+  end
+  
+  style STD_data_arch_impl fill:#e1f5e1,stroke:#4a4,stroke-dasharray: 5 5
+  style STD_parser_impl fill:#f0f0f0,stroke:#999,stroke-dasharray: 5 5
+  
+  classDef future opacity:0.5
+  class STD_parser_impl future
+```
+
+**Legend:**
+- **Solid nodes** = Published documents
+- **Dotted nodes** = Future/planned documents  
+- **Dotted edges** (`-.companion.->`) = "companion" relationship (NOT a dependency)
+- **Green fill** = Implementation guide available
+- **Gray fill** = Planned but not yet created
+
+**Discovery Mechanisms:**
+- **Markdown metadata:** `**Companion Docs:**` and `**Companion Of:**` fields in headers
+- **Callouts:** "For Implementers" sections in standard documents
+- **Visual graph:** This subgraph for human wayfinding
+- **Keywords:** Implementation guides include "how to implement", "integration patterns", etc. in first paragraph for AI/RAG recall
+
+**Audit Enforcement:** CI validates bidirectional companion links (see §8.3).
+
 ---
 
 ## 8. Automation & Compliance Checks
+
+### 8.1 Documentation Audits
 
 - `tools/audit_doc_catalog.py` verifies catalog consistency (run manually or in CI).  
 - `.github/workflows/doc-catalog-audit.yml` executes weekly (Monday 12:00 UTC) and on demand; fails the build on inconsistencies.  
 - Pre-commit hooks enforce filename prefixes and header metadata (`tools/verify-prd-headers.sh`).  
 - `tools/update-prd-refs.sh` bulk-updates references after renames.
+
+### 8.2 Cross-Reference Validation
+
+- `tools/audit_cross_references.py` validates all PRD cross-references
+- `tools/audit_doc_links.py` checks for broken markdown links
+- Run on every PR + daily schedule
+
+### 8.3 Companion Link Validation
+
+**Tools:** `tools/audit_doc_catalog.py`
+
+**Checks:**
+1. **Bidirectional symmetry:** Every `**Companion Docs:**` entry has matching `**Companion Of:**` in target doc
+2. **File existence:** All companion references point to existing files (case-sensitive paths)
+3. **Document Type consistency:** Implementation guides have `**Document Type:** Implementation Guide`
+
+**Fail Conditions:**
+- Missing companion file (hard error)
+- One-way companion link / not bidirectional (hard error)
+- Broken markdown link in companion field (hard error)
+
+**Implementation:** Simple regex parsing (same pattern as `**Status:**` field)
+
+**Schedule:** Runs on every PR + daily at 00:00 UTC
+
+**Future Enhancement:** `tools/update-prd-refs.sh` will update `**Companion *:**` fields on renames
 
 ---
 

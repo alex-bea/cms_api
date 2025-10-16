@@ -236,6 +236,65 @@ def check_companion_document_compliance() -> List[Tuple[str, str]]:
     return violations
 
 
+def check_companion_links_markdown() -> List[Tuple[str, str]]:
+    """Validate bidirectional companion doc links using markdown headers.
+    
+    Returns list of (doc_name, error_message) tuples.
+    """
+    issues = []
+    all_docs = {f.name for f in PRDS_DIR.glob('*.md')}
+    
+    for doc_path in PRDS_DIR.glob('*.md'):
+        try:
+            content = read_path_text(doc_path)
+        except Exception:
+            continue
+            
+        lines = content.splitlines()[:50]  # Check first 50 lines for headers
+        doc_name = doc_path.name
+        
+        # Check forward links (STD -> IMPL) via **Companion Docs:** field
+        companion_docs_line = next((l for l in lines if "**Companion Docs:**" in l), None)
+        if companion_docs_line and "_(" not in companion_docs_line:  # Skip "_(Planned...)"
+            # Extract markdown link: [filename.md](filename.md) or filename.md
+            companion_match = re.search(
+                r'\[([A-Z]{3,4}-[a-z0-9\-]+(?:-impl)?(?:-v[0-9]+\.[0-9]+)?\.md)\]|'
+                r'\b([A-Z]{3,4}-[a-z0-9\-]+(?:-impl)?(?:-v[0-9]+\.[0-9]+)?\.md)\b',
+                companion_docs_line
+            )
+            if companion_match:
+                companion = companion_match.group(1) or companion_match.group(2)
+                if companion not in all_docs:
+                    issues.append((doc_name, f'Companion doc missing: {companion}'))
+                else:
+                    # Check reverse link exists
+                    try:
+                        companion_content = read_path_text(PRDS_DIR / companion)
+                        # Look for **Companion Of:** that mentions this doc
+                        if f'**Companion Of:**' in companion_content and doc_name not in companion_content:
+                            issues.append((
+                                doc_name,
+                                f'Broken bidirectional link: {companion} does not reference {doc_name} in **Companion Of:**'
+                            ))
+                    except Exception:
+                        pass
+        
+        # Check reverse links (IMPL -> STD) via **Companion Of:** field
+        companion_of_line = next((l for l in lines if "**Companion Of:**" in l), None)
+        if companion_of_line:
+            parent_match = re.search(
+                r'\[([A-Z]{3,4}-[a-z0-9\-]+(?:-prd)?(?:-v[0-9]+\.[0-9]+)?\.md)\]|'
+                r'\b([A-Z]{3,4}-[a-z0-9\-]+(?:-prd)?(?:-v[0-9]+\.[0-9]+)?\.md)\b',
+                companion_of_line
+            )
+            if parent_match:
+                parent = parent_match.group(1) or parent_match.group(2)
+                if parent not in all_docs:
+                    issues.append((doc_name, f'Companion parent missing: {parent}'))
+    
+    return issues
+
+
 def main() -> int:
     logger = get_logger("audit.doc_catalog")
     issues: List[AuditIssue] = []
@@ -272,6 +331,13 @@ def main() -> int:
 
     for doc, description in check_companion_document_compliance():
         # Warnings for main docs not referencing companions
+        if "(warning)" in description:
+            issues.append(AuditIssue("warning", description, doc=doc))
+        else:
+            issues.append(AuditIssue("error", description, doc=doc))
+
+    # Companion link validation (markdown-based, no YAML needed)
+    for doc, description in check_companion_links_markdown():
         if "(warning)" in description:
             issues.append(AuditIssue("warning", description, doc=doc))
         else:

@@ -3,11 +3,15 @@
 **Status:** Draft v1.0.1  
 **Owners:** Platform/Data Engineering  
 **Consumers:** Ingestor Implementers, Data Engineers  
-**Change control:** PR review (no ADR required for code examples)
+**Change control:** PR review (no ADR required for code examples)  
+**Companion Of:** [STD-data-architecture-prd-v1.0.md](STD-data-architecture-prd-v1.0.md)  
+**Document Type:** Implementation Guide
 
-**Companion to:** [STD-data-architecture-prd-v1.0.md](STD-data-architecture-prd-v1.0.md)
-
-> This is the **implementation companion** to the Data Architecture Standard. It provides code templates, working examples, and step-by-step guides for implementing DIS-compliant ingestors. For requirements and policies, see the main PRD.
+> **Companion to:** [STD-data-architecture-prd-v1.0.md](STD-data-architecture-prd-v1.0.md)
+>
+> This **implementation guide** shows **how to implement** the DIS (Discovery → Ingestion → Serving) 
+> architecture. It provides **integration patterns**, **code examples**, practical **mapper guardrails**, 
+> and end-to-end workflows for building DIS-compliant data pipelines.
 
 **Cross-References:**
 - **STD-data-architecture-prd-v1.0.md:** Main standard (requirements, architecture, policies)
