@@ -97,4 +97,9 @@ markers = [
     "integration: marks tests as integration tests",
     "golden: marks tests as golden/parity tests",
     "ingestor: marks tests as ingestor/parser tests",
+    "prd_docs: marks tests related to PRD documentation",
+    "scraper: marks tests related to scrapers",
+    "geography: marks tests related to geography/nearest_zip",
+    "api: marks tests related to API routers",
+    "e2e: marks tests as end-to-end tests",
 ]
