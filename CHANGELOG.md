@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Centralized transformation functions
 - **Configurable Natural Key Uniqueness**: BLOCK/WARN severity in `check_natural_key_uniqueness()`
 - **`ingestor` pytest marker** for parser/ingestor tests
+- **PRD Learning Reminder System**: Automated GitHub workflow to suggest PRD updates based on code changes ([9b9e63d](https://github.com/alex-bea/cms_api/commit/9b9e63d))
+  - Declarative rules in `.github/prd_learning_rules.yml`
+  - PR comment automation + `docs/prd_learning_inbox.md` aggregation
+  - Pattern matching for code changes (parsers, ingestors, contracts, PRDs)
+  - Suppression tokens for intentional skips
 
 ### Changed
 - **Layout Registry (v2025.4.0 → v2025.4.1)**: PPRRVU layout aligned with schema contract
@@ -35,13 +40,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed `min_line_length`: 200 → 165 (actual data is ~173 chars)
 - **Parser Normalization**: Conditional - skip if columns already canonical (from layout)
 - **Schema Loading**: Strips minor version from schema_id (e.g., `cms_pprrvu_v1.1` → `cms_pprrvu_v1.0.json`)
-- **`pyproject.toml`**: Added `ingestor` pytest marker
+- **STD-parser-contracts**: v1.3 → v1.4 → v1.5 (production hardening)
+  - **v1.5** ([a8f5188](https://github.com/alex-bea/cms_api/commit/a8f5188)): 10 surgical fixes for unbreakable parser development
+    - §6.5: ParseResult consumption + ingestor file writes pattern
+    - §21.1 Step 1: head-sniff + seek pattern (memory-bounded)
+    - Row hash: Decimal quantization (not float) + link to `finalize_parser_output()`
+    - §5.3: rejects/quarantine naming consistency note
+    - §21.1: join invariant assert (total = valid + rejects)
+    - §20.1: duplicate header guard enhancement
+    - §21.1: Excel (dtype=str) + ZIP (iterate members) guidance
+    - §14.6: schema loader path (relative to module)
+    - §7.2: layout names = schema names (cross-ref §7.3)
+  - **v1.4** ([391de34](https://github.com/alex-bea/cms_api/commit/391de34)): Template hardening + CMS-specific pitfalls
+    - §20.1 Anti-Patterns 6-10: BOM in headers, duplicate headers, Excel coercion, whitespace/NBSP, CRLF leftovers
+    - §1 summary: ParseResult return type clarity
+    - §7.2 example: schema-canonical names (rvu_work not work_rvu)
+    - YAML section: tagged as "Future (informative)"
+  - **v1.3** ([5fd7fd4](https://github.com/alex-bea/cms_api/commit/5fd7fd4)): Normative clarifications from PPRRVU implementation
+    - §7.3 Layout-Schema Alignment (5 MUST rules, CI-enforceable)
+    - §8.5 Error Code Severity Table (12 codes with dataset policies)
+    - §20.1 Common Pitfalls (top 5 anti-patterns, reordered by frequency)
+    - §6.6 Schema vs API Naming Convention
+    - §14.6 Schema File Naming & Loading (version stripping)
+    - §7.4 CI Test Snippets (4 copy/paste guards)
+- **Companion Document Pattern** ([a077468](https://github.com/alex-bea/cms_api/commit/a077468)): Simplified from YAML to markdown headers
+  - `**Companion Docs:**` and `**Companion Of:**` in markdown headers
+  - Bidirectional link validation with case-sensitive path checks
+  - Removed `PyYAML` dependency for simplicity
+- **pyproject.toml**: Added missing pytest markers ([d487ac6](https://github.com/alex-bea/cms_api/commit/d487ac6))
+  - `prd_docs`, `scraper`, `geography`, `api`, `e2e` markers
+  - Fixes pytest strict-markers error
 
 ### Fixed
-- Schema-layout column name alignment (prevented KeyError in categorical validation)
-- Missing natural key columns in layout (modifier, effective_from)
-- Over-strict min_line_length filtering out valid data rows
-- Parameter name: `canonicalize_numeric_col(rounding_mode=...)` not `rounding`
+- **Schema-layout column name alignment** (prevented KeyError in categorical validation)
+- **Missing natural key columns** in layout (modifier, effective_from)
+- **Over-strict min_line_length** filtering out valid data rows
+- **Parameter name**: `canonicalize_numeric_col(rounding_mode=...)` not `rounding`
+- **pytest markers**: Added missing markers to fix strict-markers configuration error
+- **Companion link validation** ([ffae4e9](https://github.com/alex-bea/cms_api/commit/ffae4e9)): 7 improvements
+  - Case-sensitive path validation (prevents Linux CI failures on macOS dev)
+  - Multiple companion links support (comma-separated)
+  - Planned companion exemptions (e.g., `_(Planned for v2.0)_`)
+  - Bidirectional symmetry checks
+  - Document type consistency validation
+- **Dependency graph audit** ([27e765c](https://github.com/alex-bea/cms_api/commit/27e765c)): Companion docs separated from main DAG
+  - §7.1 Companion Relationships subgraph in master catalog
+  - Audit rules updated to handle `-impl` naming pattern
 
 ### Architecture
 - **Schema vs API Naming**: Established clean separation
@@ -56,26 +100,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ✅ Error taxonomy implemented
 
 ### Documentation
-- **STD-parser-contracts v1.3**: Comprehensive parser standard enhancements
-  - §7.3 Layout-Schema Alignment (5 MUST rules, CI-enforceable)
-  - §7.4 CI Test Snippets (4 copy/paste guards for compliance)
-  - §8.5 Error Code Severity Table (12 codes with dataset policies)
-  - §20.1 Common Pitfalls (top 5 anti-patterns from PPRRVU, reordered by frequency)
-  - §6.6 Schema vs API Naming Convention (transformation boundary)
-  - §14.6 Schema File Naming & Loading (version stripping pattern)
-  - Enhanced §7.2 Layout Registry API (signature, semantics, min_line_length as heuristic)
-  - **Impact**: Prevents 15-20 hours debugging across next 5 parsers
+- **STD-parser-contracts**: v1.3 → v1.4 → v1.5 (see Changed section for details)
+  - **Cumulative Impact**: Prevents 23-32 hours debugging across next 4 parsers
+    - v1.3: 15-20 hours (layout alignment, error taxonomy, pitfalls 1-5)
+    - v1.4: 4-8 hours (pitfalls 6-10: BOM, duplicates, Excel, NBSP, CRLF)
+    - v1.5: 8-12 hours (10 surgical fixes: ParseResult, head-sniff, Decimal, etc.)
 - **PPRRVU_HANDOFF.md**: Comprehensive handoff with DB contract vs API surface architecture
 - **README_PPRRVU.md**: Parser-specific documentation with schema/API column mapping table
 - **Column Mapper Documentation**: Schema↔API transformation patterns in `cms_pricing/mappers/`
+- **Task Tracker** ([aa765d4](https://github.com/alex-bea/cms_api/commit/aa765d4)): Added deferred parser infrastructure improvements to `github_tasks_plan.md`
+  - Tasks A-D: Streaming file reads, metadata preflight, layout-schema validator, dynamic skiprows metrics
+  - Total effort: 55 minutes (fold into CF parser development)
+  - ROI: Prevents 3-7 hours debugging across remaining parsers
 
-### Commits (6 since v0.1.0-phase0)
+### Commits (13 since v0.1.0-phase0)
 1. [0b6d892](https://github.com/alex-bea/cms_api/commit/0b6d892) - feat(parser): Phase 1 enhancements + PPRRVU fixtures
 2. [53c0886](https://github.com/alex-bea/cms_api/commit/53c0886) - WIP: PPRRVU parser (90% complete) + Phase 1 enhancements
 3. [7ea293e](https://github.com/alex-bea/cms_api/commit/7ea293e) - feat(parser): Complete PPRRVU parser with schema-API alignment
 4. [498bddf](https://github.com/alex-bea/cms_api/commit/498bddf) - docs: Prepare PRD updates - PPRRVU learnings documented
 5. [5fd7fd4](https://github.com/alex-bea/cms_api/commit/5fd7fd4) - docs(prd): STD-parser-contracts v1.2 → v1.3
 6. [57fc7cf](https://github.com/alex-bea/cms_api/commit/57fc7cf) - docs(prd): STD-parser-contracts v1.3 final refinements
+7. [27e765c](https://github.com/alex-bea/cms_api/commit/27e765c) - chore(docs): Fix audit failures - CHANGELOG + dependency graph
+8. [a077468](https://github.com/alex-bea/cms_api/commit/a077468) - docs: companion pattern with simple markdown metadata
+9. [9b9e63d](https://github.com/alex-bea/cms_api/commit/9b9e63d) - feat(automation): Add PRD learning reminder system
+10. [ffae4e9](https://github.com/alex-bea/cms_api/commit/ffae4e9) - refactor(audit): harden companion link validation (7 improvements)
+11. [391de34](https://github.com/alex-bea/cms_api/commit/391de34) - docs(prd): STD-parser-contracts v1.3 → v1.4
+12. [aa765d4](https://github.com/alex-bea/cms_api/commit/aa765d4) - docs: add deferred parser infrastructure improvements to task tracker
+13. [a8f5188](https://github.com/alex-bea/cms_api/commit/a8f5188) - docs: STD-parser-contracts v1.5 - production hardening (10 surgical fixes)
+14. [d487ac6](https://github.com/alex-bea/cms_api/commit/d487ac6) - fix: add missing pytest markers to pyproject.toml
 
 ### Planned (Next Sessions)
 - Conversion Factor parser
