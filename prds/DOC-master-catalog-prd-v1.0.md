@@ -91,20 +91,18 @@
 ```mermaid
 graph TD
   subgraph Standards
-    SA[STD-data-architecture]
-    SA_IMPL[STD-data-architecture-impl]
-    SB[STD-api-contract-management]
-    SC[STD-api-security-and-auth]
-    SD[STD-scraper]
-    SE[STD-parser-contracts]
+    SA[STD-data-architecture-prd]
+    SB[STD-api-contract-management-prd]
+    SC[STD-api-security-and-auth-prd]
+    SD[STD-scraper-prd]
+    SE[STD-parser-contracts-prd]
   end
 
   subgraph References
-    RA[REF-nearest-zip-resolver]
-    RB[REF-geography-mapping-cursor]
-    RC[REF-scraper-ingestor-integration]
-    RD[REF-cms-pricing-source-map]
-    RE[REF-geography-source-map]
+    RA[REF-nearest-zip-resolver-prd]
+    RB[REF-geography-mapping-cursor-prd]
+    RD[REF-cms-pricing-source-map-prd]
+    RE[REF-geography-source-map-prd]
   end
 
   subgraph Products
@@ -124,28 +122,18 @@ graph TD
   D1[DOC-test-patterns]
   end
 
-  SA -.companion.-> SA_IMPL
   SA --> SE
-  SE --> SA_IMPL
   SE --> P1
   SE --> P2
   SE --> P5
   SA --> P1
   SA --> P4
-  SA_IMPL -.-> P1
-  SA_IMPL -.-> P2
-  SD --> RC
-  SA --> RC
-  RC --> P1
-  RC --> P2
-  RC --> P6
   SB --> P3
   SC --> P2
   SC --> P3
   SD --> P2
   SD --> P5
   SD --> P6
-  SD -.-> SA_IMPL
   RA -.-> P1
   RB -.-> P2
   RB -.-> P4

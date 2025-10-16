@@ -55,8 +55,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ✅ Column mapper pattern established
 - ✅ Error taxonomy implemented
 
+### Documentation
+- **STD-parser-contracts v1.3**: Comprehensive parser standard enhancements
+  - §7.3 Layout-Schema Alignment (5 MUST rules, CI-enforceable)
+  - §7.4 CI Test Snippets (4 copy/paste guards for compliance)
+  - §8.5 Error Code Severity Table (12 codes with dataset policies)
+  - §20.1 Common Pitfalls (top 5 anti-patterns from PPRRVU, reordered by frequency)
+  - §6.6 Schema vs API Naming Convention (transformation boundary)
+  - §14.6 Schema File Naming & Loading (version stripping pattern)
+  - Enhanced §7.2 Layout Registry API (signature, semantics, min_line_length as heuristic)
+  - **Impact**: Prevents 15-20 hours debugging across next 5 parsers
+- **PPRRVU_HANDOFF.md**: Comprehensive handoff with DB contract vs API surface architecture
+- **README_PPRRVU.md**: Parser-specific documentation with schema/API column mapping table
+- **Column Mapper Documentation**: Schema↔API transformation patterns in `cms_pricing/mappers/`
+
+### Commits (6 since v0.1.0-phase0)
+1. [0b6d892](https://github.com/alex-bea/cms_api/commit/0b6d892) - feat(parser): Phase 1 enhancements + PPRRVU fixtures
+2. [53c0886](https://github.com/alex-bea/cms_api/commit/53c0886) - WIP: PPRRVU parser (90% complete) + Phase 1 enhancements
+3. [7ea293e](https://github.com/alex-bea/cms_api/commit/7ea293e) - feat(parser): Complete PPRRVU parser with schema-API alignment
+4. [498bddf](https://github.com/alex-bea/cms_api/commit/498bddf) - docs: Prepare PRD updates - PPRRVU learnings documented
+5. [5fd7fd4](https://github.com/alex-bea/cms_api/commit/5fd7fd4) - docs(prd): STD-parser-contracts v1.2 → v1.3
+6. [57fc7cf](https://github.com/alex-bea/cms_api/commit/57fc7cf) - docs(prd): STD-parser-contracts v1.3 final refinements
+
 ### Planned (Next Sessions)
-- Update STD-parser-contracts v1.3 (document learnings)
 - Conversion Factor parser
 - GPCI, ANES, OPPSCAP, Locality parsers
 - Phase 2: Advanced routing (weighted voting, confidence scoring, PII detection)

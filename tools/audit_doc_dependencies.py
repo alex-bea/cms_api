@@ -46,7 +46,14 @@ def parse_tables(text: str) -> Dict[str, Set[str]]:
             cells = [cell.strip() for cell in line.strip().split("|")]
             if len(cells) >= 2 and cells[1].startswith("`"):
                 name = cells[1].strip("` ")
-                base = name.split("-prd-", 1)[0]
+                # Handle both patterns: STD-name-prd-v1.0.md and STD-name-v1.0.md (companion docs)
+                if "-prd-" in name:
+                    base = name.split("-prd-", 1)[0]
+                elif "-v" in name and name.endswith(".md"):
+                    # For companion docs like STD-data-architecture-impl-v1.0.md
+                    base = name.rsplit("-v", 1)[0]
+                else:
+                    base = name
                 sections[current].add(base)
     return sections
 
