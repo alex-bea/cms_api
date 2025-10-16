@@ -1,0 +1,3 @@
+cf_type,cf_value,cf_description,effective_from,effective_to
+physician,99.0000,Wrong Physician CF Value,2025-01-01,
+anesthesia,20.3178,Correct Anesthesia CF,2025-01-01,
