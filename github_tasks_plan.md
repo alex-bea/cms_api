@@ -1885,3 +1885,209 @@ Before starting next parser:
 **Owner:** Parser team  
 **Blocker for:** All remaining Phase 1 parsers
 
+---
+
+## 🔧 Parser Infrastructure Improvements (Deferred to CF Parser)
+
+**Added:** 2025-10-16  
+**Status:** 📋 Documented, ready for implementation  
+**Source:** STD-parser-contracts v1.4 feedback integration  
+**Effort:** 55 minutes total (fold into CF parser development)
+
+### Overview
+
+These improvements were documented in `STD-parser-contracts-prd-v1.0.md` v1.4 but code implementation is deferred to avoid premature abstraction. They will be implemented during Conversion Factor parser development.
+
+### Tasks
+
+#### Task A: Streaming File Reads (Priority: HIGH)
+**Effort:** 15 minutes  
+**Impact:** Prevents OOM on large files
+
+**Current Issue:**
+- PPRRVU reads entire file into memory: `content = file_obj.read()`
+- Works for small files, problematic for large datasets
+
+**Target Pattern:**
+```python
+# In parser template:
+head = file_obj.read(8192)  # Just for BOM/encoding
+encoding, _ = detect_encoding(head)
+file_obj.seek(0)  # Reset to start
+df = pd.read_fwf(file_obj, ...)  # Let pandas stream
+```
+
+**Implementation Checklist:**
+- [ ] Update `_parser_kit.py`: Ensure `detect_encoding()` accepts bytes (already does)
+- [ ] Update `pprrvu_parser.py`: Use head + seek(0) pattern
+- [ ] Update `cf_parser.py`: Follow new pattern from start
+- [ ] Update template in §21.1 with streaming example
+- [ ] Test: `detect_encoding()` works on 8KB head
+- [ ] Test: `file_obj.seek(0)` resets for pandas
+- [ ] Test: Memory usage bounded (doesn't grow with file size)
+- [ ] Test: All existing tests still pass
+
+---
+
+#### Task B: Metadata Preflight Validation (Priority: HIGH)
+**Effort:** 10 minutes  
+**Impact:** Fail fast, clear errors, saves debugging time
+
+**Current Issue:**
+- No upfront validation of required metadata
+- Cryptic errors deep in parser (KeyError on `metadata['release_id']`)
+
+**Target Pattern:**
+```python
+# In parser, Step 0 (before encoding detection):
+REQUIRED_META = [
+    "release_id", "schema_id", "product_year",
+    "quarter_vintage", "file_sha256"
+]
+missing = [k for k in REQUIRED_META if k not in metadata]
+if missing:
+    raise ValueError(f"Missing required metadata: {missing}")
+```
+
+**Implementation Checklist:**
+- [ ] Add `validate_required_metadata()` to `_parser_kit.py`
+- [ ] Add tests in `test_parser_kit.py`
+- [ ] Call from `cf_parser.py` Step 0
+- [ ] Update `pprrvu_parser.py` to include preflight
+- [ ] Update template §21.1 with preflight step
+- [ ] Test: Clear error message with missing fields
+- [ ] Test: All parsers call it first
+
+---
+
+#### Task C: Layout-Schema Alignment Validator (Priority: MEDIUM)
+**Effort:** 20 minutes  
+**Impact:** Prevents 2-hour debugging (PPRRVU hit this exact issue)
+
+**Current Issue:**
+- §7.3 shows validation guard but function doesn't exist
+- Manual alignment check in each parser
+- PPRRVU spent 2 hours debugging column name mismatches
+
+**Target Pattern:**
+```python
+# In _parser_kit.py:
+def validate_layout_schema_alignment(
+    layout: Dict,
+    schema: Dict
+) -> None:
+    """
+    Validate layout columns match schema exactly.
+    
+    Per STD-parser-contracts §7.3.
+    
+    Raises:
+        LayoutMismatchError: If columns don't align
+    """
+    schema_cols = set(schema['columns'].keys())
+    layout_cols = set(layout['columns'].keys())
+    
+    missing = schema_cols - layout_cols
+    if missing:
+        raise LayoutMismatchError(
+            f"Layout missing schema columns: {missing}"
+        )
+    
+    # Check for API naming anti-pattern
+    if 'work_rvu' in layout_cols and 'rvu_work' in schema_cols:
+        raise LayoutMismatchError(
+            "Layout uses API names (work_rvu) not schema names (rvu_work)"
+        )
+```
+
+**Implementation Checklist:**
+- [ ] Add function to `_parser_kit.py`
+- [ ] Add test to `test_parser_kit.py`
+- [ ] Call from `cf_parser.py` after loading layout+schema
+- [ ] Update template with handshake pattern
+- [ ] Test: Catches layout-schema mismatches
+- [ ] Test: PPRRVU v2025.4.0 (broken) vs v2025.4.1 (fixed)
+- [ ] Test: Called in template
+
+---
+
+#### Task D: Dynamic Skiprows Metrics (Priority: LOW)
+**Effort:** 10 minutes  
+**Impact:** CI observability for dynamic detection
+
+**Current Issue:**
+- Parsers detect data start dynamically but don't report it
+- CI can't assert dynamic detection is happening
+
+**Target Pattern:**
+```python
+# In parser after detecting data start:
+data_start_idx, pattern_used = detect_data_start(file_obj, layout)
+file_obj.seek(0)
+
+metrics.update({
+    "skiprows_dynamic": int(data_start_idx),
+    "data_start_pattern": pattern_used  # e.g., "^[A-Z0-9]{5}$"
+})
+```
+
+**Implementation Checklist:**
+- [ ] Add `detect_data_start()` to `_parser_kit.py` (or keep in parser)
+- [ ] Update `cf_parser.py` to emit metrics
+- [ ] Add CI test per §7.4 (`test_parser_reports_dynamic_skiprows`)
+- [ ] Update template with metrics pattern
+- [ ] Test: Metrics include `skiprows_dynamic`
+- [ ] Test: Metrics include `data_start_pattern`
+- [ ] Test: Value makes sense (0-10 typically)
+
+---
+
+#### Task E: Documentation Updates (Priority: LOW)
+**Effort:** Included in other tasks  
+**Impact:** Complete template for future parsers
+
+**Add to §21.1 template comments:**
+```python
+def parse_{dataset}(...):
+    """
+    ...
+    
+    Special Cases:
+    - ZIP files: List members, route each file, aggregate results
+    - Excel files: Read as dtype=str to avoid date/float coercion, then cast
+    - Large files: Chunked and single-shot parsing MUST produce identical output (hash-verified)
+    """
+```
+
+**Implementation:** Just documentation (add during next PRD update)
+
+---
+
+### Success Criteria
+
+**Before merging CF parser:**
+- [ ] All 4 code tasks (A-D) implemented
+- [ ] Template documentation (Task E) updated
+- [ ] All tests passing
+- [ ] No breaking changes to PPRRVU parser
+- [ ] `STD-parser-contracts-prd-v1.0.md` updated if needed
+
+---
+
+### Related Documents
+
+- `STD-parser-contracts-prd-v1.0.md` v1.4 - §7.3, §7.4, §20.1, §21.1
+- `PPRRVU_HANDOFF.md` - Real-world debugging context
+- `cms_pricing/ingestion/parsers/_parser_kit.py` - Shared utilities
+- `cms_pricing/ingestion/parsers/pprrvu_parser.py` - Reference implementation
+
+---
+
+### Time ROI
+
+**Investment:** 55 minutes (spread across CF parser work)  
+**Saved per parser:** Prevents 1-2 hours debugging × 4 remaining parsers = 4-8 hours  
+**Net benefit:** 3-7 hours saved + improved code quality
+
+---
+
