@@ -1,6 +1,6 @@
 # Parser Contracts Standard
 
-**Status:** Draft v1.4  
+**Status:** Draft v1.5  
 **Owners:** Data Platform Engineering  
 **Consumers:** Data Engineering, MPFS Ingestor, RVU Ingestor, OPPS Ingestor, API Teams, QA Guild  
 **Change control:** ADR + PR review  
@@ -245,8 +245,11 @@ def compute_row_hash(
             parts.append("")
         elif isinstance(val, (float, Decimal)):
             # Schema-driven precision for hash stability
+            # Use Decimal for exact rounding (avoid binary float quirks)
+            from decimal import Decimal as D, ROUND_HALF_UP
             precision = column_precision.get(col, 6) if column_precision else 6
-            parts.append(f"{float(val):.{precision}f}")
+            quantizer = D(10) ** -precision
+            parts.append(str(D(str(val)).quantize(quantizer, rounding=ROUND_HALF_UP)))
         elif isinstance(val, datetime):
             parts.append(val.strftime('%Y-%m-%dT%H:%M:%SZ'))
         elif isinstance(val, date):
@@ -260,6 +263,8 @@ def compute_row_hash(
     # Return FULL 64-char digest (not truncated)
     return hashlib.sha256(content.encode('utf-8')).hexdigest()
 ```
+
+**Production Note:** Use `cms_pricing/ingestion/parsers/_parser_kit.py::finalize_parser_output()` which implements this spec. Don't reimplement row hashing in individual parsers.
 
 **Categorical Type Handling:**
 - Use categorical dtype for memory efficiency and domain enforcement
@@ -292,6 +297,7 @@ Parsers **prepare data in-memory** and return `ParseResult` NamedTuple with:
 - Columns: All original columns + `validation_error`, `validation_severity`, `validation_rule_id`, `source_line_num`
 - Created for any rejected rows (domain violations, schema mismatches, etc.)
 - Location: `data/quarantine/{release_id}/{dataset}_{reason}.parquet`
+- **Note:** Ingestor may enrich/rename fields (e.g., `validation_error` → `quarantine_reason`) for consistency with §8.4 quarantine schema. Parser provides raw reject data; ingestor normalizes for storage.
 
 **Metrics Output:**
 - `metrics.json` - Aggregated from `ParseResult.metrics` across all files
@@ -617,21 +623,44 @@ class MPFSIngestor(BaseDISIngestor):
         }
         
         adapted_data = {}
+        rejects_data = {}
+        metrics_data = {}
         
         for file_data in raw_batch.files:
-            # Route to parser
-            dataset, schema_id, parser_func = route_to_parser(file_data['filename'])
+            # Route to parser with content sniffing
+            file_head = file_data['file_obj'].read(8192)
+            file_data['file_obj'].seek(0)
             
-            # Call parser with metadata injection
-            df = parser_func(
+            dataset, schema_id, parser_func = route_to_parser(
+                file_data['filename'], 
+                file_head
+            )
+            
+            # Call parser - returns ParseResult (v1.1+)
+            result = parser_func(
                 file_obj=file_data['file_obj'],
                 filename=file_data['filename'],
                 metadata=metadata
             )
             
-            adapted_data[dataset] = df
+            # Ingestor writes artifacts from ParseResult components
+            adapted_data[dataset] = result.data
+            rejects_data[dataset] = result.rejects
+            metrics_data[dataset] = result.metrics
+            
+            # Write parsed.parquet (from result.data)
+            self._write_parquet(result.data, f"{dataset}/parsed.parquet")
+            
+            # Write rejects.parquet (from result.rejects)
+            if len(result.rejects) > 0:
+                self._write_parquet(result.rejects, f"{dataset}/rejects.parquet")
         
-        return AdaptedBatch(adapted_data=adapted_data, metadata=metadata)
+        return AdaptedBatch(
+            adapted_data=adapted_data, 
+            metadata=metadata,
+            rejects=rejects_data,
+            metrics=metrics_data
+        )
 ```
 
 **IngestRun Tracking:**
@@ -779,11 +808,12 @@ LAYOUT_REGISTRY = {
         'min_line_length': 165,
         'source_version': '2025D',
         'columns': {
+            # Layout column names MUST match schema exactly (see §7.3)
             'hcpcs': {'start': 0, 'end': 5, 'type': 'string', 'nullable': False},
             'modifier': {'start': 5, 'end': 7, 'type': 'string', 'nullable': False},
-            'rvu_work': {'start': 61, 'end': 65, 'type': 'decimal', 'nullable': True},
-            'rvu_malp': {'start': 85, 'end': 89, 'type': 'decimal', 'nullable': True},
-            # ... all 20 columns for PPRRVU (schema-canonical names)
+            'rvu_work': {'start': 61, 'end': 65, 'type': 'decimal', 'nullable': True},  # NOT work_rvu
+            'rvu_malp': {'start': 85, 'end': 89, 'type': 'decimal', 'nullable': True},  # NOT mp_rvu
+            # ... all 20 columns for PPRRVU (schema-canonical names, not API names)
         }
     }
 }
@@ -1684,9 +1714,15 @@ def test_parse_pprrvu_csv():
 ```python
 def load_schema(schema_id: str) -> Dict:
     """Load schema contract, stripping minor version from ID."""
+    from pathlib import Path
+    
     # Strip minor: cms_pprrvu_v1.1 → cms_pprrvu_v1.0
     major_id = schema_id.rsplit('.', 1)[0] + '.0'
-    schema_path = Path('contracts') / f'{major_id}.json'
+    
+    # Path relative to this module (cms_pricing/ingestion/parsers/)
+    # Resolves to: cms_pricing/ingestion/contracts/{schema_id}.json
+    schema_path = Path(__file__).parent.parent / 'contracts' / f'{major_id}.json'
+    
     return json.load(open(schema_path))
 ```
 
@@ -2134,13 +2170,13 @@ Result: Schema validation fails (expects `description` column, not `description.
 
 **Fix:**
 ```python
-# Detect and reject duplicate headers:
+# Detect and reject duplicate headers (add to §21.1 template):
 df = pd.read_csv(file_obj)
-duplicates = [col for col in df.columns if '.1' in col or '.2' in col]
-if duplicates:
-    raise ParseError(f"Duplicate column headers detected (pandas mangled): {duplicates}")
+dupes = [c for c in df.columns if '.' in c]
+if dupes:
+    raise ParseError(f"Duplicate column headers detected (pandas mangled): {dupes}")
 
-# OR normalize intentionally:
+# OR normalize intentionally (if duplicates are expected):
 df.columns = [normalize_column_name(col.split('.')[0]) for col in df.columns]
 ```
 
@@ -2237,6 +2273,7 @@ def detect_data_start(file_obj, layout):
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
+| **1.5** | **2025-10-16** | **Production hardening: 10 surgical fixes.** Type: Non-breaking (implementation guidance). **Fixed:** §6.5 normalize example (ParseResult consumption + file writes); §21.1 Step 1 (head-sniff + seek pattern); row-hash impl (Decimal quantization not float); §5.3 rejects/quarantine naming consistency; §21.1 join invariant (assert total = valid + rejects); §20.1 duplicate header guard; §21.1 Excel/ZIP guidance; §14.6 schema loader path (relative to module); §7.2 layout names = schema names (cross-ref §7.3). **Motivation:** User feedback pre-CF parser - eliminate last gotchas. **Impact:** 10 fixes prevent 2-3 hours debugging per parser × 4 = 8-12 hours saved. | TBD |
 | **1.4** | **2025-10-16** | **Template hardening + CMS-specific pitfalls.** Type: Non-breaking (guidance). **Added:** §20.1 Anti-Patterns 6-10 (BOM in headers, duplicate headers, Excel coercion, whitespace/NBSP, CRLF leftovers) - real issues from CMS file parsing. **Fixed:** §1 summary consistency (ParseResult not DataFrame); §7.2 example layout (rvu_work not work_rvu per §7.3 requirement); YAML section tagged as "Future (informative)" with current=dicts note. **Motivation:** Pre-document common CMS file issues before GPCI/ANES/OPPSCAP parsers to prevent 1-2 hours debugging each. **Impact:** 5 new pitfalls × 4 parsers = 4-8 hours saved. | ffae4e9 |
 | **1.3** | **2025-10-16** | **Normative clarifications from PPRRVU implementation.** Type: Non-breaking (guidance, enforcement rules). **Added (Normative):** §7.3 Layout-Schema Alignment with 5 MUST rules (colspec sorting, end exclusivity, dynamic header detection, keyword args, explicit data-line pattern) and validation guard; §8.5 Error Code Severity Table (12 codes) with per-dataset policies; §20.1 Common Pitfalls (top 5 anti-patterns with fixes, reordered by frequency). **Added (Guidance):** §6.6 Schema vs API Naming Convention (DB canonical vs presentation, mapper location); §14.6 Schema File Naming & Loading (version stripping pattern); §7.4 CI Test Snippets (colspec order, end exclusivity, key columns, dynamic skiprows). **Enhanced:** §7.2 Layout Registry API (signature, semantics, end=EXCLUSIVE, min_line_length as heuristic, CI enforcement); §9.1 Exception Hierarchy (custom error types); §21.1 Implementation Template (validation guard). **CI Evolution:** New validations for layout exclusivity, colspec sorting, data-start detection (pattern-based), key-column guard. **Motivation:** PPRRVU parser (commit 7ea293e) hit 3 major issues: layout-schema column mismatch (2h debug), missing natural keys (1h debug), min_line_length too strict (30min debug). **Impact:** Prevents 3-4 hours debugging per parser × 5 remaining = 15-20 hours saved. | 5fd7fd4 |
 | 1.2 | 2025-10-16 | **Phase 1 readiness: Parser implementation template and acceptance criteria.** Added §21 Parser Implementation Template with standardized 9-step structure (detect encoding → parse format → normalize → cast → validate → inject metadata → finalize → metrics → return ParseResult). Includes per-parser acceptance checklist with routing, validation, precision, performance, and testing requirements. Added golden-first development workflow (extract fixture → write test → implement → verify → commit). Provides copy/paste checklist for parser PRs. Supports Phase 1 parser implementations (PPRRVU, CF, GPCI, ANES, OPPSCAP, Locality). | #TBD |
@@ -2273,14 +2310,34 @@ def parse_{dataset}(
     import time
     start_time = time.perf_counter()
     
-    # Step 1: Detect encoding (use parser kit)
-    encoding, content_clean = detect_encoding(file_obj.read())
+    # Step 1: Detect encoding (head-sniff to keep memory bounded)
+    head = file_obj.read(8192)  # First 8KB for BOM/encoding detection
+    encoding, _ = detect_encoding(head)
+    file_obj.seek(0)  # Reset for full parse
     logger.info("Encoding detected", encoding=encoding)
     
-    # Step 2: Parse format (fixed-width via layout OR CSV)
+    # Read full content after encoding known
+    content_clean = file_obj.read()
+    
+    # Step 2: Parse format (fixed-width via layout OR CSV/Excel)
     if _is_fixed_width(content_clean):
         layout = get_layout(dataset, metadata['product_year'], metadata['quarter'])
         df = _parse_fixed_width(content_clean, encoding, layout)
+    elif filename.endswith('.xlsx'):
+        # Excel: Read as dtype=str, then cast with Decimal (never trust Excel's inferred dates/floats)
+        df = pd.read_excel(file_obj, dtype=str)
+    elif filename.endswith('.zip'):
+        # ZIP: Iterate members, route each through same contract, concat results
+        import zipfile
+        with zipfile.ZipFile(file_obj) as zf:
+            dfs = []
+            for member in zf.namelist():
+                with zf.open(member) as f:
+                    # Recurse through router for each member
+                    member_result = parse_{dataset}(f, member, metadata)
+                    member_result.data['source_zip_member'] = member
+                    dfs.append(member_result.data)
+            df = pd.concat(dfs, ignore_index=True)
     else:
         df = _parse_csv(content_clean, encoding)
     
@@ -2324,6 +2381,10 @@ def parse_{dataset}(
         'parse_duration_sec': parse_duration,
         'schema_id': metadata['schema_id']
     }
+    
+    # Join invariant: total_rows = valid + rejects (catches bugs)
+    assert metrics['total_rows'] == len(final_df) + len(cat_result.rejects_df), \
+        f"Row count mismatch: {metrics['total_rows']} != {len(final_df)} + {len(cat_result.rejects_df)}"
     
     logger.info("Parse completed", rows=len(final_df), rejects=len(cat_result.rejects_df))
     
