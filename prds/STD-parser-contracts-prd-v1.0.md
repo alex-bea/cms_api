@@ -1,6 +1,6 @@
 # Parser Contracts Standard
 
-**Status:** Draft v1.5  
+**Status:** Draft v1.6  
 **Owners:** Data Platform Engineering  
 **Consumers:** Data Engineering, MPFS Ingestor, RVU Ingestor, OPPS Ingestor, API Teams, QA Guild  
 **Change control:** ADR + PR review  
@@ -460,6 +460,10 @@ def parse_{dataset}(
         'encoding_detected': encoding,
         'encoding_fallback': encoding != 'utf-8'
     }
+    
+    # Join invariant: input == valid + rejects
+    assert metrics['total_rows'] == (len(data) + len(rejects)), \
+        "Join invariant violated: valid + rejects must equal input rows"
     
     return ParseResult(data=data, rejects=rejects, metrics=metrics)
 ```
@@ -1088,6 +1092,17 @@ def test_parser_reports_dynamic_skiprows(metrics):
         "Parser must report data_start_pattern used for detection"
 ```
 
+**5. Layout Column Names Match Schema:**
+
+```python
+def test_layout_schema_column_name_alignment(layout, schema):
+    """Verify fixed-width layout column names match schema contract exactly."""
+    schema_cols = set(schema['columns'].keys())
+    layout_cols = set(layout['columns'].keys())
+    missing = schema_cols - layout_cols
+    assert not missing, f"Layout missing schema columns: {sorted(missing)}"
+```
+
 **Usage:**
 ```python
 # In tests/ingestion/test_layout_compliance.py
@@ -1709,21 +1724,27 @@ def test_parse_pprrvu_csv():
 - **Minor version** = additive changes (update existing file)
 - **Filename stability** = predictable imports, no cascading renames
 
-**Registry Load Pattern:**
+**Registry Load Pattern (package-safe):** Use `importlib.resources` to load contracts whether running from source or an installed package. A dev-only Path fallback is shown in comments.
 
 ```python
+from importlib.resources import files
+import json
+from typing import Dict
+
 def load_schema(schema_id: str) -> Dict:
-    """Load schema contract, stripping minor version from ID."""
-    from pathlib import Path
-    
+    """Load schema contract, stripping minor version from ID (package-safe)."""
     # Strip minor: cms_pprrvu_v1.1 → cms_pprrvu_v1.0
     major_id = schema_id.rsplit('.', 1)[0] + '.0'
-    
-    # Path relative to this module (cms_pricing/ingestion/parsers/)
-    # Resolves to: cms_pricing/ingestion/contracts/{schema_id}.json
-    schema_path = Path(__file__).parent.parent / 'contracts' / f'{major_id}.json'
-    
-    return json.load(open(schema_path))
+
+    # Package-safe load from installed resources
+    schema_path = files('cms_pricing.ingestion.contracts').joinpath(f'{major_id}.json')
+    with schema_path.open('r', encoding='utf-8') as f:
+        return json.load(f)
+
+    # --- Dev-only fallback (example) ---
+    # from pathlib import Path
+    # with open(Path(__file__).parent.parent / 'contracts' / f'{major_id}.json', encoding='utf-8') as f:
+    #     return json.load(f)
 ```
 
 **Example:**
@@ -2273,6 +2294,7 @@ def detect_data_start(file_obj, layout):
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
+| **1.6** | **2025-10-16** | **Package safety + CI guards.** Type: Non-breaking (implementation guidance). **Fixed:** §14.6 schema loader (importlib.resources for package-safe loading); §6.1 ParseResult example (join invariant assert). **Added:** §7.4 CI guard #5 (layout-schema column name alignment test). **Motivation:** Package installation support + prevent layout-schema drift. **Impact:** Prevents import errors in installed packages + 1-2h debugging per parser. | TBD |
 | **1.5** | **2025-10-16** | **Production hardening: 10 surgical fixes.** Type: Non-breaking (implementation guidance). **Fixed:** §6.5 normalize example (ParseResult consumption + file writes); §21.1 Step 1 (head-sniff + seek pattern); row-hash impl (Decimal quantization not float); §5.3 rejects/quarantine naming consistency; §21.1 join invariant (assert total = valid + rejects); §20.1 duplicate header guard; §21.1 Excel/ZIP guidance; §14.6 schema loader path (relative to module); §7.2 layout names = schema names (cross-ref §7.3). **Motivation:** User feedback pre-CF parser - eliminate last gotchas. **Impact:** 10 fixes prevent 2-3 hours debugging per parser × 4 = 8-12 hours saved. | TBD |
 | **1.4** | **2025-10-16** | **Template hardening + CMS-specific pitfalls.** Type: Non-breaking (guidance). **Added:** §20.1 Anti-Patterns 6-10 (BOM in headers, duplicate headers, Excel coercion, whitespace/NBSP, CRLF leftovers) - real issues from CMS file parsing. **Fixed:** §1 summary consistency (ParseResult not DataFrame); §7.2 example layout (rvu_work not work_rvu per §7.3 requirement); YAML section tagged as "Future (informative)" with current=dicts note. **Motivation:** Pre-document common CMS file issues before GPCI/ANES/OPPSCAP parsers to prevent 1-2 hours debugging each. **Impact:** 5 new pitfalls × 4 parsers = 4-8 hours saved. | ffae4e9 |
 | **1.3** | **2025-10-16** | **Normative clarifications from PPRRVU implementation.** Type: Non-breaking (guidance, enforcement rules). **Added (Normative):** §7.3 Layout-Schema Alignment with 5 MUST rules (colspec sorting, end exclusivity, dynamic header detection, keyword args, explicit data-line pattern) and validation guard; §8.5 Error Code Severity Table (12 codes) with per-dataset policies; §20.1 Common Pitfalls (top 5 anti-patterns with fixes, reordered by frequency). **Added (Guidance):** §6.6 Schema vs API Naming Convention (DB canonical vs presentation, mapper location); §14.6 Schema File Naming & Loading (version stripping pattern); §7.4 CI Test Snippets (colspec order, end exclusivity, key columns, dynamic skiprows). **Enhanced:** §7.2 Layout Registry API (signature, semantics, end=EXCLUSIVE, min_line_length as heuristic, CI enforcement); §9.1 Exception Hierarchy (custom error types); §21.1 Implementation Template (validation guard). **CI Evolution:** New validations for layout exclusivity, colspec sorting, data-start detection (pattern-based), key-column guard. **Motivation:** PPRRVU parser (commit 7ea293e) hit 3 major issues: layout-schema column mismatch (2h debug), missing natural keys (1h debug), min_line_length too strict (30min debug). **Impact:** Prevents 3-4 hours debugging per parser × 5 remaining = 15-20 hours saved. | 5fd7fd4 |
