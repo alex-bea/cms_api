@@ -1,0 +1,66 @@
+# PRD Learning Reminder Rules
+# -----------------------------------------------------------------------------
+# This declarative map drives tools/collect_prd_learnings.py. Each rule
+# associates changed files or textual keywords with the documentation that
+# likely needs a follow-up update. Update this file (not the script) when
+# ownership or coverage changes.
+
+paths:
+  # Ingestion pipelines (parsers, ingestors, discovery)
+  - pattern: "cms_pricing/ingestion/contracts/**"
+    prds:
+      - "STD-parser-contracts-prd-v1.0.md"
+    reason: "Schema contract or layout registry changed; verify parser standard."
+
+  - pattern: "cms_pricing/ingestion/parsers/**"
+    prds:
+      - "STD-parser-contracts-prd-v1.0.md"
+      - "STD-data-architecture-impl-v1.0.md"
+    reason: "Parser implementation changed; check parser standard and implementation guide."
+
+  - pattern: "cms_pricing/ingestion/ingestors/**"
+    prds:
+      - "STD-data-architecture-prd-v1.0.md"
+      - "STD-data-architecture-impl-v1.0.md"
+    reason: "Ingestor behavior changed; confirm DIS standard documents the update."
+
+  - pattern: "cms_pricing/ingestion/metadata/**"
+    prds:
+      - "REF-scraper-ingestor-integration-v1.0.md"
+      - "STD-scraper-prd-v1.0.md"
+    reason: "Discovery metadata changed; ensure integration reference and scraper standard stay in sync."
+
+  # Documentation directories
+  - pattern: "prds/**"
+    prds:
+      - "DOC-master-catalog-prd-v1.0.md"
+    reason: "Direct edit to PRDs; remind to update master catalog changelog."
+
+keywords:
+  - trigger: "parser fix"
+    prds:
+      - "STD-parser-contracts-prd-v1.0.md"
+    reason: "Parser fixes usually imply documentation updates."
+
+  - trigger: "layout drift"
+    prds:
+      - "STD-parser-contracts-prd-v1.0.md"
+    reason: "Layout/schema drift must be documented."
+
+  - trigger: "schema contract"
+    prds:
+      - "STD-parser-contracts-prd-v1.0.md"
+      - "DOC-master-catalog-prd-v1.0.md"
+    reason: "Schema contract change should trigger parser standard and catalog review."
+
+  - trigger: "ingestion pipeline"
+    prds:
+      - "STD-data-architecture-prd-v1.0.md"
+      - "STD-data-architecture-impl-v1.0.md"
+    reason: "Pipeline updates may alter DIS requirements."
+
+suppression_tokens:
+  - "[skip-prd-reminder]"
+  - "docs:ignore"
+  - "skip-prd-learning"
+

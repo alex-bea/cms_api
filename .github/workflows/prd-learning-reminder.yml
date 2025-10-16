@@ -1,0 +1,80 @@
+name: PRD Learning Reminder
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml
+
+      - name: Collect PRD learnings
+        id: collect
+        run: |
+          python tools/collect_prd_learnings.py \
+            --base-sha "${{ github.event.pull_request.base.sha || github.event.before }}" \
+            --event-path "${{ github.event_path }}" \
+            --json-output learning_results.json \
+            --markdown-output learning_results.md
+          echo "markdown<<EOF" >> "$GITHUB_OUTPUT"
+          cat learning_results.md >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && steps.collect.outputs.markdown != ''
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const commentBody = `${{ steps.collect.outputs.markdown }}`;
+            const marker = '<!-- prd-learning-anchor -->';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+            const body = `${marker}\n${commentBody}`;
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Append learning inbox
+        if: github.event_name == 'push' && steps.collect.outputs.markdown != ''
+        run: |
+          mkdir -p docs
+          file="docs/prd_learning_inbox.md"
+          echo "### $(date -u +"%Y-%m-%d %H:%M UTC") — ${GITHUB_SHA}" >> "$file"
+          cat learning_results.md >> "$file"
+          echo "" >> "$file"
+          echo "Learning inbox updated:"
+          tail "$file"
+
