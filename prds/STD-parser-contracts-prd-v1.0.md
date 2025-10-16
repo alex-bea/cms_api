@@ -1,6 +1,6 @@
 # Parser Contracts Standard
 
-**Status:** Draft v1.3  
+**Status:** Draft v1.4  
 **Owners:** Data Platform Engineering  
 **Consumers:** Data Engineering, MPFS Ingestor, RVU Ingestor, OPPS Ingestor, API Teams, QA Guild  
 **Change control:** ADR + PR review  
@@ -22,7 +22,7 @@
 
 ## 1. Summary
 
-Parsers return canonical pandas DataFrames; the ingestor writes Arrow/Parquet artifacts with deterministic outputs and full provenance. The system converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP) into schema-validated tabular datasets. Parsers are selected by a router using filename patterns and optional content sniffing. The normalize stage writes DataFrames to Arrow/Parquet format.
+Parsers return `ParseResult(data, rejects, metrics)`; the ingestor writes Arrow/Parquet artifacts with deterministic outputs and full provenance. The system converts heterogeneous CMS source files (CSV/TSV/TXT/XLSX/ZIP) into schema-validated tabular datasets. Parsers are selected by a router using filename patterns and optional content sniffing. The normalize stage writes DataFrames to Arrow/Parquet format.
 
 **Why this matters**: Parsing quality is the single largest driver of downstream reliability and cost. Standardizing parser behavior, observability, and contracts prevents silent data drift, enables reproducible releases, and accelerates onboarding of new ingestors.
 
@@ -775,19 +775,21 @@ PARSER_ROUTING = {
 ```python
 LAYOUT_REGISTRY = {
     ('pprrvu', '2025', 'Q4'): {
-        'version': 'v2025.4.0',  # SemVer
-        'min_line_length': 200,
+        'version': 'v2025.4.1',  # SemVer
+        'min_line_length': 165,
         'source_version': '2025D',
         'columns': {
             'hcpcs': {'start': 0, 'end': 5, 'type': 'string', 'nullable': False},
-            'work_rvu': {'start': 61, 'end': 65, 'type': 'decimal', 'nullable': True},
-            # ... all 20 columns for PPRRVU
+            'modifier': {'start': 5, 'end': 7, 'type': 'string', 'nullable': False},
+            'rvu_work': {'start': 61, 'end': 65, 'type': 'decimal', 'nullable': True},
+            'rvu_malp': {'start': 85, 'end': 89, 'type': 'decimal', 'nullable': True},
+            # ... all 20 columns for PPRRVU (schema-canonical names)
         }
     }
 }
 ```
 
-**v1.0 Note:** Layouts are Python dicts in-code for simplicity and speed.
+**v1.0 Note (Current Source of Truth):** Layouts are Python dicts in-code for simplicity and speed. YAML migration is planned but NOT required for v1.0-v1.4 compliance.
 
 **Function Signature & Semantics (v1.3):**
 
@@ -845,7 +847,9 @@ layout = get_layout(product_year="2025", quarter_vintage="2025Q4", dataset="pprr
 **CI Enforcement:**
 - CI MUST verify `end` is exclusive by reconstructing a synthetic line and ensuring `read_fwf` reproduces exact boundaries (see §7.4 for test snippets)
 
-**v1.1 Enhancement (Planned - YAML Source of Truth):**
+**v2.0 Future Enhancement (Informative - YAML Source of Truth):**
+
+**Note:** This section describes a FUTURE enhancement. Current implementations (v1.0-v1.4) use Python dict layouts and are fully compliant. YAML migration is optional and NOT required.
 
 ```yaml
 # File: layout_registry/pprrvu/v2025.4.0.yaml
@@ -2091,6 +2095,140 @@ final_df = finalize_parser_output(df, natural_keys, schema)  # Handles exclusion
 
 ---
 
+---
+
+### Anti-Pattern 6: BOM in Header Names
+
+**Problem:**
+```python
+df = pd.read_csv(file_obj)
+# Column becomes: '\ufeffhcpcs' (U+FEFF BOM prefix)
+assert 'hcpcs' in df.columns  # ❌ Fails!
+```
+Result: "Missing required column: hcpcs" even though it's there.
+
+**Fix:**
+```python
+# Detect and strip BOM BEFORE parsing:
+from cms_pricing.ingestion.parsers._parser_kit import detect_encoding
+
+content = file_obj.read()
+encoding, content_clean = detect_encoding(content)  # Strips BOM
+df = pd.read_csv(StringIO(content_clean.decode(encoding)))
+
+# Verify after normalization:
+assert 'hcpcs' in df.columns, f"Missing hcpcs, got: {list(df.columns)}"
+```
+
+---
+
+### Anti-Pattern 7: Duplicate Headers Mangled by Pandas
+
+**Problem:**
+```python
+# CSV has: description,amount,description
+df = pd.read_csv(file_obj)
+# Pandas auto-renames: description, amount, description.1
+```
+Result: Schema validation fails (expects `description` column, not `description.1`).
+
+**Fix:**
+```python
+# Detect and reject duplicate headers:
+df = pd.read_csv(file_obj)
+duplicates = [col for col in df.columns if '.1' in col or '.2' in col]
+if duplicates:
+    raise ParseError(f"Duplicate column headers detected (pandas mangled): {duplicates}")
+
+# OR normalize intentionally:
+df.columns = [normalize_column_name(col.split('.')[0]) for col in df.columns]
+```
+
+---
+
+### Anti-Pattern 8: Excel Date/Float Coercion
+
+**Problem:**
+```python
+df = pd.read_excel(file_obj)
+# Excel date 01/02/2025 → locale-dependent interpretation
+# Float 19.31 → 19.30999999999... (binary precision loss)
+```
+
+**Fix:**
+```python
+# Read Excel as strings, then cast:
+df = pd.read_excel(file_obj, dtype=str)
+
+# Cast with schema-driven precision:
+from cms_pricing.ingestion.parsers._parser_kit import canonicalize_numeric_col
+
+for col, spec in schema['columns'].items():
+    if spec['type'] in ['decimal', 'float']:
+        df[col] = canonicalize_numeric_col(
+            df[col],
+            precision=spec.get('precision', 6),
+            rounding_mode=spec.get('rounding_mode', 'HALF_UP')
+        )
+```
+
+---
+
+### Anti-Pattern 9: Whitespace & NBSP in Codes
+
+**Problem:**
+```python
+df['hcpcs'] = '99213 '  # Trailing space
+df['status'] = 'A\u00a0'  # Non-breaking space (NBSP)
+
+# Category validation fails:
+allowed = {'A', 'B'}
+actual = set(df['status'].unique())  # {'A\u00a0'}
+assert actual.issubset(allowed)  # ❌ Fails
+```
+
+**Fix:**
+```python
+# Strip whitespace + replace NBSP before validation:
+for col in categorical_columns:
+    df[col] = df[col].str.strip()  # Regular spaces
+    df[col] = df[col].str.replace('\u00a0', ' ')  # NBSP → space
+    df[col] = df[col].str.strip()  # Trim again
+
+# Then validate:
+allowed = get_categorical_columns(schema)[col]['enum']
+invalid = set(df[col].dropna().unique()) - set(allowed)
+if invalid:
+    raise CategoryValidationError(col, list(invalid))
+```
+
+---
+
+### Anti-Pattern 10: CRLF Leftovers in Fixed-Width
+
+**Problem:**
+```python
+# Windows file with CRLF endings:
+line = 'HCPCS00123  19.31\r\n'
+token = line[0:5]  # 'HCPCS'
+length = len(line)  # 22 (includes \r\n)
+
+# min_line_length check fails or last char misaligned
+```
+
+**Fix:**
+```python
+# Strip CRLF when measuring and detecting data start:
+def detect_data_start(file_obj, layout):
+    for i, raw_line in enumerate(file_obj):
+        line = raw_line.rstrip(b'\r\n').decode('utf-8', errors='ignore')
+        if len(line) >= layout['min_line_length']:
+            # Check pattern at first key position
+            ...
+```
+
+---
+
 **More Issues?** See PPRRVU parser commit history (7ea293e) for full debugging trail.
 
 ---
@@ -2099,6 +2237,7 @@ final_df = finalize_parser_output(df, natural_keys, schema)  # Handles exclusion
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
+| **1.4** | **2025-10-16** | **Template hardening + CMS-specific pitfalls.** Type: Non-breaking (guidance). **Added:** §20.1 Anti-Patterns 6-10 (BOM in headers, duplicate headers, Excel coercion, whitespace/NBSP, CRLF leftovers) - real issues from CMS file parsing. **Fixed:** §1 summary consistency (ParseResult not DataFrame); §7.2 example layout (rvu_work not work_rvu per §7.3 requirement); YAML section tagged as "Future (informative)" with current=dicts note. **Motivation:** Pre-document common CMS file issues before GPCI/ANES/OPPSCAP parsers to prevent 1-2 hours debugging each. **Impact:** 5 new pitfalls × 4 parsers = 4-8 hours saved. | ffae4e9 |
 | **1.3** | **2025-10-16** | **Normative clarifications from PPRRVU implementation.** Type: Non-breaking (guidance, enforcement rules). **Added (Normative):** §7.3 Layout-Schema Alignment with 5 MUST rules (colspec sorting, end exclusivity, dynamic header detection, keyword args, explicit data-line pattern) and validation guard; §8.5 Error Code Severity Table (12 codes) with per-dataset policies; §20.1 Common Pitfalls (top 5 anti-patterns with fixes, reordered by frequency). **Added (Guidance):** §6.6 Schema vs API Naming Convention (DB canonical vs presentation, mapper location); §14.6 Schema File Naming & Loading (version stripping pattern); §7.4 CI Test Snippets (colspec order, end exclusivity, key columns, dynamic skiprows). **Enhanced:** §7.2 Layout Registry API (signature, semantics, end=EXCLUSIVE, min_line_length as heuristic, CI enforcement); §9.1 Exception Hierarchy (custom error types); §21.1 Implementation Template (validation guard). **CI Evolution:** New validations for layout exclusivity, colspec sorting, data-start detection (pattern-based), key-column guard. **Motivation:** PPRRVU parser (commit 7ea293e) hit 3 major issues: layout-schema column mismatch (2h debug), missing natural keys (1h debug), min_line_length too strict (30min debug). **Impact:** Prevents 3-4 hours debugging per parser × 5 remaining = 15-20 hours saved. | 5fd7fd4 |
 | 1.2 | 2025-10-16 | **Phase 1 readiness: Parser implementation template and acceptance criteria.** Added §21 Parser Implementation Template with standardized 9-step structure (detect encoding → parse format → normalize → cast → validate → inject metadata → finalize → metrics → return ParseResult). Includes per-parser acceptance checklist with routing, validation, precision, performance, and testing requirements. Added golden-first development workflow (extract fixture → write test → implement → verify → commit). Provides copy/paste checklist for parser PRs. Supports Phase 1 parser implementations (PPRRVU, CF, GPCI, ANES, OPPSCAP, Locality). | #TBD |
 | 1.1 | 2025-10-15 | **Production-grade enhancements for MPFS implementation.** Upgraded parser return type to `ParseResult(data, rejects, metrics)` for cleaner separation (§5.3). Added content sniffing via `file_head` parameter for magic byte/BOM detection (§6.2). Changed row hash to full 64-char SHA-256 digest with schema-driven precision per column (§5.2). Added CP1252 to encoding cascade for Windows file support (§5.2). Implemented explicit categorical domain validation - pre-check before conversion to prevent silent NaN coercion (§8.2.1). Pinned exact natural keys per dataset including `effective_from` for time-variant data. Added vintage field duplication guidance (§6.4). Enhanced test strategy with explicit IO boundary rules - parsers return data, ingestors write files (§14.1). Updated acceptance criteria with all v1.1 requirements (§18). These changes prevent technical debt and enable immediate production deployment. | #TBD |
