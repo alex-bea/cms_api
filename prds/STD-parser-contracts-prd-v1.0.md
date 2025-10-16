@@ -1,6 +1,6 @@
 # Parser Contracts Standard
 
-**Status:** Draft v1.2  
+**Status:** Draft v1.3  
 **Owners:** Data Platform Engineering  
 **Consumers:** Data Engineering, MPFS Ingestor, RVU Ingestor, OPPS Ingestor, API Teams, QA Guild  
 **Change control:** ADR + PR review  
@@ -638,6 +638,100 @@ Parsers update IngestRun model fields during normalize stage:
 - `schema_version` - Schema contract version used
 - `stage_timings['normalize_duration_sec']` - Parse duration
 
+### 6.6 Schema vs API Naming Convention (v1.3)
+
+**Problem:** CMS datasets appear in both internal storage (database) and external API responses, requiring different naming conventions for different audiences.
+
+**Solution:** Parsers output **schema format** (DB canonical). API layer transforms to **presentation format** at serialization boundary.
+
+**Schema Format (DB Canonical):**
+- **Pattern:** `{component}_{type}` with prefix grouping
+- **Example:** `rvu_work`, `rvu_pe_nonfac`, `rvu_pe_fac`, `rvu_malp`
+- **Used by:** Parsers, database tables, schema contracts, ingestors
+- **Rationale:** Logical grouping by prefix, clear data ownership (all RVU fields start with `rvu_*`)
+
+**API Format (Presentation):**
+- **Pattern:** `{type}_{component}` with suffix grouping
+- **Example:** `work_rvu`, `pe_rvu_nonfac`, `pe_rvu_fac`, `mp_rvu`
+- **Used by:** API responses, Pydantic schemas, external documentation
+- **Rationale:** More intuitive for API consumers, industry-standard naming
+
+**Transformation Boundary:**
+
+Transform at **API serialization**, NOT in parser or ingestor:
+
+```python
+# Parser outputs schema format (DB canonical):
+result = parse_pprrvu(file_obj, filename, metadata)
+# result.data has columns: rvu_work, rvu_pe_nonfac, rvu_pe_fac, rvu_malp
+
+# Database stores schema format (no transformation):
+db_table.insert(result.data)  # Columns match table schema
+
+# API router transforms for response (presentation format):
+from cms_pricing.mappers import schema_to_api
+
+@router.get("/rvu/{hcpcs}")
+async def get_rvu(hcpcs: str):
+    df = await db.query_rvu(hcpcs)  # Has rvu_work
+    api_df = schema_to_api(df)       # Now has work_rvu
+    return RVUResponse.from_dataframe(api_df)
+```
+
+**Column Mapper Location:** `cms_pricing/mappers/__init__.py`
+
+**Per-Dataset Mappings:**
+
+| Dataset | Schema → API Mappings |
+|---------|----------------------|
+| PPRRVU | `rvu_work` → `work_rvu`, `rvu_malp` → `mp_rvu` |
+| GPCI | (add as implemented) |
+| Others | (add as implemented) |
+
+**Benefits:**
+- **Single source of truth:** Schema contract is canonical
+- **Clean layer separation:** Parser→DB (no transform), DB→API (transform)
+- **Reversible:** Both `schema_to_api()` and `api_to_schema()` available
+- **No silent drift:** Explicit mapping prevents misalignment
+- **API evolution:** Can change presentation without affecting storage
+
+**Example Mapping (PPRRVU):**
+
+| Schema (DB Canonical) | API (Presentation) | Why |
+|-----------------------|--------------------|-----|
+| `rvu_work` | `work_rvu` | API aligns to legacy/intuitive naming |
+| `rvu_malp` | `mp_rvu` | API uses common abbreviation (mp vs malp) |
+
+**Code - PPRRVU:**
+```python
+# Transformation layer (outside parser):
+# Location: cms_pricing/mappers/__init__.py
+
+PPRRVU_SCHEMA_TO_API = {
+    'rvu_work': 'work_rvu',
+    'rvu_pe_nonfac': 'pe_rvu_nonfac',
+    'rvu_pe_fac': 'pe_rvu_fac',
+    'rvu_malp': 'mp_rvu',
+}
+
+def schema_to_api(df):
+    """Transform schema columns to API presentation format."""
+    return df.rename(columns=PPRRVU_SCHEMA_TO_API)
+
+# Usage in API router:
+@router.get("/rvu/{hcpcs}")
+async def get_rvu(hcpcs: str):
+    df_schema = await db.query_rvu(hcpcs)  # Has rvu_work
+    df_api = schema_to_api(df_schema)       # Now has work_rvu
+    return RVUResponse.from_dataframe(df_api)
+```
+
+**Parser Requirement:**
+- ✅ **MUST** output schema format (rvu_work, etc.)
+- ❌ **MUST NOT** output API format (work_rvu, etc.)
+- ✅ **MUST** align layout column names with schema
+- ✅ **SHOULD** document mapping in column mapper if API differs
+
 ---
 
 ## 7. Router & Layout Registry
@@ -689,7 +783,59 @@ LAYOUT_REGISTRY = {
 }
 ```
 
-**v1.0 Note:** Layouts are Python dicts in-code for simplicity and speed. Lookups via `get_layout(year, quarter, dataset)`.
+**v1.0 Note:** Layouts are Python dicts in-code for simplicity and speed.
+
+**Function Signature & Semantics (v1.3):**
+
+```python
+def get_layout(
+    product_year: str,      # "2025"
+    quarter_vintage: str,   # "2025Q4" or "2025D" (annual)
+    dataset: str            # "pprrvu", "gpci", etc.
+) -> Optional[Dict[str, Any]]:
+    """
+    Get layout specification for fixed-width parsing.
+    
+    Returns:
+        {
+            'version': str,           # SemVer: vYYYY.Q.P
+            'min_line_length': int,   # Observed minimum data line length
+            'source_version': str,    # CMS release ID (e.g., "2025D")
+            'columns': {
+                name: {
+                    'start': int,     # 0-indexed, INCLUSIVE
+                    'end': int,       # EXCLUSIVE (for read_fwf, slicing)
+                    'type': str,      # 'string', 'decimal', 'int'
+                    'nullable': bool
+                }
+            }
+        }
+        OR None if layout not found
+    """
+```
+
+**Lookup Logic:**
+1. Extract quarter from `quarter_vintage`: `"2025Q4"` → `"Q4"`
+2. Try specific quarter: `(dataset, product_year, quarter)` tuple lookup
+3. Fallback to annual: `(dataset, product_year, None)`
+4. Return `None` if not found
+
+**Example:**
+```python
+layout = get_layout(product_year="2025", quarter_vintage="2025Q4", dataset="pprrvu")
+# Looks up: ("pprrvu", "2025", "Q4"), then ("pprrvu", "2025", None)
+# Returns: {'version': 'v2025.4.1', 'columns': {...}, 'min_line_length': 165}
+```
+
+**Critical Semantics:**
+- **`end` is EXCLUSIVE** - For `read_fwf(colspecs=[(start, end)])` and `line[start:end]` slicing
+- **Dict order ≠ positional order** - MUST sort columns by `start` before building colspecs
+- **Column names MUST match schema** - See §7.3 for alignment requirements
+
+**Common Pitfalls:**
+- ❌ Positional args: `get_layout("2025", "pprrvu", "Q4")` swaps dataset/quarter → returns None
+- ❌ Inclusive end: `{'start': 0, 'end': 5}` expecting 6 chars (only gets 5: indices 0-4)
+- ❌ Hardcoded skiprows: CMS headers vary by release; detect data start dynamically
 
 **v1.1 Enhancement (Planned - YAML Source of Truth):**
 
@@ -724,6 +870,111 @@ columns:
 **Testing:**
 - Layout tests detect column width changes
 - CI blocks if layout changes without version bump
+
+### 7.3 Layout-Schema Alignment (v1.3 - CRITICAL)
+
+**NORMATIVE REQUIREMENT:** Layout column names MUST exactly match schema contract column names.
+
+**Hard Rules (CI-enforceable):**
+
+1. **MUST** sort fixed-width columns by `start` position before building colspecs
+2. **MUST** treat layout `end` as EXCLUSIVE for `read_fwf()` and `line[start:end]` slicing
+3. **MUST** detect data start dynamically (no hardcoded skiprows; use pattern matching + min_line_length)
+4. **MUST** call `get_layout(product_year=..., quarter_vintage=..., dataset=...)` using keyword arguments
+
+**Alignment Checklist (Pre-Implementation):**
+
+Before implementing parser:
+1. ✅ Load schema contract: `cms_{dataset}_v1.0.json`
+2. ✅ List natural keys: `schema['natural_keys']`
+3. ✅ List all required columns: `schema['columns'].keys()`
+4. ✅ Verify layout has ALL required columns (exact names, case-sensitive)
+5. ✅ Verify natural key columns present in layout
+6. ✅ Measure actual data line length (do NOT guess `min_line_length`)
+
+**Validation Guard (Post-Parse):**
+
+Add after normalization, before categorical validation:
+
+```python
+# In parser, after _normalize_column_names(df):
+required_cols = set(schema['columns'].keys())
+actual_cols = set(df.columns)
+missing = required_cols - actual_cols
+
+if missing:
+    # Include first row sample for debugging
+    sample = df.head(1).to_dict('records')[0] if len(df) > 0 else {}
+    raise LayoutMismatchError(
+        f"DataFrame missing required schema columns: {missing}. "
+        f"Layout may be out of sync with schema. First row sample: {sample}"
+    )
+```
+
+**Common Misalignments:**
+
+| Schema Contract Has | Layout Had | Fix | Version Bump |
+|---------------------|------------|-----|--------------|
+| `rvu_work` | `work_rvu` | Rename layout column | Patch (v2025.4.0→v2025.4.1) |
+| `modifier` | ❌ MISSING | Add at position 5:7 | Minor (v2025.4→v2025.5) |
+| `effective_from` | ❌ MISSING | Inject from metadata in parser | No bump (parser handles) |
+| `rvu_malp` | `mp_rvu` | Rename layout column | Patch (v2025.4.0→v2025.4.1) |
+
+**Example: PPRRVU Alignment (Real Fix from commit 7ea293e):**
+
+**Before (v2025.4.0 - BROKE PARSER):**
+```python
+PPRRVU_2025D_LAYOUT = {
+    'version': 'v2025.4.0',
+    'min_line_length': 200,  # ❌ Too strict (actual data = 173 chars)
+    'columns': {
+        'hcpcs': {'start': 0, 'end': 5},  # ✓ Matches schema
+        # 'modifier' MISSING!  # ❌ Natural key absent → uniqueness check fails
+        'work_rvu': {'start': 61, 'end': 65},  # ❌ Schema expects rvu_work
+        'mp_rvu': {'start': 85, 'end': 89},  # ❌ Schema expects rvu_malp
+    }
+}
+# Result: 0/7 tests passing, KeyError: 'rvu_work'
+```
+
+**After (v2025.4.1 - FIXED):**
+```python
+PPRRVU_2025D_LAYOUT = {
+    'version': 'v2025.4.1',
+    'min_line_length': 165,  # ✅ Measured actual data (173 chars) with margin
+    'columns': {
+        'hcpcs': {'start': 0, 'end': 5},  # ✓ Matches schema
+        'modifier': {'start': 5, 'end': 7},  # ✅ Added natural key
+        'rvu_work': {'start': 61, 'end': 65},  # ✅ Renamed to match schema
+        'rvu_malp': {'start': 85, 'end': 89},  # ✅ Renamed to match schema
+    }
+}
+# Result: 7/7 tests passing, production-ready
+```
+
+**Debugging Time Saved:** 2+ hours (from KeyError to working parser)
+
+**CI Enforcement (Future):**
+
+Add to schema contract validator:
+
+```python
+def validate_layout_schema_alignment(layout: Dict, schema: Dict) -> None:
+    """Enforce layout-schema column name alignment."""
+    schema_cols = set(schema['columns'].keys())
+    layout_cols = set(layout['columns'].keys())
+    
+    missing = schema_cols - layout_cols
+    if missing:
+        raise ValidationError(f"Layout missing schema columns: {missing}")
+    
+    # Check for common anti-patterns (API names in layout)
+    if 'work_rvu' in layout_cols and 'rvu_work' in schema_cols:
+        raise ValidationError(
+            "Layout uses 'work_rvu' but schema expects 'rvu_work'. "
+            "Layout must use schema column names, not API names."
+        )
+```
 
 ---
 
@@ -847,9 +1098,144 @@ result: ValidationResult = enforce_categorical_dtypes(
 - Format violations (WARN level)
 - Schema mismatches (if not blocking)
 
+### 8.5 Error Code Severity Table & Uniqueness Policies (v1.3)
+
+**Canonical Error Code Table:**
+
+All parsers use these default severities unless explicitly overridden:
+
+| Error Code | Default Severity | Parser Action | Artifact | Notes |
+|------------|------------------|---------------|----------|-------|
+| `LAYOUT_MISMATCH` | **BLOCK** | Raise `LayoutMismatchError` | — | Cannot continue parsing |
+| `FIELD_MISSING` | **BLOCK** | Raise `SchemaRegressionError` | — | Required column absent |
+| `TYPE_CAST_ERROR` | **BLOCK** | Raise `ValueError` | — | Cannot cast to required type |
+| `KEY_VIOLATION` | **BLOCK** | Raise `DuplicateKeyError` | — | Primary key constraint |
+| `ROW_DUPLICATE` | **Varies by dataset** | Raise (BLOCK) or quarantine (WARN) | `rejects.parquet` (if WARN) | See table below |
+| `CATEGORY_UNKNOWN` | **WARN** | Quarantine | `rejects.parquet` | Unknown categorical value |
+| `REFERENCE_MISS` | **WARN** | Quarantine | `rejects.parquet` | Code not in ref set |
+| `OUT_OF_RANGE` | **WARN** | Quarantine | `rejects.parquet` | Value outside bounds |
+| `BOM_DETECTED` | **INFO** | Log + metric only | — | BOM stripped |
+| `ENCODING_FALLBACK` | **INFO** | Log + metric only | — | Fell back to CP1252/Latin-1 |
+
+**Severity Precedence:** Dataset override > Global default > Function default parameter
+
+**Per-Dataset Natural Key Uniqueness Policies:**
+
+For `ROW_DUPLICATE` errors, severity varies by dataset business rules:
+
+| Dataset | Severity | Rationale |
+|---------|----------|-----------|
+| **PPRRVU** | **BLOCK** | Critical reference data; duplicates indicate CMS data quality issue |
+| **Conversion Factor** | **BLOCK** | Single value per (cf_type, effective_from); duplicates are errors |
+| **ANES CF** | **BLOCK** | Single value per (locality, effective_from) |
+| **GPCI** | **WARN** | May have valid overlapping effective dates during transitions |
+| **Locality** | **WARN** | County-locality mappings may overlap temporarily |
+| **OPPSCAP** | **WARN** | May have multiple modifiers for same HCPCS |
+
+**Configuration Pattern:**
+
+```python
+# In parser module (e.g., pprrvu_parser.py):
+UNIQUENESS_SEVERITY = ValidationSeverity.BLOCK  # Or WARN per table above
+
+# In parser normalize stage:
+unique_df, dupes_df = check_natural_key_uniqueness(
+    df,
+    natural_keys=NATURAL_KEYS,
+    severity=UNIQUENESS_SEVERITY,  # Dataset-specific
+    schema_id=metadata['schema_id'],
+    release_id=metadata['release_id']
+)
+```
+
+**Behavior:**
+
+**When BLOCK:**
+- Raises `DuplicateKeyError` immediately
+- Stops processing (no partial ingestion)
+- Error contains `duplicates` list for debugging
+
+**When WARN:**
+- Returns duplicates in `dupes_df`
+- Continues processing with unique rows in `unique_df`
+- Duplicates written to `rejects.parquet` with full provenance
+
+**Future - Dataset Config:**
+```python
+# Could externalize to config file:
+SEVERITY_OVERRIDES = {
+    'pprrvu': {'ROW_DUPLICATE': 'BLOCK'},
+    'gpci': {'ROW_DUPLICATE': 'WARN'},
+}
+```
+
 ---
 
 ## 9. Error Taxonomy
+
+### 9.1 Exception Hierarchy (v1.3)
+
+All parsers use a common exception hierarchy for consistent error handling:
+
+**Base Exception:**
+```python
+class ParseError(Exception):
+    """Base exception for all parser errors."""
+    pass
+```
+
+**Specific Exceptions:**
+
+**1. DuplicateKeyError** - Natural key violations
+```python
+class DuplicateKeyError(ParseError):
+    def __init__(self, message: str, duplicates: Optional[List[Dict]] = None):
+        super().__init__(message)
+        self.duplicates = duplicates  # List of duplicate key combinations
+```
+- **Usage:** Raised when `severity=BLOCK` and duplicate natural keys detected
+- **When:** `check_natural_key_uniqueness()` with BLOCK severity
+- **Contains:** List of duplicate key combinations for debugging
+
+**2. CategoryValidationError** - Invalid categorical values
+```python
+class CategoryValidationError(ParseError):
+    def __init__(self, field: str, invalid_values: List[Any]):
+        self.field = field
+        self.invalid_values = invalid_values
+```
+- **Usage:** Raised when unknown categorical values found before domain casting
+- **When:** Pre-validation before CategoricalDtype conversion
+- **Contains:** Field name and list of invalid values
+
+**3. LayoutMismatchError** - Fixed-width parsing failures
+```python
+class LayoutMismatchError(ParseError):
+    pass
+```
+- **Usage:** Raised when layout doesn't match file structure
+- **When:** Wrong column widths, missing layout, truncated lines
+- **Contains:** String error message
+
+**4. SchemaRegressionError** - Unexpected schema fields
+```python
+class SchemaRegressionError(ParseError):
+    def __init__(self, message: str, unexpected_fields: Optional[List[str]] = None):
+        self.unexpected_fields = unexpected_fields
+```
+- **Usage:** Raised when DataFrame has fields not in schema contract
+- **When:** Banned columns appear (e.g., vintage_year in CF v2.0+)
+- **Contains:** List of unexpected field names
+
+**When to Raise vs Return in Rejects:**
+- `DuplicateKeyError`: Raise if `severity=BLOCK`, return in rejects if `severity=WARN`
+- `CategoryValidationError`: Return in rejects (soft failure, quarantine)
+- `LayoutMismatchError`: Always raise (critical parsing failure, cannot continue)
+- `SchemaRegressionError`: Always raise (contract violation, cannot continue)
+
+**Location:** `cms_pricing/ingestion/parsers/_parser_kit.py`
+
+### 9.2 Error Codes (v1.0)
 
 **Error Codes:**
 - `ENCODING_ERROR` - Cannot decode file with known encodings
@@ -859,9 +1245,9 @@ result: ValidationResult = enforce_categorical_dtypes(
 - `TYPE_CAST_ERROR` - Cannot cast field to required type
 - `OUT_OF_RANGE` - Value exceeds min/max constraints
 - `REFERENCE_MISS` - Code not in reference set
-- `ROW_DUPLICATE` - Duplicate natural key
+- `ROW_DUPLICATE` - Duplicate natural key (maps to DuplicateKeyError in v1.3)
 - `KEY_VIOLATION` - Primary key constraint violation
-- `LAYOUT_MISMATCH` - Fixed-width layout doesn't match data
+- `LAYOUT_MISMATCH` - Fixed-width layout doesn't match data (maps to LayoutMismatchError in v1.3)
 - `BOM_DETECTED` - BOM found and stripped (info)
 - `PARSER_INTERNAL` - Internal parser error
 
@@ -1176,6 +1562,49 @@ def test_parse_pprrvu_csv():
 
 **CI Integration:** Performance regression detection
 
+### 14.6 Schema File Naming & Loading (v1.3)
+
+**Filename Convention:**
+- **Format:** `cms_{dataset}_v{major}.0.json`
+- **Example:** `cms_pprrvu_v1.0.json`
+
+**Internal Version:**
+- Schema JSON contains: `"version": "{major}.{minor}"`
+- **Example:** `"version": "1.1"` (inside `cms_pprrvu_v1.0.json`)
+
+**Version Mismatch Pattern:**
+- **Metadata schema_id:** `"cms_pprrvu_v1.1"` (authoritative, includes minor)
+- **Filename:** `cms_pprrvu_v1.0.json` (stable, major only)
+- **Parser MUST strip minor version to locate file**
+
+**Rationale:**
+- **Major version** = breaking changes (new file required)
+- **Minor version** = additive changes (update existing file)
+- **Filename stability** = predictable imports, no cascading renames
+
+**Registry Load Pattern:**
+
+```python
+def load_schema(schema_id: str) -> Dict:
+    """Load schema contract, stripping minor version from ID."""
+    # Strip minor: cms_pprrvu_v1.1 → cms_pprrvu_v1.0
+    major_id = schema_id.rsplit('.', 1)[0] + '.0'
+    schema_path = Path('contracts') / f'{major_id}.json'
+    return json.load(open(schema_path))
+```
+
+**Example:**
+- `schema_id = "cms_pprrvu_v1.1"` → loads `cms_pprrvu_v1.0.json`
+- `schema_id = "cms_conversion_factor_v2.0"` → loads `cms_conversion_factor_v2.0.json`
+
+**CI Warning (SHOULD):**
+- Warn if schema ID and filename diverge unexpectedly
+- Example: `cms_pprrvu_v2.1` but file still named `v1.0.json`
+
+**Version Examples:**
+- **v1.0 → v1.1:** Add `precision` field → update `cms_pprrvu_v1.0.json` to version `"1.1"`
+- **v1.1 → v2.0:** Remove `vintage_year` → create new file `cms_conversion_factor_v2.0.json`
+
 ---
 
 ## 15. Rollout & Operations
@@ -1443,10 +1872,139 @@ tests/fixtures/
 
 ---
 
+## 20.1 Common Pitfalls & Anti-Patterns (v1.3)
+
+**Top 5 Issues from PPRRVU Implementation (Real Debugging - commit 7ea293e)**
+
+### Anti-Pattern 1: min_line_length Too High
+
+**Problem:**
+```python
+'min_line_length': 200  # Assumption, not measurement!
+```
+Actual data is 173 chars → All 94 rows skipped → Empty DataFrame → `KeyError: 'hcpcs'`
+
+**Fix:**
+```bash
+# Measure actual data first:
+head -20 data.txt | tail -10 | awk '{print length}'
+# Output: 173, 173, 173, ...
+
+# Set conservatively (with margin):
+'min_line_length': 165  # Allows 173-char lines + 8-char margin
+```
+
+**Debugging time:** 30 minutes
+
+---
+
+### Anti-Pattern 2: Layout-Schema Column Name Mismatch
+
+**Problem:**
+```python
+# Layout:          Schema:
+'work_rvu'    ≠   'rvu_work'
+'mp_rvu'      ≠   'rvu_malp'
+```
+Result: `KeyError: 'rvu_work'` in categorical validation (2 hours debugging).
+
+**Fix:**
+```python
+# BEFORE coding parser, verify alignment:
+schema = json.load(open('cms_pprrvu_v1.0.json'))
+layout = get_layout("2025", "2025Q4", "pprrvu")
+
+schema_cols = set(schema['columns'].keys())
+layout_cols = set(layout['columns'].keys())
+
+assert schema_cols.issubset(layout_cols), f"Missing: {schema_cols - layout_cols}"
+# Fails fast with: Missing: {'rvu_work', 'modifier', 'rvu_malp'}
+```
+
+**Solution:** Rename layout columns to match schema exactly, bump layout version.
+
+---
+
+### Anti-Pattern 3: Category Validation After Cast
+
+**Problem:**
+```python
+df['status'] = df['status'].astype(CategoricalDtype(['A', 'B']))
+# Unknown value 'Z' silently becomes NaN! ❌
+```
+
+**Fix:**
+```python
+# Validate BEFORE casting:
+allowed = {'A', 'B'}
+invalid = set(df['status'].dropna().unique()) - allowed
+if invalid:
+    raise CategoryValidationError('status', list(invalid))
+
+# Only then cast:
+df['status'] = df['status'].astype(CategoricalDtype(['A', 'B']))
+```
+
+**See:** §8.2.1 Categorical Domain Validation
+
+---
+
+### Anti-Pattern 4: Hash Includes Metadata
+
+**Problem:**
+```python
+row_hash = hashlib.sha256(df.to_dict('records')).hexdigest()
+# Includes release_id, parsed_at! ❌
+```
+Result: Same row, different release → different hash (not deterministic).
+
+**Fix:**
+```python
+# Exclude metadata columns:
+data_cols = [c for c in df.columns 
+             if c not in ['release_id', 'parsed_at', 'source_file_sha256', ...]]
+row_hash = hashlib.sha256(df[data_cols].to_dict('records')).hexdigest()
+```
+
+**Or use kit:**
+```python
+from cms_pricing.ingestion.parsers._parser_kit import finalize_parser_output
+final_df = finalize_parser_output(df, natural_keys, schema)  # Handles exclusions
+```
+
+---
+
+### Anti-Pattern 5: Positional get_layout() Arguments
+
+**Problem:**
+```python
+layout = get_layout("2025", "pprrvu", "Q4")  # ❌ Wrong parameter order!
+```
+Swaps `dataset` and `quarter` → returns `None` → `LayoutMismatchError`.
+
+**Fix:**
+```python
+# Use keyword arguments (self-documenting):
+layout = get_layout(
+    product_year="2025",
+    quarter_vintage="2025Q4",
+    dataset="pprrvu"
+)
+```
+
+**See:** §7.2 Layout Registry API for signature.
+
+---
+
+**More Issues?** See PPRRVU parser commit history (7ea293e) for full debugging trail.
+
+---
+
 ## 21. Change Log
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
+| **1.3** | **2025-10-16** | **Normative clarifications from PPRRVU implementation.** Type: Non-breaking (guidance, enforcement rules). **Added (Normative):** §7.3 Layout-Schema Alignment with 4 MUST rules and validation guard; §8.5 Error Code Severity Table with per-dataset policies; §20.1 Common Pitfalls (top 5 anti-patterns with fixes). **Added (Guidance):** §6.6 Schema vs API Naming Convention (DB canonical vs presentation); §14.6 Schema File Naming & Loading (version stripping). **Enhanced:** §7.2 Layout Registry API (signature, semantics, end=EXCLUSIVE); §9.1 Exception Hierarchy (custom error types); §21.1 Implementation Template (validation guard). **Motivation:** PPRRVU parser (commit 7ea293e) hit 3 major issues: layout-schema column mismatch (2h debug), missing natural keys (1h debug), min_line_length too strict (30min debug). **Impact:** Prevents 3-4 hours debugging per parser × 5 remaining = 15-20 hours saved. | 7ea293e |
 | 1.2 | 2025-10-16 | **Phase 1 readiness: Parser implementation template and acceptance criteria.** Added §21 Parser Implementation Template with standardized 9-step structure (detect encoding → parse format → normalize → cast → validate → inject metadata → finalize → metrics → return ParseResult). Includes per-parser acceptance checklist with routing, validation, precision, performance, and testing requirements. Added golden-first development workflow (extract fixture → write test → implement → verify → commit). Provides copy/paste checklist for parser PRs. Supports Phase 1 parser implementations (PPRRVU, CF, GPCI, ANES, OPPSCAP, Locality). | #TBD |
 | 1.1 | 2025-10-15 | **Production-grade enhancements for MPFS implementation.** Upgraded parser return type to `ParseResult(data, rejects, metrics)` for cleaner separation (§5.3). Added content sniffing via `file_head` parameter for magic byte/BOM detection (§6.2). Changed row hash to full 64-char SHA-256 digest with schema-driven precision per column (§5.2). Added CP1252 to encoding cascade for Windows file support (§5.2). Implemented explicit categorical domain validation - pre-check before conversion to prevent silent NaN coercion (§8.2.1). Pinned exact natural keys per dataset including `effective_from` for time-variant data. Added vintage field duplication guidance (§6.4). Enhanced test strategy with explicit IO boundary rules - parsers return data, ingestors write files (§14.1). Updated acceptance criteria with all v1.1 requirements (§18). These changes prevent technical debt and enable immediate production deployment. | #TBD |
 | 1.0 | 2025-10-15 | Initial adoption of parser contracts standard. Defines public contract requirements (pandas DataFrame return type), metadata injection pattern with three vintage fields, tiered validation (BLOCK/WARN/INFO), formal row hash specification for reproducibility, SemVer for parsers/schemas/layouts, integration with DIS normalize stage, and comprehensive testing strategy. Documents v1.0 implementation (pandas, helper-based quarantine, Python dict layouts, filename routing) and v1.1 enhancements (ParseResult, YAML layouts, magic byte routing). Establishes governance for shared parser infrastructure used by MPFS, RVU, OPPS, and future ingestors. | #TBD |
