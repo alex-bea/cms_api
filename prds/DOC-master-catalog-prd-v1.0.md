@@ -180,6 +180,10 @@ graph TD
 - **Green fill** = Implementation guide available
 - **Gray fill** = Planned but not yet created
 
+**Key Distinction:**
+- **Dependency edge** (solid arrow in §7 main graph): A depends on B → must read B to understand A's requirements
+- **Companion edge** (dotted arrow in §7.1): B supplements A → how-to guide, code examples, not required reading
+
 **Discovery Mechanisms:**
 - **Markdown metadata:** `**Companion Docs:**` and `**Companion Of:**` fields in headers
 - **Callouts:** "For Implementers" sections in standard documents
@@ -223,7 +227,18 @@ graph TD
 
 **Schedule:** Runs on every PR + daily at 00:00 UTC
 
-**Future Enhancement:** `tools/update-prd-refs.sh` will update `**Companion *:**` fields on renames
+**Rename Safety:**
+- When renaming a PRD file, `tools/update-prd-refs.sh` MUST update:
+  * All `**Companion Docs:**` fields pointing to the old filename
+  * All `**Companion Of:**` fields pointing to the old filename
+  * Cross-references in other documents
+- CI MUST fail if companion links are broken after rename (audit catches stale references)
+- Audit runs on every PR to prevent merge of broken links
+
+**Path Validation:**
+- Links MUST be case-sensitive (exact match) even on macOS
+- Links MUST NOT contain `../`, `/`, or `http://` (local docs only)
+- CI catches case mismatches that work locally but break on Linux
 
 ---
 

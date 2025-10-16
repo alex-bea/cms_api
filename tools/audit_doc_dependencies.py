@@ -85,6 +85,40 @@ def parse_graph_nodes(text: str) -> Dict[str, Set[str]]:
     return sections
 
 
+def check_impl_docs_not_in_main_dag(master_text: str) -> list[AuditIssue]:
+    """Ensure implementation guides stay out of main dependency graph.
+    
+    Implementation docs should only appear in §7.1 companion subgraph,
+    not in the main §7 dependency graph.
+    """
+    issues = []
+    
+    # Extract main DAG mermaid block (before §7.1 companion subgraph)
+    dag_match = re.search(
+        r'## 7\. Dependency Graph.*?```mermaid(.*?)```.*?(?:###\s*7\.1|---)',
+        master_text,
+        re.DOTALL
+    )
+    if not dag_match:
+        return issues
+    
+    main_dag = dag_match.group(1)
+    
+    # Check for -impl nodes in main DAG
+    impl_nodes = re.findall(r'\[([A-Z]{3,4}-[a-z0-9\-]+-impl[^\]]*)\]', main_dag)
+    if impl_nodes:
+        for node in impl_nodes:
+            issues.append(
+                AuditIssue(
+                    'error',
+                    f'Implementation doc in main dependency graph (should be in §7.1 companion subgraph only): {node}',
+                    doc='DOC-master-catalog-prd-v1.0.md'
+                )
+            )
+    
+    return issues
+
+
 def main() -> int:
     logger = get_logger("audit.doc_dependencies")
     try:
@@ -108,6 +142,9 @@ def main() -> int:
                         doc=name,
                     )
                 )
+
+    # Check impl docs not in main DAG
+    issues.extend(check_impl_docs_not_in_main_dag(text))
 
     if not issues:
         logger.info("Dependency graph audit passed.")

@@ -236,61 +236,127 @@ def check_companion_document_compliance() -> List[Tuple[str, str]]:
     return violations
 
 
+def is_planned_companion(line_content: str) -> bool:
+    """Check if companion is marked as planned/future."""
+    return bool(re.search(r'_\(.*?planned.*?\)_', line_content, re.IGNORECASE))
+
+
+def parse_companion_links(line_content: str) -> List[str]:
+    """Extract companion doc links from markdown line, handling multiple formats.
+    
+    Supports:
+    - Single link: [file.md](file.md)
+    - Multiple links: [file1.md](file1.md), [file2.md](file2.md)
+    - Bare filename: STD-name-impl-v1.0.md
+    - List format with bullets
+    """
+    # Extract all markdown links: [file.md]
+    links = re.findall(r'\[([A-Z]{3,4}-[a-z0-9\-]+\.md)\]', line_content)
+    
+    # Also match bare filenames (backward compat)
+    if not links:
+        links = re.findall(r'\b([A-Z]{3,4}-[a-z0-9\-]+\.md)\b', line_content)
+    
+    # Normalize paths (reject external/relative paths)
+    normalized = []
+    for link in links:
+        # Reject external or relative paths
+        if '../' in link or link.startswith('http') or '/' in link:
+            continue
+        normalized.append(link)
+    
+    return normalized
+
+
+def validate_case_sensitive_path(doc_name: str, all_docs: Set[str]) -> Optional[str]:
+    """Ensure exact case match, even on case-insensitive filesystems (macOS)."""
+    if doc_name not in all_docs:
+        # Check for case-insensitive match (would work on macOS, break on Linux)
+        lower_match = [d for d in all_docs if d.lower() == doc_name.lower()]
+        if lower_match:
+            return f'Case mismatch: {doc_name} (found: {lower_match[0]}) - will break on Linux CI'
+        return f'File not found: {doc_name}'
+    return None
+
+
 def check_companion_links_markdown() -> List[Tuple[str, str]]:
     """Validate bidirectional companion doc links using markdown headers.
+    
+    Enhancements (v2):
+    - Anchored regex patterns (line start)
+    - Handles multiple links (comma-separated)
+    - "Planned" exemption
+    - Case-sensitive validation
+    - Path normalization
     
     Returns list of (doc_name, error_message) tuples.
     """
     issues = []
     all_docs = {f.name for f in PRDS_DIR.glob('*.md')}
     
+    # Anchored patterns for header fields
+    COMPANION_DOCS_PATTERN = re.compile(
+        r'^\s*(?:[-*]\s*)?\*\*Companion Docs:\*\*\s*(.+?)$',
+        re.MULTILINE
+    )
+    COMPANION_OF_PATTERN = re.compile(
+        r'^\s*(?:[-*]\s*)?\*\*Companion Of:\*\*\s*(.+?)$',
+        re.MULTILINE
+    )
+    
     for doc_path in PRDS_DIR.glob('*.md'):
         try:
             content = read_path_text(doc_path)
         except Exception:
             continue
-            
-        lines = content.splitlines()[:50]  # Check first 50 lines for headers
+        
+        # Limit search to first 60 lines (header area)
+        header_content = '\n'.join(content.splitlines()[:60])
         doc_name = doc_path.name
         
         # Check forward links (STD -> IMPL) via **Companion Docs:** field
-        companion_docs_line = next((l for l in lines if "**Companion Docs:**" in l), None)
-        if companion_docs_line and "_(" not in companion_docs_line:  # Skip "_(Planned...)"
-            # Extract markdown link: [filename.md](filename.md) or filename.md
-            companion_match = re.search(
-                r'\[([A-Z]{3,4}-[a-z0-9\-]+(?:-impl)?(?:-v[0-9]+\.[0-9]+)?\.md)\]|'
-                r'\b([A-Z]{3,4}-[a-z0-9\-]+(?:-impl)?(?:-v[0-9]+\.[0-9]+)?\.md)\b',
-                companion_docs_line
-            )
-            if companion_match:
-                companion = companion_match.group(1) or companion_match.group(2)
-                if companion not in all_docs:
-                    issues.append((doc_name, f'Companion doc missing: {companion}'))
-                else:
-                    # Check reverse link exists
-                    try:
-                        companion_content = read_path_text(PRDS_DIR / companion)
-                        # Look for **Companion Of:** that mentions this doc
-                        if f'**Companion Of:**' in companion_content and doc_name not in companion_content:
+        companion_docs_match = COMPANION_DOCS_PATTERN.search(header_content)
+        if companion_docs_match:
+            line_content = companion_docs_match.group(1)
+            
+            # Skip validation if marked as planned
+            if is_planned_companion(line_content):
+                continue
+            
+            # Parse companion links
+            companions = parse_companion_links(line_content)
+            for companion in companions:
+                # Case-sensitive validation
+                if error := validate_case_sensitive_path(companion, all_docs):
+                    issues.append((doc_name, error))
+                    continue
+                
+                # Check reverse link exists
+                try:
+                    companion_content = read_path_text(PRDS_DIR / companion)
+                    companion_header = '\n'.join(companion_content.splitlines()[:60])
+                    
+                    # Verify reverse link
+                    if COMPANION_OF_PATTERN.search(companion_header):
+                        if doc_name not in companion_header:
                             issues.append((
                                 doc_name,
                                 f'Broken bidirectional link: {companion} does not reference {doc_name} in **Companion Of:**'
                             ))
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
         
         # Check reverse links (IMPL -> STD) via **Companion Of:** field
-        companion_of_line = next((l for l in lines if "**Companion Of:**" in l), None)
-        if companion_of_line:
-            parent_match = re.search(
-                r'\[([A-Z]{3,4}-[a-z0-9\-]+(?:-prd)?(?:-v[0-9]+\.[0-9]+)?\.md)\]|'
-                r'\b([A-Z]{3,4}-[a-z0-9\-]+(?:-prd)?(?:-v[0-9]+\.[0-9]+)?\.md)\b',
-                companion_of_line
-            )
-            if parent_match:
-                parent = parent_match.group(1) or parent_match.group(2)
-                if parent not in all_docs:
-                    issues.append((doc_name, f'Companion parent missing: {parent}'))
+        companion_of_match = COMPANION_OF_PATTERN.search(header_content)
+        if companion_of_match:
+            line_content = companion_of_match.group(1)
+            
+            # Parse parent links
+            parents = parse_companion_links(line_content)
+            for parent in parents:
+                # Case-sensitive validation
+                if error := validate_case_sensitive_path(parent, all_docs):
+                    issues.append((doc_name, error))
     
     return issues
 
