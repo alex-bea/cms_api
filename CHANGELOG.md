@@ -113,7 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Total effort: 55 minutes (fold into CF parser development)
   - ROI: Prevents 3-7 hours debugging across remaining parsers
 
-### Commits (13 since v0.1.0-phase0)
+### Commits (15 since v0.1.0-phase0)
 1. [0b6d892](https://github.com/alex-bea/cms_api/commit/0b6d892) - feat(parser): Phase 1 enhancements + PPRRVU fixtures
 2. [53c0886](https://github.com/alex-bea/cms_api/commit/53c0886) - WIP: PPRRVU parser (90% complete) + Phase 1 enhancements
 3. [7ea293e](https://github.com/alex-bea/cms_api/commit/7ea293e) - feat(parser): Complete PPRRVU parser with schema-API alignment
@@ -128,6 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 12. [aa765d4](https://github.com/alex-bea/cms_api/commit/aa765d4) - docs: add deferred parser infrastructure improvements to task tracker
 13. [a8f5188](https://github.com/alex-bea/cms_api/commit/a8f5188) - docs: STD-parser-contracts v1.5 - production hardening (10 surgical fixes)
 14. [d487ac6](https://github.com/alex-bea/cms_api/commit/d487ac6) - fix: add missing pytest markers to pyproject.toml
+15. [1f394a1](https://github.com/alex-bea/cms_api/commit/1f394a1) - docs: update CHANGELOG.md with 13 commits since v0.1.0-phase0
 
 ### Planned (Next Sessions)
 - Conversion Factor parser
@@ -138,7 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.1.0-phase0] - 2025-10-16
+## [v0.1.0-phase0] - 2025-10-16
 
 **Phase 0: Parser Infrastructure Foundation**
 
