@@ -248,7 +248,7 @@ def _parse_fixed_width(content: bytes, encoding: str, metadata: Dict) -> pd.Data
     # Skip header rows (lines starting with 'HDR')
     data_lines = [line for line in lines if not line.startswith('HDR')]
     
-    min_length = layout.get('min_line_length', 200)
+    min_length = layout.get('min_line_length', 165)
     
     records = []
     for line_num, line in enumerate(data_lines, start=1):
@@ -302,57 +302,86 @@ def _parse_xlsx(content: bytes) -> pd.DataFrame:
 
 def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Normalize column names to canonical snake_case.
+    Normalize column names to schema contract format.
     
-    Handles CMS header variations (case, spaces, underscores).
+    Fixed-width layout already uses schema names (rvu_work, etc.) - skip normalization.
+    CSV/XLSX may use CMS header variations - apply aliases to schema format.
+    
+    Schema format (DB canonical): rvu_work, rvu_pe_nonfac, rvu_pe_fac, rvu_malp
+    API format (presentation): work_rvu, pe_rvu_nonfac, pe_rvu_fac, mp_rvu
+    
+    Parser produces schema format. API layer transforms for presentation.
     
     Args:
         df: Raw DataFrame
         
     Returns:
-        DataFrame with normalized column names
+        DataFrame with schema-canonical column names
     """
+    # Check if columns already canonical (from fixed-width layout)
+    schema_cols = {'hcpcs', 'modifier', 'status_code', 'rvu_work', 'rvu_pe_nonfac', 'rvu_pe_fac', 'rvu_malp'}
+    
+    if schema_cols.issubset(set(df.columns)):
+        # Layout already uses schema names - no normalization needed
+        logger.debug("Columns already canonical from layout")
+        return df
+    
+    # Apply aliases for CSV/XLSX formats (map both old and new variants to schema)
     COLUMN_ALIASES = {
+        # HCPCS/Codes
         'HCPCS': 'hcpcs',
         'HCPCS_CODE': 'hcpcs',
         'HCPCS CODE': 'hcpcs',
         'CPT': 'hcpcs',
         'CPT/HCPCS': 'hcpcs',
+        
+        # Modifier
         'MOD': 'modifier',
         'MODIFIER': 'modifier',
         'MOD1': 'modifier',
+        
+        # Status
         'STATUS': 'status_code',
         'STATUS_CODE': 'status_code',
         'STAT': 'status_code',
-        'WORK_RVU': 'work_rvu',
-        'WORK RVU': 'work_rvu',
-        'RVU_WORK': 'work_rvu',
-        'WORK': 'work_rvu',
-        'PE_NONFAC_RVU': 'pe_rvu_nonfac',
-        'PE NONFAC RVU': 'pe_rvu_nonfac',
-        'NON_FAC_PE_RVU': 'pe_rvu_nonfac',
-        'PE_NONFAC': 'pe_rvu_nonfac',
-        'PE_FAC_RVU': 'pe_rvu_fac',
-        'PE FAC RVU': 'pe_rvu_fac',
-        'FAC_PE_RVU': 'pe_rvu_fac',
-        'PE_FAC': 'pe_rvu_fac',
-        'MP_RVU': 'mp_rvu',
-        'MALPRACTICE_RVU': 'mp_rvu',
-        'MALPRACTICE RVU': 'mp_rvu',
-        'MALP_RVU': 'mp_rvu',
-        'MP': 'mp_rvu',
+        
+        # Work RVU (support both API and schema formats)
+        'WORK_RVU': 'rvu_work',  # API format
+        'WORK RVU': 'rvu_work',
+        'RVU_WORK': 'rvu_work',  # Schema format
+        'WORK': 'rvu_work',
+        
+        # PE Non-Fac RVU
+        'PE_NONFAC_RVU': 'rvu_pe_nonfac',  # API format
+        'PE NONFAC RVU': 'rvu_pe_nonfac',
+        'PE_RVU_NONFAC': 'rvu_pe_nonfac',
+        'RVU_PE_NONFAC': 'rvu_pe_nonfac',  # Schema format
+        'NON_FAC_PE_RVU': 'rvu_pe_nonfac',
+        
+        # PE Fac RVU
+        'PE_FAC_RVU': 'rvu_pe_fac',  # API format
+        'PE FAC RVU': 'rvu_pe_fac',
+        'PE_RVU_FAC': 'rvu_pe_fac',
+        'RVU_PE_FAC': 'rvu_pe_fac',  # Schema format
+        'FAC_PE_RVU': 'rvu_pe_fac',
+        
+        # Malpractice RVU
+        'MP_RVU': 'rvu_malp',  # API format (mp)
+        'MALPRACTICE_RVU': 'rvu_malp',
+        'MALPRACTICE RVU': 'rvu_malp',
+        'MALP_RVU': 'rvu_malp',
+        'RVU_MALP': 'rvu_malp',  # Schema format
+        
+        # Other fields
         'GLOBAL': 'global_days',
         'GLOBAL_DAYS': 'global_days',
-        'GLOB_DAYS': 'global_days',
         'NA_IND': 'na_indicator',
-        'NA': 'na_indicator',
         'NA_INDICATOR': 'na_indicator',
         'OPPS_CAP': 'opps_cap_applicable',
-        'CAP': 'opps_cap_applicable',
         'OPPS_CAP_IND': 'opps_cap_applicable',
         'EFFECTIVE_DATE': 'effective_from',
+        'EFFECTIVE_FROM': 'effective_from',
         'EFFECTIVE': 'effective_from',
-        'EFF_DATE': 'effective_from',
     }
     
     df = df.copy()
@@ -365,8 +394,9 @@ def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
 
 def _cast_dtypes(df: pd.DataFrame, metadata: Dict) -> pd.DataFrame:
     """
-    Cast columns to explicit dtypes (no coercion).
+    Cast columns to explicit dtypes using schema contract names.
     
+    Schema format (DB canonical): rvu_work, rvu_pe_nonfac, rvu_pe_fac, rvu_malp
     Categorical conversion happens in validation step.
     
     Args:
@@ -389,24 +419,23 @@ def _cast_dtypes(df: pd.DataFrame, metadata: Dict) -> pd.DataFrame:
     if 'status_code' in df.columns:
         df['status_code'] = df['status_code'].astype(str).str.strip().str.upper()
     
-    # RVUs as float64 (precision handled in canonicalize step)
-    rvu_cols = ['work_rvu', 'pe_rvu_nonfac', 'pe_rvu_fac', 'mp_rvu']
+    # RVUs as float64 (SCHEMA NAMES: rvu_*)
+    rvu_cols = ['rvu_work', 'rvu_pe_nonfac', 'rvu_pe_fac', 'rvu_malp']
     for col in rvu_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
             # Apply schema-driven precision (2 decimals, HALF_UP)
-            df[col] = canonicalize_numeric_col(df[col], precision=2, rounding='HALF_UP')
+            df[col] = canonicalize_numeric_col(df[col], precision=2, rounding_mode='HALF_UP')
     
     # Global days as int
     if 'global_days' in df.columns:
         df['global_days'] = pd.to_numeric(df['global_days'], errors='coerce').fillna(0).astype('Int64')
     
-    # Dates - use metadata vintage_date if effective_from not in file
+    # Dates - inject from metadata (not in fixed-width file)
     if 'effective_from' not in df.columns:
         df['effective_from'] = metadata.get('vintage_date', pd.Timestamp('2025-01-01'))
-    elif 'effective_from' in df.columns:
+    else:
         df['effective_from'] = pd.to_datetime(df['effective_from'], errors='coerce')
-        # Fill NaT with vintage_date
         df['effective_from'] = df['effective_from'].fillna(metadata.get('vintage_date', pd.Timestamp('2025-01-01')))
     
     return df

@@ -80,8 +80,8 @@ def test_pprrvu_golden_fixture():
     assert len(result.data) < 100, "Should have skipped header rows"
     assert len(result.rejects) == 0, f"Expected no rejects, got {len(result.rejects)}"
     
-    # Verify schema compliance
-    required_data_cols = ['hcpcs', 'modifier', 'status_code', 'work_rvu', 'pe_rvu_nonfac', 'pe_rvu_fac', 'mp_rvu']
+    # Verify schema compliance (using schema column names: rvu_*)
+    required_data_cols = ['hcpcs', 'modifier', 'status_code', 'rvu_work', 'rvu_pe_nonfac', 'rvu_pe_fac', 'rvu_malp', 'effective_from']
     required_metadata_cols = ['release_id', 'vintage_date', 'product_year', 'quarter_vintage',
                                'source_filename', 'source_file_sha256', 'parsed_at', 'row_content_hash']
     

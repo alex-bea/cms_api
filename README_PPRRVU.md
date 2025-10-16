@@ -63,19 +63,26 @@ Duplicates raise `DuplicateKeyError` (severity=BLOCK).
 
 ## Data Columns
 
-| Column | Type | Precision | Description |
-|--------|------|-----------|-------------|
-| `hcpcs` | str (categorical) | - | HCPCS/CPT code |
-| `modifier` | str (categorical, nullable) | - | Procedure modifier |
-| `status_code` | str (categorical) | - | Status code (A/B/C/I/J/T/X) |
-| `work_rvu` | float64 | 2 | Work RVU |
-| `pe_rvu_nonfac` | float64 | 2 | PE RVU non-facility |
-| `pe_rvu_fac` | float64 | 2 | PE RVU facility |
-| `mp_rvu` | float64 | 2 | Malpractice RVU |
-| `global_days` | Int64 | - | Global days |
-| `na_indicator` | str | - | Not applicable indicator |
-| `opps_cap_applicable` | str/bool | - | OPPS cap applicable |
-| `effective_from` | date | - | Effective date |
+**Note:** Parser outputs **schema format** (DB canonical). API layer transforms to presentation format.
+
+| Schema Column (DB) | API Column (Presentation) | Type | Precision | Description |
+|--------------------|---------------------------|------|-----------|-------------|
+| `hcpcs` | `hcpcs` | str (categorical) | - | HCPCS/CPT code |
+| `modifier` | `modifier` | str (categorical, nullable) | - | Procedure modifier |
+| `status_code` | `status_code` | str (categorical) | - | Status code (A/B/C/I/J/T/X) |
+| `rvu_work` | `work_rvu` | float64 | 2 | Work RVU |
+| `rvu_pe_nonfac` | `pe_rvu_nonfac` | float64 | 2 | PE RVU non-facility |
+| `rvu_pe_fac` | `pe_rvu_fac` | float64 | 2 | PE RVU facility |
+| `rvu_malp` | `mp_rvu` | float64 | 2 | Malpractice RVU |
+| `global_days` | `global_days` | Int64 | - | Global days |
+| `na_indicator` | `na_indicator` | str | - | Not applicable indicator |
+| `opps_cap_applicable` | `opps_cap_applicable` | str/bool | - | OPPS cap applicable |
+| `effective_from` | `effective_from` | date | - | Effective date |
+
+**Schema vs API Naming:**
+- Schema uses `rvu_*` prefix (grouped by type)
+- API uses `*_rvu` suffix (intuitive naming)
+- Transformation: Use `cms_pricing.mappers.schema_to_api()`
 
 ## Metadata Columns
 

@@ -33,17 +33,23 @@ logger = structlog.get_logger()
 # ===================================================================
 
 PPRRVU_2025D_LAYOUT = {
-    'version': 'v2025.4.0',  # SemVer: year.quarter.patch
-    'min_line_length': 200,
+    'version': 'v2025.4.1',  # Bump: Aligned column names with schema contract (rvu_* prefix)
+    'min_line_length': 165,  # Actual data lines are ~173 chars (was 200, too strict)
     'source_version': '2025D',
     'columns': {
+        # Core identifiers (schema-aligned)
         'hcpcs': {'start': 0, 'end': 5, 'type': 'string', 'nullable': False},
-        'description': {'start': 6, 'end': 57, 'type': 'string', 'nullable': True},
+        'modifier': {'start': 5, 'end': 7, 'type': 'string', 'nullable': True},  # Added (natural key!)
+        'description': {'start': 7, 'end': 57, 'type': 'string', 'nullable': True},
         'status_code': {'start': 57, 'end': 58, 'type': 'string', 'nullable': False},
-        'work_rvu': {'start': 61, 'end': 65, 'type': 'decimal', 'nullable': True},
-        'pe_rvu_nonfac': {'start': 68, 'end': 72, 'type': 'decimal', 'nullable': True},
-        'pe_rvu_fac': {'start': 77, 'end': 81, 'type': 'decimal', 'nullable': True},
-        'mp_rvu': {'start': 85, 'end': 89, 'type': 'decimal', 'nullable': True},
+        
+        # RVU columns (RENAMED to match schema: rvu_* prefix)
+        'rvu_work': {'start': 61, 'end': 65, 'type': 'decimal', 'nullable': True},  # was work_rvu
+        'rvu_pe_nonfac': {'start': 68, 'end': 72, 'type': 'decimal', 'nullable': True},  # was pe_rvu_nonfac
+        'rvu_pe_fac': {'start': 77, 'end': 81, 'type': 'decimal', 'nullable': True},  # was pe_rvu_fac
+        'rvu_malp': {'start': 85, 'end': 89, 'type': 'decimal', 'nullable': True},  # was mp_rvu
+        
+        # Additional fields (kept for completeness, not all in schema)
         'na_indicator': {'start': 92, 'end': 93, 'type': 'string', 'nullable': True},
         'bilateral_ind': {'start': 103, 'end': 104, 'type': 'string', 'nullable': True},
         'multiple_proc_ind': {'start': 104, 'end': 105, 'type': 'string', 'nullable': True},
@@ -57,6 +63,8 @@ PPRRVU_2025D_LAYOUT = {
         'diag_imaging_family': {'start': 147, 'end': 148, 'type': 'string', 'nullable': True},
         'total_nonfac': {'start': 153, 'end': 157, 'type': 'decimal', 'nullable': True},
         'total_fac': {'start': 160, 'end': 164, 'type': 'decimal', 'nullable': True},
+        'opps_cap_applicable': {'start': 91, 'end': 92, 'type': 'string', 'nullable': True},  # Added (schema field)
+        # Note: effective_from not in fixed-width file - injected from metadata in parser
     }
 }
 
