@@ -112,6 +112,22 @@ def extract_issue_references(section_text: str, base_line: int) -> List[IssueRef
     return refs
 
 
+def extract_commit_range(since_ref: str) -> str:
+    """Return commit messages/bodies newer than the provided ref/date."""
+    try:
+        log_output = run(
+            [
+                "git",
+                "log",
+                f"{since_ref}..HEAD",
+                "--pretty=format:%H%n%s%n%b%n----END-COMMIT----",
+            ]
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"Failed to read git log since '{since_ref}'.") from exc
+    return log_output
+
+
 def load_project_metadata(owner: str, project_number: int) -> Tuple[str, str, Dict[str, str]]:
     """Fetch project node ID and the Status field metadata."""
     project_view = json.loads(
@@ -303,6 +319,11 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         action="store_true",
         help="Leave an audit comment on issues that are marked Done.",
     )
+    parser.add_argument(
+        "--commits-since",
+        help="Optional git ref/date range. When set, commits newer than the ref "
+             "(e.g. 'v1.2.3', 'HEAD~10', '2025-10-01') are scanned for issue references.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -313,6 +334,19 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     if not issue_refs:
         print(f"No issue references found in section '{args.section}'.")
+
+    commit_refs: List[IssueReference] = []
+    if args.commits_since:
+        commit_text = extract_commit_range(args.commits_since)
+        commit_refs = extract_issue_references(commit_text, base_line=0)
+        if commit_refs:
+            print(f"Found {len(commit_refs)} issue reference(s) in commits since '{args.commits_since}'.")
+        else:
+            print(f"No issue references found in commits since '{args.commits_since}'.")
+
+    all_refs = issue_refs + commit_refs
+    if not all_refs:
+        print("No issue references detected in changelog or commit range.")
         return 0
 
     print(f"Found {len(issue_refs)} issue reference(s) in section '{args.section}'.")
@@ -332,7 +366,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     processed: List[int] = []
     skipped: List[str] = []
 
-    for ref in issue_refs:
+    seen: set[int] = set()
+    for ref in all_refs:
+        if ref.number in seen:
+            continue
+        seen.add(ref.number)
+
         issue_data = check_issue_exists(ref.number)
         issue_number = issue_data["number"]
         issue_url = issue_data["url"]
@@ -373,6 +412,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         print(f"  Updated issues: {', '.join(f'#{n}' for n in processed)}")
     else:
         print("  Updated issues: none")
+
+    if args.commits_since:
+        print(f"  Commit scan range: {args.commits_since}..HEAD")
 
     if skipped:
         print("  Skipped:")

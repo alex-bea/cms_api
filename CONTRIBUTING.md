@@ -33,8 +33,8 @@ The provided pre-commit hook executes the Markdown checkbox scanner and TODO lin
 ## Release Checklist Additions
 
 1. Ensure the changelog entry references the relevant GitHub issues using `[#123]` or `GH-123`.
-2. Run the changelog synchroniser to move completed items into the “Done” column:
+2. Run the changelog synchroniser to move completed items into the “Done” column (optionally include recent commits with `--commits-since <ref>`):
    ```bash
-   python3 tools/mark_tasks_done.py --project-number 5 --owner @me --section Unreleased --close-issues --comment
+   python3 tools/mark_tasks_done.py --project-number 5 --owner @me --section Unreleased --commits-since v1.2.0 --close-issues --comment
    ```
 3. (Optional) Trigger the `Changelog Sync` GitHub Action (`workflow_dispatch`) to perform the same reconciliation using the `PROJECT_SYNC_TOKEN` secret (a PAT with the `project` scope).
