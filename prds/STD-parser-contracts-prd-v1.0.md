@@ -3571,6 +3571,7 @@ if invalid_range.any():
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
+| **1.11** | **2025-10-17** | **Real data format variance pre-check (Locality Phase 2 learnings).** Type: Non-breaking (pre-implementation guidance). **Added:** §21.4 Step 2c "Real Data Format Variance Analysis" (5-step checklist: row counts, Format Authority Matrix selection, parity thresholds, diff artifacts plan, observation documentation; decision tree for variance levels: <2% proceed, 2-10% document + investigate, ≥10% stop and verify). **Motivation:** Locality parser revealed TXT/CSV matched but XLSX had 15% fewer rows; proceeding without analysis wasted 30+ min debugging and created QTS compliance conflict. **Impact:** Prevents 30-60 min debugging when formats differ; establishes clear testing strategy before coding starts; documents Authority Matrix for auditability; 5-10 min investment saves hours. **Cross-Reference:** STD-qa-testing §5.1.3 (Authentic Source Variance Testing). **Reference Implementation:** `planning/parsers/locality/AUTHORITY_MATRIX.md`. | TBD |
 | **1.10** | **2025-10-17** | **Layout verification tooling (Locality parser lessons).** Type: Non-breaking (tooling). **Added:** §21.4 Step 2b "Verify Fixed-Width Layout Positions" (guided verification with domain-specific checklists); `tools/verify_layout_positions.py` CLI tool (extracts columns, shows verification questions, fail-fast checks). **Enhanced:** Clarified "Source of Truth" for layout verification (manual inspection + domain knowledge, no CMS format specs exist). **Motivation:** Locality parser revealed column position errors cost 30+ min debugging; systematic verification prevents off-by-one errors. **Impact:** Saves 30 min per fixed-width parser; prevents layout rework after coding starts. **Cross-Reference:** STD-qa-testing §6.3 (Environment Testing Fallback). | TBD |
 | **1.9** | **2025-10-17** | **Comprehensive parser implementation guidance (5 new sections from GPCI lessons).** Type: Non-breaking (implementation guidance). **Added:** §21.4 "Format Verification Pre-Implementation Checklist" (7-step verification, prevents 4-6h debugging); §21.6 "Incremental Phased Implementation" (3-phase strategy, 40% time savings); §5.2.3 "Alias Map Best Practices & Testing" (comprehensive header mapping, all format variations); §5.2.4 "Defensive Type Handling Patterns" (safe Decimal casting, references _parser_kit); §7.1 "Router & Format Detection" expanded (6 subsections: strategy, ZIP handling, flowchart, pitfalls, checklist); §10.3 "Safe Metrics Calculation Patterns" (safe_min_max, anti-patterns). **Enhanced:** Template structure (§21.4-21.7 sequential). **Motivation:** GPCI parser revealed critical pre-implementation verification gaps, format detection complexities, and type handling edge cases. **Impact:** Reduces future parser implementation time 8h → 2.5h (70%); eliminates common debugging scenarios (line length, header rows, empty value casting). **Cross-Reference:** SRC-gpci.md v1.0 (reference implementation), REF-cms-data-quirks-v1.0.md (cross-dataset patterns), _parser_kit.py (utilities). **Total Added:** ~600 lines of implementation guidance. | TBD |
 | **1.8** | **2025-10-17** | **Tiered validation thresholds (GPCI QTS compliance learnings).** Type: Non-breaking (implementation guidance). **Added:** §21.3 "Tiered Validation Thresholds" (INFO/WARN/ERROR severity levels instead of binary pass/fail; supports test fixtures + production without test-only bypasses; standard tier definitions table; prohibited patterns documented). **Motivation:** GPCI parser QTS alignment revealed test-only `skip_row_count_validation` flags violate production parity principle. Binary thresholds force test bypasses. **Impact:** Eliminates test-only code paths while maintaining strict production validation; reduces test-production divergence bugs; enables proper golden fixture testing (rejects == 0) with tiered INFO messages for small fixtures. **Cross-Reference:** STD-qa-testing-prd §5.1.1 (Golden Fixture Hygiene). **Reference Implementation:** `gpci_parser.py::_validate_row_count()`. | TBD |
@@ -4020,6 +4021,67 @@ python tools/verify_layout_positions.py \\
 
 **Source of Truth:** Manual inspection + domain knowledge (no CMS format specs exist)  
 **Critical:** Verify with 3-5 representative lines including edge cases (blank fields, max-length values)
+
+#### Step 2c: Real Data Format Variance Analysis (5-10 min)
+
+**Purpose:** Detect and plan for format variance when using authentic CMS source files.
+
+**Problem:** Real CMS files may have format differences (XLSX ≠ CSV ≠ TXT) due to different vintages, manual edits, or export processes. Proceeding without analysis wastes 30-60 minutes debugging and creates QTS compliance conflicts.
+
+**Checklist:**
+
+1. **Row counts by format**
+   ```bash
+   # Count data rows in each format
+   wc -l sample_data/*/25LOCCO.txt
+   python -c "import pandas as pd; print(len(pd.read_csv('sample_data/rvu25d_0/25LOCCO.csv')))"
+   python -c "import pandas as pd; print(len(pd.read_excel('sample_data/rvu25d_0/25LOCCO.xlsx')))"
+   ```
+
+2. **Select Format Authority Matrix**
+   - Choose authoritative format for this vintage (typically TXT for fixed-width sources)
+   - Document rationale: "TXT chosen as authority for 2025D because it's the canonical CMS format"
+   - Record in `planning/parsers/<parser>/AUTHORITY_MATRIX.md`
+
+3. **Define parity thresholds** (standard for real-source tests per QTS §5.1.3)
+   - Natural-key overlap: ≥ 98%
+   - Row-count variance: ≤ 1% OR ≤ 2 rows (whichever is stricter)
+
+4. **Plan diff artifacts**
+   - `<parser>_parity_missing_in_<format>.csv`
+   - `<parser>_parity_extra_in_<format>.csv`
+   - `<parser>_parity_summary.json`
+
+5. **Document observations**
+   - Encodings detected per format (UTF-8, CP1252, BOM)
+   - Sheet names (XLSX)
+   - Header row positions
+   - Known CMS quirks (typos, banners, trailing spaces)
+
+**Decision Tree:**
+
+```
+If row count variance < 2%:
+  → Proceed with @pytest.mark.real_source parity tests (QTS §5.1.3)
+  → CSV/XLSX likely match TXT closely
+
+If row count variance ≥ 2% AND < 10%:
+  → Document variance in pre-implementation notes
+  → Implement real-source tests with diff artifacts
+  → Investigate root cause in parallel (different vintages?)
+
+If row count variance ≥ 10%:
+  → STOP and investigate before proceeding
+  → Likely wrong files, different vintages, or corrupted data
+  → Verify file provenance and download dates
+```
+
+**Time Investment:** 5-10 minutes  
+**Time Saved:** 30-60 minutes debugging + prevents QTS conflicts
+
+**Cross-Reference:** STD-qa-testing §5.1.3 (Authentic Source Variance Testing)
+
+**Reference Implementation:** `planning/parsers/locality/AUTHORITY_MATRIX.md`, `planning/parsers/locality/PHASE_2_LEARNINGS.md`
 
 -  **CSV:** Document exact header row structure
   ```bash

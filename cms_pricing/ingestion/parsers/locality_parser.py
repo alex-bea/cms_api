@@ -1,8 +1,8 @@
 """
 Locality-County Crosswalk Parser (Raw)
 
-Parses CMS 25LOCCO.txt files to raw schema (no FIPS derivation).
-Per STD-parser-contracts v1.9 §21.1 (11-step template).
+Parses CMS 25LOCCO files (TXT, CSV, XLSX) to raw schema (no FIPS derivation).
+Per STD-parser-contracts v1.10 §21.1 (11-step template).
 
 Two-stage architecture:
 - Stage 1 (this parser): Layout-faithful parsing (state/county NAMES)
@@ -10,14 +10,20 @@ Two-stage architecture:
 
 Reference: planning/parsers/locality/TWO_STAGE_ARCHITECTURE.md
 
+Formats Supported:
+- TXT: Fixed-width (LOCCO_2025D_LAYOUT)
+- CSV: Header auto-detection, alias mapping
+- XLSX: Auto-sheet selection, dtype control
+
 Schema: cms_locality_raw_v1.0 (CMS-native naming)
 Natural Keys: ['mac', 'locality_code']
-Expected Rows: 100-150 (~115 locality entries)
+Expected Rows: 100-150 (~109 unique after dedup)
 """
 
 import hashlib
 import time
-from typing import IO, Dict, Any
+import re
+from typing import IO, Dict, Any, BinaryIO, Tuple, Optional
 from io import BytesIO
 import pandas as pd
 import structlog
@@ -38,28 +44,62 @@ logger = structlog.get_logger(__name__)
 
 
 # ============================================================================
+# Header Normalization Helper
+# ============================================================================
+
+def _normalize_header(col: str) -> str:
+    """
+    Normalize column header for robust aliasing.
+    
+    - Strip leading/trailing whitespace
+    - Condense multiple spaces to single space  
+    - Lowercase for case-insensitive matching
+    
+    Examples:
+        "State " → "state"
+        "Fee Schedule  Area" → "fee schedule area"
+        "Locality Number" → "locality number"
+        
+    Per STD-parser-contracts v1.10 §5.2.3 (Alias Map Best Practices)
+    """
+    return re.sub(r'\s+', ' ', str(col or '').strip()).lower()
+
+
+# ============================================================================
 # Constants
 # ============================================================================
 
-PARSER_VERSION = "v1.0.0"
+PARSER_VERSION = "v1.1.0"  # Phase 2: Added CSV/XLSX support
 SCHEMA_ID = "cms_locality_raw_v1.0"
 NATURAL_KEYS = ["mac", "locality_code"]
 
-# CSV/XLSX header aliases (for future Phase 2)
-ALIAS_MAP = {
-    'medicare administrative contractor (mac)': 'mac',
-    'medicare administrative contractor': 'mac',
+# Canonical alias map (normalized: lowercase, single-spaced)
+# Handles CMS CSV quirks: typo ("Adminstrative"), trailing spaces
+CANONICAL_ALIAS_MAP = {
+    # MAC variations (includes CSV typo)
+    'medicare adminstrative contractor': 'mac',   # CSV has typo
+    'medicare administrative contractor': 'mac',  # Corrected spelling
+    'medicare admin': 'mac',
     'mac': 'mac',
-    'locality number': 'locality_code',
-    'locality': 'locality_code',
+    
+    # Locality code variations
+    'locality number': 'locality_code',  # CSV name
     'locality code': 'locality_code',
+    'locality': 'locality_code',
+    
+    # State variations
     'state': 'state_name',
     'state name': 'state_name',
+    
+    # Fee area variations  
     'fee schedule area': 'fee_area',
+    'fee area': 'fee_area',
     'locality name': 'fee_area',
-    'county': 'county_names',
+    
+    # Counties variations
     'counties': 'county_names',
     'county names': 'county_names',
+    'county': 'county_names',
 }
 
 
@@ -111,31 +151,35 @@ def parse_locality_raw(
         'vintage_date', 'file_sha256', 'source_uri'
     ])
     
-    # Step 2: Read file content
-    raw_bytes = file_obj.read()
-    if isinstance(file_obj, BytesIO):
-        file_obj.seek(0)  # Reset for potential re-reads
+    # Step 2: Detect format and route to appropriate parser
+    filename_lower = filename.lower()
     
-    # Step 3: Detect encoding
-    detected_encoding, confidence = detect_encoding(raw_bytes)
-    logger.info(
-        "encoding_detected",
-        filename=filename,
-        encoding=detected_encoding,
-        confidence=confidence
-    )
-    
-    # Step 4: Decode to text
-    try:
-        text_content = raw_bytes.decode(detected_encoding)
-    except UnicodeDecodeError as e:
-        raise ParseError(f"Encoding failed with {detected_encoding}: {e}")
-    
-    # Step 5: Parse with layout (TXT only for Phase 1)
-    if filename.endswith('.txt'):
+    if filename_lower.endswith('.csv'):
+        # CSV format: Dynamic header detection, alias mapping
+        # _parse_csv handles encoding detection internally
+        df = _parse_csv(file_obj, metadata)
+        detected_encoding = 'utf-8'  # CSV parser handles this, placeholder for metrics
+        
+    elif filename_lower.endswith(('.xlsx', '.xls')):
+        # XLSX format: Auto-sheet selection, dtype control
+        df = _parse_xlsx(file_obj, metadata)
+        detected_encoding = 'excel'  # XLSX is binary, not text-encoded
+        
+    elif filename_lower.endswith('.txt'):
+        # TXT fixed-width format
+        raw_bytes = file_obj.read()
+        detected_encoding, confidence = detect_encoding(raw_bytes)
+        logger.info(
+            "encoding_detected",
+            filename=filename,
+            encoding=detected_encoding,
+            confidence=confidence
+        )
+        text_content = raw_bytes.decode(detected_encoding, errors='replace')
         df = _parse_txt_fixed_width(text_content, metadata)
+        
     else:
-        raise ParseError(f"Unsupported format: {filename} (Phase 1 = TXT only)")
+        raise ParseError(f"Unsupported format: {filename}. Expected: .txt, .csv, .xlsx")
     
     # Step 6: Normalize string columns (trim, uppercase)
     string_cols = ['mac', 'locality_code', 'state_name', 'fee_area', 'county_names']
@@ -194,6 +238,250 @@ def parse_locality_raw(
 # ============================================================================
 # Format-Specific Parsers
 # ============================================================================
+
+def _find_header_row_csv(file_obj: BinaryIO, encoding: str) -> int:
+    """
+    Find CSV header row with specific column names (not title rows).
+    
+    Looks for column names like "Locality Number" or "Locality Code" 
+    AND "Contractor" to distinguish from title rows.
+    
+    Scans first 15 rows to find headers (don't hardcode skiprows).
+    
+    Returns:
+        Row index (0-based)
+        
+    Raises:
+        ParseError: If header row not found
+    """
+    file_obj.seek(0)
+    lines = file_obj.read().decode(encoding, errors='ignore').splitlines()
+    
+    for idx, line in enumerate(lines[:15]):
+        line_lower = line.lower()
+        # Look for specific column names, not generic keywords
+        has_locality_col = ('locality number' in line_lower or 
+                           'locality code' in line_lower or
+                           'locality' in line_lower)
+        has_contractor = 'contractor' in line_lower
+        has_county_col = ('counties' in line_lower or 'county' in line_lower)
+        
+        # Must have locality column + contractor (avoids matching title rows)
+        if has_locality_col and has_contractor and has_county_col:
+            logger.info("csv_header_detected", row_index=idx, header_preview=line[:80])
+            return idx
+    
+    raise ParseError("CSV header row not found (expected row with column names like 'Locality Number', 'Contractor', 'Counties')")
+
+
+def _parse_csv(file_obj: BinaryIO, metadata: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Parse CSV format with dynamic header detection and alias mapping.
+    
+    Features:
+    - Auto-detects header row (no hardcoded skiprows)
+    - Handles CSV quirks: typos, trailing spaces
+    - Zero-pads locality_code for format consistency
+    - Encoding/BOM detection
+    
+    Args:
+        file_obj: File object
+        metadata: Metadata dict
+        
+    Returns:
+        DataFrame with canonical columns
+    """
+    
+    # Read bytes and detect encoding
+    raw_bytes = file_obj.read()
+    detected_encoding = detect_encoding(raw_bytes)[0]
+    
+    # Find header row dynamically
+    file_obj_temp = BytesIO(raw_bytes)
+    header_row = _find_header_row_csv(file_obj_temp, detected_encoding)
+    
+    # Reset for pandas read
+    file_obj_temp = BytesIO(raw_bytes)
+    
+    logger.info(
+        "parse_csv_start",
+        encoding=detected_encoding,
+        header_row=header_row
+    )
+    
+    # Read CSV
+    df = pd.read_csv(
+        file_obj_temp,
+        encoding=detected_encoding,
+        header=header_row,
+        dtype=str,  # All columns as strings
+        skipinitialspace=True,
+        skip_blank_lines=True,
+    )
+    
+    # Normalize headers (lowercase, condense spaces, strip)
+    df.columns = [_normalize_header(c) for c in df.columns]
+    
+    # Apply canonical alias map
+    df = df.rename(columns=CANONICAL_ALIAS_MAP)
+    
+    # Verify expected columns present
+    expected = {'mac', 'locality_code', 'state_name', 'fee_area', 'county_names'}
+    actual = set(df.columns)
+    missing = expected - actual
+    if missing:
+        raise ParseError(f"Missing columns in CSV: {missing}. Found: {list(df.columns)}")
+    
+    # Select canonical columns in deterministic order
+    canonical_cols = ['mac', 'locality_code', 'state_name', 'fee_area', 'county_names']
+    df = df[canonical_cols].copy()
+    
+    # Drop blank rows FIRST (before normalization)
+    df = df[df['mac'].notna() & (df['mac'] != '') & (df['mac'] != 'nan')].copy()
+    df = df[df['locality_code'].notna() & (df['locality_code'] != '') & (df['locality_code'] != 'nan')].copy()
+    
+    # Format normalization (non-semantic, for format consistency)
+    df['mac'] = df['mac'].str.strip().str.zfill(5)  # Zero-pad MAC: "1112" → "01112"
+    df['locality_code'] = df['locality_code'].str.strip().str.zfill(2)  # Zero-pad: "0" → "00"
+    df['state_name'] = df['state_name'].str.strip()
+    df['fee_area'] = df['fee_area'].str.strip()
+    df['county_names'] = df['county_names'].str.strip()
+    
+    logger.info(
+        "csv_parsed",
+        rows_read=len(df),
+        encoding=detected_encoding,
+        header_row=header_row
+    )
+    
+    return df
+
+
+def _find_data_sheet_xlsx(file_obj: BinaryIO) -> Tuple[str, int]:
+    """
+    Find XLSX sheet and header row with specific column names (not title rows).
+    
+    Looks for column names like "Locality Number" AND "Contractor"
+    to distinguish from title rows.
+    
+    Auto-selects correct sheet (handles multi-sheet workbooks).
+    
+    Returns:
+        (sheet_name, header_row_index)
+        
+    Raises:
+        ParseError: If header not found in any sheet
+    """
+    xlsx = pd.ExcelFile(file_obj)
+    
+    for sheet_name in xlsx.sheet_names:
+        # Read first 15 rows to find headers
+        df_preview = pd.read_excel(
+            file_obj,
+            sheet_name=sheet_name,
+            header=None,
+            nrows=15
+        )
+        
+        for idx, row in df_preview.iterrows():
+            row_text = ' '.join(str(v) for v in row if pd.notna(v)).lower()
+            # Look for specific column names, not generic keywords
+            has_locality_col = ('locality number' in row_text or 
+                               'locality code' in row_text or
+                               'locality' in row_text)
+            has_contractor = 'contractor' in row_text
+            has_county_col = ('counties' in row_text or 'county' in row_text)
+            
+            # Must have locality column + contractor (avoids matching title rows)
+            if has_locality_col and has_contractor and has_county_col:
+                logger.info(
+                    "xlsx_header_detected",
+                    sheet=sheet_name,
+                    row_index=idx,
+                    header_preview=row_text[:80]
+                )
+                return sheet_name, int(idx)
+    
+    raise ParseError("XLSX header row not found in any sheet (expected row with column names like 'Locality Number', 'Contractor', 'Counties')")
+
+
+def _parse_xlsx(file_obj: BinaryIO, metadata: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Parse XLSX format with auto-sheet selection and dtype control.
+    
+    Features:
+    - Auto-selects correct sheet
+    - Prevents Excel float coercion (0.0 → "0")
+    - Zero-pads locality_code for format consistency
+    
+    Args:
+        file_obj: File object
+        metadata: Metadata dict
+        
+    Returns:
+        DataFrame with canonical columns
+    """
+    
+    # Find data sheet and header row
+    sheet_name, header_row = _find_data_sheet_xlsx(file_obj)
+    file_obj.seek(0)
+    
+    logger.info(
+        "parse_xlsx_start",
+        sheet_name=sheet_name,
+        header_row=header_row
+    )
+    
+    # Read with dtype control (prevent Excel float coercion)
+    df = pd.read_excel(
+        file_obj,
+        sheet_name=sheet_name,
+        header=header_row,
+        dtype=str,
+        converters={
+            # Strip '.0' from Excel integers
+            'Locality Number': lambda v: str(v).rstrip('.0') if v else '',
+            'Locality Code': lambda v: str(v).rstrip('.0') if v else '',
+        }
+    )
+    
+    # Normalize headers (lowercase, condense spaces, strip)
+    df.columns = [_normalize_header(c) for c in df.columns]
+    
+    # Apply canonical alias map
+    df = df.rename(columns=CANONICAL_ALIAS_MAP)
+    
+    # Verify expected columns present
+    expected = {'mac', 'locality_code', 'state_name', 'fee_area', 'county_names'}
+    actual = set(df.columns)
+    missing = expected - actual
+    if missing:
+        raise ParseError(f"Missing columns in XLSX: {missing}. Found: {list(df.columns)}")
+    
+    # Select canonical columns in deterministic order
+    canonical_cols = ['mac', 'locality_code', 'state_name', 'fee_area', 'county_names']
+    df = df[canonical_cols].copy()
+    
+    # Drop blank rows FIRST (before normalization)
+    df = df[df['mac'].notna() & (df['mac'] != '') & (df['mac'] != 'nan')].copy()
+    df = df[df['locality_code'].notna() & (df['locality_code'] != '') & (df['locality_code'] != 'nan')].copy()
+    
+    # Format normalization (non-semantic, for format consistency)
+    df['mac'] = df['mac'].str.strip().str.zfill(5)  # Zero-pad MAC: "1112" → "01112"
+    df['locality_code'] = df['locality_code'].str.strip().str.zfill(2)  # Zero-pad: "0" → "00"
+    df['state_name'] = df['state_name'].str.strip()
+    df['fee_area'] = df['fee_area'].str.strip()
+    df['county_names'] = df['county_names'].str.strip()
+    
+    logger.info(
+        "xlsx_parsed",
+        rows_read=len(df),
+        sheet_name=sheet_name,
+        header_row=header_row
+    )
+    
+    return df
+
 
 def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.DataFrame:
     """
@@ -298,7 +586,12 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
     if not rows:
         raise ParseError("No data rows found after skipping headers/blanks")
     
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    
+    # Format normalization (for consistency with CSV/XLSX)
+    df['locality_code'] = df['locality_code'].str.strip().str.zfill(2)  # Zero-pad: "0" → "00"
+    
+    return df
 
 
 # ============================================================================
@@ -316,5 +609,5 @@ def _normalize_header(header: str) -> str:
         Canonical column name or original if no alias
     """
     normalized = header.strip().lower()
-    return ALIAS_MAP.get(normalized, header)
+    return CANONICAL_ALIAS_MAP.get(normalized, header)
 

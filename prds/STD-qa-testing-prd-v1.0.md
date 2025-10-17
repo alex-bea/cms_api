@@ -819,6 +819,8 @@ def test_gpci_duplicate_locality_00():
 
 **Principle:** All format variations (TXT/CSV/XLSX/ZIP) must contain identical data.
 
+**Scope:** This requirement applies to **curated golden fixtures** under team control. For authentic CMS source files, see §5.1.3.
+
 **Identical Data Requirement:**
 For parsers supporting multiple formats, all variations MUST have identical data:
 - TXT, CSV, XLSX, ZIP must contain same rows
@@ -876,6 +878,63 @@ If XLSX contains full dataset (100+ rows) for comprehensive load testing:
 - QTS §5.1 compliant
 
 **Reference Implementation:** `tests/fixtures/gpci/golden/` (18 identical rows across TXT/CSV/ZIP)
+
+5.1.3 Authentic Source Variance Testing (Added 2025-10-17)
+
+**Scope:** Only applies when using authentic CMS source files during development.
+
+**Principle:** Curated fixtures (§5.1.2) remain **strict equality**. Real source files use **threshold-based parity** with diff artifacts.
+
+**Requirements:**
+
+1. **Format Authority Matrix** - Declare per vintage which format is authoritative
+   - Example: `TXT > CSV > XLSX` for 2025D means TXT is ground truth
+   - Document rationale in `planning/parsers/<parser>/AUTHORITY_MATRIX.md`
+
+2. **Parity Thresholds** (failures block merge)
+   - Natural-key overlap ≥ 98% vs authority format
+   - Row-count variance ≤ 1% OR ≤ 2 rows (whichever is stricter)
+
+3. **Variance Report Artifacts** (emitted every CI run)
+   - `<parser>_parity_missing_in_<format>.csv` - Keys in authority, missing in secondary
+   - `<parser>_parity_extra_in_<format>.csv` - Keys in secondary, not in authority
+   - `<parser>_parity_summary.json` - Thresholds, counts, authority, sample hashes
+
+4. **Test Pattern** (`@pytest.mark.real_source`)
+   ```python
+   @pytest.mark.real_source
+   def test_<parser>_parity_real_source(txt_df, csv_df, xlsx_df):
+       authority = canon_<parser>(txt_df)  # TXT chosen for 2025D
+       for name, df in {"CSV": csv_df, "XLSX": xlsx_df}.items():
+           sec = canon_<parser>(df)
+           nk_auth = set(zip(authority["key1"], authority["key2"]))
+           nk_sec = set(zip(sec["key1"], sec["key2"]))
+           overlap = len(nk_auth & nk_sec) / max(1, len(nk_auth))
+           row_var = abs(len(sec) - len(authority)) / max(1, len(authority))
+           write_variance_artifacts(name, authority, sec, "<parser>")
+           assert overlap >= 0.98, f"{name} NK overlap {overlap:.1%} < 98%"
+           assert (row_var <= 0.01) or (abs(len(sec)-len(authority)) <= 2)
+   ```
+
+5. **Known Mismatches** - Use `xfail(strict=True)` ONLY for ticketed issues
+   ```python
+   @pytest.mark.real_source
+   @pytest.mark.xfail(strict=True, reason="CMS mismatch ISSUE-123; expires 2025-12-31")
+   def test_<parser>_known_mismatch(): ...
+   ```
+
+**Prohibited:**
+- Blanket `skip` of parity tests for real data
+- Lowering thresholds below 98% NK / 1% row variance without ADR approval
+
+**Migration Path:**
+1. Use real files for Phase 1-2 development with real-source tests
+2. Create curated golden fixtures for Phase 3+ (optional)
+3. Keep real files for edge case testing
+
+**Cross-Reference:** STD-parser-contracts §21.4 Step 2c
+
+**Reference Implementation:** `tests/parsers/test_locality_parser.py::test_locality_parity_real_source`, `planning/parsers/locality/AUTHORITY_MATRIX.md`
 
 5.2 Baselines & Backward Compatibility
 	•	Store baseline metrics (row counts, distinct keys, distribution summaries) per release.
@@ -1211,6 +1270,7 @@ if invalid_range.any():
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
+| **1.5** | **2025-10-17** | **Authentic source variance testing (Locality Phase 2 learnings).** Type: Non-breaking (new testing category). **Added:** §5.1.3 "Authentic Source Variance Testing" (threshold-based parity for real CMS files: NK overlap ≥98%, row variance ≤1% or ≤2 rows; Format Authority Matrix per vintage; Variance Report artifacts: missing/extra CSVs + summary JSON; `@pytest.mark.real_source` marker; `xfail(strict=True)` for ticketed mismatches only). **Clarified:** §5.1.2 applies to curated fixtures only. **Prohibited:** Blanket `skip` of parity tests. **Motivation:** Locality parser revealed real CMS files violate strict equality (XLSX ≠ TXT); previous approach weakened §5.1.2; new approach maintains curated fixture rigor while adding auditable real-source lane. **Impact:** Prevents silent data drift in real CMS files; diff artifacts enable root cause analysis; 98% threshold catches significant variance; future parsers have clear guidance. **Cross-Reference:** STD-parser-contracts §21.4 Step 2c. **Reference Implementation:** `tests/parsers/test_locality_parser.py::test_locality_parity_real_source`. | TBD |
 | **1.2** | **2025-10-16** | **Parser testing patterns (CF parser learnings).** Type: Non-breaking (guidance). **Added:** Appendix G "Parser Testing Patterns" with 5 subsections: G.1 Error Message Testing (rich messages with examples), G.2 Metrics Structure Testing (guardrail warnings structure), G.3 Rejects Structure Testing (validation context requirements), G.4 String/Numeric Validation Pattern (canonicalize_numeric_col handling), G.5 Test Development Workflow (implementation-first approach). **Cross-Reference:** STD-parser-contracts v1.7 §21.2. **Motivation:** CF parser debug session revealed critical test expectation patterns that weren't documented. **Impact:** Prevents 1-2 hours debugging per parser from test-implementation mismatch; standardizes test quality across all parsers. **Source:** CF parser debug session 2025-10-16. | TBD |
 | **1.1** | **2025-10-16** | **DIS enhancements & implementation analysis requirements.** Type: Non-breaking (guidance). **Added:** Section 2.1.1 Implementation Analysis Before Testing (REQUIRED), Section 2.2.1 Real Data Structure Analysis (REQUIRED), Section 2.3.1 Mocking Strategy Analysis (REQUIRED), Section 2.4 Test-First Discovery Process, Section 2.5 Test Accuracy Metrics. **Enhanced:** Scraper method unit tests, coverage requirements, test infrastructure, performance & load testing, DIS metadata requirements, observability. **Motivation:** Prevent test-implementation mismatches discovered during OPPS scraper testing. **Impact:** 100% test accuracy requirement prevents costly test rewrites. | TBD |
 | 1.0 | 2025-10-15 | Initial QTS standard with test lifecycle, environment matrix, quality gates, observability requirements, and compliance procedures. | TBD |
