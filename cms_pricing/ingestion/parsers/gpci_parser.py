@@ -64,10 +64,12 @@ ALIAS_MAP = {
     'locality name': 'locality_name',
     'pw gpci': 'gpci_work',
     'work gpci': 'gpci_work',
-    '2025 pw gpci (with 1.0 floor)': 'gpci_work',
+    '2025 pw gpci (with 1.0 floor)': 'gpci_work',  # CSV/XLSX header format
     'pe gpci': 'gpci_pe',
+    '2025 pe gpci': 'gpci_pe',  # CSV/XLSX header format
     'practice expense gpci': 'gpci_pe',
     'mp gpci': 'gpci_mp',
+    '2025 mp gpci': 'gpci_mp',  # CSV/XLSX header format
     'malpractice gpci': 'gpci_mp',
     'malp gpci': 'gpci_mp',
 }
@@ -247,12 +249,12 @@ def parse_gpci(
         'schema_id': metadata['schema_id'],
         'locality_count': len(final_df),
         'gpci_value_stats': {
-            'work_min': float(final_df['gpci_work'].min()) if len(final_df) > 0 else None,
-            'work_max': float(final_df['gpci_work'].max()) if len(final_df) > 0 else None,
-            'pe_min': float(final_df['gpci_pe'].min()) if len(final_df) > 0 else None,
-            'pe_max': float(final_df['gpci_pe'].max()) if len(final_df) > 0 else None,
-            'mp_min': float(final_df['gpci_mp'].min()) if len(final_df) > 0 else None,
-            'mp_max': float(final_df['gpci_mp'].max()) if len(final_df) > 0 else None,
+            'work_min': float(final_df[final_df['gpci_work'] != '']['gpci_work'].min()) if len(final_df) > 0 and (final_df['gpci_work'] != '').any() else None,
+            'work_max': float(final_df[final_df['gpci_work'] != '']['gpci_work'].max()) if len(final_df) > 0 and (final_df['gpci_work'] != '').any() else None,
+            'pe_min': float(final_df[final_df['gpci_pe'] != '']['gpci_pe'].min()) if len(final_df) > 0 and (final_df['gpci_pe'] != '').any() else None,
+            'pe_max': float(final_df[final_df['gpci_pe'] != '']['gpci_pe'].max()) if len(final_df) > 0 and (final_df['gpci_pe'] != '').any() else None,
+            'mp_min': float(final_df[final_df['gpci_mp'] != '']['gpci_mp'].min()) if len(final_df) > 0 and (final_df['gpci_mp'] != '').any() else None,
+            'mp_max': float(final_df[final_df['gpci_mp'] != '']['gpci_mp'].max()) if len(final_df) > 0 and (final_df['gpci_mp'] != '').any() else None,
         }
     }
 
@@ -348,10 +350,15 @@ def _parse_csv(content: bytes, encoding: str) -> pd.DataFrame:
     """
     Parse CSV with dialect sniffing.
     
+    Skips first 2 rows (CMS standard header format):
+    - Row 1: Document title
+    - Row 2: Empty
+    - Row 3: Column headers
+    
     Raises ParseError on duplicate headers.
     """
     decoded = content.decode(encoding, errors='replace')
-    df = pd.read_csv(StringIO(decoded), dtype=str)
+    df = pd.read_csv(StringIO(decoded), skiprows=2, dtype=str)
     
     # Duplicate header guard (pandas mangles to .1, .2, etc.)
     dupes = [c for c in df.columns if '.' in str(c) and '.1' in str(c)]
