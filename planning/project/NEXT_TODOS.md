@@ -41,52 +41,13 @@
 ## 🌐 **Priority 5: Integration & Ecosystem**
 
 ### 5.1 External Integrations
-- [ ] **Third-Party Integrations**
-  - [ ] Integrate with healthcare data platforms
-  - [ ] Add FHIR API support
-  - [ ] Implement webhook notifications
-  - [ ] Add SDK for common programming languages
-
-- [ ] **Data Export & Import**
-  - [ ] Implement bulk data export
-  - [ ] Add data import from external sources
-  - [ ] Implement data transformation tools
-  - [ ] Add data migration utilities
+> **Tasks now tracked in GitHub Project #5:** #190, #191, #192, #193, #194, #195, #196, #197, #198, #199
 
 ### 5.2 Developer Experience
-- [ ] **Documentation & Tools**
-  - [ ] Create comprehensive API documentation
-  - [ ] Add interactive API explorer
-  - [ ] Implement code generation tools
-  - [ ] Add developer onboarding guides
-
-- [ ] **Testing & Development Tools**
-  - [ ] Create local development environment
-  - [ ] Add data seeding tools
-  - [ ] Implement testing utilities
-  - [ ] Add debugging and profiling tools
+> **Tasks now tracked in GitHub Project #5:** #200, #201, #202, #203, #204, #205, #206, #207, #208, #209
 
 ## 🎯 **Immediate Next Steps (This Week)**
-
-1. **Research CMS Data Sources**
-   - [ ] Investigate CMS website structure and data availability
-   - [ ] Research CMS APIs and data access methods
-   - [ ] Identify best approach for automated data acquisition
-
-2. **Prototype Web Scraper**
-   - [ ] Build basic scraper for one RVU dataset
-   - [ ] Test download and parsing capabilities
-   - [ ] Implement basic error handling and retry logic
-
-3. **Enhance Current System**
-   - [ ] Add database dependency testing
-   - [ ] Implement real data ingestion testing
-   - [ ] Add performance monitoring and alerting
-
-4. **Documentation & Planning**
-   - [ ] Create technical architecture document
-   - [ ] Plan data acquisition strategy
-   - [ ] Design monitoring and alerting system
+> **Tasks now tracked in GitHub Project #5:** #210, #211, #212, #213, #214, #215, #216, #217, #218, #219, #220, #221
 
 ## 💡 **Key Questions to Answer**
 

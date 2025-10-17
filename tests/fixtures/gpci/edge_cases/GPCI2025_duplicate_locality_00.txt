@@ -1,0 +1,6 @@
+ADDENDUM E. FINAL CY 2025 GEOGRAPHIC PRACTICE COST INDICES (GPCIs) BY STATE AND MEDICARE LOCALITY
+
+10112           AL      00   ALABAMA                                                                                     1.000       0.869       0.575
+02102           AK      01   ALASKA*                                                                                     1.500       1.081       0.592
+03102           AZ      00   ARIZONA                                                                                     1.000       0.975       0.854
+

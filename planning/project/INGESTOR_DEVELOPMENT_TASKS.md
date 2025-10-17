@@ -32,16 +32,7 @@
 - **Status**: ❌ Missing (broken imports across codebase)
 
 **Requirements:**
-- [ ] Create `cms_pricing/ingestion/ingestors/mpfs_ingestor.py`
-- [ ] Implement DIS-compliant MPFS ingester following RVU ingester pattern
-- [ ] Handle MPFS RVU data, conversion factors, and fee schedule data
-- [ ] Support both annual and quarterly correction releases
-- [ ] Add schema contracts for MPFS data validation
-- [ ] Implement 5-pillar observability (Freshness, Volume, Schema, Quality, Lineage)
-- [ ] Add quarantine workflow for rejected records
-- [ ] Create comprehensive test suite following QTS standards
-- [ ] Fix all broken imports across codebase
-- [ ] Update documentation to reflect actual status
+> **Tasks now tracked in Project:** https://github.com/alex-bea/cms_api/issues/309, https://github.com/alex-bea/cms_api/issues/310, https://github.com/alex-bea/cms_api/issues/311, https://github.com/alex-bea/cms_api/issues/312, https://github.com/alex-bea/cms_api/issues/313, https://github.com/alex-bea/cms_api/issues/314, https://github.com/alex-bea/cms_api/issues/315, https://github.com/alex-bea/cms_api/issues/316, https://github.com/alex-bea/cms_api/issues/317, https://github.com/alex-bea/cms_api/issues/318, https://github.com/alex-bea/cms_api/issues/319, https://github.com/alex-bea/cms_api/issues/320, https://github.com/alex-bea/cms_api/issues/321, https://github.com/alex-bea/cms_api/issues/322, https://github.com/alex-bea/cms_api/issues/323, https://github.com/alex-bea/cms_api/issues/324, https://github.com/alex-bea/cms_api/issues/325, https://github.com/alex-bea/cms_api/issues/326, https://github.com/alex-bea/cms_api/issues/327, https://github.com/alex-bea/cms_api/issues/328, https://github.com/alex-bea/cms_api/issues/329, https://github.com/alex-bea/cms_api/issues/330, https://github.com/alex-bea/cms_api/issues/331, https://github.com/alex-bea/cms_api/issues/332, https://github.com/alex-bea/cms_api/issues/333, https://github.com/alex-bea/cms_api/issues/334, https://github.com/alex-bea/cms_api/issues/335
 
 **Files to Create/Modify:**
 - `cms_pricing/ingestion/ingestors/mpfs_ingestor.py` (new)
@@ -72,15 +63,7 @@
 - **Status**: ❌ Missing (broken imports across codebase)
 
 **Requirements:**
-- [ ] Create `cms_pricing/ingestion/ingestors/opps_ingestor.py`
-- [ ] Implement DIS-compliant OPPS ingester
-- [ ] Handle APC payment rates and HCPCS to APC mapping
-- [ ] Support quarterly releases (Q1-Q4)
-- [ ] Add schema contracts for OPPS data validation
-- [ ] Implement 5-pillar observability
-- [ ] Add quarantine workflow for rejected records
-- [ ] Create comprehensive test suite following QTS standards
-- [ ] Fix all broken imports across codebase
+> **Tasks now tracked in Project:** https://github.com/alex-bea/cms_api/issues/336, https://github.com/alex-bea/cms_api/issues/337, https://github.com/alex-bea/cms_api/issues/338, https://github.com/alex-bea/cms_api/issues/339, https://github.com/alex-bea/cms_api/issues/340, https://github.com/alex-bea/cms_api/issues/341, https://github.com/alex-bea/cms_api/issues/342, https://github.com/alex-bea/cms_api/issues/343, https://github.com/alex-bea/cms_api/issues/344
 
 **Files to Create/Modify:**
 - `cms_pricing/ingestion/ingestors/opps_ingestor.py` (new)

@@ -10,10 +10,10 @@
 
 | File | Format | Rows | Size | SHA-256 |
 |------|--------|------|------|---------|
-| `GPCI2025_sample.txt` | Fixed-width TXT | 20 data rows | 3.4K | `02683691ce1d8c468f132b81440a63cd63f979b53a26cef151745c7d8ac22d22` |
-| `GPCI2025_sample.csv` | CSV | 20 data rows | 1.5K | `f465ef8cdf4e7e1b472814d61a2105d3b0021228014cc89ede795ffb2a17b4fa` |
+| `GPCI2025_sample.txt` | Fixed-width TXT | 18 data rows | 2.9K | `a98a333aee244b1bba68084d25ec595be22797269c4caf8de854a52d0dcac7e5` |
+| `GPCI2025_sample.csv` | CSV | 18 data rows | 1.3K | `bd1233ccf74e40f2b151feae8a38654908e54f1a9418a11a956ca8420b9a6b55` |
 | `GPCI2025_sample.xlsx` | Excel | 115 rows | 19K | `e8418d31371af658e17402e8ae8c1eac16707f69608b763614f69320ae9ad711` |
-| `GPCI2025_sample.zip` | ZIP (contains TXT) | 20 data rows | 1.2K | *(see below)* |
+| `GPCI2025_sample.zip` | ZIP (contains TXT) | 18 data rows | 1.1K | `81e309e2baf582d02e51b590a7a258fc934a14d04b18c397a8a80417cb4fe60f` |
 
 ---
 
@@ -50,48 +50,47 @@ zip GPCI2025_sample.zip GPCI2025_sample.txt
 
 ## 📋 **Fixture Contents**
 
-### **Sample Localities (20 rows):**
+### **Sample Localities (18 rows - Clean, No Duplicates):**
 
-**Included localities** (TXT/CSV fixtures):
-- Alabama (00)
-- Alaska (01) - Has 1.50 work GPCI floor
-- Arizona (00, 13, 54)
-- Arkansas (00, 13, 20, 47, 60)
-- California (05, 06, 07, 09, 18, 26) - Multiple localities
-- Colorado (01, 02, 03)
-- Connecticut (00)
-- Delaware (00)
+**Included localities** (TXT/CSV/ZIP fixtures):
+- Alaska (01) - Has 1.50 work GPCI floor ⭐
+- Arkansas (13)
+- California (17, 18, 51, 54-64, 71, 72) - Multiple localities showing range
+  - Napa (51) - High-cost area
+  - Los Angeles (18) - Major metro
+  - San Diego (72) - Coastal metro
+  - Central Valley (54-60) - Lower-cost areas
 
 **Coverage:**
-- ✅ Geographic diversity (multiple states)
+- ✅ Geographic diversity (AK + CA)
 - ✅ Work GPCI floor (Alaska 1.50)
-- ✅ High-cost areas (Manhattan, SF)
-- ✅ Low-cost areas (Alabama, Arkansas)
-- ✅ Multi-locality states (CA, CO)
-- ✅ Single-locality states (AL, DE)
+- ✅ High-cost areas (Napa, LA, Ventura)
+- ✅ Low-cost areas (Arkansas, Central Valley)
+- ✅ Multi-locality state (California with 14 localities)
+- ✅ No duplicate natural keys (clean fixture per QTS standards)
 
 ### **Expected Values:**
-
-**Alabama (locality 00):**
-- Work GPCI: 1.000
-- PE GPCI: 0.869
-- MP GPCI: 0.575
 
 **Alaska (locality 01):**
 - Work GPCI: 1.500 (floor applied)
 - PE GPCI: 1.081
 - MP GPCI: 0.592
 
-**Manhattan (locality 05):**
-- Work GPCI: 1.122
-- PE GPCI: 1.569
-- MP GPCI: 1.859
+**Napa, CA (locality 51):**
+- Work GPCI: 1.058
+- PE GPCI: 1.310
+- MP GPCI: 0.521
+
+**Los Angeles, CA (locality 18):**
+- Work GPCI: 1.042
+- PE GPCI: 1.194
+- MP GPCI: 0.690
 
 ---
 
 ## 🧪 **Test Usage**
 
-### **Golden Test Pattern:**
+### **Golden Test Pattern (QTS-Compliant):**
 ```python
 def test_gpci_golden_txt():
     """TXT format produces deterministic output."""
@@ -100,36 +99,45 @@ def test_gpci_golden_txt():
     with open(fixture, 'rb') as f:
         result = parse_gpci(f, 'GPCI2025_sample.txt', metadata)
     
-    # Verify row count
-    assert len(result.data) == 20
+    # Verify exact row count (deterministic, no rejects)
+    assert len(result.data) == 18, "Expected exactly 18 rows"
+    assert len(result.rejects) == 0, "No rejects expected for clean fixture"
     
     # Verify schema compliance
     assert 'locality_code' in result.data.columns
     assert 'gpci_work' in result.data.columns
     assert 'row_content_hash' in result.data.columns
     
-    # Verify specific locality
-    alabama = result.data[result.data['locality_code'] == '00'].iloc[0]
-    assert alabama['gpci_work'] == '1.000'  # String (3dp)
-    assert alabama['gpci_pe'] == '0.869'
-    assert alabama['gpci_mp'] == '0.575'
+    # Verify specific locality (Alaska - has 1.500 work floor)
+    alaska = result.data[result.data['locality_code'] == '01'].iloc[0]
+    assert alaska['gpci_work'] == '1.500'  # String (3dp)
+    assert alaska['gpci_pe'] == '1.081'
+    assert alaska['gpci_mp'] == '0.592'
 ```
 
-### **Determinism Test Pattern:**
+### **Format Consistency Pattern (QTS-Compliant):**
 ```python
-def test_gpci_determinism():
-    """Same input produces identical row_content_hash."""
-    fixture = Path(__file__).parent.parent / 'fixtures/gpci/golden/GPCI2025_sample.txt'
+def test_gpci_txt_csv_consistency():
+    """TXT and CSV formats produce identical output."""
     
-    # Parse twice
-    with open(fixture, 'rb') as f:
-        result1 = parse_gpci(f, 'GPCI2025_sample.txt', metadata)
+    # Parse TXT
+    with open(fixtures_dir / 'GPCI2025_sample.txt', 'rb') as f:
+        txt_result = parse_gpci(f, 'GPCI2025_sample.txt', metadata)
     
-    with open(fixture, 'rb') as f:
-        result2 = parse_gpci(f, 'GPCI2025_sample.txt', metadata)
+    # Parse CSV
+    with open(fixtures_dir / 'GPCI2025_sample.csv', 'rb') as f:
+        csv_result = parse_gpci(f, 'GPCI2025_sample.csv', metadata)
     
-    # Verify identical hashes
-    assert result1.data['row_content_hash'].equals(result2.data['row_content_hash'])
+    # Should have exact same row count
+    assert len(txt_result.data) == len(csv_result.data) == 18
+    
+    # Should have exact same localities
+    assert set(txt_result.data['locality_code']) == set(csv_result.data['locality_code'])
+    
+    # Should have exact same GPCI values for Alaska
+    txt_ak = txt_result.data[txt_result.data['locality_code'] == '01'].iloc[0]
+    csv_ak = csv_result.data[csv_result.data['locality_code'] == '01'].iloc[0]
+    assert txt_ak['gpci_work'] == csv_ak['gpci_work'] == '1.500'
 ```
 
 ---
@@ -144,11 +152,12 @@ def test_gpci_determinism():
 - XLSX: Excel readable (openpyxl)
 - ZIP: Valid archive with TXT member
 
-✅ **Data Quality:**
-- All 20 rows have valid locality codes (2-digit, zero-padded)
-- All GPCI values in valid range [0.575, 1.859]
+✅ **Data Quality (QTS-Compliant):**
+- All 18 rows have unique locality codes (2-digit, zero-padded)
+- All GPCI values in valid range [0.521, 1.500]
 - No missing values in required columns
-- No duplicate localities in sample
+- **No duplicate natural keys** (clean fixture per STD-qa-testing-prd §5.1)
+- Identical data across TXT/CSV/ZIP formats
 
 ✅ **Coverage:**
 - Multiple formats (TXT, CSV, XLSX, ZIP)

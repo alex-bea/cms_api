@@ -1,9 +1,7 @@
 ADDENDUM E. FINAL CY 2025 GEOGRAPHIC PRACTICE COST INDICES (GPCIs) BY STATE AND MEDICARE LOCALITY
 
 Medicare Admi State  Locality                                      Locality Name                                      2025 PW GPCI2025 PE GPCI2025 MP GPCI
-10112           AL      00   ALABAMA                                                                                     1.000       0.869       0.575
 02102           AK      01   ALASKA*                                                                                     1.500       1.081       0.592
-03102           AZ      00   ARIZONA                                                                                     1.000       0.975       0.854
 07102           AR      13   ARKANSAS                                                                                    1.000       0.860       0.518
 01112           CA      54   BAKERSFIELD                                                                                 1.017       1.093       0.662
 01112           CA      55   CHICO                                                                                       1.014       1.093       0.560

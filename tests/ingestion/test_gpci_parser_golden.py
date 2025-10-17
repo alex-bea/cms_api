@@ -25,7 +25,6 @@ TEST_METADATA = {
     'file_sha256': 'test_sha256_golden_fixture',
     'source_uri': 'file://tests/fixtures/gpci/golden/',
     'source_release': 'RVU25D',
-    'skip_row_count_validation': True,  # Allow small test fixtures
 }
 
 
@@ -59,15 +58,15 @@ def test_gpci_golden_txt(fixtures_dir):
     assert hasattr(result, 'rejects')
     assert hasattr(result, 'metrics')
     
-    # Verify row count (fixture has 20 rows, 2 duplicates quarantined = 18 valid)
-    # Note: Alabama and Arizona both have locality_code 00, creating natural key duplicates
-    assert len(result.data) == 18, f"Expected 18 unique rows, got {len(result.data)}"
-    assert len(result.rejects) == 2, f"Expected 2 duplicate rejects, got {len(result.rejects)}"
+    # Verify row count (clean golden fixture: no duplicates, no rejects)
+    # Per STD-qa-testing-prd §5.1: "Validate goldens against schema contracts"
+    assert len(result.data) == 18, f"Expected exactly 18 unique rows, got {len(result.data)}"
+    assert len(result.rejects) == 0, f"No rejects expected for clean golden fixture, got {len(result.rejects)}"
     
-    # Verify duplicates were correctly identified
-    assert result.metrics['total_rows'] == 20  # Input had 20 rows
-    assert result.metrics['valid_rows'] == 18   # 18 unique rows
-    assert result.metrics['reject_rows'] == 2   # 2 duplicates
+    # Verify metrics (deterministic)
+    assert result.metrics['total_rows'] == 18
+    assert result.metrics['valid_rows'] == 18
+    assert result.metrics['reject_rows'] == 0
     
     # Verify schema compliance (core columns)
     required_cols = ['locality_code', 'gpci_work', 'gpci_pe', 'gpci_mp', 
@@ -94,10 +93,10 @@ def test_gpci_golden_txt(fixtures_dir):
     assert alaska['gpci_pe'] == '1.081', f"Alaska PE GPCI should be 1.081, got {alaska['gpci_pe']}"
     assert alaska['gpci_mp'] == '0.592', f"Alaska MP GPCI should be 0.592, got {alaska['gpci_mp']}"
     
-    # Verify metrics
-    assert result.metrics['total_rows'] == 20  # Input rows
-    assert result.metrics['valid_rows'] == 18   # After duplicate removal
-    assert result.metrics['reject_rows'] == 2   # 2 duplicates
+    # Verify metrics (clean fixture: no rejects)
+    assert result.metrics['total_rows'] == 18
+    assert result.metrics['valid_rows'] == 18
+    assert result.metrics['reject_rows'] == 0
     assert result.metrics['parser_version'] == PARSER_VERSION
     assert result.metrics['schema_id'] == 'cms_gpci_v1.2'
     assert 'gpci_value_stats' in result.metrics
@@ -122,9 +121,9 @@ def test_gpci_golden_csv(fixtures_dir):
     with open(fixture, 'rb') as f:
         result = parse_gpci(f, 'GPCI2025_sample.csv', TEST_METADATA)
     
-    # Verify row count (CSV has 18 input rows, 2 duplicates = 16 valid)
-    assert len(result.data) == 16, f"Expected 16 unique rows (2 duplicates removed from 18 total), got {len(result.data)}"
-    assert len(result.rejects) == 2, f"Expected 2 duplicate rejects, got {len(result.rejects)}"
+    # Verify row count (clean golden fixture: identical to TXT)
+    assert len(result.data) == 18, f"Expected exactly 18 rows (same as TXT), got {len(result.data)}"
+    assert len(result.rejects) == 0, f"No rejects expected for clean golden fixture, got {len(result.rejects)}"
     
     # Verify schema compliance
     assert 'locality_code' in result.data.columns
@@ -139,9 +138,10 @@ def test_gpci_golden_csv(fixtures_dir):
         assert alaska['gpci_pe'] == '1.081'
         assert alaska['gpci_mp'] == '0.592'
     
-    # Verify metrics (CSV has 18 input, 16 valid after duplicates)
-    assert result.metrics['valid_rows'] == 16  # After duplicate removal
-    assert result.metrics['reject_rows'] == 2
+    # Verify metrics (clean fixture: no rejects)
+    assert result.metrics['total_rows'] == 18
+    assert result.metrics['valid_rows'] == 18
+    assert result.metrics['reject_rows'] == 0
     assert result.metrics['encoding_detected'] in ['utf-8', 'utf-8-sig', 'latin-1']
 
 
@@ -202,9 +202,9 @@ def test_gpci_golden_zip(fixtures_dir):
     with open(fixture, 'rb') as f:
         result = parse_gpci(f, 'GPCI2025_sample.zip', TEST_METADATA)
     
-    # Verify row count (ZIP contains TXT with 20 rows, 2 duplicates = 18 valid)
-    assert len(result.data) == 18, f"Expected 18 rows from ZIP (20 - 2 duplicates), got {len(result.data)}"
-    assert len(result.rejects) == 2, f"Expected 2 duplicate rejects, got {len(result.rejects)}"
+    # Verify row count (ZIP contains clean TXT: 18 rows, no rejects)
+    assert len(result.data) == 18, f"Expected exactly 18 rows from ZIP (same as TXT), got {len(result.data)}"
+    assert len(result.rejects) == 0, f"No rejects expected for clean golden fixture, got {len(result.rejects)}"
     
     # Verify source_inner_file tracked
     assert result.data['source_inner_file'].iloc[0] == 'GPCI2025_sample.txt', \
@@ -417,29 +417,60 @@ def test_gpci_txt_csv_consistency(fixtures_dir):
     with open(fixtures_dir / 'GPCI2025_sample.csv', 'rb') as f:
         csv_result = parse_gpci(f, 'GPCI2025_sample.csv', TEST_METADATA)
     
-    # Note: TXT and CSV fixtures have different row counts
-    # TXT: 20 rows - 2 duplicates = 18 valid
-    # CSV: 18 rows - 2 duplicates = 16 valid
-    assert len(txt_result.data) >= 16, "TXT should have at least 16 rows"
-    assert len(csv_result.data) >= 16, "CSV should have at least 16 rows"
+    # Per STD-qa-testing-prd §5.1: Fixtures should be identical across formats
+    # Both TXT and CSV have exactly 18 unique localities (no duplicates)
+    assert len(txt_result.data) == 18, "TXT should have exactly 18 rows"
+    assert len(csv_result.data) == 18, "CSV should have exactly 18 rows"
+    assert len(txt_result.rejects) == 0, "TXT should have no rejects"
+    assert len(csv_result.rejects) == 0, "CSV should have no rejects"
     
-    # Note: TXT and CSV fixtures have different localities (different samples)
-    # TXT: 18 unique localities (20 - 2 dups)
-    # CSV: 16 unique localities (18 - 2 dups)
-    # Test: Verify overlapping localities have same GPCI values
-    
+    # Should have identical localities
     txt_localities = set(txt_result.data['locality_code'])
     csv_localities = set(csv_result.data['locality_code'])
-    overlapping = txt_localities & csv_localities
+    assert txt_localities == csv_localities, \
+        f"TXT and CSV should have identical localities. Diff: {txt_localities ^ csv_localities}"
     
-    assert len(overlapping) >= 10, f"Should have at least 10 overlapping localities, got {len(overlapping)}"
+    # Verify GPCI values match exactly for Alaska (locality 01)
+    txt_ak = txt_result.data[txt_result.data['locality_code'] == '01'].iloc[0]
+    csv_ak = csv_result.data[csv_result.data['locality_code'] == '01'].iloc[0]
     
-    # Verify GPCI values match for overlapping localities (test Alaska)
-    if '01' in overlapping:
-        txt_ak = txt_result.data[txt_result.data['locality_code'] == '01'].iloc[0]
-        csv_ak = csv_result.data[csv_result.data['locality_code'] == '01'].iloc[0]
-        
-        assert txt_ak['gpci_work'] == csv_ak['gpci_work'], "Alaska GPCI work should match"
-        assert txt_ak['gpci_pe'] == csv_ak['gpci_pe'], "Alaska GPCI PE should match"
-        assert txt_ak['gpci_mp'] == csv_ak['gpci_mp'], "Alaska GPCI MP should match"
+    assert txt_ak['gpci_work'] == csv_ak['gpci_work'] == '1.500'
+    assert txt_ak['gpci_pe'] == csv_ak['gpci_pe'] == '1.081'
+    assert txt_ak['gpci_mp'] == csv_ak['gpci_mp'] == '0.592'
+
+
+@pytest.mark.edge_case
+@pytest.mark.gpci
+def test_gpci_real_cms_duplicate_locality_00(fixtures_dir):
+    """
+    Edge case: Real CMS quirk where AL and AZ both use locality 00.
+    
+    Tests duplicate natural key handling with authentic CMS data.
+    Per STD-qa-testing-prd §2.2 (negative testing requirements).
+    
+    Fixture: GPCI2025_duplicate_locality_00.txt
+    Expected: Duplicate detection and quarantine (WARN severity)
+    """
+    from pathlib import Path
+    
+    fixture = Path(__file__).parent.parent / 'fixtures/gpci/edge_cases/GPCI2025_duplicate_locality_00.txt'
+    
+    with open(fixture, 'rb') as f:
+        result = parse_gpci(f, 'GPCI2025_duplicate_locality_00.txt', TEST_METADATA)
+    
+    # Should have 3 input rows
+    assert result.metrics['total_rows'] == 3, f"Expected 3 input rows, got {result.metrics['total_rows']}"
+    
+    # Should detect BOTH locality 00 rows as duplicates (Alabama AND Arizona)
+    # Natural key is (locality_code, effective_from), so both 00s have same key
+    assert len(result.rejects) == 2, f"Should quarantine both locality 00 rows, got {len(result.rejects)}"
+    assert len(result.data) == 1, f"Should keep only Alaska (unique key), got {len(result.data)}"
+    
+    # Verify both locality 00s were quarantined (none in valid data)
+    locality_00_rows = result.data[result.data['locality_code'] == '00']
+    assert len(locality_00_rows) == 0, "Both locality 00 rows should be quarantined"
+    
+    # Alaska (unique key) should be the only valid row
+    assert result.data.iloc[0]['locality_code'] == '01', "Alaska should be only valid row"
+    assert result.data.iloc[0]['gpci_work'] == '1.500'
 
