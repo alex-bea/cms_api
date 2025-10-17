@@ -1,6 +1,6 @@
 # Data Architecture Implementation Guide (v1.0)
 
-**Status:** Draft v1.0.1  
+**Status:** Draft v1.0.2  
 **Owners:** Platform/Data Engineering  
 **Consumers:** Ingestor Implementers, Data Engineers  
 **Change control:** PR review (no ADR required for code examples)  
@@ -84,7 +84,256 @@ All ingestors MUST extend `BaseDISIngestor` and implement the required methods a
 | **Enrich** | `enrich_stage(adapted_batch) -> StageFrame` | Adapted batch | Enriched stage frame | `ingestor_spec.py:260` |
 | **Publish** | `publish_stage(stage_frame) -> Dict[str, Any]` | Stage frame | Publish result metadata | `ingestor_spec.py:270` |
 
-### 1.3 Required Properties
+---
+
+### 1.3 Transformation Boundaries: Parser vs Normalize vs Enrich (Added 2025-10-17)
+
+**Intent:** Make pipelines predictable and auditable by drawing a hard line between layout-faithful parsing and business/semantic transforms.
+
+**Non-goals:** No business joins, no derived keys, no imputations in parsers.
+
+---
+
+#### A) Responsibilities (Who Does What)
+
+| Stage | Do | Don't |
+|-------|-----|-------|
+| **Parse (Raw→Stage)** | Read bytes layout-faithfully; map headers to canonical names; set explicit dtypes; inject metadata (`release_id`, `vintage_date`, `quarter_vintage`, `file_sha256`); produce deterministic sort + `row_content_hash`; write rejects on structural/schema errors. | No reference joins; no derivations (FIPS from name, etc.); no imputation; no filtering except hard rejects. |
+| **Normalize (light)** | Zero-pad codes, trim/whitespace, unit/coercion to canonical (e.g., decimals); rename columns to standard; enforce contract (Schema Registry). | No cross-dataset enrichment or lookups. |
+| **Enrich** | Join to `/ref` (FIPS, ZIP↔ZCTA, Gazetteer, CPT/HCPCS/POS); compute `mapping_confidence` and apply tie-breakers; create "latest-effective" views. | Change raw semantics; silently drop conflicts; override upstream values. |
+
+---
+
+#### B) Decision Tree (Where Does a Change Belong?)
+
+1. **Needs external lookup** (any ref table)? → **Enrich**
+2. **Only formatting/type/units?** → **Normalize**
+3. **Fixing a parser layout/width/header?** → **Parse** (update `layout_registry` + bump SemVer)
+4. **Deriving keys** (FIPS, locality from ZIP)? → **Enrich** with precedence & thresholds from Appendix J
+5. **Removing records?** Only if hard rule violation (quarantine with `violation_rule_id`)—otherwise keep and flag.
+
+---
+
+#### C) Contracts & I/O Shape
+
+**Parser outputs** must conform to `schema_id` (SemVer) with explicit dtypes (Arrow decimals for RVUs/CFs).
+
+**Normalize** may only perform contract-preserving changes (no column add/remove except metadata).
+
+**Enrich** writes new columns (`*_fips`, `locality_code`, `mapping_confidence`) and must log which `/ref` vintage was used.
+
+**Required metadata columns (all stages):**  
+`release_id`, `vintage_date`, `product_year`, `quarter_vintage`, `source_filename`, `source_file_sha256`, `row_content_hash`
+
+---
+
+#### D) Example: MPFS (PPRRVU + GPCI + Locality)
+
+**Parse:**
+- Read PPRRVU fixed-width/CSV → canonical names
+- Decimals for `rvu_*`
+- Inject metadata
+- No GPCI application
+
+**Normalize:**
+- Zero-pad `locality_code`, `state_fips`
+- Coerce `status_code`, `global_days` to domains
+
+**Enrich:**
+- ZIP→locality via precedence (PIP > crosswalk > nearest ≤1.0 mi)
+- Join GPCI
+- Emit `mapping_confidence`
+- Block on unknown HCPCS/CPT/POS
+
+---
+
+#### E) Quality Gates & Alerts
+
+**Block (critical):**
+- Schema contract fail
+- Unknown HCPCS/CPT/POS
+- Invalid FIPS
+- Missing locality/GPCI key
+
+**Warn + quarantine:**
+- ZIP↔ZCTA disagreements
+- NBER vs haversine deltas (median > 1.0 mi or p95 > 3.0 mi)
+- Nearest fallback > 1.0 mi → mark ambiguous
+
+**Emit per-file metrics:**
+- Rows, nulls on criticals, encoding used, parse time
+
+---
+
+#### F) Tests (Must Pass)
+
+**Parsers:**
+- Golden fixed-width/CSV → exact columns/dtypes
+- BOM/encoding matrix
+- Property-based fuzz on widths
+- Deterministic `row_content_hash`
+
+**Boundary tests:**
+- Assert no `/ref` joins appear before Enrich
+- Assert Normalize never adds/removes business columns
+
+**Enrich:**
+- Precedence/tie-breaker tests
+- Thresholds (share sum ±0.01, distance deltas)
+
+**Idempotency:**
+- Re-run same inputs → identical checksums
+- Older release after newer → newer remains current
+
+---
+
+#### G) Change Control
+
+- **Parser layout changes** require `layout_registry` bump + ADR if breaking
+- **Precedence/tie-breaker updates** require ADR (see Appendix J)
+
+---
+
+#### H) Real-World Example: Locality-County Crosswalk
+
+**Problem:** CMS file has state/county NAMES, canonical schema needs FIPS codes
+
+**Wrong Approach (One-Stage):**
+```python
+# ❌ WRONG: Parser derives FIPS (violates separation)
+def parse_locality(file_obj, filename, metadata):
+    df = parse_fixed_width(file_obj, LAYOUT)
+    
+    # BAD: Reference lookup in parser!
+    df['state_fips'] = df['state_name'].map(STATE_NAME_TO_FIPS)
+    df['county_fips'] = df.apply(
+        lambda row: county_lookup(row['state_fips'], row['county_name']),
+        axis=1
+    )
+    return ParseResult(data=df, rejects=rejects, metrics=metrics)
+```
+
+**Correct Approach (Two-Stage):**
+```python
+# ✅ CORRECT: Parse as-is, derive in enrich
+
+# Stage 1: Parser (layout-faithful, no transforms)
+def parse_locality_raw(file_obj, filename, metadata):
+    """Parse LOCCO file exactly as CMS ships it."""
+    df = parse_fixed_width(file_obj, LOCCO_LAYOUT)
+    
+    # Columns from file: mac, locality_id, state (NAME), county_name (NAMES)
+    # No FIPS derivation - that's enrich stage!
+    
+    return ParseResult(data=df, rejects=rejects, metrics=metrics)
+
+# Stage 2: Enrich (derive FIPS from names via reference tables)
+def enrich_locality_fips(raw_df, ref_states, ref_counties, aliases):
+    """Derive FIPS codes from state/county names."""
+    
+    # Load reference tables
+    state_fips_map = load_state_crosswalk(ref_states)  # name → FIPS
+    county_fips_map = load_county_crosswalk(ref_counties)  # (state_fips, name) → FIPS
+    
+    # Derive state FIPS
+    df['state_fips'] = df['state'].map(state_fips_map)
+    
+    # Derive county FIPS (tiered matching: exact → alias → fuzzy)
+    df['county_fips'] = df.apply(
+        lambda row: match_county_to_fips(
+            row['state_fips'],
+            row['county_name'],
+            county_fips_map,
+            aliases
+        ),
+        axis=1
+    )
+    
+    # Explode multi-county rows (e.g., "LOS ANGELES/ORANGE" → 2 rows)
+    exploded = explode_counties(df)
+    
+    # Quarantine unmatched
+    unmatched = exploded[exploded['county_fips'].isna()]
+    valid = exploded[exploded['county_fips'].notna()]
+    
+    return EnrichResult(data=valid, quarantine=unmatched, metrics=...)
+```
+
+**Benefits of Two-Stage:**
+- ✅ Parser stays simple (layout-faithful)
+- ✅ Reference logic isolated (testable, reusable)
+- ✅ Reference data versioned separately
+- ✅ Audit trail clear (raw vs enriched)
+
+---
+
+#### I) Boundary Tests (Required)
+
+**Test: Parser Doesn't Enrich**
+```python
+def test_locality_parser_no_fips_derivation():
+    """Verify parser outputs raw columns, no FIPS derivation."""
+    result = parse_locality_raw(fixture, 'LOCCO.txt', metadata)
+    
+    # Raw columns present
+    assert 'mac' in result.data.columns
+    assert 'state' in result.data.columns  # NAME, not state_fips
+    assert 'county_name' in result.data.columns  # NAMES, not county_fips
+    
+    # Canonical columns NOT present (added in enrich)
+    assert 'state_fips' not in result.data.columns
+    assert 'county_fips' not in result.data.columns
+```
+
+**Test: Enrich Produces Canonical**
+```python
+def test_locality_enrich_derives_fips():
+    """Verify enrich stage produces canonical schema."""
+    raw_df = pd.DataFrame([
+        {'mac': '10112', 'state': 'ALABAMA', 'county_name': 'ALL COUNTIES'}
+    ])
+    
+    enriched = enrich_locality_fips(raw_df, ref_states, ref_counties, aliases)
+    
+    # Canonical columns present
+    assert 'state_fips' in enriched.data.columns
+    assert 'county_fips' in enriched.data.columns
+    
+    # Explosion occurred (ALL COUNTIES → 67 rows for Alabama)
+    assert len(enriched.data) == 67
+    assert enriched.data['state_fips'].iloc[0] == '01'
+```
+
+---
+
+#### J) When to Use This Pattern
+
+**Use two-stage (parse-as-is + enrich) when:**
+- ✅ CMS file has names, canonical needs codes
+- ✅ Requires external reference table
+- ✅ Complex matching logic (aliases, fuzzy matching)
+- ✅ One-to-many explosion (e.g., "ALL COUNTIES" → N rows)
+
+**Use single-stage (parse directly) when:**
+- ✅ File already has canonical values (FIPS codes present)
+- ✅ Simple column renaming only
+- ✅ No external lookups needed
+
+**Reference Implementations:**
+- **Two-stage:** Locality parser (§H above)
+- **Single-stage:** GPCI parser (file has locality codes as-is)
+
+---
+
+**Cross-References:**
+- **STD-data-architecture-prd §3.4** (Normalize stage requirements)
+- **STD-data-architecture-prd §3.5** (Enrich stage requirements)
+- **STD-parser-contracts-prd §6** (Parser contract boundaries)
+- **planning/parsers/locality/TWO_STAGE_ARCHITECTURE.md** (Detailed example)
+
+---
+
+### 1.4 Required Properties
 
 All ingestors must implement these properties:
 

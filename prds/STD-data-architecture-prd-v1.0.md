@@ -68,9 +68,13 @@ We separate concerns into **Land → Validate → Normalize → Enrich → Publi
 - Canonicalize column names (snake_case), zero‑pad codes (FIPS/ZCTA), standardize units and time semantics.
 - Emit a **Schema Contract** (JSON) and **Column Dictionary** (name, type, unit, description, domain).
 
+**Transformation Boundary:** Parsers in normalize stage are layout-faithful (no reference joins or derivations). See **STD-data-architecture-impl §1.3** for transformation boundary patterns.
+
 ### 3.5 Enrich
 - Join to `/ref/` reference tables (e.g., Census crosswalks, Gazetteer centroids, FIPS codes).
 - Apply tie‑breaker logic where mappings are one‑to‑many; compute `mapping_confidence`.
+
+**Transformation Boundary:** Enrich stage handles all reference lookups and derivations (FIPS from names, ZIP→locality). See **STD-data-architecture-impl §1.3** for decision tree and examples.
 
 ### 3.6 Publish (Curated)
 - Snapshot tables partitioned by `vintage_date` and optionally `effective_from`.
