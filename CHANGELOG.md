@@ -10,6 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Locality Parser (v1.0.0)** - Locality-County Crosswalk raw parser (#123)
+  - Fixed-width TXT parsing (25LOCCO.txt format)
+  - Schema: `cms_locality_raw_v1.0` (layout-faithful: state/county NAMES, not FIPS)
+  - Layout: `LOCCO_2025D_LAYOUT` v2025.4.2 (corrected column positions)
+  - Natural keys: `['mac', 'locality_code']`
+  - Features: Header skipping, state forward-fill, auto-deduplication
+  - Handles CMS data quirks: duplicate 05302/99 row auto-removed
+  - Tests: 4 golden tests (100% pass rate)
+  - Two-stage architecture: Raw parser → FIPS enricher (#124)
+  - Follows STD-parser-contracts v1.9 §21.1 (11-step template)
+- **Reference Data Infrastructure** - Dual-mode reference data access (#125)
+  - `REF_MODE` feature flag (inline vs curated)
+  - Fail-closed policies for data publishing
+  - Schema contract validation for inline reference data
+  - Bootstrap: US states (51) + representative counties (96)
+  - Documented in STD-data-architecture-impl v1.0.2 §4.2
+- **Changelog Sync Automation** - GitHub Project integration (#126)
+  - Tool: `tools/mark_tasks_done.py` syncs CHANGELOG with Project #5
+  - Workflow: `.github/workflows/changelog-sync.yml` auto-triggers
+  - Auto-closes issues and moves project cards to Done
+  - Supports dry-run mode for testing
+
 - **GPCI Parser (v1.0.0)** - Geographic Practice Cost Indices parser
   - Supports TXT (fixed-width), CSV, XLSX, ZIP formats
   - Schema: `cms_gpci_v1.2` (CMS-native naming: `gpci_mp`, `locality_code`)
