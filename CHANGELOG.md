@@ -60,6 +60,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - GPCI planning docs: 10 files including IMPLEMENTATION.md (27K guide)
 
 ### Changed
+- **Reference Mode Module**: Moved `reference_mode.py` from `normalize/` to `infra/` for better architectural layering
+  - Infrastructure-level config (REF_MODE, ReferenceConfig) separated from processing stages
+  - Updated reference in STD-data-architecture-impl §4.2
 - **Router**: Updated GPCI routing to use `cms_gpci_v1.2` and `parse_gpci()` function
 - **RouteDecision**: Added `parser_func` field to support callable parsers
 
