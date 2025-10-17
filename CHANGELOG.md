@@ -26,12 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Schema contract validation for inline reference data
   - Bootstrap: US states (51) + representative counties (96)
   - Documented in STD-data-architecture-impl v1.0.2 §4.2
+- **Infrastructure Module** - Created `cms_pricing/infra/` for cross-cutting concerns
+  - Centralized location for infrastructure-level configuration
+  - Better architectural layering (separation from processing stages)
+  - Houses: `reference_mode.py` (REF_MODE feature flag and guardrails)
 - **Changelog Sync Automation** - GitHub Project integration (#126)
   - Tool: `tools/mark_tasks_done.py` syncs CHANGELOG with Project #5
   - Workflow: `.github/workflows/changelog-sync.yml` auto-triggers
   - Auto-closes issues and moves project cards to Done
   - Supports dry-run mode for testing
-
 - **GPCI Parser (v1.0.0)** - Geographic Practice Cost Indices parser
   - Supports TXT (fixed-width), CSV, XLSX, ZIP formats
   - Schema: `cms_gpci_v1.2` (CMS-native naming: `gpci_mp`, `locality_code`)
@@ -58,11 +61,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `tools/create_parser_plan.sh` automation script
   - Created parser template and HOW_TO_ADD_PARSER.md guide
   - GPCI planning docs: 10 files including IMPLEMENTATION.md (27K guide)
+- **PRD Standards Improvements** - Enhanced parser development standards
+  - **STD-parser-contracts**: v1.7 → v1.9 (2 major sections added)
+    - §21.3 Tiered Validation Thresholds (INFO/WARN/ERROR severity)
+    - §21.4 Format Verification Pre-Implementation Checklist (7-step, saves 4-6h debugging)
+    - §21.6 Incremental Implementation Strategy (3-phase approach)
+    - §5.2.3 Alias Map Best Practices & Testing
+    - §5.2.4 Defensive Type Handling Patterns
+    - §7.1 Router & Format Detection (6 subsections, flowchart)
+    - §10.3 Safe Metrics Calculation Patterns
+  - **STD-qa-testing**: v1.2 → v1.3 (QTS compliance enhancements)
+    - §5.1.1 Golden Fixture Hygiene (hybrid approach for edge cases)
+    - §5.1.2 Multi-Format Fixture Parity (identical data across TXT/CSV/XLSX/ZIP)
+    - §2.2.1 Test Categorization with Markers (@pytest.mark.golden, edge_case, negative)
+  - **STD-data-architecture-impl**: v1.0 → v1.0.2 (transformation boundaries)
+    - §1.3 Transformation Boundaries (Parser vs Normalize vs Enrich)
+    - §4.2 Dual-Mode Reference Data Access (REF_MODE guardrails)
+  - **Source Descriptors**: Added SRC-TEMPLATE.md and updated SRC-gpci.md
 
 ### Changed
 - **Reference Mode Module**: Moved `reference_mode.py` from `normalize/` to `infra/` for better architectural layering
   - Infrastructure-level config (REF_MODE, ReferenceConfig) separated from processing stages
   - Updated reference in STD-data-architecture-impl §4.2
+- **Planning Files Organization (2025-10-16)**: Reorganized 26 planning documents into structured `planning/` directory
+  - Created hierarchy: `planning/parsers/`, `planning/project/`, `planning/architecture/`
+  - Parser-specific organization: GPCI (8 files), PPRRVU (4 files), CF (ready for future)
+  - Archive pattern: Superseded docs preserved in `archive/` subdirectories
+  - Root cleanup: 26 → 5 essential files (80% reduction)
+  - Navigation aids: `planning/README.md`, `planning/INDEX.md`, `planning/QUICK_NAVIGATION.md`
+  - Active GPCI plan: `planning/parsers/gpci/IMPLEMENTATION.md` (v2.1)
+  - Benefit: Clean root, scalable structure, clear discoverability
 - **Router**: Updated GPCI routing to use `cms_gpci_v1.2` and `parse_gpci()` function
 - **RouteDecision**: Added `parser_func` field to support callable parsers
 
@@ -76,17 +104,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **GPCI Layout Positions**: Corrected 3 column positions based on actual CMS data measurements
 
-### Changed
-- **Planning Files Organization (2025-10-16)**: Reorganized 26 planning documents into structured `planning/` directory
-  - Created hierarchy: `planning/parsers/`, `planning/project/`, `planning/architecture/`
-  - Parser-specific organization: GPCI (8 files), PPRRVU (4 files), CF (ready for future)
-  - Archive pattern: Superseded docs preserved in `archive/` subdirectories
-  - Root cleanup: 26 → 5 essential files (80% reduction)
-  - Navigation aids: `planning/README.md`, `planning/INDEX.md`, `planning/QUICK_NAVIGATION.md`
-  - Active GPCI plan: `planning/parsers/gpci/IMPLEMENTATION.md` (v2.1)
-  - Benefit: Clean root, scalable structure, clear discoverability
-
-### Added (Phase 1)
+### Added (Phase 1 Parsers)
 - **PPRRVU Parser (COMPLETE)**: Full implementation with schema-aligned fixed-width, CSV, XLSX support
   - Natural keys: `['hcpcs', 'modifier', 'status_code', 'effective_from']`
   - Schema: `cms_pprrvu_v1.1` (precision=2, HALF_UP rounding)
