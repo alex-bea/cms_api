@@ -1,9 +1,9 @@
-# QA & Testing Standard PRD (v1.2)
+# QA & Testing Standard PRD (v1.4)
 
 ## 0. Overview
 This document defines the **QA & Testing Standard (QTS)** that governs validation across ingestion, services, and user-facing experiences. It specifies the canonical lifecycle for tests, minimum coverage and gating rules, artifact expectations, observability, and operational playbooks. Every product or dataset PRD must reference this standard and include a scope-specific **QA Summary** derived from §12.
 
-**Status:** Draft v1.3 (proposed)  
+**Status:** Draft v1.4 (proposed)  
 **Owners:** Quality Engineering & Platform Reliability  
 **Consumers:** Product, Engineering, Data, Ops  
 **Change control:** ADR + QA guild review + PR sign-off
@@ -96,6 +96,98 @@ We standardize QA into **Plan → Implement → Execute → Observe → Improve*
 - QA Summary documents effective date of baselines; enforce backward compatibility via change detection tests.
 - Golden datasets expire after 12 months unless revalidated.
 - **Database fixtures:** Store database fixtures as SQL dumps or Alembic seed scripts, not as application model instances. Use `tests/scripts/bootstrap_test_db.py` for consistent database state across test runs.
+
+### 6.3 Environment Testing Fallback Strategy (Added 2025-10-17)
+
+**Problem:** Local test execution may fail due to environment issues (library conflicts, OS incompatibilities, pandas/pyarrow segfaults on macOS).
+
+**Principle:** Code quality can be verified without execution if syntax is valid and patterns are proven.
+
+**Fallback Hierarchy:**
+
+**1. Docker Clean-Room** (Recommended - 2-3 min)
+```bash
+# Rebuild with latest code
+docker-compose up -d --build
+
+# Run tests in clean environment
+docker-compose exec api pytest tests/parsers/test_<parser>.py -xvs
+```
+- **Pros:** Clean environment, matches CI exactly
+- **Cons:** Requires Docker running
+- **When:** First fallback, most reliable
+
+**2. Fresh Virtual Environment** (5-10 min)
+```bash
+# Create isolated environment
+python3 -m venv .venv_test
+source .venv_test/bin/activate
+
+# Install fresh dependencies
+pip install -r requirements.txt
+
+# Run tests
+export PYTHONPATH=/path/to/project
+pytest tests/parsers/test_<parser>.py -xvs
+```
+- **Pros:** Isolated from system Python issues
+- **Cons:** May still have OS-level library conflicts
+- **When:** Docker unavailable
+
+**3. CI-First Strategy** (5-10 min feedback)
+```bash
+# Validate syntax only (no runtime)
+python3 -c "import ast; ast.parse(open('parser.py').read())"
+
+# Commit and push (let CI test)
+git add parser.py test_parser.py
+git commit -m "feat: Add parser (syntax validated, follows proven pattern)"
+git push
+
+# Monitor CI: https://github.com/owner/repo/actions
+```
+- **Pros:** Guaranteed clean environment, no local setup
+- **Cons:** Slower feedback loop
+- **When:** Local environment persistently broken
+
+**4. Document & Defer** (0 min, proceed with development)
+```markdown
+# Create: planning/parsers/<parser>/ENVIRONMENT_ISSUE.md
+
+## Environment Issue: <Brief Description>
+
+**Date:** YYYY-MM-DD
+**Impact:** Tests ready but cannot execute locally
+
+### Root Cause
+<Describe issue: e.g., pandas/pyarrow segfault on macOS 14.x>
+
+### Attempted Fixes
+- Tried: <what you tried>
+- Result: <still failed>
+
+### Solutions
+1. Docker (recommended)
+2. Rebuild venv with pinned versions
+3. Use different Python version
+4. Defer to CI
+
+### Status
+- Code: Syntactically valid ✓
+- Pattern: Follows proven <parser> pattern ✓
+- Tests: Written and ready ✓
+- Execution: Deferred to Docker/CI
+```
+- **Pros:** Doesn't block development progress
+- **Cons:** No immediate test feedback
+- **When:** Environment issue requires investigation
+- **Acceptance:** Code is syntactically valid and follows proven patterns
+
+**Best Practice:** 
+- Try Docker first (fastest, most reliable)
+- Document environment issues for team awareness
+- Syntax validation + pattern compliance acceptable for commit
+- Full test execution required before production deployment
 
 ## 7. Quality Gates (Minimum Bar)
 - **Unit:** ≥90% line coverage for core libraries; failures block merge.

@@ -1,6 +1,6 @@
 # Runbook: MPFS / NCCI / OPPS — Go-Live & Ops
 
-**Status:** Draft v1.0  
+**Status:** Draft v1.1  
 **Owners:** Operations & Data Engineering  
 **Consumers:** On-call Engineers, Product Ops, QA  
 **Change control:** PR review + Ops sign-off
@@ -51,11 +51,123 @@ This runbook lists validation steps and ops playbook items for the new MPFS inge
 - Ensure quarterly **PTP** & **MUE** updates landed; produce diffs (new/retired pairs; MUE value changes).  [oai_citation:43‡Centers for Medicare & Medicaid Services](https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits/medicare-ncci-procedure-procedure-ptp-edits?utm_source=chatgpt.com)
 - Keep **Policy Manual** link handy for rule authors.  [oai_citation:44‡Centers for Medicare & Medicaid Services](https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits/medicare-ncci-policy-manual?utm_source=chatgpt.com)
 
-## D. OPPS (when enabled)
+## D. Release Management & CHANGELOG Discipline (Added 2025-10-17)
+
+### D.1 CHANGELOG Format (Keep a Changelog)
+
+**Rules:**
+- **Single section per type**: Added, Changed, Deprecated, Removed, Fixed
+- **No duplicate subsections**: Only ONE "### Changed" in `[Unreleased]`
+- **Chronological ordering**: Newest entries first within each section
+- **Issue references**: Use `(#123)` or `GH-123` format
+- **Commit references**: Use `[a1b2c3d](https://github.com/owner/repo/commit/a1b2c3d)` format
+
+**Structure:**
+```markdown
+## [Unreleased]
+
+### Added
+- Feature A (#123)
+- Feature B (#124)
+
+### Changed
+- Component X refactored
+- Component Y updated
+
+### Deprecated
+- Old API v1
+
+### Removed
+- Legacy code
+
+### Fixed
+- Bug in module Z
+```
+
+**Validation:**
+```bash
+# Run before every release
+python tools/audit_changelog.py
+
+# Expected: ✅ Format valid, no duplicate sections
+```
+
+### D.2 Release Workflow
+
+**Pre-Release Checklist:**
+
+1. **Update CHANGELOG** with all completed work
+   - Add issue references for all closed items
+   - Ensure proper section structure (no duplicates)
+   - Date stamp the release section
+
+2. **Sync with Project Board**
+   ```bash
+   # Dry run (preview)
+   python3 tools/mark_tasks_done.py \
+     --project-number 5 \
+     --owner @me \
+     --section Unreleased \
+     --commits-since v1.2.0 \
+     --dry-run
+   
+   # Execute (close issues, update board)
+   python3 tools/mark_tasks_done.py \
+     --project-number 5 \
+     --owner @me \
+     --section Unreleased \
+     --commits-since v1.2.0 \
+     --close-issues \
+     --comment
+   ```
+
+3. **Verify CI Hygiene**
+   ```bash
+   # Run all checks
+   python tools/md_checkbox_scan.py
+   python tools/todo_lint.py
+   python tools/audit_changelog.py
+   ```
+
+4. **Create Release**
+   ```bash
+   git tag -a v1.3.0 -m "Release v1.3.0"
+   git push origin v1.3.0
+   ```
+
+### D.3 Automated Workflows
+
+**Changelog Sync Workflow** (`.github/workflows/changelog-sync.yml`):
+- **Triggers:** Push to `main` with CHANGELOG.md changes
+- **Actions:** Parses `[Unreleased]`, closes issues, updates Project #5
+- **Token:** Uses `PROJECT_SYNC_TOKEN` (PAT with 'project' scope)
+
+**Setup:**
+1. Create GitHub PAT with 'project' scope
+2. Add as repository secret: `PROJECT_SYNC_TOKEN`
+3. Workflow auto-triggers on CHANGELOG updates
+
+### D.4 CHANGELOG Hygiene Gates
+
+**Pre-commit hook** (enforced):
+- No unchecked checkboxes in committed files
+- No naked TODO comments
+
+**CI checks** (recommended):
+- CHANGELOG format validator
+- Duplicate section detector
+- Issue reference validator
+
+**Release blocker criteria:**
+- Duplicate "Added" or "Changed" sections
+- Missing issue references for major features
+- Unclosed issues referenced in `[Unreleased]`
+
+## E. OPPS (when enabled)
 
 - Ingest **Addendum B** quarterly; confirm status indicator/APC shifts match CMS transmittals; keep join keys `(HCPCS, MOD, quarter)`.  [oai_citation:45‡Centers for Medicare & Medicaid Services](https://www.cms.gov/medicare/payment/prospective-payment-systems/hospital-outpatient-pps/quarterly-addenda-updates?utm_source=chatgpt.com)
 
-## E. Test Harness Dependency (Postgres)
+## F. Test Harness Dependency (Postgres)
 
 - **Purpose:** API and pricing suites depend on PostgreSQL types (JSONB/ARRAY, UUID). Local testing and CI must exercise those flows against a real Postgres instance rather than the default SQLite harness.
 - **Database isolation:** Each test run must use a dedicated database to prevent conflicts between app startup table creation and Alembic migrations. Use environment-specific database names: `cms_pricing_{environment}`.

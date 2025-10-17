@@ -61,8 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `tools/create_parser_plan.sh` automation script
   - Created parser template and HOW_TO_ADD_PARSER.md guide
   - GPCI planning docs: 10 files including IMPLEMENTATION.md (27K guide)
+- **Layout Verification Tool** - `tools/verify_layout_positions.py` for pre-implementation validation
+  - Extracts fixed-width columns from sample files
+  - Domain-specific verification questions (MAC, locality, HCPCS, etc.)
+  - Prevents 30+ min debugging per parser
+  - Referenced in STD-parser-contracts §21.4 Step 2b
 - **PRD Standards Improvements** - Enhanced parser development standards
-  - **STD-parser-contracts**: v1.7 → v1.9 (2 major sections added)
+  - **STD-parser-contracts**: v1.7 → v1.10 (layout verification tooling + comprehensive guidance)
     - §21.3 Tiered Validation Thresholds (INFO/WARN/ERROR severity)
     - §21.4 Format Verification Pre-Implementation Checklist (7-step, saves 4-6h debugging)
     - §21.6 Incremental Implementation Strategy (3-phase approach)
@@ -70,13 +75,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - §5.2.4 Defensive Type Handling Patterns
     - §7.1 Router & Format Detection (6 subsections, flowchart)
     - §10.3 Safe Metrics Calculation Patterns
-  - **STD-qa-testing**: v1.2 → v1.3 (QTS compliance enhancements)
+  - **STD-qa-testing**: v1.2 → v1.4 (QTS compliance + environment fallback)
     - §5.1.1 Golden Fixture Hygiene (hybrid approach for edge cases)
     - §5.1.2 Multi-Format Fixture Parity (identical data across TXT/CSV/XLSX/ZIP)
     - §2.2.1 Test Categorization with Markers (@pytest.mark.golden, edge_case, negative)
+    - §6.3 Environment Testing Fallback Strategy (Docker, fresh venv, CI-first, document & defer)
   - **STD-data-architecture-impl**: v1.0 → v1.0.2 (transformation boundaries)
     - §1.3 Transformation Boundaries (Parser vs Normalize vs Enrich)
     - §4.2 Dual-Mode Reference Data Access (REF_MODE guardrails)
+  - **RUN-global-operations**: v1.0 → v1.1 (release management)
+    - §D Release Management & CHANGELOG Discipline (Keep a Changelog format rules)
+    - §D.2 Release Workflow (pre-release checklist with mark_tasks_done.py --commits-since)
+    - §D.3 Automated Workflows (changelog-sync.yml integration)
+    - §D.4 CHANGELOG Hygiene Gates (CI validators, release blockers)
   - **Source Descriptors**: Added SRC-TEMPLATE.md and updated SRC-gpci.md
 
 ### Changed

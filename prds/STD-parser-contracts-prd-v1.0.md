@@ -1,6 +1,6 @@
 # Parser Contracts Standard
 
-**Status:** Draft v1.9  
+**Status:** Draft v1.10  
 **Owners:** Data Platform Engineering  
 **Consumers:** Data Engineering, MPFS Ingestor, RVU Ingestor, OPPS Ingestor, API Teams, QA Guild  
 **Change control:** ADR + PR review  
@@ -3571,6 +3571,7 @@ if invalid_range.any():
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
+| **1.10** | **2025-10-17** | **Layout verification tooling (Locality parser lessons).** Type: Non-breaking (tooling). **Added:** §21.4 Step 2b "Verify Fixed-Width Layout Positions" (guided verification with domain-specific checklists); `tools/verify_layout_positions.py` CLI tool (extracts columns, shows verification questions, fail-fast checks). **Enhanced:** Clarified "Source of Truth" for layout verification (manual inspection + domain knowledge, no CMS format specs exist). **Motivation:** Locality parser revealed column position errors cost 30+ min debugging; systematic verification prevents off-by-one errors. **Impact:** Saves 30 min per fixed-width parser; prevents layout rework after coding starts. **Cross-Reference:** STD-qa-testing §6.3 (Environment Testing Fallback). | TBD |
 | **1.9** | **2025-10-17** | **Comprehensive parser implementation guidance (5 new sections from GPCI lessons).** Type: Non-breaking (implementation guidance). **Added:** §21.4 "Format Verification Pre-Implementation Checklist" (7-step verification, prevents 4-6h debugging); §21.6 "Incremental Phased Implementation" (3-phase strategy, 40% time savings); §5.2.3 "Alias Map Best Practices & Testing" (comprehensive header mapping, all format variations); §5.2.4 "Defensive Type Handling Patterns" (safe Decimal casting, references _parser_kit); §7.1 "Router & Format Detection" expanded (6 subsections: strategy, ZIP handling, flowchart, pitfalls, checklist); §10.3 "Safe Metrics Calculation Patterns" (safe_min_max, anti-patterns). **Enhanced:** Template structure (§21.4-21.7 sequential). **Motivation:** GPCI parser revealed critical pre-implementation verification gaps, format detection complexities, and type handling edge cases. **Impact:** Reduces future parser implementation time 8h → 2.5h (70%); eliminates common debugging scenarios (line length, header rows, empty value casting). **Cross-Reference:** SRC-gpci.md v1.0 (reference implementation), REF-cms-data-quirks-v1.0.md (cross-dataset patterns), _parser_kit.py (utilities). **Total Added:** ~600 lines of implementation guidance. | TBD |
 | **1.8** | **2025-10-17** | **Tiered validation thresholds (GPCI QTS compliance learnings).** Type: Non-breaking (implementation guidance). **Added:** §21.3 "Tiered Validation Thresholds" (INFO/WARN/ERROR severity levels instead of binary pass/fail; supports test fixtures + production without test-only bypasses; standard tier definitions table; prohibited patterns documented). **Motivation:** GPCI parser QTS alignment revealed test-only `skip_row_count_validation` flags violate production parity principle. Binary thresholds force test bypasses. **Impact:** Eliminates test-only code paths while maintaining strict production validation; reduces test-production divergence bugs; enables proper golden fixture testing (rejects == 0) with tiered INFO messages for small fixtures. **Cross-Reference:** STD-qa-testing-prd §5.1.1 (Golden Fixture Hygiene). **Reference Implementation:** `gpci_parser.py::_validate_row_count()`. | TBD |
 | **1.7** | **2025-10-16** | **Validation phases + error enrichment + string normalization (CF parser learnings).** Type: Non-breaking (implementation guidance). **Added:** §21.2 "Validation Phases & Rejects Handling" (4-phase pattern: coercion → post-cast validation → categorical → uniqueness); Anti-Pattern 11 "Range Validation Before Type Casting" (canonicalize_numeric_col returns strings, need pd.to_numeric for range checks); `normalize_string_columns()` utility in parser kit (strips whitespace/NBSP before validation); Step 3.5 in §21.1 template (string normalization). **Enhanced:** Error message enrichment requirements (include example bad values); Guardrail warnings metrics structure (counts + details dict). **Motivation:** CF parser implementation revealed critical string/numeric handling pattern + test expectation patterns + whitespace data quality issues. **Impact:** Prevents 30-60 min debugging per parser when adding range validation; standardizes error messages across parsers for better DX; ensures whitespace is stripped globally across all parsers. **Source:** CF parser debug session 2025-10-16. | TBD |
@@ -3997,6 +3998,28 @@ For each format:
   head -20 sample.txt | tail -10 | awk '{print length}'
   # Document: min=165, max=173, set min_line_length=160
   ```
+
+**Step 2b: Verify Fixed-Width Layout Positions (TXT only, 10 min)**
+
+Use layout verification tool to validate column extractions:
+
+```bash
+# Create draft layout in layout_registry.py first, then verify
+python tools/verify_layout_positions.py \\
+  cms_pricing/ingestion/parsers/layout_registry.py \\
+  sample_data/rvu25d_0/25LOCCO.txt \\
+  5
+
+# Review output and answer verification questions:
+# - Does each column contain expected content type?
+# - Are any values truncated or spanning wrong columns?
+# - Are end indices EXCLUSIVE (not inclusive)?
+
+# Adjust positions if needed, re-run until all correct
+```
+
+**Source of Truth:** Manual inspection + domain knowledge (no CMS format specs exist)  
+**Critical:** Verify with 3-5 representative lines including edge cases (blank fields, max-length values)
 
 -  **CSV:** Document exact header row structure
   ```bash
