@@ -476,3 +476,318 @@ def test_locality_county_names_with_delimiters():
     if has_slash.any():
         slash_example = result.data[has_slash].iloc[0]
         assert '/' in slash_example['county_names'], "Slash should be preserved"
+
+
+# ============================================================================
+# Phase 3: Edge Cases & Negative Tests
+# ============================================================================
+
+@pytest.mark.edge_case
+def test_locality_duplicate_natural_keys_real_data_preserved():
+    """
+    Raw layer must **preserve duplicates** exactly as in source.
+    
+    Known: Real 25LOCCO.txt contains duplicate NKs (e.g., MAC=05302, locality_code=99).
+    Expectation:
+    - Raw TXT/CSV/XLSX parsers do NOT deduplicate
+    - Duplicates preserved for Stage 2 (FIPS normalizer) processing
+    - Canonical comparison helpers (canon_locality) may drop duplicates for parity tests
+    """
+    metadata = {
+        'release_id': 'test_2025d',
+        'schema_id': 'cms_locality_raw_v1.0',
+        'product_year': 2025,
+        'quarter_vintage': 'D',
+        'vintage_date': '2025-01-01',
+        'file_sha256': 'test_sha',
+        'source_uri': 'test://edge'
+    }
+    
+    # Load real TXT with known duplicates
+    filepath = Path("sample_data/rvu25d_0/25LOCCO.txt")
+    with open(filepath, 'rb') as f:
+        result = parse_locality_raw(f, '25LOCCO.txt', metadata)
+    
+    # Count duplicates
+    duplicate_mask = result.data.duplicated(subset=['mac', 'locality_code'], keep=False)
+    duplicate_count = duplicate_mask.sum()
+    unique_nk_count = result.data[['mac', 'locality_code']].drop_duplicates().shape[0]
+    
+    # Assert duplicates are preserved (not removed)
+    assert duplicate_count > 0, "Real CMS file has duplicates, should be preserved in raw layer"
+    assert len(result.data) > unique_nk_count, "Total rows should exceed unique NKs (duplicates preserved)"
+    
+    print(f"✓ Raw layer preserved {duplicate_count} duplicate rows (total: {len(result.data)}, unique: {unique_nk_count})")
+
+
+@pytest.mark.edge_case
+def test_locality_csv_with_utf8_bom():
+    """
+    Test CSV with UTF-8 BOM (EF BB BF) header.
+    
+    Real CMS files sometimes have BOM from Excel exports.
+    Parser should detect and strip BOM correctly.
+    """
+    metadata = {
+        'release_id': 'test_2025d',
+        'schema_id': 'cms_locality_raw_v1.0',
+        'product_year': 2025,
+        'quarter_vintage': 'D',
+        'vintage_date': '2025-01-01',
+        'file_sha256': 'test_sha',
+        'source_uri': 'test://bom'
+    }
+    
+    # Add UTF-8 BOM to real CSV
+    csv_path = Path("sample_data/rvu25d_0/25LOCCO.csv")
+    csv_bytes = open(csv_path, 'rb').read()
+    csv_with_bom = b'\xef\xbb\xbf' + csv_bytes
+    
+    # Parse
+    result = parse_locality_raw(BytesIO(csv_with_bom), '25LOCCO.csv', metadata)
+    
+    # Verify successful parse
+    assert len(result.data) > 0, "Should parse CSV with BOM"
+    assert len(result.rejects) == 0, "No rejects expected"
+    
+    # Verify no BOM artifacts in data
+    first_col_name = result.data.columns[0]
+    assert not first_col_name.startswith('\ufeff'), "BOM should be stripped from column names"
+    
+    # Verify headers parsed correctly
+    assert 'mac' in result.data.columns, "Should find 'mac' column (not corrupted by BOM)"
+
+
+@pytest.mark.edge_case
+def test_locality_continuation_rows_forward_fill_state_only():
+    """
+    TXT continuation rows may omit the State field for multi-county localities.
+    
+    Raw parser forward-fills **state_name only**; MAC and locality_code are
+    parsed from fixed-width spans (not forward-filled).
+    
+    Example from CMS TXT:
+    Row 1: 01112  00  CALIFORNIA  STATEWIDE  ALL COUNTIES
+    Row 2:             (blank)     (blank)    LOS ANGELES  LOS ANGELES/ORANGE
+    
+    Expectation:
+    - state_name forward-filled on row 2 from row 1
+    - mac and locality_code parsed from their fixed-width positions (may also forward-fill if blank)
+    """
+    # Use real file - already has continuation rows
+    metadata = {
+        'release_id': 'test_2025d',
+        'schema_id': 'cms_locality_raw_v1.0',
+        'product_year': 2025,
+        'quarter_vintage': 'D',
+        'vintage_date': '2025-01-01',
+        'file_sha256': 'test_sha',
+        'source_uri': 'test://continuation'
+    }
+    
+    filepath = Path("sample_data/rvu25d_0/25LOCCO.txt")
+    with open(filepath, 'rb') as f:
+        result = parse_locality_raw(f, '25LOCCO.txt', metadata)
+    
+    # Verify all rows have state_name (forward-filled when blank)
+    null_states = result.data['state_name'].isna().sum()
+    blank_states = (result.data['state_name'] == '').sum()
+    
+    assert null_states == 0, "All rows should have state_name (forward-filled)"
+    assert blank_states == 0, "No blank state names (forward-filled)"
+    
+    print(f"✓ All {len(result.data)} rows have state_name (forward-fill working)")
+
+
+@pytest.mark.edge_case
+def test_locality_zero_padding_edge_cases():
+    """
+    Test zero-padding for edge case locality codes and MACs.
+    
+    Edge cases:
+    - locality_code: 0, 1, 7, 99 (single and double digits)
+    - MAC: 1112, 11402, 5302 (4-5 digits)
+    
+    All should be zero-padded consistently:
+    - 0 → 00, 1 → 01, 7 → 07, 99 → 99
+    - 1112 → 01112, 11402 → 11402, 5302 → 05302
+    """
+    metadata = {
+        'release_id': 'test_2025d',
+        'schema_id': 'cms_locality_raw_v1.0',
+        'product_year': 2025,
+        'quarter_vintage': 'D',
+        'vintage_date': '2025-01-01',
+        'file_sha256': 'test_sha',
+        'source_uri': 'test://padding'
+    }
+    
+    # CSV has numeric values that need padding
+    filepath = Path("sample_data/rvu25d_0/25LOCCO.csv")
+    with open(filepath, 'rb') as f:
+        result = parse_locality_raw(f, '25LOCCO.csv', metadata)
+    
+    # Verify all locality codes are 2 digits
+    assert all(len(lc) == 2 for lc in result.data['locality_code']), \
+        "All locality codes should be zero-padded to width 2"
+    
+    # Verify all MACs are 5 digits
+    assert all(len(mac) == 5 for mac in result.data['mac']), \
+        "All MACs should be zero-padded to width 5"
+    
+    # Verify specific edge cases
+    lc_set = set(result.data['locality_code'])
+    assert '00' in lc_set, "Should have '00' (padded from 0)"
+    assert '01' in lc_set, "Should have '01' (padded from 1)"
+    assert '99' in lc_set, "Should have '99'"
+    
+    mac_set = set(result.data['mac'])
+    assert '01112' in mac_set or '01182' in mac_set, "Should have 5-digit MACs starting with 0"
+
+
+# ============================================================================
+# Negative Tests
+# ============================================================================
+
+@pytest.mark.negative
+def test_locality_missing_required_metadata():
+    """
+    Test parser raises ValueError for missing metadata fields.
+    
+    Required: release_id, schema_id, product_year, quarter_vintage,
+              vintage_date, file_sha256, source_uri
+    """
+    # Missing schema_id and others
+    metadata_incomplete = {
+        'release_id': 'test_2025d',
+    }
+    
+    filepath = Path("sample_data/rvu25d_0/25LOCCO.txt")
+    with open(filepath, 'rb') as f:
+        with pytest.raises(ValueError) as exc_info:
+            parse_locality_raw(f, '25LOCCO.txt', metadata_incomplete)
+    
+    # Verify error message lists missing fields
+    error_msg = str(exc_info.value)
+    assert 'Missing required metadata' in error_msg
+    assert 'schema_id' in error_msg, "Error should mention missing schema_id"
+
+
+@pytest.mark.negative
+def test_locality_unsupported_format():
+    """
+    Test parser rejects unsupported file formats.
+    
+    Supported: .txt, .csv, .xlsx
+    Unsupported: .json, .xml, .pdf, etc.
+    """
+    from cms_pricing.ingestion.parsers._parser_kit import ParseError
+    
+    metadata = {
+        'release_id': 'test_2025d',
+        'schema_id': 'cms_locality_raw_v1.0',
+        'product_year': 2025,
+        'quarter_vintage': 'D',
+        'vintage_date': '2025-01-01',
+        'file_sha256': 'test_sha',
+        'source_uri': 'test://unsupported'
+    }
+    
+    # Try unsupported format
+    fake_json = BytesIO(b'{"data": "test"}')
+    
+    with pytest.raises(ParseError) as exc_info:
+        parse_locality_raw(fake_json, '25LOCCO.json', metadata)
+    
+    error_msg = str(exc_info.value)
+    assert 'Unsupported format' in error_msg
+    assert '.txt, .csv, .xlsx' in error_msg or 'json' in error_msg.lower()
+
+
+@pytest.mark.negative
+def test_locality_empty_file():
+    """
+    Test parser handles empty files gracefully.
+    """
+    from cms_pricing.ingestion.parsers._parser_kit import ParseError
+    
+    metadata = {
+        'release_id': 'test_2025d',
+        'schema_id': 'cms_locality_raw_v1.0',
+        'product_year': 2025,
+        'quarter_vintage': 'D',
+        'vintage_date': '2025-01-01',
+        'file_sha256': 'test_sha',
+        'source_uri': 'test://empty'
+    }
+    
+    empty_bytes = BytesIO(b'')
+    
+    with pytest.raises(ParseError) as exc_info:
+        parse_locality_raw(empty_bytes, '25LOCCO.txt', metadata)
+    
+    error_msg = str(exc_info.value)
+    assert 'No data rows' in error_msg or 'empty' in error_msg.lower()
+
+
+@pytest.mark.negative
+def test_locality_csv_missing_columns():
+    """
+    Test CSV with missing required columns raises ParseError.
+    
+    Required: mac, locality_code, state_name, fee_area, county_names
+    """
+    from cms_pricing.ingestion.parsers._parser_kit import ParseError
+    
+    metadata = {
+        'release_id': 'test_2025d',
+        'schema_id': 'cms_locality_raw_v1.0',
+        'product_year': 2025,
+        'quarter_vintage': 'D',
+        'vintage_date': '2025-01-01',
+        'file_sha256': 'test_sha',
+        'source_uri': 'test://bad_csv'
+    }
+    
+    # CSV with header that passes detection but missing required columns
+    # Header must have "locality" + "contractor" + "counties" to pass detection
+    # But missing fee_area column
+    csv_bad = b"Medicare Contractor,Locality Number,State,Counties\n10112,00,ALABAMA,ALL\n"
+    
+    with pytest.raises(ParseError) as exc_info:
+        parse_locality_raw(BytesIO(csv_bad), '25LOCCO.csv', metadata)
+    
+    error_msg = str(exc_info.value)
+    assert 'Missing columns' in error_msg
+    # Should mention at least one missing column
+    assert 'locality_code' in error_msg or 'county_names' in error_msg or 'fee_area' in error_msg or 'mac' in error_msg
+
+
+@pytest.mark.negative
+def test_locality_csv_no_header_row():
+    """
+    Test CSV without proper header row raises ParseError.
+    
+    Parser looks for row with "Locality" + "Contractor" + "Counties"
+    File without these tokens should fail gracefully.
+    """
+    from cms_pricing.ingestion.parsers._parser_kit import ParseError
+    
+    metadata = {
+        'release_id': 'test_2025d',
+        'schema_id': 'cms_locality_raw_v1.0',
+        'product_year': 2025,
+        'quarter_vintage': 'D',
+        'vintage_date': '2025-01-01',
+        'file_sha256': 'test_sha',
+        'source_uri': 'test://no_header'
+    }
+    
+    # CSV without proper header tokens
+    csv_no_header = b"Data,Values,Here\n10112,00,ALABAMA\n"
+    
+    with pytest.raises(ParseError) as exc_info:
+        parse_locality_raw(BytesIO(csv_no_header), '25LOCCO.csv', metadata)
+    
+    error_msg = str(exc_info.value).lower()
+    assert 'header' in error_msg and ('not found' in error_msg or 'expected' in error_msg)
