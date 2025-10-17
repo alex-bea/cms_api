@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -z "$(git diff --cached --name-only)" ]]; then
+  exit 0
+fi
+
+echo "▶ Markdown checkbox scan"
+python3 tools/md_checkbox_scan.py
+
+echo "▶ TODO lint"
+python3 tools/todo_lint.py

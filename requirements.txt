@@ -46,4 +46,5 @@ black==23.11.0
 isort==5.12.0
 flake8==6.1.0
 mypy==1.7.1
-jsonschema==4.20.0freezegun==1.4.0
+jsonschema==4.20.0
+freezegun==1.4.0

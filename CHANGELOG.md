@@ -9,6 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GPCI Parser (v1.0.0)** - Geographic Practice Cost Indices parser
+  - Supports TXT (fixed-width), CSV, XLSX, ZIP formats
+  - Schema: `cms_gpci_v1.2` (CMS-native naming: `gpci_mp`, `locality_code`)
+  - Layout: `GPCI_2025D_LAYOUT` v2025.4.1 (verified column positions)
+  - Natural keys: `['locality_code', 'effective_from']`
+  - Validation: Row count (100-120 expected), GPCI ranges [0.20, 2.50]
+  - Provenance: `source_release` tracking (RVU25A/B/C/D)
+  - Tests: 8 golden tests, 10 negative tests, 3 integration tests
+  - Follows STD-parser-contracts v1.7 §21.1 (11-step template)
+- **Schema Contract**: `cms_gpci_v1.2.json`
+  - CMS-native naming (`gpci_mp` not `gpci_malp`)
+  - Split into Core, Enrichment, and Provenance columns
+  - Core columns only in row hash (deterministic)
+  - Optional state/MAC enrichment (not required)
+  - 3 decimal precision for GPCI values
+- **Layout Registry**: Updated `GPCI_2025D_LAYOUT` to v2025.4.1
+  - Corrected 3 column positions (state: 16:18, gpci_work: 121:126, gpci_mp: 145:150)
+  - CMS-native column names matching schema v1.2
+  - Added quarter variants (A/B/C/D) to registry lookups
+  - Conservative `min_line_length=100` (actual 150)
+- **Planning Infrastructure**:
+  - Organized all planning docs into `planning/` directory
+  - Created standardized parser planning structure (5 parsers)
+  - Added `tools/create_parser_plan.sh` automation script
+  - Created parser template and HOW_TO_ADD_PARSER.md guide
+  - GPCI planning docs: 10 files including IMPLEMENTATION.md (27K guide)
+
+### Changed
+- **Router**: Updated GPCI routing to use `cms_gpci_v1.2` and `parse_gpci()` function
+- **RouteDecision**: Added `parser_func` field to support callable parsers
+
+### Deprecated
+- **cms_gpci_v1.0.json**: Superseded by v1.2 (CMS-native naming)
+
+### Fixed
+- **GPCI Layout Positions**: Corrected 3 column positions based on actual CMS data measurements
+
 ### Changed
 - **Planning Files Organization (2025-10-16)**: Reorganized 26 planning documents into structured `planning/` directory
   - Created hierarchy: `planning/parsers/`, `planning/project/`, `planning/architecture/`

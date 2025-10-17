@@ -1,25 +1,39 @@
 """
 Parser Routing Table
 
-Maps CMS file patterns to schema contracts and dataset types.
-Uses existing schema contracts from cms_pricing.ingestion.contracts.
+Maps CMS file patterns to parser functions and schema contracts.
 
-NOTE: Individual parser functions will be extracted from RVU ingestor
-      in future phases. This module provides the routing infrastructure
-      and contract mapping for Phase 0.
-      
-Per PRD-mpfs-prd-v1.0.md line 26:
-  Schema Contracts: cms_pprrvu_v1.0.json, cms_gpci_v1.0.json, 
-  cms_localitycounty_v1.0.json, cms_anescf_v1.0.json
+Phase 1 Implementation:
+- PPRRVU: uses RVU ingestor (legacy)
+- GPCI: parse_gpci() (NEW - STD-parser-contracts v1.7)
+- Conversion Factor: parse_conversion_factor() (STD-parser-contracts v1.6)
+- Others: use existing ingestor methods (to be extracted)
+
+Per STD-parser-contracts v1.7 §6.2 and §7.1.
 """
 
 import re
 import json
 from pathlib import Path
-from typing import Tuple, Optional, Dict, Any, List, NamedTuple, Literal
+from typing import Tuple, Optional, Dict, Any, List, NamedTuple, Literal, Callable, IO
 import structlog
 
 logger = structlog.get_logger()
+
+# Import available parsers
+try:
+    from cms_pricing.ingestion.parsers.gpci_parser import parse_gpci
+    GPCI_PARSER_AVAILABLE = True
+except ImportError:
+    GPCI_PARSER_AVAILABLE = False
+    parse_gpci = None
+
+try:
+    from cms_pricing.ingestion.parsers.conversion_factor_parser import parse_conversion_factor
+    CF_PARSER_AVAILABLE = True
+except ImportError:
+    CF_PARSER_AVAILABLE = False
+    parse_conversion_factor = None
 
 
 class RouteDecision(NamedTuple):
@@ -33,6 +47,7 @@ class RouteDecision(NamedTuple):
         schema_id: Schema contract identifier (e.g., 'cms_pprrvu_v1.0')
         status: Routing status ('ok', 'quarantine', 'reject')
         natural_keys: Sort/primary key columns from schema contract (single source of truth)
+        parser_func: Parser function (if available) or None
     
     Examples:
         >>> decision = route_to_parser("PPRRVU2025.csv")
@@ -40,11 +55,14 @@ class RouteDecision(NamedTuple):
         'pprrvu'
         >>> decision.natural_keys
         ['hcpcs', 'modifier', 'effective_from']
+        >>> decision.parser_func
+        <function parse_pprrvu>
     """
     dataset: str
     schema_id: str
     status: Literal["ok", "quarantine", "reject"]
     natural_keys: List[str]
+    parser_func: Optional[Callable[[IO[bytes], str, Dict[str, Any]], Any]] = None
 
 
 # File pattern → (dataset_name, schema_contract_id, parser_status)
@@ -59,8 +77,8 @@ PARSER_ROUTING = {
     # GPCI files (geographic practice cost indices)
     r"GPCI.*\.(txt|csv|xlsx)$": (
         "gpci",
-        "cms_gpci_v1.0",
-        "uses_rvu_ingestor"
+        "cms_gpci_v1.2",  # Updated to v1.2 (CMS-native naming)
+        parse_gpci if GPCI_PARSER_AVAILABLE else "uses_rvu_ingestor"
     ),
     
     # Locality/County crosswalk files
@@ -191,7 +209,8 @@ def route_to_parser(
                     dataset=dataset,
                     schema_id=schema_id,
                     status="quarantine",
-                    natural_keys=[]
+                    natural_keys=[],
+                    parser_func=None
                 )
             
             # Content sniffing (if file_head provided and available)
@@ -215,6 +234,9 @@ def route_to_parser(
                         error=str(e)
                     )
             
+            # Get parser function if callable
+            parser_func = parser_status if callable(parser_status) else None
+            
             logger.debug(
                 "Routed file to parser",
                 filename=filename,
@@ -222,6 +244,7 @@ def route_to_parser(
                 schema_id=schema_id,
                 status="ok",
                 natural_keys=natural_keys,
+                parser_available=parser_func is not None,
                 content_sniffing_used=file_head is not None
             )
             
@@ -229,7 +252,8 @@ def route_to_parser(
                 dataset=dataset,
                 schema_id=schema_id,
                 status="ok",
-                natural_keys=natural_keys
+                natural_keys=natural_keys,
+                parser_func=parser_func
             )
     
     # No match found

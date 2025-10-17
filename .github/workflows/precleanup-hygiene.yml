@@ -1,0 +1,32 @@
+name: Pre-Implementation Cleanup
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 7 1 */3 *"
+
+jobs:
+  checkbox-police:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Markdown checkbox scan
+        run: python3 tools/md_checkbox_scan.py
+
+  todo-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run TODO linter
+        run: python3 tools/todo_lint.py
+
+  docs-drift:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scheduled checkbox scan
+        run: python3 tools/md_checkbox_scan.py
