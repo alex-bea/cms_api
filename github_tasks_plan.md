@@ -96,6 +96,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 ### Summary by Category
 
 - **Data Ingestion**: 14 tasks
+- **Documentation & Standards**: 10 tasks (PRD Improvements)
 - **General**: 32 tasks
 - **API Development**: 3 tasks
 - **Performance**: 3 tasks
@@ -2478,3 +2479,47 @@ def parse_pprrvu(file_obj, filename, metadata) -> ParseResult:
 
 ---
 
+
+---
+
+## 📚 Documentation & Standards Improvements (Added 2025-10-17)
+
+**Status:** 🔵 **ACTIVE** - PRD improvements from GPCI parser lessons learned
+
+**Context:** During GPCI parser implementation (60% → near-100% test pass rate), we identified 10 critical improvements for parser PRD standards. Expected to reduce future parser implementation time by ~40% and debugging time by ~80%.
+
+**Reference Documents:**
+- `planning/parsers/gpci/LESSONS_LEARNED.md` - Detailed analysis of 10 key lessons
+- `planning/parsers/gpci/GITHUB_TASKS_PRD_IMPROVEMENTS.md` - Full task specifications
+
+**Task Summary:**
+- **P0 (Critical):** 3 tasks - Format verification, CMS characteristics template, error handling standards
+- **P1 (High):** 4 tasks - Test coverage matrix, incremental implementation, CMS quirks reference, metrics standards
+- **P2 (Medium):** 3 tasks - Format detection, alias map best practices, type handling standards
+
+**Total Effort:** ~20 hours over 3 weeks  
+**Expected Impact:** 50% reduction in total parser implementation + debugging time  
+
+**Quick Reference:**
+1. **Task 1 (P0):** Update STD-parser-contracts with Format Verification Section (2h)
+2. **Task 2 (P0):** Create "CMS Dataset Characteristics" Template (3h)
+3. **Task 3 (P0):** Enhance Error Handling Requirements (2h)
+4. **Task 4 (P1):** Add Test Coverage Matrix to QA Standard (2h)
+5. **Task 5 (P1):** Document Incremental Implementation Best Practice (1.5h)
+6. **Task 6 (P1):** Create "Common CMS Data Quirks" Reference (4h)
+7. **Task 7 (P1):** Add Metrics Calculation Standards (1h)
+8. **Task 8 (P2):** Enhance Format Detection Documentation (1.5h)
+9. **Task 9 (P2):** Create Alias Map Best Practices Guide (1h)
+10. **Task 10 (P2):** Add Type Handling Standards (1.5h)
+
+**Success Metrics:**
+| Metric | Current | Target | Improvement |
+|--------|---------|--------|-------------|
+| Time to first working test | 3h | <2h | 33% faster |
+| Debugging time | 5h | <1h | 80% less |
+| First-run test pass rate | 60% | >80% | +20pts |
+
+**Detailed task specifications available in:**  
+`planning/parsers/gpci/GITHUB_TASKS_PRD_IMPROVEMENTS.md`
+
+---
