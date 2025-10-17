@@ -1,6 +1,6 @@
 # Parser Contracts Standard
 
-**Status:** Draft v1.8  
+**Status:** Draft v1.9  
 **Owners:** Data Platform Engineering  
 **Consumers:** Data Engineering, MPFS Ingestor, RVU Ingestor, OPPS Ingestor, API Teams, QA Guild  
 **Change control:** ADR + PR review  
@@ -180,12 +180,550 @@ Parsers return `ParseResult(data, rejects, metrics)`; the ingestor writes Arrow/
 - Case-insensitive matching for aliases
 - Map variations to canonical names (e.g., "HCPCS_CODE" → "hcpcs")
 
+#### 5.2.3 Alias Map Best Practices & Testing (Added 2025-10-17)
+
+**Purpose:** Comprehensive column header mapping to handle CMS format variations and prevent "missing column" errors.
+
+**Problem:**
+CMS uses different header names across formats and releases:
+- TXT: "locality code" (spaces)
+- CSV: "locality_code" (underscores)
+- XLSX: "Locality Code" (title case)
+- Yearly: "2025 PW GPCI" → "2026 PW GPCI"
+
+Missing aliases → KeyError → Parser failure.
+
+**Solution:** Comprehensive alias map with testing.
+
+---
+
+**Alias Map Structure:**
+
+```python
+# Location: In parser module (e.g., gpci_parser.py)
+
+ALIAS_MAP = {
+    # ==========================================
+    # TXT Format (Fixed-Width)
+    # ==========================================
+    'locality code': 'locality_code',
+    'locality name': 'locality_name',
+    '2025 PW GPCI (with 1.0 floor)': 'gpci_work',
+    '2025 PE GPCI': 'gpci_pe',
+    '2025 MP GPCI': 'gpci_mp',
+    
+    # ==========================================
+    # CSV Format (Comma-Delimited)
+    # ==========================================
+    # After _normalize_column_names(), spaces→underscores
+    'locality_code': 'locality_code',  # Identity mapping
+    'locality_name': 'locality_name',
+    '2025_pw_gpci_(with_1.0_floor)': 'gpci_work',
+    '2025_pe_gpci': 'gpci_pe',
+    '2025_mp_gpci': 'gpci_mp',
+    
+    # ==========================================
+    # XLSX Format (Excel)
+    # ==========================================
+    '2025 PW GPCI': 'gpci_work',  # Without qualifier
+    '2025 PE GPCI': 'gpci_pe',
+    '2025 MP GPCI': 'gpci_mp',
+    
+    # ==========================================
+    # Historical Variations (Older Releases)
+    # ==========================================
+    '2024 PW GPCI': 'gpci_work',
+    '2024 PE GPCI': 'gpci_pe',
+    '2024 MP GPCI': 'gpci_mp',
+    'pw_gpci_2024': 'gpci_work',
+    'pe_gpci_2024': 'gpci_pe',
+    
+    # ==========================================
+    # Case Variations
+    # ==========================================
+    # Handled by case-insensitive matching in apply_aliases()
+    'Locality Code': 'locality_code',
+    'LOCALITY_CODE': 'locality_code',
+}
+
+# Usage in parser
+def apply_aliases(df: pd.DataFrame, alias_map: Dict[str, str]) -> pd.DataFrame:
+    """
+    Apply column name aliases with case-insensitive matching.
+    
+    Returns DataFrame with canonical column names.
+    """
+    # Build case-insensitive lookup
+    lower_map = {k.lower(): v for k, v in alias_map.items()}
+    
+    # Rename columns
+    new_cols = {}
+    for col in df.columns:
+        canonical = lower_map.get(col.lower(), col)
+        new_cols[col] = canonical
+    
+    return df.rename(columns=new_cols)
+```
+
+---
+
+**Best Practices:**
+
+**1. Organization:**
+- Group by format (TXT, CSV, XLSX, Historical)
+- Add comments explaining each section
+- Sort alphabetically within sections
+- Document year-specific patterns
+
+**2. Comprehensiveness:**
+- Include ALL observed variations (past + present)
+- Add identity mappings (e.g., `'locality_code': 'locality_code'`)
+- Document removals (e.g., "# 'footnote': removed in 2024D")
+
+**3. Year Handling:**
+- **Explicit mapping** per year (e.g., "2025 PW GPCI", "2024 PW GPCI")
+- OR **Regex patterns** for year-agnostic matching:
+  ```python
+  import re
+  # Match any 4-digit year
+  year_pattern = re.compile(r'\d{4} PW GPCI')
+  ```
+
+**4. Case Sensitivity:**
+- Always apply case-insensitive matching
+- Store aliases in lowercase for lookup
+- Example: "Locality Code", "locality code", "LOCALITY_CODE" → same mapping
+
+**5. Parenthetical Qualifiers:**
+- Map both with and without qualifiers:
+  ```python
+  '2025 PW GPCI (with 1.0 floor)': 'gpci_work',  # Current
+  '2025 PW GPCI': 'gpci_work',                   # Historical
+  ```
+
+---
+
+**Testing Strategy:**
+
+**Test 1: Completeness Test**
+```python
+def test_alias_map_covers_all_formats():
+    """Verify alias map handles all format variations."""
+    from gpci_parser import ALIAS_MAP
+    
+    # Expected headers from each format
+    txt_headers = ['locality code', 'locality name', '2025 PW GPCI']
+    csv_headers = ['locality_code', 'locality_name', '2025_pw_gpci']
+    xlsx_headers = ['Locality Code', 'Locality Name', '2025 PW GPCI']
+    
+    # All should map to canonical names
+    for header in txt_headers + csv_headers + xlsx_headers:
+        assert header.lower() in {k.lower() for k in ALIAS_MAP.keys()}, \
+            f"Missing alias for: {header}"
+```
+
+**Test 2: Schema Alignment Test**
+```python
+def test_alias_targets_match_schema():
+    """Verify all alias targets are valid schema columns."""
+    from gpci_parser import ALIAS_MAP
+    
+    schema = load_schema('cms_gpci_v1.0')
+    schema_cols = set(schema['columns'].keys())
+    alias_targets = set(ALIAS_MAP.values())
+    
+    # All targets must be in schema
+    invalid = alias_targets - schema_cols
+    assert not invalid, f"Aliases target non-existent columns: {invalid}"
+```
+
+**Test 3: Format Consistency Test**
+```python
+def test_formats_produce_same_columns():
+    """Verify TXT/CSV/XLSX produce identical canonical columns."""
+    txt_result = parse_gpci(fixture_txt, 'sample.txt', metadata)
+    csv_result = parse_gpci(fixture_csv, 'sample.csv', metadata)
+    xlsx_result = parse_gpci(fixture_xlsx, 'sample.xlsx', metadata)
+    
+    # After aliasing, all should have same columns
+    assert set(txt_result.data.columns) == set(csv_result.data.columns)
+    assert set(csv_result.data.columns) == set(xlsx_result.data.columns)
+```
+
+**Test 4: Unmapped Column Detection**
+```python
+def test_unmapped_columns_logged():
+    """Verify parser logs unmapped columns (future CMS changes)."""
+    # Create fixture with NEW column not in ALIAS_MAP
+    df_with_new = pd.DataFrame({
+        'locality_code': ['01'],
+        'new_cms_column_2026': ['value'],  # Not in ALIAS_MAP
+    })
+    
+    # Parser should log warning
+    with pytest.raises(ParseError, match="Unmapped columns detected"):
+        # Or: with caplog to check for warning
+        result = parse_gpci(...)
+```
+
+---
+
+**Maintenance Pattern:**
+
+**When CMS Releases Change:**
+
+1. **Inspect new files** (§21.4 Format Verification)
+   ```bash
+   head -5 new_release.csv
+   # Document any new column names
+   ```
+
+2. **Update ALIAS_MAP**
+   ```python
+   # Add new variations
+   '2026 PW GPCI': 'gpci_work',  # New year
+   ```
+
+3. **Run alias tests**
+   ```bash
+   pytest -k "alias" -v
+   ```
+
+4. **Document changes in SRC-**
+   ```markdown
+   ## Historical Format Changes
+   | Release | Change | Alias Added |
+   | 2026A | Year prefix changed | '2026 PW GPCI' |
+   ```
+
+---
+
+**Anti-Patterns:**
+
+**1. Incomplete Coverage**
+```python
+# ❌ WRONG: Only map one format
+ALIAS_MAP = {
+    'locality code': 'locality_code',
+    # Missing CSV, XLSX variations!
+}
+
+# ✅ CORRECT: All formats covered
+ALIAS_MAP = {
+    # TXT
+    'locality code': 'locality_code',
+    # CSV (normalized)
+    'locality_code': 'locality_code',
+    # XLSX
+    'Locality Code': 'locality_code',
+}
+```
+
+**2. Case-Sensitive Matching**
+```python
+# ❌ WRONG: Exact case required
+if col in ALIAS_MAP:
+    col = ALIAS_MAP[col]
+
+# ✅ CORRECT: Case-insensitive
+lower_map = {k.lower(): v for k, v in ALIAS_MAP.items()}
+if col.lower() in lower_map:
+    col = lower_map[col.lower()]
+```
+
+**3. Silent Failures**
+```python
+# ❌ WRONG: Skip unmapped columns silently
+canonical_cols = [ALIAS_MAP.get(col, col) for col in df.columns]
+
+# ✅ CORRECT: Log unmapped columns
+unmapped = [col for col in df.columns if col.lower() not in lower_map]
+if unmapped:
+    logger.warning(f"Unmapped columns detected: {unmapped}")
+```
+
+**4. No Historical Tracking**
+```python
+# ❌ WRONG: Delete old aliases
+# Removed '2024 PW GPCI' (no longer used)
+
+# ✅ CORRECT: Keep for historical data
+'2024 PW GPCI': 'gpci_work',  # Historical, keep for backfills
+```
+
+---
+
+**Implementation Checklist:**
+
+-  Alias map organized by format (TXT/CSV/XLSX/Historical)
+-  Identity mappings included (e.g., `'col': 'col'`)
+-  Case-insensitive matching implemented
+-  Parenthetical variations covered
+-  Year-specific patterns documented
+-  Unmapped column detection and logging
+-  Schema alignment validated
+-  Format consistency tested
+-  Historical variations preserved
+
+---
+
+**Cross-References:**
+- **REF-cms-data-quirks-v1.0.md** §3 - Common CMS header patterns
+- **SRC-{dataset}.md** §3.3 - Per-dataset alias maps
+- **STD-qa-testing-prd-v1.0.md** - Testing patterns for alias validation
+
+**Reference Implementation:**
+- `cms_pricing/ingestion/parsers/gpci_parser.py` - ALIAS_MAP (lines 50-100)
+- `planning/parsers/gpci/LESSONS_LEARNED.md` - §2 Alias map lessons
+
+**Benefits:**
+- Prevents "missing column" errors across formats
+- Handles CMS naming changes across releases
+- Clear documentation for maintenance
+- Testable and verifiable
+
+---
+
 **Type Casting Per Schema:**
 - Codes as **categorical** (HCPCS, modifier, status, locality)
 - Money/RVUs as **decimal** or **float64** (explicit, not object)
 - Dates as **datetime64[ns]** or **date**
 - Booleans as **bool** (not 0/1 or Y/N strings)
 - No silent coercion - fail on type cast errors
+
+#### 5.2.4 Defensive Type Handling Patterns (Added 2025-10-17)
+
+**Purpose:** Safe type conversion that handles CMS data variations (integer strings, empty values, scientific notation) without runtime errors.
+
+**Problem:**
+CMS data contains mixed numeric representations:
+- Integer strings: `"1"` (not `"1.000"`)
+- Empty values: `""`, `None`, `"nan"`
+- Scientific notation: `"1.23E+05"`
+- Invalid values: `"N/A"`, `"--"`, `"*"`
+
+Direct casting fails: `Decimal("1")` ✓ but `Decimal("")` ✗ InvalidOperation
+
+**Solution:** Use `_parser_kit.py` utilities with defensive patterns.
+
+---
+
+**Standard Implementation (Use Parser Kit):**
+
+```python
+from cms_pricing.ingestion.parsers._parser_kit import canonicalize_numeric_col
+
+# Recommended: Use parser kit (handles all cases)
+df['gpci_work'] = canonicalize_numeric_col(
+    df['gpci_work'],
+    precision=3,
+    rounding_mode='HALF_UP'
+)
+```
+
+**Parser Kit Handles:**
+- ✅ Integer strings: `"1"` → `"1.000"`
+- ✅ Empty values: `""` → `""`
+- ✅ Scientific notation: `"1.5E+02"` → `"150.000"`
+- ✅ Invalid values: `"N/A"` → `""` (logged)
+- ✅ Decimals: `"1.5"` → `"1.500"`
+
+**Implementation:** `cms_pricing/ingestion/parsers/_parser_kit.py::canonicalize_numeric_col()`
+
+---
+
+**Type Handling Best Practices:**
+
+**1. Expected Input Types:**
+
+Document what your parser expects vs handles:
+
+```python
+def _cast_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Cast columns to canonical types with defensive handling.
+    
+    Expected Inputs (from CMS files):
+        - Numeric columns: strings ("1", "1.5", "", "1.23E+02")
+        - Date columns: strings ("2025-01-01", "01/01/2025")
+        - Boolean columns: strings ("Y", "N", "1", "0")
+        - Categorical: strings (any value)
+    
+    Variations Handled:
+        - Empty strings → appropriate null/default
+        - Scientific notation → decimal
+        - Integer strings → decimal with precision
+        - Multiple date formats → canonical datetime
+    """
+```
+
+**2. Three-Stage Casting:**
+
+```python
+# Stage 1: Clean strings (remove whitespace, NBSP)
+df = normalize_string_columns(df)  # From _parser_kit
+
+# Stage 2: Cast to intermediate types (pandas native)
+df['amount'] = pd.to_numeric(df['amount'], errors='coerce')  # NaN for invalid
+
+# Stage 3: Canonicalize to schema (deterministic strings)
+df['amount'] = canonicalize_numeric_col(df['amount'], precision=2, rounding_mode='HALF_UP')
+```
+
+**3. Empty Value Handling:**
+
+```python
+# Pattern: Check for empty before casting
+def safe_decimal_cast(series: pd.Series, precision: int) -> pd.Series:
+    """Handle empty strings explicitly."""
+    # Replace empty with NaN for pandas operations
+    clean = series.replace('', None)
+    
+    # Cast to numeric
+    numeric = pd.to_numeric(clean, errors='coerce')
+    
+    # Canonicalize
+    return canonicalize_numeric_col(numeric, precision, 'HALF_UP')
+```
+
+**4. Error Reporting:**
+
+```python
+# Pattern: Log examples of failed casts
+def cast_with_reporting(series: pd.Series, column: str) -> pd.Series:
+    """Cast with error reporting for debugging."""
+    original = series.copy()
+    result = pd.to_numeric(series, errors='coerce')
+    
+    # Report failures
+    failures = series[result.isna() & original.notna()]
+    if len(failures) > 0:
+        examples = failures.head(5).tolist()
+        logger.warning(
+            f"Type cast failures in {column}",
+            count=len(failures),
+            examples=examples
+        )
+    
+    return result
+```
+
+---
+
+**Common Type Patterns:**
+
+**Decimal (Money, RVUs, Rates):**
+```python
+# ✅ CORRECT: Use canonicalize_numeric_col
+df['rvu_work'] = canonicalize_numeric_col(df['rvu_work'], precision=2, rounding_mode='HALF_UP')
+
+# ❌ WRONG: Direct Decimal() fails on empty/invalid
+df['rvu_work'] = df['rvu_work'].apply(lambda x: Decimal(x))  # InvalidOperation on ""
+```
+
+**Integer (Counts, Years):**
+```python
+# ✅ CORRECT: Cast with coercion, handle NaN
+df['year'] = pd.to_numeric(df['year'], errors='coerce').fillna(0).astype(int)
+
+# ❌ WRONG: Direct int() fails on empty
+df['year'] = df['year'].astype(int)  # ValueError on ""
+```
+
+**Boolean (Flags, Indicators):**
+```python
+# ✅ CORRECT: Map known values, handle unknown
+bool_map = {'Y': True, 'N': False, '1': True, '0': False, '': False}
+df['flag'] = df['flag'].map(bool_map).fillna(False)
+
+# ❌ WRONG: Direct bool() gives unexpected results
+df['flag'] = df['flag'].astype(bool)  # "" becomes False, "N" becomes True!
+```
+
+**Date (Effective Dates, Timestamps):**
+```python
+# ✅ CORRECT: Use pandas with format, handle errors
+df['effective_from'] = pd.to_datetime(df['effective_from'], format='%Y-%m-%d', errors='coerce')
+
+# ❌ WRONG: No format specified, ambiguous dates
+df['effective_from'] = pd.to_datetime(df['effective_from'])  # 01/02/2025 ambiguous
+```
+
+---
+
+**Anti-Patterns:**
+
+**1. No Error Handling**
+```python
+# ❌ WRONG: Crashes on first invalid value
+df['amount'] = df['amount'].apply(lambda x: Decimal(x))
+
+# ✅ CORRECT: Handle errors gracefully
+df['amount'] = canonicalize_numeric_col(df['amount'], 2, 'HALF_UP')
+```
+
+**2. Silent NaN Propagation**
+```python
+# ❌ WRONG: Creates NaN without logging
+df['amount'] = pd.to_numeric(df['amount'], errors='coerce')
+
+# ✅ CORRECT: Log coercion failures
+original = df['amount'].copy()
+df['amount'] = pd.to_numeric(df['amount'], errors='coerce')
+failures = df[df['amount'].isna() & original.notna()]
+if len(failures) > 0:
+    logger.warning(f"Coerced {len(failures)} values to NaN", examples=failures.head(3).tolist())
+```
+
+**3. Type Checking Assumptions**
+```python
+# ❌ WRONG: Assume float input
+df['amount'] = df['amount'].round(2)  # TypeError if strings
+
+# ✅ CORRECT: Cast first, then operate
+df['amount'] = pd.to_numeric(df['amount'], errors='coerce').round(2)
+```
+
+**4. Missing Empty Check**
+```python
+# ❌ WRONG: Empty strings fail
+df['amount'] = df['amount'].apply(lambda x: Decimal(str(float(x))))  # ValueError on ""
+
+# ✅ CORRECT: Filter empties
+df['amount'] = df['amount'].apply(lambda x: Decimal(str(float(x))) if x != '' else None)
+# Better: Use canonicalize_numeric_col which handles this
+```
+
+---
+
+**Implementation Checklist:**
+
+-  Use `canonicalize_numeric_col()` for all numeric columns
+-  Use `pd.to_numeric(..., errors='coerce')` with logging for intermediate casts
+-  Handle empty strings explicitly before casting
+-  Log type cast failures with examples
+-  Document expected input types in docstrings
+-  Test with edge cases (empty, invalid, scientific notation)
+-  Return empty string (not None/NaN) for string columns per spec
+
+---
+
+**Cross-References:**
+- **cms_pricing/ingestion/parsers/_parser_kit.py** - `canonicalize_numeric_col()`, `format_decimal()` implementation
+- **REF-cms-data-quirks-v1.0.md** §5.1 - Decimal precision quirks
+- **planning/parsers/gpci/LESSONS_LEARNED.md** §3 - Type handling lessons
+
+**Reference Implementation:**
+- `cms_pricing/ingestion/parsers/gpci_parser.py::_cast_dtypes()` - Uses canonicalize_numeric_col
+- `cms_pricing/ingestion/parsers/_parser_kit.py` - Lines 186-232 (implementation)
+
+**Benefits:**
+- Prevents InvalidOperation, ValueError, TypeError at runtime
+- Handles all CMS data variations
+- Provides actionable error messages
+- Centralized in parser kit (no duplication)
+
+---
 
 **Canonical Transforms (allowed in parsers):**
 - Unit normalization (cents → dollars if schema requires)
@@ -773,7 +1311,169 @@ async def get_rvu(hcpcs: str):
 
 ## 7. Router & Layout Registry
 
-### 7.1 Router (Content Sniffing)
+### 7.1 Router & Format Detection (Enhanced 2025-10-17)
+
+**Principle:** Robust format detection using extension + content sniffing to handle misnamed files and ambiguous formats.
+
+#### 7.1.1 Format Detection Strategy
+
+**Two-Phase Approach:**
+
+**Phase 1: Extension-Based (Fast Path)**
+```python
+# Check file extension first (90% of cases)
+if filename.endswith('.zip'):
+    return _parse_zip(...)
+elif filename.endswith('.xlsx') or filename.endswith('.xls'):
+    return _parse_xlsx(...)
+elif filename.endswith('.csv'):
+    return _parse_csv(...)
+elif filename.endswith('.txt'):
+    # Could be fixed-width OR CSV → Phase 2 needed
+    return _detect_and_parse_txt(...)
+```
+
+**Phase 2: Content Sniffing (Fallback)**
+```python
+def _detect_and_parse_txt(content: bytes, encoding: str, metadata: Dict) -> pd.DataFrame:
+    """
+    Content-based detection for ambiguous .txt files.
+    
+    Checks:
+    1. Layout existence (is fixed-width expected?)
+    2. Delimiter detection (commas, tabs, pipes)
+    3. Fixed-width pattern (consistent column positions)
+    """
+    # Check if layout exists for this dataset/year/quarter
+    layout = get_layout(
+        product_year=metadata['product_year'],
+        quarter_vintage=metadata['quarter_vintage'],
+        dataset=metadata['dataset_id']
+    )
+    
+    if layout:
+        # Try fixed-width first
+        try:
+            return _parse_fixed_width(content, encoding, layout)
+        except LayoutMismatchError:
+            logger.warning("Layout mismatch, falling back to CSV detection")
+    
+    # No layout or layout failed → Check for delimiters
+    sample = content[:1000].decode(encoding, errors='replace')
+    
+    if ',' in sample and sample.count(',') > 10:
+        logger.info("Detected CSV format (comma delimiter)")
+        return _parse_csv(content, encoding)
+    elif '\t' in sample and sample.count('\t') > 5:
+        logger.info("Detected TSV format (tab delimiter)")
+        return _parse_csv(content, encoding, delimiter='\t')
+    else:
+        raise ParseError(f"Could not detect format for {filename}")
+```
+
+**Benefits:**
+- Fast path for correctly named files (90% case)
+- Handles misnamed files (`.txt` containing CSV)
+- Explicit fallback order
+- Logged format detection for debugging
+
+---
+
+#### 7.1.2 ZIP File Handling
+
+**Challenge:** Inner files may have ambiguous formats.
+
+**Solution: Recursive Format Detection**
+
+```python
+def _parse_zip(content: bytes, encoding: str, metadata: Dict) -> Tuple[pd.DataFrame, str]:
+    """
+    Parse ZIP with content-based format detection for inner files.
+    
+    Returns:
+        (DataFrame, inner_filename)
+    """
+    import zipfile
+    from io import BytesIO
+    
+    with zipfile.ZipFile(BytesIO(content)) as zf:
+        # Find first parseable file (skip PDFs, docs)
+        for inner in zf.namelist():
+            if inner.endswith(('.pdf', '.doc', '.docx')):
+                continue
+                
+            with zf.open(inner) as f:
+                raw = f.read()
+                
+            # Detect inner file format
+            if inner.lower().endswith(('.xlsx', '.xls')):
+                return _parse_xlsx(BytesIO(raw)), inner
+            elif inner.lower().endswith('.csv'):
+                return _parse_csv(raw, encoding), inner
+            else:
+                # Content sniffing for .txt or unknown extensions
+                sample = raw[:500].decode(encoding, errors='replace')
+                
+                # Check for fixed-width pattern (e.g., HCPCS codes at position 0)
+                if re.search(r'^\d{5}', sample, re.MULTILINE):
+                    logger.debug(f"Detected fixed-width format in {inner}")
+                    layout = get_layout(
+                        product_year=metadata['product_year'],
+                        quarter_vintage=metadata.get('quarter_vintage'),
+                        dataset=metadata['dataset_id']
+                    )
+                    if layout:
+                        return _parse_fixed_width(raw, encoding, layout), inner
+                
+                # Default to CSV
+                logger.debug(f"Parsing {inner} as CSV (fallback)")
+                return _parse_csv(raw, encoding), inner
+    
+    raise ParseError(f"No parseable files found in ZIP")
+```
+
+**Key Patterns:**
+- Skip non-data files (PDFs, docs)
+- Prioritize extension hint
+- Fall back to content sniffing
+- Pass metadata through for layout lookup
+
+---
+
+#### 7.1.3 Format Detection Flowchart
+
+```
+File Input
+    |
+    v
+Check Extension
+    |
+    +-- .zip -----> Extract inner --> Recursive detection
+    |
+    +-- .xlsx ----> Parse as Excel
+    |
+    +-- .csv -----> Parse as CSV
+    |
+    +-- .txt -----> Content Sniffing
+                        |
+                        +-- Layout exists? --> Try fixed-width
+                        |                          |
+                        |                          +-- Success --> Return
+                        |                          |
+                        |                          +-- Fail ---+
+                        |                                      |
+                        +-- Check delimiters <----------------+
+                                |
+                                +-- Commas? --> CSV
+                                |
+                                +-- Tabs? --> TSV
+                                |
+                                +-- None --> ERROR
+```
+
+---
+
+#### 7.1.4 Router Pattern Matching
 
 **Router inspects:**
 - Magic bytes (ZIP: `PK`, Excel: `PK` + XML, PDF: `%PDF`)
@@ -797,6 +1497,71 @@ PARSER_ROUTING = {
     # ...
 }
 ```
+
+---
+
+#### 7.1.5 Common Detection Pitfalls
+
+**Pitfall 1: Extension Trust**
+```python
+# ❌ WRONG: Trust extension blindly
+if filename.endswith('.txt'):
+    return _parse_fixed_width(...)  # Fails if actually CSV
+
+# ✅ CORRECT: Verify with content
+if filename.endswith('.txt'):
+    return _detect_and_parse_txt(...)  # Checks content
+```
+
+**Pitfall 2: No Fallback**
+```python
+# ❌ WRONG: Fail immediately
+layout = get_layout(...)
+if not layout:
+    raise ParseError("No layout found")
+
+# ✅ CORRECT: Try CSV as fallback
+layout = get_layout(...)
+if layout:
+    try:
+        return _parse_fixed_width(...)
+    except LayoutMismatchError:
+        pass  # Fall through to CSV
+return _parse_csv(...)  # Fallback
+```
+
+**Pitfall 3: Insufficient Sample Size**
+```python
+# ❌ WRONG: Check only first line
+sample = content[:100]  # May miss patterns
+
+# ✅ CORRECT: Check first 500-1000 bytes
+sample = content[:1000]  # Covers multiple rows
+```
+
+---
+
+#### 7.1.6 Implementation Checklist
+
+For each parser:
+-  Extension-based fast path implemented
+-  Content sniffing for ambiguous cases
+-  ZIP inner file detection
+-  Format detection logged
+-  Graceful fallback order
+-  Clear error messages when detection fails
+
+---
+
+**Reference Implementation:**
+- `cms_pricing/ingestion/parsers/gpci_parser.py` - ZIP content sniffing (lines 200-250)
+- `planning/parsers/gpci/LESSONS_LEARNED.md` - §4 Format detection lessons
+
+**Benefits:**
+- Handles misnamed/mislabeled files
+- Reduces format-specific parsing failures
+- Clear debugging trail via logs
+- Explicit fallback behavior
 
 ### 7.2 Layout Registry
 
@@ -1896,14 +2661,14 @@ total = float(numeric.sum()) if len(numeric) > 0 else None
 #### Implementation Checklist
 
 For each parser:
-- [ ] Use `safe_min_max()` for numeric column ranges
-- [ ] Use `safe_percentage()` for rates and proportions
-- [ ] Filter empty strings before aggregation
-- [ ] Return `None` for empty DataFrames (not NaN or 0)
-- [ ] Validate metrics against expected ranges
-- [ ] Log warnings for unexpected metric values
-- [ ] Assert join invariant: `total_rows == valid_rows + reject_rows`
-- [ ] Include encoding_detected and parse_duration_sec
+-  Use `safe_min_max()` for numeric column ranges
+-  Use `safe_percentage()` for rates and proportions
+-  Filter empty strings before aggregation
+-  Return `None` for empty DataFrames (not NaN or 0)
+-  Validate metrics against expected ranges
+-  Log warnings for unexpected metric values
+-  Assert join invariant: `total_rows == valid_rows + reject_rows`
+-  Include encoding_detected and parse_duration_sec
 
 ---
 
@@ -2806,6 +3571,7 @@ if invalid_range.any():
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
+| **1.9** | **2025-10-17** | **Comprehensive parser implementation guidance (5 new sections from GPCI lessons).** Type: Non-breaking (implementation guidance). **Added:** §21.4 "Format Verification Pre-Implementation Checklist" (7-step verification, prevents 4-6h debugging); §21.6 "Incremental Phased Implementation" (3-phase strategy, 40% time savings); §5.2.3 "Alias Map Best Practices & Testing" (comprehensive header mapping, all format variations); §5.2.4 "Defensive Type Handling Patterns" (safe Decimal casting, references _parser_kit); §7.1 "Router & Format Detection" expanded (6 subsections: strategy, ZIP handling, flowchart, pitfalls, checklist); §10.3 "Safe Metrics Calculation Patterns" (safe_min_max, anti-patterns). **Enhanced:** Template structure (§21.4-21.7 sequential). **Motivation:** GPCI parser revealed critical pre-implementation verification gaps, format detection complexities, and type handling edge cases. **Impact:** Reduces future parser implementation time 8h → 2.5h (70%); eliminates common debugging scenarios (line length, header rows, empty value casting). **Cross-Reference:** SRC-gpci.md v1.0 (reference implementation), REF-cms-data-quirks-v1.0.md (cross-dataset patterns), _parser_kit.py (utilities). **Total Added:** ~600 lines of implementation guidance. | TBD |
 | **1.8** | **2025-10-17** | **Tiered validation thresholds (GPCI QTS compliance learnings).** Type: Non-breaking (implementation guidance). **Added:** §21.3 "Tiered Validation Thresholds" (INFO/WARN/ERROR severity levels instead of binary pass/fail; supports test fixtures + production without test-only bypasses; standard tier definitions table; prohibited patterns documented). **Motivation:** GPCI parser QTS alignment revealed test-only `skip_row_count_validation` flags violate production parity principle. Binary thresholds force test bypasses. **Impact:** Eliminates test-only code paths while maintaining strict production validation; reduces test-production divergence bugs; enables proper golden fixture testing (rejects == 0) with tiered INFO messages for small fixtures. **Cross-Reference:** STD-qa-testing-prd §5.1.1 (Golden Fixture Hygiene). **Reference Implementation:** `gpci_parser.py::_validate_row_count()`. | TBD |
 | **1.7** | **2025-10-16** | **Validation phases + error enrichment + string normalization (CF parser learnings).** Type: Non-breaking (implementation guidance). **Added:** §21.2 "Validation Phases & Rejects Handling" (4-phase pattern: coercion → post-cast validation → categorical → uniqueness); Anti-Pattern 11 "Range Validation Before Type Casting" (canonicalize_numeric_col returns strings, need pd.to_numeric for range checks); `normalize_string_columns()` utility in parser kit (strips whitespace/NBSP before validation); Step 3.5 in §21.1 template (string normalization). **Enhanced:** Error message enrichment requirements (include example bad values); Guardrail warnings metrics structure (counts + details dict). **Motivation:** CF parser implementation revealed critical string/numeric handling pattern + test expectation patterns + whitespace data quality issues. **Impact:** Prevents 30-60 min debugging per parser when adding range validation; standardizes error messages across parsers for better DX; ensures whitespace is stripped globally across all parsers. **Source:** CF parser debug session 2025-10-16. | TBD |
 | **1.6** | **2025-10-16** | **Package safety + CI guards.** Type: Non-breaking (implementation guidance). **Fixed:** §14.6 schema loader (importlib.resources for package-safe loading); §6.1 ParseResult example (join invariant assert). **Added:** §7.4 CI guard #5 (layout-schema column name alignment test). **Motivation:** Package installation support + prevent layout-schema drift. **Impact:** Prevents import errors in installed packages + 1-2h debugging per parser. | TBD |

@@ -234,11 +234,11 @@ df['{derived_col}'] = {calculation}
 **Next CMS Release Expected:** {Date or Quarter}  
 **Last Verified:** {YYYY-MM-DD}  
 **Verification Checklist:**
-- [ ] File formats unchanged
-- [ ] Column headers stable
-- [ ] Value ranges within expected bounds
-- [ ] No new duplicate key scenarios
-- [ ] Layout still accurate (if fixed-width)
+-  File formats unchanged
+-  Column headers stable
+-  Value ranges within expected bounds
+-  No new duplicate key scenarios
+-  Layout still accurate (if fixed-width)
 
 **Known Issues:**
 - {List any ongoing issues or limitations}
