@@ -13,6 +13,14 @@
 - **STD-qa-testing-prd-v1.0.md:** Testing requirements for RVU ingestion
 - **REF-cms-pricing-source-map-prd-v1.0.md:** Canonical CMS pricing source inventory
 
+**Implementation Resources:**
+- **GPCI Parser Planning:** `planning/parsers/gpci/README.md` (index of all GPCI implementation docs)
+- **Implementation Plan:** `planning/parsers/gpci/IMPLEMENTATION.md` (v2.1 - authoritative parser guide)
+- **Pre-Implementation:** `planning/parsers/gpci/PRE_IMPLEMENTATION_PLAN.md` (layout verification & setup)
+- **Schema Contract:** `cms_pricing/ingestion/contracts/cms_gpci_v1.2.json` (current)
+- **Layout Registry:** `cms_pricing/ingestion/parsers/layout_registry.py` (GPCI_2025D_LAYOUT v2025.4.1)
+- **Sample Data:** `sample_data/rvu25d_0/GPCI2025.txt` (CMS RVU25D bundle)
+
 ## Work-Backwards Checklist (Required)
 Reference **REF-cms-pricing-source-map-prd-v1.0.md** before any RVU/GPCI ingestion change. Validate the mapped artifacts, layouts, and checklist items, then capture deltas here or in the linked reference prior to implementation.
 

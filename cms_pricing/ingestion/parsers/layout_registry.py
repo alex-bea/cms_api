@@ -73,17 +73,21 @@ PPRRVU_2025D_LAYOUT = {
 # ===================================================================
 
 GPCI_2025D_LAYOUT = {
-    'version': 'v2025.4.0',
-    'min_line_length': 150,
+    'version': 'v2025.4.1',  # Patch bump: CMS-native names + corrected positions
     'source_version': '2025D',
+    'min_line_length': 100,  # Actual data=150; conservative with margin
+    'data_start_pattern': r'^\d{5}',  # MAC code (5 digits) at line start
     'columns': {
-        'mac': {'start': 0, 'end': 5, 'type': 'string', 'nullable': False},
-        'state': {'start': 15, 'end': 17, 'type': 'string', 'nullable': False},
-        'locality_id': {'start': 24, 'end': 26, 'type': 'string', 'nullable': False},
-        'locality_name': {'start': 25, 'end': 75, 'type': 'string', 'nullable': True},
-        'work_gpci': {'start': 120, 'end': 126, 'type': 'decimal', 'nullable': False},
-        'pe_gpci': {'start': 133, 'end': 139, 'type': 'decimal', 'nullable': False},
-        'mp_gpci': {'start': 140, 'end': 146, 'type': 'decimal', 'nullable': False},
+        # Core schema columns (CMS-native names, schema v1.2)
+        'locality_code': {'start': 24, 'end': 26, 'type': 'string', 'nullable': False},
+        'gpci_work':     {'start': 121, 'end': 126, 'type': 'decimal', 'nullable': False},
+        'gpci_pe':       {'start': 133, 'end': 138, 'type': 'decimal', 'nullable': False},
+        'gpci_mp':       {'start': 145, 'end': 150, 'type': 'decimal', 'nullable': False},
+        
+        # Optional enrichment columns (excluded from hash)
+        'mac':           {'start': 0, 'end': 5, 'type': 'string', 'nullable': True},
+        'state':         {'start': 16, 'end': 18, 'type': 'string', 'nullable': True},
+        'locality_name': {'start': 28, 'end': 78, 'type': 'string', 'nullable': True},
     }
 }
 
@@ -150,8 +154,12 @@ LAYOUT_REGISTRY = {
     ('pprrvu', '2025', 'Q2'): PPRRVU_2025D_LAYOUT,  # Same layout for Q2
     ('pprrvu', '2025', 'Q1'): PPRRVU_2025D_LAYOUT,  # Same layout for Q1
     
-    ('gpci', '2025', 'Q4'): GPCI_2025D_LAYOUT,
-    ('gpci', '2025', None): GPCI_2025D_LAYOUT,  # Annual
+    # GPCI 2025 layouts (all quarters use same 2025D layout)
+    ('gpci', '2025', 'A'): GPCI_2025D_LAYOUT,
+    ('gpci', '2025', 'B'): GPCI_2025D_LAYOUT,
+    ('gpci', '2025', 'C'): GPCI_2025D_LAYOUT,
+    ('gpci', '2025', 'D'): GPCI_2025D_LAYOUT,
+    ('gpci', '2025', None): GPCI_2025D_LAYOUT,  # Annual fallback
     
     ('oppscap', '2025', 'Q4'): OPPSCAP_2025D_LAYOUT,
     ('oppscap', '2025', 'Q3'): OPPSCAP_2025D_LAYOUT,

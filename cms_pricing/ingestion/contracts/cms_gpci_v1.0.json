@@ -1,7 +1,10 @@
 {
   "dataset_name": "cms_gpci",
   "version": "1.1",
+  "status": "DEPRECATED - Use cms_gpci_v1.2.json instead (CMS-native naming)",
   "generated_at": "2025-10-15T00:00:00Z",
+  "deprecated_at": "2025-10-16T00:00:00Z",
+  "superseded_by": "cms_gpci_v1.2.json",
   "hash_spec_version": "1",
   "natural_keys": ["locality_code", "effective_from"],
   "column_order": ["locality_code", "state_fips", "gpci_work", "gpci_pe", "gpci_malp", "effective_from"],

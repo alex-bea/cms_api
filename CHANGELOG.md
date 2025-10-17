@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Planning Files Organization (2025-10-16)**: Reorganized 26 planning documents into structured `planning/` directory
+  - Created hierarchy: `planning/parsers/`, `planning/project/`, `planning/architecture/`
+  - Parser-specific organization: GPCI (8 files), PPRRVU (4 files), CF (ready for future)
+  - Archive pattern: Superseded docs preserved in `archive/` subdirectories
+  - Root cleanup: 26 → 5 essential files (80% reduction)
+  - Navigation aids: `planning/README.md`, `planning/INDEX.md`, `planning/QUICK_NAVIGATION.md`
+  - Active GPCI plan: `planning/parsers/gpci/IMPLEMENTATION.md` (v2.1)
+  - Benefit: Clean root, scalable structure, clear discoverability
+
 ### Added (Phase 1)
 - **PPRRVU Parser (COMPLETE)**: Full implementation with schema-aligned fixed-width, CSV, XLSX support
   - Natural keys: `['hcpcs', 'modifier', 'status_code', 'effective_from']`
@@ -131,9 +141,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Note: CHANGELOG-only commits (729d06d, 1f394a1) excluded per audit convention._
 
+### Added (Phase 1 - Continued)
+- **Conversion Factor Parser (COMPLETE)**: Full implementation with CSV, XLSX, ZIP support
+  - Natural keys: `['cf_type', 'effective_from']` (BLOCK duplicates per §8.5)
+  - Schema: `cms_conversion_factor_v2.0` (precision=4, HALF_UP rounding)
+  - Comprehensive golden tests + 11 negative test fixtures
+  - CMS authoritative value guardrails (Federal Register comparison)
+  - Tasks A-D from deferred improvements (metadata preflight, streaming file reads)
+  - Validation phases: coercion → post-cast → categorical → uniqueness
+
+- **GPCI Schema v1.2 (CMS-Native)**: Updated GPCI schema with CMS domain expert improvements
+  - BREAKING: `gpci_malp` → `gpci_mp` (CMS-native "MP" terminology)
+  - BREAKING: `state_fips` (required) → `state` (optional enrichment)
+  - Added `source_release`, `source_inner_file` for CMS provenance tracking
+  - Updated quality thresholds: 100-120 rows (CMS post-CA consolidation: ~109 localities)
+  - Enhanced GPCI bounds: [0.30, 2.00] warn, [0.20, 2.50] fail (headroom for edge localities)
+  - Implementation plan: `planning/parsers/gpci/IMPLEMENTATION.md` (v2.1)
+  - Rationale document: `planning/parsers/gpci/GPCI_SCHEMA_V1.2_RATIONALE.md`
+
 ### Planned (Next Sessions)
-- Conversion Factor parser
-- GPCI, ANES, OPPSCAP, Locality parsers
+
+**Documentation Updates (Pre-Implementation):**
+- **PRD-rvu-gpci (v0.1 → v0.2)** - Schema v1.2 migration decisions (~30 min)
+  - Add §3.3.1 Schema Evolution with v1.2 breaking changes
+  - Update §2.4 quality thresholds (100-120 rows, [0.20, 2.50] GPCI bounds)
+  - Document CMS-native terminology rationale (gpci_mp vs gpci_malp)
+  - Reference GPCI_SCHEMA_V1.2_RATIONALE.md for full migration details
+
+**Phase 1 Parsers (Remaining):**
+- GPCI parser (~180 lines, 2.5 hours) - Schema v1.2 ready, implementation plan complete
+- ANES parser (~100 lines, 2 hours)
+- OPPSCAP parser (~120 lines, 2 hours)
+- Locality parser (~100 lines, 2 hours)
+
+**Phase 2 Enhancements:**
 - Phase 2: Advanced routing (weighted voting, confidence scoring, PII detection)
 - Phase 2: Vocabulary registry with normalizers
 - Phase 2: Telemetry and observability metrics

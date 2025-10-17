@@ -1,0 +1,230 @@
+{
+  "dataset_name": "cms_gpci",
+  "version": "1.2",
+  "generated_at": "2025-10-16T00:00:00Z",
+  "hash_spec_version": "1",
+  "natural_keys": ["locality_code", "effective_from"],
+  "column_order": ["locality_code", "gpci_work", "gpci_pe", "gpci_mp", "effective_from"],
+  "hash_metadata_exclusions": ["release_id", "vintage_date", "product_year", "quarter_vintage", "source_filename", "source_file_sha256", "source_uri", "source_release", "source_inner_file", "parsed_at", "row_content_hash", "effective_to", "locality_name", "state", "mac"],
+  "columns": {
+    "locality_code": {
+      "name": "locality_code",
+      "type": "str",
+      "nullable": false,
+      "description": "2-digit Medicare locality code (zero-padded)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^\\d{2}$",
+      "sample_values": ["01", "05", "99"]
+    },
+    "gpci_work": {
+      "name": "gpci_work",
+      "type": "float64",
+      "precision": 3,
+      "scale": 3,
+      "rounding_mode": "HALF_UP",
+      "multipleOf": 0.001,
+      "nullable": false,
+      "description": "Work GPCI index (raw from CMS; floors applied at pricing time)",
+      "unit": null,
+      "domain": null,
+      "min_value": 0.3,
+      "max_value": 2.0,
+      "pattern": null,
+      "sample_values": [1.000, 1.500, 1.122]
+    },
+    "gpci_pe": {
+      "name": "gpci_pe",
+      "type": "float64",
+      "precision": 3,
+      "scale": 3,
+      "rounding_mode": "HALF_UP",
+      "multipleOf": 0.001,
+      "nullable": false,
+      "description": "Practice expense GPCI index",
+      "unit": null,
+      "domain": null,
+      "min_value": 0.3,
+      "max_value": 2.0,
+      "pattern": null,
+      "sample_values": [0.869, 1.081, 1.569]
+    },
+    "gpci_mp": {
+      "name": "gpci_mp",
+      "type": "float64",
+      "precision": 3,
+      "scale": 3,
+      "rounding_mode": "HALF_UP",
+      "multipleOf": 0.001,
+      "nullable": false,
+      "description": "Malpractice (MP) GPCI index (CMS terminology)",
+      "unit": null,
+      "domain": null,
+      "min_value": 0.3,
+      "max_value": 2.0,
+      "pattern": null,
+      "sample_values": [0.575, 0.592, 1.859]
+    },
+    "effective_from": {
+      "name": "effective_from",
+      "type": "datetime64[ns]",
+      "nullable": false,
+      "description": "Effective start date (RVU A=Jan 1, B=Apr 1, C=Jul 1, D=Oct 1)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": ["2025-01-01", "2025-04-01"]
+    },
+    "effective_to": {
+      "name": "effective_to",
+      "type": "datetime64[ns]",
+      "nullable": true,
+      "description": "Effective end date (next release eve; null for current)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
+    "locality_name": {
+      "name": "locality_name",
+      "type": "str",
+      "nullable": true,
+      "description": "Locality name (optional enrichment from CMS Locality Key)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": ["ALABAMA", "ALASKA", "MANHATTAN"]
+    },
+    "state": {
+      "name": "state",
+      "type": "str",
+      "nullable": true,
+      "description": "2-letter state code (optional enrichment from Locality Key, not FIPS)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^[A-Z]{2}$",
+      "sample_values": ["AL", "AK", "NY"]
+    },
+    "mac": {
+      "name": "mac",
+      "type": "str",
+      "nullable": true,
+      "description": "Medicare Administrative Contractor code (optional from source)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^\\d{5}$",
+      "sample_values": ["10112", "02102"]
+    },
+    "source_release": {
+      "name": "source_release",
+      "type": "str",
+      "nullable": false,
+      "description": "CMS release identifier (e.g., RVU25A, RVU25D)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": ["RVU25A", "RVU25D"]
+    },
+    "source_inner_file": {
+      "name": "source_inner_file",
+      "type": "str",
+      "nullable": false,
+      "description": "Inner filename from RVU ZIP (e.g., GPCI2025.csv)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": ["GPCI2025.csv", "GPCI2025.txt"]
+    },
+    "row_content_hash": {
+      "name": "row_content_hash",
+      "type": "str",
+      "nullable": false,
+      "description": "64-character SHA-256 hex digest of row content per STD-parser-contracts v1.7 §5.2. Computed from columns in declared order excluding metadata fields. Uses schema-defined precision for numeric normalization.",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^[a-f0-9]{64}$",
+      "sample_values": ["a1b2c3d4e5f6789012345678901234567890123456789012345678901234"]
+    }
+  },
+  "primary_keys": [
+    "locality_code",
+    "effective_from"
+  ],
+  "partition_columns": [
+    "effective_from"
+  ],
+  "business_rules": [
+    "Locality code must be 2 digits (zero-padded)",
+    "GPCI indices must be between 0.3 and 2.0 (schema bounds)",
+    "Parser delivers raw GPCI values; floors (e.g., Alaska 1.50 work floor) applied at pricing time",
+    "Expected 100-120 localities per release (CMS post-CA consolidation universe)",
+    "Locality reconfiguration events may cause row count deltas across releases"
+  ],
+  "quality_thresholds": {
+    "null_rate_threshold": 0.0,
+    "duplicate_rate_threshold": 0.0,
+    "row_count_min": 90,
+    "row_count_expected_min": 100,
+    "row_count_expected_max": 120,
+    "gpci_warn_min": 0.30,
+    "gpci_warn_max": 2.00,
+    "gpci_fail_min": 0.20,
+    "gpci_fail_max": 2.50
+  },
+  "storage_note": "Stored as float64 in Parquet for efficiency. Canonicalized to Decimal with schema-defined precision before hashing to ensure determinism. Enrichment columns (locality_name, state, mac) excluded from hash for stability.",
+  "enrichment_note": "locality_name, state, mac are optional enrichments from CMS Locality Key or source files. Parser may include if present in source; warehouse layer performs full enrichment via Locality crosswalk.",
+  "changelog": [
+    {
+      "version": "1.2",
+      "date": "2025-10-16",
+      "changes": [
+        "BREAKING: Renamed gpci_malp → gpci_mp (CMS-native terminology)",
+        "BREAKING: Removed state_fips as required column (now optional 'state' enrichment)",
+        "BREAKING: Updated column_order to lean schema (locality_code, gpci_work, gpci_pe, gpci_mp, effective_from)",
+        "Added source_release, source_inner_file for CMS provenance (required)",
+        "Added locality_name, state, mac as optional enrichment columns",
+        "Updated hash_metadata_exclusions to exclude enrichment columns",
+        "Added quality_thresholds for CMS-realistic row counts (100-120, fail <90)",
+        "Added quality_thresholds for GPCI bounds (warn [0.30, 2.00], fail [0.20, 2.50])",
+        "Updated business_rules to reflect CMS locality universe (~109 post-consolidation)",
+        "Added enrichment_note explaining parser vs warehouse enrichment strategy",
+        "Updated gpci_work description to clarify floors applied at pricing time"
+      ]
+    },
+    {
+      "version": "1.1",
+      "date": "2025-10-15",
+      "changes": [
+        "Added precision (3dp), rounding_mode (HALF_UP), scale, multipleOf to 3 GPCI numeric columns for hash stability",
+        "Updated row_content_hash pattern from 16-char to 64-char SHA-256 digest",
+        "Added hash_spec_version, column_order, hash_metadata_exclusions for deterministic hashing",
+        "Enables schema-driven numeric precision per STD-parser-contracts v1.1"
+      ]
+    },
+    {
+      "version": "1.0",
+      "date": "2025-09-30",
+      "changes": ["Initial GPCI schema contract"]
+    }
+  ]
+}
+
+
