@@ -1,137 +1,279 @@
-"""Utility to migrate unchecked Markdown checkboxes into GitHub Project tasks."""
+#!/usr/bin/env python3
+"""Chunked migration of Markdown checkboxes into GitHub Project issues."""
 
 from __future__ import annotations
 
+import argparse
+import json
 import pathlib
 import re
 import subprocess
 import sys
-from typing import Iterable, Optional
+import time
+from typing import Iterable, List, Optional, Tuple
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-CHECKBOX_PATTERN = re.compile(r"^\s*[-*]\s*\[\s*\]\s*(.+)$")
-HEADING_PATTERN = re.compile(r"^(#+)\s+(.*)")
+RE_ITEM = re.compile(r"^\s*[-*]\s*\[\s*\]\s*(.+)$")
+RE_HEADING = re.compile(r"^(?P<hashes>#+)\s+(?P<title>.+?)\s*$")
+
 DEFAULT_LABELS = ["from-docs-import", "triage"]
-
-# Files to scan for checkboxes. Adjust as needed.
-DEFAULT_GLOBS = [
-    "planning/project/NEXT_TODOS.md",
-    "planning/project/INGESTOR_DEVELOPMENT_TASKS.md",
-    "planning/project/STATUS_REPORT.md",
-    "planning/project/TESTING_SUMMARY.md",
-    "planning/project/github_tasks_plan.md",
-]
+DEFAULT_SLEEP = 0.8  # seconds between API calls
 
 
-def git_repo_url() -> str:
-    raw = (
-        subprocess.check_output(
-            ["git", "config", "--get", "remote.origin.url"], text=True
-        )
-        .strip()
-        .removesuffix(".git")
-    )
-    if raw.startswith("git@github.com:"):
-        user_repo = raw.split(":", 1)[1]
-        return f"https://github.com/{user_repo}"
-    return raw
+def run(cmd: List[str], capture: bool = True, check: bool = True) -> str:
+    if capture:
+        result = subprocess.run(cmd, text=True, capture_output=True, check=check)
+        return result.stdout.strip()
+    subprocess.run(cmd, check=check)
+    return ""
 
 
-def current_commit() -> str:
-    return (
-        subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    )
+def repo_http_url() -> str:
+    url = run(["git", "config", "--get", "remote.origin.url"])
+    if url.endswith(".git"):
+        url = url[:-4]
+    if url.startswith("git@github.com:"):
+        url = "https://github.com/" + url.split(":", 1)[1]
+    return url
 
 
-def github_anchor(text: str) -> str:
-    slug = re.sub(r"[^\w\s-]", "", text).strip().lower()
+def md_anchor(title: str) -> str:
+    slug = re.sub(r"[^\w\s-]", "", title).strip().lower()
     slug = re.sub(r"\s+", "-", slug)
     slug = re.sub(r"-{2,}", "-", slug)
     return slug
 
 
-def headed_lines(
-    lines: Iterable[str],
-) -> Iterable[tuple[int, str, Optional[str]]]:
-    current_heading: Optional[str] = None
-    for index, line in enumerate(lines, start=1):
-        heading_match = HEADING_PATTERN.match(line)
-        if heading_match:
-            current_heading = heading_match.group(2).strip()
-        yield index, line.rstrip("\n"), current_heading
+def search_existing_issue(title: str) -> Optional[str]:
+    try:
+        out = run(
+            [
+                "gh",
+                "issue",
+                "list",
+                "--state",
+                "open",
+                "--search",
+                f'"{title}" in:title',
+                "--json",
+                "title,url",
+            ]
+        )
+        data = json.loads(out)
+    except Exception:
+        return None
+
+    for item in data:
+        if item.get("title") == title:
+            return item.get("url")
+    return None
 
 
-def create_issue(title: str, body: str) -> str:
+def create_issue(
+    title: str,
+    body: str,
+    labels: List[str],
+    assignee: Optional[str],
+    dry_run: bool,
+) -> str:
+    if dry_run:
+        return "(dry-run) #0"
+
     cmd = ["gh", "issue", "create", "--title", title, "--body", body]
-    for label in DEFAULT_LABELS:
-        cmd.extend(["--label", label])
-    output = subprocess.check_output(cmd, text=True).strip()
-    print(f"Created issue: {output}")
-    return output
+    for label in labels:
+        cmd += ["--label", label]
+    if assignee:
+        cmd += ["--assignee", assignee]
+    return run(cmd)
 
 
-def add_to_project(item_url: str, project_number: str, owner: str) -> None:
-    subprocess.check_call(
-        ["gh", "project", "item-add", project_number, "--owner", owner, "--url", item_url]
+def add_to_project(
+    issue_url: str,
+    project_number: int,
+    owner: str,
+    dry_run: bool,
+) -> None:
+    if dry_run:
+        return
+    run(
+        [
+            "gh",
+            "project",
+            "item-add",
+            str(project_number),
+            "--owner",
+            owner,
+            "--url",
+            issue_url,
+        ],
+        capture=False,
     )
 
 
-def migrate_file(
-    rel_path: pathlib.Path,
-    project_number: str,
-    repo_url: str,
-    commit_sha: str,
-    owner: str,
-) -> int:
-    created = 0
-    full_path = ROOT / rel_path
-    lines = full_path.read_text(encoding="utf-8", errors="ignore").splitlines()
-    for line_no, line, heading in headed_lines(lines):
-        match = CHECKBOX_PATTERN.match(line)
-        if not match:
+def iter_md_items(
+    path: pathlib.Path, heading: Optional[str]
+) -> Iterable[Tuple[int, str, str]]:
+    """Yield (line_no, checkbox_text, current_heading)."""
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    current_heading: Optional[str] = None
+    in_scope = heading is None
+
+    for line_no, line in enumerate(lines, start=1):
+        match_heading = RE_HEADING.match(line)
+        if match_heading:
+            current_heading = match_heading.group("title").strip()
+            if heading is None:
+                in_scope = True
+            else:
+                in_scope = bool(
+                    current_heading == heading
+                    or re.fullmatch(heading, current_heading)
+                )
             continue
 
-        title = match.group(1).strip()
-        anchor = f"#{github_anchor(heading)}" if heading else ""
-        rel_posix = rel_path.as_posix()
-        source_url = f"{repo_url}/blob/{commit_sha}/{rel_posix}{anchor}"
-        body = (
-            f"Imported from `{rel_posix}` (line {line_no}).\n\n"
-            f"**Source:** {source_url}\n\n"
-            "Please add acceptance criteria and assign an owner."
-        )
-        issue_url = create_issue(title, body)
-        add_to_project(issue_url, project_number, owner)
-        created += 1
-    return created
+        match_item = RE_ITEM.match(line)
+        if match_item and in_scope:
+            yield line_no, match_item.group(1).strip(), current_heading or ""
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) < 2:
-        print("Usage: python tools/migrate_checkboxes_to_project.py <PROJECT_NUMBER> [glob...]", file=sys.stderr)
-        return 2
+def replace_block_with_pointer(
+    path: pathlib.Path,
+    heading: str,
+    issue_urls: List[str],
+) -> None:
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    output: List[str] = []
+    in_scope = False
+    replaced = False
+    i = 0
 
-    project_number = argv[1]
-    globs = argv[2:] if len(argv) > 2 else DEFAULT_GLOBS
+    while i < len(lines):
+        line = lines[i]
+        match_heading = RE_HEADING.match(line)
+        if match_heading:
+            current = match_heading.group("title").strip()
+            in_scope = bool(current == heading or re.fullmatch(heading, current))
+            output.append(line)
+            i += 1
+            continue
 
-    repo_url = git_repo_url()
+        if in_scope and not replaced:
+            start = i
+            while i < len(lines) and RE_ITEM.match(lines[i]):
+                i += 1
+            if i > start:
+                pointer = (
+                    "> **Tasks now tracked in Project:** "
+                    + (", ".join(issue_urls) if issue_urls else "(migrated)")
+                )
+                output.append(pointer)
+                replaced = True
+                continue
+
+        output.append(line)
+        i += 1
+
+    path.write_text("\n".join(output) + "\n", encoding="utf-8")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Migrate unchecked Markdown checkboxes to GitHub Project tasks."
+    )
+    parser.add_argument("project_number", type=int, help="Project (v2) number")
+    parser.add_argument("paths", nargs="+", help="Markdown file paths")
+    parser.add_argument(
+        "--heading",
+        help="Exact or regex heading title to scope migration (per file).",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Maximum issues to create in this run (0 = no limit).",
+    )
+    parser.add_argument(
+        "--labels",
+        default="from-docs-import,triage",
+        help="Comma-separated labels for created issues.",
+    )
+    parser.add_argument("--assignee", help="Assign created issues to this user.")
+    parser.add_argument(
+        "--sleep",
+        type=float,
+        default=DEFAULT_SLEEP,
+        help="Pause between API calls (seconds).",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview without creating issues or editing files.",
+    )
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="Replace the migrated block under the heading with a pointer note.",
+    )
+    args = parser.parse_args()
+
+    repo_url = repo_http_url()
+    commit_sha = run(["git", "rev-parse", "HEAD"])
+    labels = [label.strip() for label in args.labels.split(",") if label.strip()]
     owner = repo_url.rstrip("/").split("github.com/", 1)[1].split("/", 1)[0]
-    commit_sha = current_commit()
 
-    total = 0
-    for pattern in globs:
-        for path in ROOT.glob(pattern):
-            if not path.exists():
-                continue
-            if path.is_dir():
-                continue
-            rel_path = path.relative_to(ROOT)
-            print(f"Scanning {rel_path}...")
-            total += migrate_file(rel_path, project_number, repo_url, commit_sha, owner)
+    created_urls: List[str] = []
+    created_count = 0
 
-    print(f"Migration complete. Created {total} issues.")
+    for path_str in args.paths:
+        path = pathlib.Path(path_str)
+        if not path.exists():
+            print(f"⚠️  Missing file: {path}")
+            continue
+        if not path.is_file():
+            print(f"⚠️  Skipping non-file path: {path}")
+            continue
+
+        for line_no, title, section_heading in iter_md_items(path, args.heading):
+            if args.limit and created_count >= args.limit:
+                break
+
+            existing = search_existing_issue(title)
+            if existing:
+                print(f"↩️  Found existing issue for '{title}': {existing}")
+                created_urls.append(existing)
+                continue
+
+            anchor = f"#{md_anchor(section_heading)}" if section_heading else ""
+            source = (
+                f"{repo_url}/blob/{commit_sha}/{path.as_posix()}{anchor}"
+            )
+            body = (
+                f"Imported from `{path.as_posix()}` line {line_no}.\n\n"
+                f"**Source:** {source}\n\n"
+                "Add acceptance criteria and assign an owner."
+            )
+
+            issue_url = create_issue(
+                title, body, labels, args.assignee, args.dry_run
+            )
+            print(f"✅ Created: {title} -> {issue_url}")
+            created_urls.append(issue_url)
+            created_count += 1
+
+            add_to_project(issue_url, args.project_number, owner, args.dry_run)
+            time.sleep(args.sleep)
+
+        if args.replace and not args.dry_run and args.heading:
+            replace_block_with_pointer(path, args.heading, created_urls)
+
+    if created_urls:
+        print("\nCreated or linked issues:")
+        for url in created_urls:
+            print(f"- {url}")
+    else:
+        print("No issues created.")
+
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(main())

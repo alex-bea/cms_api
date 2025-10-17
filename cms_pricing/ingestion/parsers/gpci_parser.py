@@ -142,21 +142,29 @@ def parse_gpci(
     
     logger.info("Encoding detected", encoding=encoding)
 
-    # Step 2: Parse by format (layout-existence pattern)
+    # Step 2: Parse by format (extension-based detection)
     content = file_obj.read()
-    layout = get_layout(
-        product_year=metadata['product_year'],
-        quarter_vintage=metadata['quarter_vintage'],
-        dataset='gpci'
-    )
 
     if filename.lower().endswith('.zip'):
-        df, inner_name = _parse_zip(content, encoding)
-    elif layout is not None:
-        df, inner_name = _parse_fixed_width(content, encoding, layout), filename
+        df, inner_name = _parse_zip(content, encoding, metadata)
     elif filename.lower().endswith(('.xlsx', '.xls')):
         df, inner_name = _parse_xlsx(BytesIO(content)), filename
+    elif filename.lower().endswith('.csv'):
+        df, inner_name = _parse_csv(content, encoding), filename
+    elif filename.lower().endswith('.txt'):
+        # TXT files: try fixed-width if layout exists, else CSV
+        layout = get_layout(
+            product_year=metadata['product_year'],
+            quarter_vintage=metadata['quarter_vintage'],
+            dataset='gpci'
+        )
+        if layout:
+            logger.debug("Found layout for TXT file", dataset='gpci', version=layout.get('version'))
+            df, inner_name = _parse_fixed_width(content, encoding, layout), filename
+        else:
+            df, inner_name = _parse_csv(content, encoding), filename
     else:
+        # Unknown extension: try CSV as fallback
         df, inner_name = _parse_csv(content, encoding), filename
 
     # Step 3: Normalize column names
@@ -276,7 +284,7 @@ def parse_gpci(
 # Helper Functions
 # ============================================================================
 
-def _parse_zip(content: bytes, encoding: str) -> Tuple[pd.DataFrame, str]:
+def _parse_zip(content: bytes, encoding: str, metadata: Dict[str, Any]) -> Tuple[pd.DataFrame, str]:
     """
     Parse ZIP, return (df, inner_filename).
     
@@ -302,8 +310,12 @@ def _parse_zip(content: bytes, encoding: str) -> Tuple[pd.DataFrame, str]:
             # Check for fixed-width data pattern (MAC code at start of line)
             if re.search(r'^\d{5}', sample, re.MULTILINE):
                 logger.debug(f"Detected fixed-width format in {inner}")
-                # It's fixed-width - need to get the layout
-                layout = LAYOUT_REGISTRY.get(('gpci', 2025, None))  # Use None for latest
+                # It's fixed-width - get the layout using metadata
+                layout = get_layout(
+                    product_year=metadata['product_year'],
+                    quarter_vintage=metadata.get('quarter_vintage'),
+                    dataset='gpci'
+                )
                 if layout:
                     return _parse_fixed_width(raw, encoding, layout), inner
             
@@ -372,13 +384,12 @@ def _parse_xlsx(file_obj: BytesIO) -> pd.DataFrame:
     """
     Parse Excel as strings to avoid coercion.
     
-    Drops duplicate header rows (common in CMS Excel files).
+    Skips first 2 rows (CMS standard header format):
+    - Row 1: Document title
+    - Row 2: Empty
+    - Row 3: Column headers
     """
-    df = pd.read_excel(file_obj, dtype=str, engine='openpyxl')
-    
-    # Drop duplicate header rows (when first data row = column names)
-    if len(df) > 1 and (df.iloc[0] == df.columns).all():
-        df = df.iloc[1:].reset_index(drop=True)
+    df = pd.read_excel(file_obj, skiprows=2, dtype=str, engine='openpyxl')
     
     return df
 
