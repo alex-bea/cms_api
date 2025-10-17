@@ -1,23 +1,24 @@
 # Reference Data Guardrails - Implementation Complete ✅
 
 **Time:** 11 minutes  
-**Status:** Fully implemented and documented in PRDs
+**Status:** Fully implemented and documented in PRDs  
+**Tasks:** Now tracked in Project #5 (see github_tasks_plan.md)
 
 ## What Was Done
 
 ### 1. Code Implementation (7 min) ✅
 
 **Created:**
-- `cms_pricing/ingestion/normalize/reference_mode.py`
+- `cms_pricing/infra/reference_mode.py` (moved from normalize/)
   - `ReferenceMode` enum (inline | curated)
   - `ReferenceConfig` with fail-closed validation
   - `get_reference_mode()`, `get_reference_config()`
   - `validate_publish_allowed()` - blocks publish if inline
   - `get_reference_metadata()` - observability
 
-**Enhanced:**
-- `cms_pricing/ingestion/normalize/locality_fips_lookup.py`
-  - Added `STATE_SCHEMA`, `COUNTY_SCHEMA` contracts
+**Note:**
+- `locality_fips_lookup.py` was exploration code (deleted)
+  - Inline FIPS dicts superseded by Reference Data Manager pattern
   - Added `get_states_dataframe()`, `get_counties_dataframe()`
   - Schema validation on every call
   - Deterministic output (sorted + mapping_confidence)

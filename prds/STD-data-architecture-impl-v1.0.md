@@ -786,7 +786,7 @@ log_level = settings.log_level
 **Purpose:** Enable fast dev/CI while protecting production quality by supporting two controlled modes of reference data access.
 
 **Added:** 2025-10-17 (v1.0.2)  
-**Reference:** `cms_pricing/ingestion/normalize/reference_mode.py`
+**Reference:** `cms_pricing/infra/reference_mode.py`
 
 #### 4.2.1 Modes & Feature Flag
 
