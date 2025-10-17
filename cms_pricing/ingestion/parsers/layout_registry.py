@@ -131,16 +131,23 @@ ANES_2025D_LAYOUT = {
 # ===================================================================
 
 LOCCO_2025D_LAYOUT = {
-    'version': 'v2025.4.0',
-    'min_line_length': 120,
+    'version': 'v2025.4.2',  # FIXED: Correct column positions from actual file analysis
+    'min_line_length': 120,  # Min line to reach counties
     'source_version': '2025D',
+    'data_start_pattern': r'^\s+\d{5}',  # MAC code (5 digits) after leading spaces
     'columns': {
-        'mac': {'start': 0, 'end': 5, 'type': 'string', 'nullable': False},
-        'locality_id': {'start': 12, 'end': 14, 'type': 'string', 'nullable': False},
-        'state': {'start': 17, 'end': 25, 'type': 'string', 'nullable': False},
-        'fee_schedule_area': {'start': 26, 'end': 76, 'type': 'string', 'nullable': True},
-        'county_name': {'start': 120, 'end': 151, 'type': 'string', 'nullable': True},
-    }
+        # Columns (0-based indices, verified from actual CMS file)
+        'mac': {'start': 0, 'end': 12, 'type': 'string', 'nullable': False},             # Cols 1-12 (5-digit MAC)
+        'locality_code': {'start': 12, 'end': 18, 'type': 'string', 'nullable': False},  # Cols 13-18 (2-digit locality)
+        'state_name': {'start': 18, 'end': 50, 'type': 'string', 'nullable': True},      # Cols 19-50 (may be blank)
+        'fee_area': {'start': 50, 'end': 120, 'type': 'string', 'nullable': True},       # Cols 51-120 (locality name, informational)
+        'county_names': {'start': 120, 'end': None, 'type': 'string', 'nullable': True}, # Cols 121+ (rest of line)
+    },
+    'notes': [
+        'State name may be blank on continuation rows (forward-fill during parse)',
+        'County names are comma- or slash-delimited (not split in raw parser)',
+        'Header rows contain "Medicare Admi" or "Locality" - skip these',
+    ]
 }
 
 # ===================================================================

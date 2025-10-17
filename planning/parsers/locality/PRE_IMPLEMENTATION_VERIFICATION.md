@@ -147,7 +147,7 @@ Position  Field                   Example
 **Before Coding:**
 - ✅ TXT format inspected (variable line length identified)
 - ✅ Resolve schema-file mismatch (FIPS vs names) → Two-stage architecture
-- Check if CSV/XLSX formats exist
+- Investigate whether CSV/XLSX formats exist (see GitHub Project task #336)
 - ✅ Create or verify layout in layout_registry.py (LOCCO_2025D_LAYOUT exists)
 - ✅ Confirm natural keys (decided: raw uses names, enrich derives FIPS)
 - ✅ Determine if FIPS lookup is parser responsibility (NO - enrich stage)
@@ -174,4 +174,3 @@ Position  Field                   Example
 ---
 
 *This is exactly what §21.4 is designed to catch!* 🎯
-
