@@ -58,11 +58,14 @@ XLSX:  93 unique localities after parsing ← DIFFERENT!
 - Natural key sets don't match across formats
 - Cannot achieve true multi-format parity with real data
 
-**Resolution:**
-- Test skipped with reason: "Real CMS files have format variance"
-- Need QTS update to differentiate:
-  - **Curated Golden Fixtures**: QTS §5.1.2 applies (controlled data)
-  - **Real Data Fixtures**: Variance expected, test key overlap only
+**Resolution (Adopt stronger, auditable policy):**
+- **Do not weaken §5.1.2.** Curated golden fixtures must still match **exactly** across TXT/CSV/XLSX.
+- Add a separate lane for **Authentic Source Variance Testing**:
+  - Assert **natural‑key overlap ≥ 98%** between the authoritative format and each secondary format.
+  - Assert **row‑count variance ≤ 1% or ≤ 2 rows** (whichever is stricter).
+  - Select and document a **Format Authority Matrix** per vintage (e.g., `TXT &gt; CSV &gt; XLSX` for 2025D) and compare secondaries to the authority.
+  - Produce a **Variance Report** artifact set on every run: `missing_in_secondary.csv`, `extra_in_secondary.csv`, and `parity_summary.json` (thresholds, counts, authority, sample hashes).
+  - Use `@pytest.mark.real_source` tests with `xfail(strict=True)` for any **known, ticketed** mismatches; include issue ID and an expiry date.
 
 **2. Missing Test Types (Planned for Phase 3)**
 - ⏭️ No `@pytest.mark.negative` tests yet
@@ -162,44 +165,68 @@ QTS was written assuming we **create curated golden fixtures**, but we're using 
 | **Determinism** | Exact row counts | Variable row counts |
 | **QTS §5.1.2** | Fully compliant | Partially compliant (skip consistency test) |
 
-**Recommendation:** Update QTS to add:
+**Recommendation (keep curated strict; add audited real‑source lane):**
 
-```markdown
-### 5.1.3 Real Data Fixtures (NEW)
+- **Curated Golden Fixtures:** Maintain **exact equality** across TXT/CSV/XLSX (unchanged).
+- **Authentic Source Files:** Enforce **threshold‑based parity** vs the authoritative format, generate diff artifacts, and fail when thresholds are exceeded.
 
-When using authentic source files (not curated fixtures):
+**Thresholds**
+- Natural‑key overlap **≥ 98%**
+- Row‑count variance **≤ 1% or ≤ 2 rows** (whichever is stricter)
 
-**Parity Expectations:**
-- ✅ Test each format individually (TXT, CSV, XLSX)
-- ✅ Verify natural key sets have significant overlap (e.g., ≥80%)
-- ⚠️ Allow row count variance (≤20%) for real CMS data
-- ❌ Don't require exact DataFrame equality across formats
+**Authority Matrix**
+- Declare per vintage which format is authoritative (e.g., `TXT &gt; CSV &gt; XLSX` for 2025D) and compare others to it.
 
-**Test Pattern:**
+**Real‑Source Test Pattern**
 ```python
-@pytest.mark.golden
-def test_<parser>_txt_real_data():
-    # Test TXT format with real CMS file
-    result = parse(real_cms_txt, metadata)
-    assert len(result.rejects) == 0  # Clean parsing
-    assert len(result.data) >= 90  # Approximate count
+import pytest
+from tests.helpers import canon_locality, write_variance_artifacts
 
-@pytest.mark.skip(reason="Real CMS files have format variance")
-def test_<parser>_format_consistency():
-    # Skip exact consistency for real data
-    pass
+@pytest.mark.real_source
+def test_locality_parity_real_source(txt_df, csv_df, xlsx_df):
+    authority = canon_locality(txt_df)  # TXT chosen as authority for 2025D
+    for name, df in {"CSV": csv_df, "XLSX": xlsx_df}.items():
+        sec = canon_locality(df)
+        nk_auth = set(zip(authority["mac"], authority["locality_code"]))
+        nk_sec = set(zip(sec["mac"], sec["locality_code"]))
+        overlap = len(nk_auth &amp; nk_sec) / max(1, len(nk_auth))
+        row_var = abs(len(sec) - len(authority)) / max(1, len(authority))
+        write_variance_artifacts(name, authority, sec)  # emits CSV + JSON
+        assert overlap &gt;= 0.98, f"{name} NK overlap below threshold"
+        assert (row_var &lt;= 0.01) or (abs(len(sec)-len(authority)) &lt;= 2), f"{name} row variance too high"
+
+@pytest.mark.real_source
+@pytest.mark.xfail(strict=True, reason="Known CMS mismatch, see ISSUE-123; expires 2025-12-31")
+def test_locality_known_mismatch_ticketed():
+    ...
 ```
 
-**When to Use:**
-- Development/testing with authentic CMS downloads
-- Validation of parser robustness on real data
-- Transition period before creating curated fixtures
+**Canon &amp; Harmonization used above**
+- Coerce all columns to **string**, then:
+  - `mac = mac.str.strip().str.zfill(5)`
+  - `locality_code = locality_code.str.strip().str.zfill(2)`
+  - `state_name`, `fee_area`, `county_names` → `str.strip()` only (no case changes)
+- Deterministic column order: `['mac','locality_code','state_name','fee_area','county_names']`
 
-**Migration Path:**
-1. Use real files for initial development (Phase 1-2)
-2. Create curated golden fixtures for Phase 3+
-3. Keep real files for edge case testing
-```
+---
+
+### 5. Harmonization &amp; Determinism (CSV/XLSX)
+
+- **Header normalization:** lowercase + collapse whitespace before aliasing.
+- **Robust alias map:** normalized keys to canonical: `mac`, `locality_code`, `state_name`, `fee_area`, `county_names`.
+- **Type discipline:** read as strings (use `dtype=str` and `converters` in Excel), drop blanks **before** padding.
+- **Padding:** `mac` → width 5; `locality_code` → width 2.
+- **BOM/encoding:** detect, rewind, and re‑read with detected encoding for CSV.
+- **Deterministic order:** enforce canonical column order on output.
+- **Duplicate policy:** keep raw duplicates in Phase 2; tests compare on natural keys with `drop_duplicates`.
+
+### 6. Metrics &amp; Diff Artifacts
+
+- Emit per‑format metrics: `header_row_detected`, `encoding`, `sheet_name`, `rows_read`, `rows_after_filter`, `duplicates_removed`, `authority_format`.
+- Always write diff artifacts for real‑source parity tests:
+  - `locality_parity_missing_in_<format>.csv`
+  - `locality_parity_extra_in_<format>.csv`
+  - `locality_parity_summary.json`
 
 ---
 
@@ -230,58 +257,41 @@ def test_<parser>_format_consistency():
 
 **Add to §21.4 (Pre-Implementation Checklist):**
 
-```markdown
 #### Step 2c: Real Data Format Variance Analysis
 
-**For parsers using real CMS source files:**
-
-1. **Check Format Consistency**
-   ```bash
-   # Compare row counts across formats
-   wc -l sample_data/*/25LOCCO.txt
-   python -c "import pandas as pd; print(len(pd.read_csv('25LOCCO.csv')))"
-   python -c "import pandas as pd; print(len(pd.read_excel('25LOCCO.xlsx')))"
-   ```
-
-2. **Document Variance**
-   If row counts differ >10%:
-   - Document in pre-implementation notes
-   - Skip multi-format consistency test (with reason)
-   - Test each format individually instead
-   - Plan to create curated fixtures for Phase 3
-
-3. **Header Detection**
-   - Scan first 10 rows of each format
-   - Identify title rows vs header rows
-   - Look for specific column names, not keywords
-```
+1) **Row counts by format** (TXT/CSV/XLSX) and header detection notes.  
+2) **Select Authority Matrix** for this vintage (e.g., `TXT &gt; CSV &gt; XLSX`) with rationale.  
+3) **Record thresholds** to be enforced by tests (NK overlap ≥ 98%; row variance ≤ 1% or ≤ 2 rows).  
+4) **Plan artifacts** to be emitted (missing/extra CSVs, summary JSON).  
+5) **Log encodings/sheets** observed to aid reproducibility.
 
 ### 2. STD-qa-testing-prd-v1.0.md
 
-**Add new section §5.1.3 (shown above)**
+**Add §5.1.3 Authentic Source Variance Testing (NEW)**
 
-**Update §5.1.2 to clarify:**
-```markdown
-### 5.1.2 Multi-Format Fixture Parity
+- **Scope:** Only applies when using authentic CMS source files during development.  
+- **Curated fixtures (§5.1.2):** Remain **strict equality** across formats.  
+- **Requirements (real‑source):**  
+  - Declare a **Format Authority Matrix** per vintage.  
+  - Assert **NK overlap ≥ 98%** and **row variance ≤ 1% or ≤ 2 rows**.  
+  - Generate **Variance Report** artifacts (CSV + JSON) on every CI run.  
+  - Permit `xfail(strict=True)` only for **ticketed**, time‑boxed mismatches.  
+- **Prohibited:** Blanket `skip` of parity tests for real data.  
 
-**Applies to:** Curated golden fixtures under team control
-
-**Does NOT apply to:** Real CMS source files used during development
-```
+**Clarify §5.1.2**  
+- Explicitly state it applies to **curated golden fixtures** under team control.
 
 ### 3. Planning Template Updates
 
-**Add to `PHASE_2_*_PLAN.md` template:**
+## Pre-Phase 2 Checklist (Revised)
 
-```markdown
-## Pre-Phase 2 Checklist
-
-- [ ] Verify TXT, CSV, XLSX files exist
-- [ ] Check row counts match (±10% acceptable)
-- [ ] If variance >10%: Document and plan to skip consistency test
-- [ ] Identify header detection strategy (specific column names)
-- [ ] Document any known CMS file quirks
-```
+- [ ] Verify TXT, CSV, XLSX files exist for the target vintage.  
+- [ ] Count rows per format; note any variance and suspected causes.  
+- [ ] Choose and document the **Format Authority Matrix**.  
+- [ ] Define real‑source parity thresholds (NK overlap ≥ 98%; row variance ≤ 1% or ≤ 2 rows).  
+- [ ] Decide header detection tokens per format (avoid generic keywords).  
+- [ ] Document known CMS quirks (typos, banners, BOM, sheet names).  
+- [ ] Plan metric capture and diff artifacts.
 
 ---
 
@@ -302,6 +312,7 @@ def test_<parser>_format_consistency():
 - ✅ Individual format tests comply with QTS §5.1.1
 - ⚠️ Multi-format parity (§5.1.2) conflict identified
 - 📋 PRD updates proposed to resolve conflict
+- ✅ Real‑source parity tests enforce thresholds and produce diff artifacts (no blanket skips)
 
 ---
 
@@ -312,6 +323,8 @@ def test_<parser>_format_consistency():
 2. 📋 Propose QTS §5.1.3 addition
 3. 📋 Update STD-parser-contracts §21.4
 4. 📋 Review with team
+5. Implement `@pytest.mark.real_source` parity tests with artifacts and thresholds
+6. Document the Authority Matrix for 2025D (TXT as authority) in the PRD
 
 ### Phase 3 Planning
 1. Add `@pytest.mark.negative` tests
@@ -342,4 +355,3 @@ def test_<parser>_format_consistency():
 - ✅ PRD improvements identified
 
 **Recommendation:** APPROVE for commit, proceed with PRD updates in parallel.
-

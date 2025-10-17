@@ -185,22 +185,17 @@ def parse_locality_raw(
     string_cols = ['mac', 'locality_code', 'state_name', 'fee_area', 'county_names']
     df = normalize_string_columns(df, string_cols)
     
-    # Step 7: Check natural key uniqueness
+    # Step 7: Check natural key uniqueness (LOG ONLY - preserve raw duplicates)
+    # Raw layer preserves duplicates exactly as in source (QTS §5.1.3 philosophy)
+    # Dedup happens in comparison helpers (canon_locality) or Stage 2 (FIPS normalizer)
     duplicates = check_natural_key_uniqueness(df, NATURAL_KEYS)
     if duplicates:
-        logger.warning(
-            "duplicate_natural_keys_found",
-            count=len(duplicates),
-            action="dropping_duplicates",
-            sample=duplicates[:5]  # Log first 5
-        )
-        # Drop duplicates, keep first occurrence (CMS files may have exact duplicates)
-        df = df.drop_duplicates(subset=NATURAL_KEYS, keep='first').reset_index(drop=True)
         logger.info(
-            "duplicates_removed",
-            original_count=len(duplicates) + len(df),
-            final_count=len(df),
-            removed_count=len(duplicates)
+            "duplicate_natural_keys_detected",
+            count=len(duplicates),
+            action="preserved_in_raw_layer",
+            note="Dedup deferred to Stage 2 (FIPS normalizer) per two-stage architecture",
+            sample=duplicates[:5]  # Log first 5 for visibility
         )
     
     # Step 8: Build metrics
