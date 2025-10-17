@@ -278,7 +278,7 @@ def _parse_zip(content: bytes, encoding: str) -> Tuple[pd.DataFrame, str]:
     """
     Parse ZIP, return (df, inner_filename).
     
-    Prefers member with 'GPCI' in name.
+    Prefers member with 'GPCI' in name. Auto-detects format (fixed-width vs CSV).
     """
     with zipfile.ZipFile(BytesIO(content)) as zf:
         names = [n for n in zf.namelist() if not n.endswith('/')]
@@ -294,6 +294,19 @@ def _parse_zip(content: bytes, encoding: str) -> Tuple[pd.DataFrame, str]:
         if inner.lower().endswith(('.xlsx', '.xls')):
             return _parse_xlsx(BytesIO(raw)), inner
         else:
+            # Check if fixed-width by decoding a sample and looking for layout pattern
+            sample = raw[:500].decode(encoding, errors='replace')
+            
+            # Check for fixed-width data pattern (MAC code at start of line)
+            if re.search(r'^\d{5}', sample, re.MULTILINE):
+                logger.debug(f"Detected fixed-width format in {inner}")
+                # It's fixed-width - need to get the layout
+                layout = LAYOUT_REGISTRY.get(('gpci', 2025, None))  # Use None for latest
+                if layout:
+                    return _parse_fixed_width(raw, encoding, layout), inner
+            
+            # Default to CSV
+            logger.debug(f"Parsing {inner} as CSV")
             return _parse_csv(raw, encoding), inner
 
 

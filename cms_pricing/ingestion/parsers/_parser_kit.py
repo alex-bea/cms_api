@@ -18,7 +18,7 @@ import codecs
 import pandas as pd
 from typing import List, Dict, Any, Tuple, NamedTuple, Optional
 from datetime import datetime, date
-from decimal import Decimal, ROUND_HALF_UP, ROUND_HALF_EVEN
+from decimal import Decimal, ROUND_HALF_UP, ROUND_HALF_EVEN, InvalidOperation
 from enum import Enum
 import structlog
 
@@ -215,9 +215,19 @@ def canonicalize_numeric_col(
     def format_decimal(x):
         if pd.isna(x):
             return ""
-        # Use Decimal for deterministic rounding (not binary float)
-        decimal_val = Decimal(str(x)).quantize(quantizer, rounding=rounding)
-        return f"{decimal_val:.{precision}f}"
+        try:
+            # Clean and normalize the value first
+            str_val = str(x).strip()
+            if str_val == '' or str_val == 'nan':
+                return ""
+            # Use Decimal for deterministic rounding (not binary float)
+            # Cast through float first to handle integer strings like "1"
+            decimal_val = Decimal(str(float(str_val))).quantize(quantizer, rounding=rounding)
+            return f"{decimal_val:.{precision}f}"
+        except (ValueError, TypeError, InvalidOperation) as e:
+            # Log and return empty for unparseable values
+            logger.warning(f"Failed to format decimal '{x}': {e}")
+            return ""
     
     return series.map(format_decimal)
 

@@ -70,17 +70,22 @@ def create_issue(title: str, body: str) -> str:
     return output
 
 
-def add_to_project(item_url: str, project_number: str) -> None:
+def add_to_project(item_url: str, project_number: str, owner: str) -> None:
     subprocess.check_call(
-        ["gh", "project", "item-add", project_number, "--url", item_url]
+        ["gh", "project", "item-add", project_number, "--owner", owner, "--url", item_url]
     )
 
 
 def migrate_file(
-    path: pathlib.Path, project_number: str, repo_url: str, commit_sha: str
+    rel_path: pathlib.Path,
+    project_number: str,
+    repo_url: str,
+    commit_sha: str,
+    owner: str,
 ) -> int:
     created = 0
-    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    full_path = ROOT / rel_path
+    lines = full_path.read_text(encoding="utf-8", errors="ignore").splitlines()
     for line_no, line, heading in headed_lines(lines):
         match = CHECKBOX_PATTERN.match(line)
         if not match:
@@ -88,14 +93,15 @@ def migrate_file(
 
         title = match.group(1).strip()
         anchor = f"#{github_anchor(heading)}" if heading else ""
-        source_url = f"{repo_url}/blob/{commit_sha}/{path.as_posix()}{anchor}"
+        rel_posix = rel_path.as_posix()
+        source_url = f"{repo_url}/blob/{commit_sha}/{rel_posix}{anchor}"
         body = (
-            f"Imported from `{path.as_posix()}` (line {line_no}).\n\n"
+            f"Imported from `{rel_posix}` (line {line_no}).\n\n"
             f"**Source:** {source_url}\n\n"
             "Please add acceptance criteria and assign an owner."
         )
         issue_url = create_issue(title, body)
-        add_to_project(issue_url, project_number)
+        add_to_project(issue_url, project_number, owner)
         created += 1
     return created
 
@@ -109,6 +115,7 @@ def main(argv: list[str]) -> int:
     globs = argv[2:] if len(argv) > 2 else DEFAULT_GLOBS
 
     repo_url = git_repo_url()
+    owner = repo_url.rstrip("/").split("github.com/", 1)[1].split("/", 1)[0]
     commit_sha = current_commit()
 
     total = 0
@@ -116,8 +123,11 @@ def main(argv: list[str]) -> int:
         for path in ROOT.glob(pattern):
             if not path.exists():
                 continue
-            print(f"Scanning {path}...")
-            total += migrate_file(path, project_number, repo_url, commit_sha)
+            if path.is_dir():
+                continue
+            rel_path = path.relative_to(ROOT)
+            print(f"Scanning {rel_path}...")
+            total += migrate_file(rel_path, project_number, repo_url, commit_sha, owner)
 
     print(f"Migration complete. Created {total} issues.")
     return 0
