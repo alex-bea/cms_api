@@ -22,7 +22,7 @@ class GeographyTraceService:
     
     def __init__(self, db: Session):
         self.db = db
-        self.service_version = "1.0.0"  # TODO: Get from config
+        self.service_version = "1.0.0"  # TODO(alex, GH-427): Get from config
     
     def create_trace(
         self,
@@ -99,7 +99,7 @@ class GeographyTraceService:
         trace_nearest = GeographyTraceNearest(
             candidate_zip=result.get("nearest_zip") if result else None,
             candidate_distance_miles=result.get("distance_miles") if result else None,
-            is_pobox=None  # TODO: Extract from result if available
+            is_pobox=None  # TODO(alex, GH-427): Extract from result if available
         )
         
         # Create trace record
@@ -231,6 +231,5 @@ class GeographyTraceService:
             "unique_zips": unique_zips,
             "unique_states": unique_states
         }
-
 
 

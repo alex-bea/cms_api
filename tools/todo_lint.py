@@ -10,13 +10,17 @@ from typing import Iterable
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TODO_PATTERN = re.compile(r"#\s*TODO\b", re.IGNORECASE)
 VALID_TODO_PATTERN = re.compile(r"#\s*TODO\(\s*[^,()]+,\s*GH-\d+\s*\)\s*:", re.IGNORECASE)
-SKIP_DIRS = {".git", ".venv", "env", "__pycache__"}
+SKIP_DIRS = {".git", ".venv", ".venv_gpci", "env", "__pycache__", "site-packages"}
+SKIP_FILES = {"tools/github_tasks_setup.py"}
 CODE_GLOBS = ("*.py",)
 
 
 def iter_code_files() -> Iterable[pathlib.Path]:
     for pattern in CODE_GLOBS:
         for path in ROOT.rglob(pattern):
+            rel = path.relative_to(ROOT).as_posix()
+            if rel in SKIP_FILES:
+                continue
             if any(part in SKIP_DIRS for part in path.parts):
                 continue
             yield path

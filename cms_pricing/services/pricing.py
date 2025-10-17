@@ -215,11 +215,11 @@ class PricingService:
                 total_beneficiary_coinsurance_cents=total_beneficiary_coinsurance_cents,
                 total_beneficiary_cents=total_beneficiary_cents,
                 total_program_payment_cents=total_program_payment_cents,
-                remaining_part_b_deductible_cents=0,  # TODO: Calculate remaining deductible
+                remaining_part_b_deductible_cents=0,  # TODO(alex, GH-424): Calculate remaining deductible
                 post_acute_included=request.include_home_health or request.include_snf,
                 sequestration_applied=request.apply_sequestration,
                 facility_specific_used=any(item.facility_specific for item in line_items),
-                datasets_used=[],  # TODO: Collect dataset information
+                datasets_used=[],  # TODO(alex, GH-425): Collect dataset information
                 warnings=geography_result.warnings
             )
             

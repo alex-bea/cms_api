@@ -1,55 +1,55 @@
 {
-  "passed": 10,
+  "passed": 2,
   "total": 12,
-  "failed": 2,
+  "failed": 10,
   "results": [
     {
       "name": "Documentation Catalog",
       "category": "audit",
-      "status": "passed",
-      "exit_code": 0
+      "status": "failed",
+      "exit_code": 1
     },
     {
       "name": "Documentation Links",
       "category": "audit",
-      "status": "passed",
-      "exit_code": 0
+      "status": "failed",
+      "exit_code": 1
     },
     {
       "name": "Cross-References",
       "category": "audit",
-      "status": "passed",
-      "exit_code": 0
+      "status": "failed",
+      "exit_code": 1
     },
     {
       "name": "Documentation Metadata",
       "category": "audit",
-      "status": "passed",
-      "exit_code": 0
+      "status": "failed",
+      "exit_code": 1
     },
     {
       "name": "Documentation Dependencies",
       "category": "audit",
-      "status": "passed",
-      "exit_code": 0
+      "status": "failed",
+      "exit_code": 1
     },
     {
       "name": "Companion Documents",
       "category": "audit",
-      "status": "passed",
-      "exit_code": 0
+      "status": "failed",
+      "exit_code": 1
     },
     {
       "name": "Source Map Verification",
       "category": "audit",
-      "status": "passed",
-      "exit_code": 0
+      "status": "failed",
+      "exit_code": 1
     },
     {
       "name": "Schema/API Mapper Alignment",
       "category": "audit",
-      "status": "passed",
-      "exit_code": 0
+      "status": "failed",
+      "exit_code": 1
     },
     {
       "name": "Layout/Schema Alignment",

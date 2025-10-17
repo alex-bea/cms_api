@@ -105,7 +105,7 @@ async def lifespan(app: FastAPI):
     warm_slices = settings.get_warm_slices()
     if warm_slices:
         logger.info("Warming caches", slices=warm_slices)
-        # TODO: Implement cache warming
+        # TODO(alex, GH-430): Implement cache warming
     
     logger.info("CMS Pricing API started successfully")
     

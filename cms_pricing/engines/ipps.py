@@ -110,7 +110,7 @@ class IPPSEngine(BasePricingEngine):
             
             # Calculate beneficiary cost sharing (Part A inpatient deductible)
             # For MVP, allocate entire deductible to DRG line
-            part_a_deductible = 1600.0  # TODO: Get from benefit params
+            part_a_deductible = 1600.0  # TODO(alex, GH-431): Get from benefit params
             beneficiary_deductible = min(part_a_deductible, allowed_amount)
             beneficiary_coinsurance = 0  # No coinsurance for IPPS
             beneficiary_total = beneficiary_deductible

@@ -165,11 +165,11 @@ class TraceService:
                 request_json=run.request_json,
                 response_json=run.response_json,
                 traces=trace_data,
-                datasets_used=[],  # TODO: Extract from traces
-                cache_hits=0,  # TODO: Extract from traces
-                cache_misses=0,  # TODO: Extract from traces
-                facility_rates_used=0,  # TODO: Extract from traces
-                benchmark_rates_used=0  # TODO: Extract from traces
+                datasets_used=[],  # TODO(alex, GH-428): Extract from traces
+                cache_hits=0,  # TODO(alex, GH-428): Extract from traces
+                cache_misses=0,  # TODO(alex, GH-428): Extract from traces
+                facility_rates_used=0,  # TODO(alex, GH-428): Extract from traces
+                benchmark_rates_used=0  # TODO(alex, GH-428): Extract from traces
             )
             
             return response
@@ -196,7 +196,7 @@ class TraceService:
                 logger.warning("Cannot replay run without request data", run_id=run_id)
                 return None
             
-            # TODO: Implement actual replay logic
+            # TODO(alex, GH-428): Implement actual replay logic
             # This would involve:
             # 1. Extracting the original request parameters
             # 2. Calling the appropriate pricing service

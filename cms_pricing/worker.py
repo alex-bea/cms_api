@@ -52,7 +52,7 @@ class Worker:
     
     async def _process_ingestion_tasks(self):
         """Process pending ingestion tasks"""
-        # TODO: Implement actual task processing
+        # TODO(alex, GH-432): Implement actual task processing
         # This would involve:
         # 1. Checking for pending ingestion tasks
         # 2. Running appropriate ingesters

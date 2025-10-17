@@ -37,7 +37,7 @@ class NearestZipMonitoring:
         # Count resolutions that used NBER fallback
         # This would need to be tracked in the trace data
         # For now, we'll estimate based on warning logs
-        fallback_resolutions = 0  # TODO: Implement proper tracking
+        fallback_resolutions = 0  # TODO(alex, GH-429): Implement proper tracking
         
         fallback_rate = (fallback_resolutions / total_resolutions * 100) if total_resolutions > 0 else 0
         

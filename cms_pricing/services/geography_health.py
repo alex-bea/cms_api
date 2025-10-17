@@ -94,7 +94,7 @@ class GeographyHealthService:
             if current_date > effective_to:
                 return "error"
         
-        # TODO: Check performance SLOs
+        # TODO(alex, GH-426): Check performance SLOs
         # For now, assume OK if snapshot exists
         return "ok"
 
@@ -135,7 +135,7 @@ class SnapshotRegistry:
                         source_url: str) -> Dict[str, Any]:
         """Register a new snapshot"""
         
-        # TODO: Implement snapshots table
+        # TODO(alex, GH-426): Implement snapshots table
         # For now, return mock data
         return {
             "dataset_id": dataset_id,
@@ -152,7 +152,7 @@ class SnapshotRegistry:
         if valuation_date is None:
             valuation_date = datetime.now(timezone.utc)
         
-        # TODO: Implement proper snapshot selection logic
+        # TODO(alex, GH-426): Implement proper snapshot selection logic
         # For now, return latest geography data
         latest_record = self.db.query(Geography).order_by(
             Geography.effective_from.desc()
@@ -171,7 +171,7 @@ class SnapshotRegistry:
     def set_active_snapshot(self, dataset_digest: str) -> bool:
         """Set active snapshot by digest"""
         
-        # TODO: Implement active snapshot management
+        # TODO(alex, GH-426): Implement active snapshot management
         # For now, just log the operation
         logger.info("Setting active snapshot", dataset_digest=dataset_digest)
         return True
