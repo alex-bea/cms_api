@@ -1,0 +1,30 @@
+name: Changelog Sync
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "CHANGELOG.md"
+      - "tools/mark_tasks_done.py"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Mark tasks done via changelog
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN != '' && secrets.PROJECT_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          python3 tools/mark_tasks_done.py \
+            --project-number 5 \
+            --owner @me \
+            --section Unreleased

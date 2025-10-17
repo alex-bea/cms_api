@@ -519,7 +519,7 @@ report = self.observability_collector.generate_report()
 
 **Location:** `cms_pricing/ingestion/enrichers/dis_reference_data_integration.py`
 
-Manages reference data joins and lookups:
+Manages reference data joins and lookups (honors `REF_MODE` per §4.2):
 
 ```python
 from cms_pricing.ingestion.enrichers.dis_reference_data_integration import (
@@ -539,6 +539,8 @@ enriched_data = enricher.enrich(data, reference_sources)
 - HCPCS codes: Code descriptions and metadata
 - Locality: Carrier→Locality mappings
 - FIPS codes: State/county codes
+
+**See also:** §4.2 Dual-Mode Reference Data Access for inline vs curated modes
 
 ### 2.6 Component Initialization Pattern
 
@@ -729,6 +731,8 @@ def reference_data_sources(self) -> List[ReferenceDataSource]:
     ]
 ```
 
+**See also:** §4.2 for dual-mode reference access and publish gates
+
 ---
 
 ## 4. Operational Patterns
@@ -754,6 +758,9 @@ LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR
 
 # API
 API_KEYS=dev-key-123,prod-key-456
+
+# Reference Data Mode (see §4.2)
+REF_MODE=curated  # curated (default, prod) | inline (dev/test only)
 ```
 
 **Configuration in code:**
@@ -772,7 +779,178 @@ log_level = settings.log_level
 - ✅ Use AWS Secrets Manager / Parameter Store for production
 - ✅ Reference: `STD-api-security-and-auth-prd-v1.0.md`
 
-### 4.2 Release & Batch ID Generation
+---
+
+### 4.2 Dual-Mode Reference Data Access
+
+**Purpose:** Enable fast dev/CI while protecting production quality by supporting two controlled modes of reference data access.
+
+**Added:** 2025-10-17 (v1.0.2)  
+**Reference:** `cms_pricing/ingestion/normalize/reference_mode.py`
+
+#### 4.2.1 Modes & Feature Flag
+
+- **`REF_MODE=curated`** (default, required for publish): Load refs from `/ref/<domain>/<dataset>/<vintage>/` via `ReferenceDataManager`.
+- **`REF_MODE=inline`** (dev/test only): Load minimal, in-repo shims that mirror curated schemas for rapid iteration.
+
+**Fail-closed:** When `REF_MODE=inline`, normalize/enrich may run, but publish **MUST** block with a clear message.
+
+```bash
+# Dev/CI: Fast iteration
+export REF_MODE=inline  # Blocks publish, allows inspect
+
+# Staging/Prod: Full pipeline
+export REF_MODE=curated  # Allows publish (default)
+```
+
+#### 4.2.2 Contract Parity (Schema & Dtypes)
+
+- Inline refs **must** validate against the same Schema Registry contracts as curated refs (SemVer).
+- Use Arrow decimals for numeric precision (e.g., `rvu_*: decimal(8,3)`, `cf_value: decimal(9,6)`).
+- **Determinism:** Sorted outputs + `row_content_hash`; null/numeric normalization for hashing.
+
+**Example validation:**
+
+```python
+# cms_pricing/ingestion/normalize/locality_fips_lookup.py
+STATE_SCHEMA = {
+    'state_fips': 'str',      # 2-digit zero-padded
+    'state_name': 'str',      # ALL CAPS
+    'state_abbr': 'str',      # 2-letter
+    'alt_names': 'str',       # Pipe-delimited or empty
+}
+
+def get_states_dataframe() -> pd.DataFrame:
+    """Returns DataFrame matching curated schema"""
+    df = pd.DataFrame(rows)
+    # Validate schema
+    for col in STATE_SCHEMA:
+        assert col in df.columns, f"Missing column: {col}"
+    return df.sort_values('state_fips').reset_index(drop=True)
+```
+
+#### 4.2.3 Provider Interface
+
+Both modes expose the same interface:
+
+```python
+class RefProvider:
+    def states(self) -> DataFrame: ...
+    def counties(self) -> DataFrame: ...
+    def zip_zcta(self) -> DataFrame: ...
+    # Returns frames with columns per schema_id and metadata:
+    # ref_version, ref_vintage
+```
+
+**Selection:**
+
+```python
+from cms_pricing.ingestion.normalize.reference_mode import get_config, ReferenceMode
+
+config = get_config()
+if config.mode == ReferenceMode.INLINE:
+    provider = InlineProvider()
+else:
+    provider = ReferenceDataManager()
+```
+
+#### 4.2.4 Guardrails
+
+1. **Publish gate:** Block curated publish if `REF_MODE!=curated`.
+   ```python
+   from cms_pricing.ingestion.normalize.reference_mode import validate_publish_allowed
+   
+   validate_publish_allowed(config, stage="publish")
+   # Raises RuntimeError if REF_MODE=inline
+   ```
+
+2. **No Restricted leakage:** Inline providers must not include Restricted content (e.g., CPT descriptions). Keys only.
+
+3. **Zip safety & size limits:** Enforce max compressed/uncompressed sizes; reject path traversal (`..`) in zips.
+
+#### 4.2.5 Observability & Metadata
+
+Emit on each run:
+
+```python
+{
+  "ref_source": "curated" | "inline",
+  "ref_vintage_used": "2025-01-01" | "dev-inline",
+  "ref_version": "1.0",
+  "conflict_rate": 0.002,
+  "fallback_usage_rate": 0.01
+}
+```
+
+Per-file parse summary: `(release_id, schema_id, file_sha256, encoding, rows, parse_ms)`.
+
+#### 4.2.6 Bootstrap (Recommended)
+
+- **Seed one small real curated ref** (e.g., `/ref/census/fips_states/2025/{data.parquet, manifest.json}`) to exercise manifests, lineage, and contracts.
+- **Use inline only for heavier sets** (ZIP↔ZCTA, counties) during early development.
+
+**Recommended structure:**
+
+```
+/ref/
+  census/
+    fips_states/2025/
+      us_states.parquet        # 51 rows - ship in repo ✅
+      manifest.json
+  cms/
+    hcpcs_codes/2025/
+      [use inline during dev]  # 10K+ rows - inline dict ok
+```
+
+#### 4.2.7 Tests (Must Pass)
+
+```python
+# Test 1: Inline frames validate against curated contracts
+def test_inline_schema_validation():
+    states = get_states_dataframe()
+    assert 'state_fips' in states.columns
+    assert 'mapping_confidence' in states.columns
+
+# Test 2: Publish gate with inline mode
+def test_publish_blocked_with_inline():
+    os.environ['REF_MODE'] = 'inline'
+    config = get_reference_config()
+    with pytest.raises(RuntimeError, match="Cannot.*publish"):
+        validate_publish_allowed(config)
+
+# Test 3: Determinism
+def test_inline_deterministic():
+    df1 = get_states_dataframe()
+    df2 = get_states_dataframe()
+    assert df1.equals(df2)
+    assert (df1['mapping_confidence'] == 1.0).all()
+
+# Test 4: Precedence/tie-breaker unchanged across modes
+def test_tie_breaker_parity():
+    # See Appendix J for tie-breaker rules
+    pass
+```
+
+#### 4.2.8 Runbook
+
+**Dev/CI:**
+```bash
+export REF_MODE=inline
+make test-parsers  # Run normalize/enrich
+make inspect       # Inspect artifacts
+# Publish blocked by design ✅
+```
+
+**Staging/Prod:**
+```bash
+export REF_MODE=curated  # Default
+# Require green freshness for refs per SLAs
+make publish
+```
+
+---
+
+### 4.4 Release & Batch ID Generation
 
 **Release ID Format:** `{source}_{year}_{period}_{timestamp}`
 
@@ -791,7 +969,7 @@ batch_id = str(uuid.uuid4())
 # Result: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 ```
 
-### 4.3 Logging Conventions
+### 4.4 Logging Conventions
 
 Use structured logging via `structlog`:
 
@@ -828,7 +1006,7 @@ logger.warning("Row count drift detected",
 - `ERROR`: Error messages for failures
 - `CRITICAL`: Critical failures requiring immediate attention
 
-### 4.4 Observability Events
+### 4.5 Observability Events
 
 Emit events for all major pipeline stages:
 
@@ -863,7 +1041,7 @@ logger.error("ingestion.failed",
 
 Reference: `STD-observability-monitoring-prd-v1.0.md` §3.2
 
-### 4.5 SLA Enforcement
+### 4.6 SLA Enforcement
 
 Define SLAs in ingestor properties:
 

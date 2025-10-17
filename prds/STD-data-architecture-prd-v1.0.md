@@ -76,6 +76,8 @@ We separate concerns into **Land → Validate → Normalize → Enrich → Publi
 
 **Transformation Boundary:** Enrich stage handles all reference lookups and derivations (FIPS from names, ZIP→locality). See **STD-data-architecture-impl §1.3** for decision tree and examples.
 
+**Reference Data Modes:** See **STD-data-architecture-impl §4.2** for dual-mode reference access (inline vs curated) and publish gates.
+
 ### 3.6 Publish (Curated)
 - Snapshot tables partitioned by `vintage_date` and optionally `effective_from`.
 - Publish **Latest‑Effective Views** using window functions over `effective_from DESC`.
