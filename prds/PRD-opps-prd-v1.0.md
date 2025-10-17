@@ -19,7 +19,8 @@ Change control: ADR + Data Architecture Board sign-off
 **Cross-References:**
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
 - **STD-data-architecture-prd-v1.0.md:** Data ingestion lifecycle and storage patterns
-- **STD-parser-contracts-prd-v1.0.md:** Shared parser contracts for OPPS addendum parsing
+- **STD-parser-contracts-prd-v2.0.md:** Parser core contracts (ParseResult, versioning)
+- **STD-parser-contracts-impl-v2.0.md:** Parser implementation templates
 - **STD-scraper-prd-v1.0.md:** Scraper requirements for OPPS data discovery
 - **STD-api-security-and-auth-prd-v1.0.md:** Security requirements for OPPS data access
 - **REF-geography-mapping-cursor-prd-v1.0.md:** Geography mapping for OPPS localities

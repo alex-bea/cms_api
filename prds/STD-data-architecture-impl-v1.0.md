@@ -15,7 +15,8 @@
 
 **Cross-References:**
 - **STD-data-architecture-prd-v1.0.md:** Main standard (requirements, architecture, policies)
-- **STD-parser-contracts-prd-v1.0.md:** Parser contracts v1.1 for normalize stage implementation (ParseResult return type, 64-char hashing, schema-driven precision)
+- **STD-parser-contracts-prd-v2.0.md:** Parser core contracts (ParseResult, versioning)
+- **STD-parser-contracts-impl-v2.0.md:** Parser implementation (§1.6 row hashing, §2.1 structure)
 - **STD-scraper-prd-v1.0.md:** Scraper patterns and discovery manifests
 - **STD-observability-monitoring-prd-v1.0.md:** Observability requirements
 - **STD-qa-testing-prd-v1.0.md:** Testing requirements
@@ -328,7 +329,7 @@ def test_locality_enrich_derives_fips():
 **Cross-References:**
 - **STD-data-architecture-prd §3.4** (Normalize stage requirements)
 - **STD-data-architecture-prd §3.5** (Enrich stage requirements)
-- **STD-parser-contracts-prd §6** (Parser contract boundaries)
+- **STD-parser-contracts-prd-v2.0 §6** (Parser contract boundaries)
 - **planning/parsers/locality/TWO_STAGE_ARCHITECTURE.md** (Detailed example)
 
 ---
@@ -1392,7 +1393,7 @@ async def normalize_stage(self, raw_batch: RawBatch) -> AdaptedBatch:
     """
     Normalize stage: Parse and canonicalize data
     
-    Per STD-parser-contracts v1.1, parsers return ParseResult(data, rejects, metrics).
+    Per STD-parser-contracts-prd-v2.0 §6.1, parsers return ParseResult(data, rejects, metrics).
     Ingestor handles all file writes (parsed.parquet, rejects.parquet, metrics.json).
     """
     logger.info("Starting {DATASET} normalize stage")

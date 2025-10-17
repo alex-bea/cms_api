@@ -9,7 +9,9 @@ This document defines the **QA & Testing Standard (QTS)** that governs validatio
 **Change control:** ADR + QA guild review + PR sign-off
 
 **Cross-References:**
-- **STD-parser-contracts-prd-v1.0.md (v1.8):** Parser validation phases, error enrichment, tiered validation thresholds (§21.2, §21.3, Anti-Pattern 11)
+- **STD-parser-contracts-prd-v2.0.md:** Parser core contracts
+- **STD-parser-contracts-impl-v2.0.md:** Parser validation phases (§2.2), tiered thresholds (§2.3), anti-patterns (§5)
+- **RUN-parser-qa-runbook-prd-v1.0.md:** QA workflows and acceptance criteria
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
 - **DOC-test-patterns-prd-v1.0.md:** Test patterns and best practices guide
 - **RUN-global-operations-prd-v1.0.md:** Operational runbooks and test harness procedures

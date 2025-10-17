@@ -9,7 +9,8 @@
 - **STD-scraper-prd-v1.0.md:** Scraper patterns and discovery standards
 - **STD-data-architecture-prd-v1.0.md:** DIS pipeline architecture and requirements
 - **STD-data-architecture-impl-v1.0.1.md:** Ingestor implementation guide with ParseResult examples
-- **STD-parser-contracts-prd-v1.0.md:** Parser contracts v1.1 (ParseResult return type, 64-char hashing, schema-driven precision, content sniffing)
+- **STD-parser-contracts-prd-v2.0.md:** Parser core contracts (ParseResult, versioning)
+- **STD-parser-contracts-impl-v2.0.md:** Parser implementation (row hashing, precision)
 - **REF-cms-pricing-source-map-prd-v1.0.md:** CMS dataset source mappings
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog
 

@@ -40,6 +40,36 @@
 
 ---
 
+## Automation Support
+
+### `tools/prd_modularizer.py`
+
+- **Purpose:** Analyze large PRDs/STDs and recommend a governance-compliant modular split (core policy, companion impl, routing REF, quality REF, RUN, appendix).
+- **Usage:**
+  ```bash
+  python tools/prd_modularizer.py prds/STD-parser-contracts-prd-v1.0.md \
+    --output planning/project/STD-parser-contracts-modularization.md
+  ```
+  The script prints a Markdown restructuring plan to stdout (or `--output`) with section assignments, proposed filenames, and the required governance checklist.
+- **Validation:** Example run captured in `.cursor/output/prd-modularizer-preview.txt` shows the parser contracts doc (4,476 lines) broken into the six planned documents with line ranges and anchor references.
+- **Governance alignment:** The generated checklist includes the header/change-log requirements from `STD-doc-governance-prd-v1.0.md`, cross-reference updates, catalog registration, and audit tooling (`audit_doc_links`, `audit_cross_references`, `audit_doc_catalog`).
+- **Post-split coverage check:** Pass `--compare category=path` arguments after drafting new docs to verify each target file still contains the assigned section titles. Example:
+  ```bash
+  python tools/prd_modularizer.py prds/STD-parser-contracts-prd-v1.0.md \
+    --compare policy=prds/STD-parser-contracts-prd-v2.0.md \
+    --compare implementation=prds/STD-parser-contracts-impl-v2.0.md
+  ```
+  The output warns about any missing titles so they can be restored before merge.
+- **Section extraction:** Use `--export category=path` to copy the original markdown for a bucket into a new document without rewriting. Example:
+  ```bash
+  python tools/prd_modularizer.py prds/STD-parser-contracts-prd-v1.0.md \
+    --export routing_ref=prds/REF-parser-routing-detection-v1.0.md \
+    --export-mode append
+  ```
+  This appends the router/layout sections exactly as written in v1.0, so only the governance header and new overview need to be authored manually.
+
+---
+
 ## Detailed Section Mapping
 
 ### Document 1: STD-parser-contracts-v2.0.md (~600 lines)
@@ -758,4 +788,3 @@ DECISION: ✅ PROCEED WITH MODULARIZATION
 **Best Time:** After Locality parser complete (now!) ✅  
 
 **Would you like me to proceed with this modularization?**
-

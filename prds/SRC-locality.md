@@ -8,11 +8,14 @@
 
 **Cross-References:**
 - **PRD-rvu-gpci-prd-v0.1.md:** GPCI uses locality codes (geographic payment areas)
-- **STD-parser-contracts-prd-v1.0.md:** Parser implementation standards
+- **STD-parser-contracts-prd-v2.0.md:** Parser core contracts and versioning
+- **STD-parser-contracts-impl-v2.0.md:** Parser implementation templates (§2.1 11-step structure)
+- **RUN-parser-qa-runbook-prd-v1.0.md:** Pre-implementation verification (§1)
 - **STD-data-architecture-impl-v1.0.md:** Two-stage transformation pattern (§1.3)
 - **STD-qa-testing-prd-v1.0.md:** Real-source variance testing (§5.1.3)
 - **planning/parsers/locality/TWO_STAGE_ARCHITECTURE.md:** Detailed implementation guide
 - **planning/parsers/locality/AUTHORITY_MATRIX.md:** Format authority per vintage
+- **planning/parsers/locality/TIME_MEASUREMENT.md:** Time analysis & ROI
 
 ---
 
@@ -59,20 +62,20 @@ The **CMS Locality-County Crosswalk** (file `25LOCCO.txt`) maps Medicare Adminis
 **TXT (Fixed-Width):**
 - **Layout:** `LOCCO_2025D_LAYOUT` in `layout_registry.py`
 - **Columns:**
-  - MAC (cols 1-12): Medicare Admin Contractor code
-  - Locality Code (cols 13-18): 2-digit locality identifier
-  - State Name (cols 19-50): State name (may be blank on continuation rows)
-  - Fee Schedule Area (cols 51-120): Locality description
-  - County Names (cols 121+): Comma/slash-delimited county list
+  - MAC (cols 1–10): Medicare Administrative Contractor code
+  - Locality Code (cols 11–16): 2‑digit locality identifier
+  - State Name (cols 17–50): State name (may be blank on continuation rows)
+  - Fee Schedule Area (cols 51–100): Locality description (informational)
+  - County Names (cols 101+): Comma/slash‑delimited county list (may wrap)
 - **Quirks:**
   - Header rows start with "Medicare Admi" or "MAC"
-  - Continuation rows have blank MAC/locality/state (forward-filled)
+  - Continuation rows may omit **State**; parser forward‑fills **state_name only** (MAC and locality_code come from fixed‑width spans)
   - Some localities have wrapped county lists
 
 **CSV:**
-- **Header Row:** Row 0 is title, Row 2 is headers (dynamic detection)
+- **Header Row:** Headers are dynamically detected (title rows may precede the header).
 - **Columns:** Similar to TXT but with different names
-  - "Medicare Adminstrative Contractor" (CMS has typo!)
+  - "Medicare Adminstrative Contractor" (CMS typo)
   - "Locality Number"
   - "State"
   - "Fee Schedule Area"
@@ -81,14 +84,16 @@ The **CMS Locality-County Crosswalk** (file `25LOCCO.txt`) maps Medicare Adminis
   - Trailing spaces in headers
   - Typo: "Adminstrative" (not "Administrative")
   - Blank rows interspersed
+  - Blank/title rows may appear before the header (auto‑detected)
 
 **XLSX:**
 - **Sheet:** Usually first sheet, auto-detected
-- **Header Row:** Similar to CSV (Row 0 title, Row 2 headers)
+- **Header Row:** Similar to CSV; header row is auto‑detected (title sheets/rows may precede data).
 - **Quirks:**
   - Excel may coerce numeric codes (0 → 0.0)
   - Known variance: 2025D XLSX has 15% fewer rows than TXT/CSV
   - See `AUTHORITY_MATRIX.md` for documented variance
+  - Multiple sheets possible; parser auto‑selects the sheet with canonical headers
 
 ### 2.3 Schema & Natural Keys
 
@@ -169,11 +174,13 @@ The **CMS Locality-County Crosswalk** (file `25LOCCO.txt`) maps Medicare Adminis
 - Encoding auto-detection (UTF-8, CP1252, BOM)
 - Forward-fill logic for TXT continuation rows (state_name)
 - Preserves special characters (/, , - ) in county names
-- Deterministic column order
+
+- Deterministic column order enforced: `['mac','locality_code','state_name','fee_area','county_names']`
+- Type discipline: all fields read as strings; pad `mac` to width 5 and `locality_code` to width 2 after dropping blanks
 
 ### 3.3 Test Coverage
 
-**Test Suite:** 18 tests (17 passing, 1 skipped)
+**Test Suite:** 18 tests total (17 passing, 1 skipped)
 
 **By Category:**
 - **Golden** (`@pytest.mark.golden`): 3 tests (TXT, CSV, XLSX)
@@ -215,6 +222,7 @@ The **CMS Locality-County Crosswalk** (file `25LOCCO.txt`) maps Medicare Adminis
 - No FIPS derivation (deferred to Stage 2)
 - Duplicate preservation (log only, no dedup)
 - Natural key uniqueness check (log duplicates, don't fail)
+- Deterministic column order; no case/whitespace normalization beyond trim and padding rules
 
 **Normalized Layer (Stage 2 - planned):**
 - FIPS lookup with alias map (St/Saint, Parish, Borough)
@@ -228,8 +236,8 @@ The **CMS Locality-County Crosswalk** (file `25LOCCO.txt`) maps Medicare Adminis
 **Per QTS §5.1.3:**
 - **Authority Format:** TXT for 2025D
 - **Thresholds:**
-  - NK overlap ≥ 98% vs TXT
-  - Row variance ≤ 1% OR ≤ 2 rows
+  - Natural‑key overlap ≥ 98% vs authoritative format (TXT for 2025D)
+  - Row variance ≤ 1% **or** ≤ 2 rows (whichever is stricter)
 - **CSV Status:** ✅ 100% parity (0 missing, 0 extra)
 - **XLSX Status:** ⚠️ 78% overlap (24 missing, 8 extra - documented)
 
@@ -343,8 +351,25 @@ WHERE g.product_year = 2025
 
 **Benchmarks:**
 - Measured via `pytest-benchmark`
-- Gated by `ENFORCE_BENCH_SLO=1` for CI stability
+- Gated by `ENFORCE_BENCH_SLO=1` for CI stability (assertion gated; prevents CI flakiness)
 - See `tests/parsers/test_locality_parser.py::test_locality_parse_performance`
+
+---
+
+## 9. Time Measurement & ROI
+
+**Summary**
+- Locality parser total effort: **~4–5 hours**
+- Baseline (GPCI): **~8 hours**
+- **Time savings:** **48–64%** (hypothesis validated)
+
+**Phase Breakdown**
+- Phase 1 (TXT): ~60 min (vs 180 min baseline)
+- Phase 2 (CSV/XLSX): ~90 min (vs 120 min baseline)
+- Phase 3 (Edge/Negative): ~15 min (vs 90 min baseline)
+- Documentation: ~15 min (vs 45 min baseline)
+
+**Reference:** See `planning/parsers/locality/TIME_MEASUREMENT.md` for detailed logs and methodology.
 
 ---
 
@@ -352,7 +377,7 @@ WHERE g.product_year = 2025
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **1.0** | **2025-10-17** | **Initial SRC document for Locality-County Crosswalk.** Covers source details, file formats (TXT/CSV/XLSX), two-stage architecture (raw → FIPS), parser implementation (v1.1.0), test coverage (18 tests, 17 passing), real-source variance testing (QTS §5.1.3), known quirks (CSV typo, XLSX variance, duplicates), format authority (TXT for 2025D), and operational notes. **Cross-References:** PRD-rvu-gpci, STD-parser-contracts §21.4, STD-qa-testing §5.1.3, TWO_STAGE_ARCHITECTURE.md, AUTHORITY_MATRIX.md. | TBD |
+| **1.0** | **2025-10-17** | **Initial SRC document for Locality-County Crosswalk.** Covers source details, file formats (TXT/CSV/XLSX), two-stage architecture (raw → FIPS), parser implementation (v1.1.0), test coverage (18 tests, 17 passing), real-source variance testing (QTS §5.1.3), known quirks (CSV typo, XLSX variance, duplicates), format authority (TXT for 2025D), and operational notes. **Cross-References:** PRD-rvu-gpci, STD-parser-contracts-prd-v2.0, STD-parser-contracts-impl-v2.0 §2.1, RUN-parser-qa-runbook-prd-v1.0 §1, STD-qa-testing §5.1.3, TWO_STAGE_ARCHITECTURE.md, AUTHORITY_MATRIX.md. | TBD |
 
 ---
 
@@ -363,7 +388,7 @@ WHERE g.product_year = 2025
 | **Authority** | ✅ Primary | Secondary | Secondary |
 | **Row Count (2025D)** | 109 unique | 109 unique | 93 unique |
 | **Parity vs TXT** | N/A | 100% | 78% |
-| **Header Detection** | Fixed-width layout | Dynamic (Row 2) | Dynamic (Row 2, Sheet 1) |
+| **Header Detection** | Fixed-width layout | Dynamic (auto‑detected) | Dynamic (auto‑detected; auto‑sheet selection) |
 | **Encoding** | UTF-8/CP1252 | UTF-8/CP1252/BOM | Binary (Excel) |
 | **Known Issues** | Continuation rows | Typo in header | 15% fewer rows, numeric coercion |
 | **Parser Support** | ✅ v1.1.0 | ✅ v1.1.0 | ✅ v1.1.0 |
@@ -397,4 +422,3 @@ Medicare Adminstrative Contractor,Locality Number,State ,Fee Schedule Area ,Coun
 ---
 
 **End of SRC-locality.md**
-

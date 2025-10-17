@@ -17,7 +17,12 @@
 | `STD-doc-governance-prd-v1.0.md` | Draft v1.0.1 | Platform | 2025-10-15 | Added companion doc conventions |
 | `STD-data-architecture-prd-v1.0.md` | Adopted 1.0 | Data Engineering | 2025-10-15 | Main standard |
 | `STD-data-architecture-impl-v1.0.md` | Draft v1.0 | Data Engineering | 2025-10-15 | Implementation guide (companion) |
-| `STD-parser-contracts-prd-v1.0.md` | Draft v1.0 | Data Platform Engineering | 2025-10-15 | Shared parser contracts, metadata injection, tiered validation |
+| `STD-parser-contracts-prd-v2.0.md` | Draft v2.0 | Data Platform Engineering | 2025-10-17 | Core parser contracts: ParseResult, router API, metadata injection, versioning (modularized from v1.11) |
+| `STD-parser-contracts-impl-v2.0.md` | Draft v2.0 | Data Platform Engineering | 2025-10-17 | Parser implementation companion: 11-step template, alias maps, type handling, validation phases |
+| `REF-parser-routing-detection-v1.0.md` | Draft v1.0 | Data Platform Engineering | 2025-10-17 | Parser routing architecture: format detection, layout registry, layout-schema alignment |
+| `REF-parser-quality-guardrails-v1.0.md` | Draft v1.0 | Data Platform Engineering, QA Guild | 2025-10-17 | Parser quality patterns: validation tiers, error taxonomy, safe metrics calculation |
+| `RUN-parser-qa-runbook-prd-v1.0.md` | Draft v1.0 | Data Platform Engineering, QA Guild | 2025-10-17 | Parser QA procedures: pre-implementation checklist, golden-first workflow, acceptance criteria, SLAs |
+| `REF-parser-reference-appendix-v1.0.md` | Draft v1.0 | Data Platform Engineering | 2025-10-17 | Parser reference tables: CMS file formats, column aliases, validation patterns |
 | `STD-api-contract-management-prd-v1.0.md` | Adopted v1.0 | Platform Engineering | 2025-09-30 | |
 | `STD-api-architecture-prd-v1.0.md` | Adopted v1.0 | Platform Engineering | 2025-09-30 | |
 | `STD-api-security-and-auth-prd-v1.0.md` | Draft v1.0 (for approval) | Security | 2025-09-30 | |
@@ -163,7 +168,11 @@ graph TD
     STD_parser_impl[STD-parser-contracts-impl]
     
     STD_data_arch -.companion.-> STD_data_arch_impl
-    STD_parser -.future companion.-> STD_parser_impl
+    STD_parser -.companion.-> STD_parser_impl
+    STD_parser --> REF_parser_routing[REF-parser-routing-detection]
+    STD_parser --> REF_parser_quality[REF-parser-quality-guardrails]
+    STD_parser --> RUN_parser_qa[RUN-parser-qa-runbook-prd]
+    STD_parser --> REF_parser_appendix[REF-parser-reference-appendix]
   end
   
   style STD_data_arch_impl fill:#e1f5e1,stroke:#4a4,stroke-dasharray: 5 5
@@ -247,6 +256,7 @@ graph TD
 | Version | Date | Summary | PR |
 |---|---|---|---|
 | 1.0.5 | 2025-10-16 | Added CHANGELOG.md to §5 Documentation & Meta (project release notes following Keep a Changelog format); Updated STD-doc-governance to v1.0.2 with CHANGELOG.md requirement (§5.1); Added automated validation via tools/audit_changelog.py. Supports Phase 0 lockdown milestone (v0.1.0-phase0). | #TBD |
+| 1.0.6 | 2025-10-17 | **Modularized STD-parser-contracts v1.11 → v2.0.** Split 4,477-line monolith into 6 focused documents: (1) STD-parser-contracts-prd-v2.0 (737 lines - core policy), (2) STD-parser-contracts-impl-v2.0 (809 lines - implementation companion), (3) REF-parser-routing-detection-v1.0 (735 lines - router architecture), (4) REF-parser-quality-guardrails-v1.0 (611 lines - validation/metrics), (5) RUN-parser-qa-runbook-prd-v1.0 (437 lines - QA procedures), (6) REF-parser-reference-appendix-v1.0 (350 lines - reference tables). **Benefits:** 3-4x faster AI context loading, governance compliance (companion doc pattern), independent versioning, clearer separation of concerns. Updated dependency graph with 5 new relationships. Archived v1.11 for 2-week transition. | #TBD |
 | 1.0.4 | 2025-10-15 | Added STD-parser-contracts-prd-v1.0.md (shared parser infrastructure standard for CMS data ingestion); updated dependency graph showing parser contracts as foundation for MPFS, RVU, OPPS ingestors; establishes public contract requirements, metadata injection pattern, and tiered validation standards. | #TBD |
 | 1.0.3 | 2025-10-15 | Added REF-scraper-ingestor-integration-v1.0.md (scraper→ingestor handoff reference); updated STD-doc-governance to allow REF docs without `-prd` suffix; updated dependency graph with new REF document and integration relationships. | #TBD |
 | 1.0.2 | 2025-10-15 | Added STD-data-architecture-impl-v1.0.md (companion implementation guide); updated STD-doc-governance to v1.0.1 with companion document conventions; updated STD-scraper to v1.1; added companion relationships to dependency graph. | #TBD |

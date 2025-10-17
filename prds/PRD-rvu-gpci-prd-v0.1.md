@@ -8,7 +8,8 @@
 **Cross-References:**
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
 - **STD-data-architecture-prd-v1.0.md:** Data ingestion lifecycle and storage patterns
-- **STD-parser-contracts-prd-v1.0.md:** Shared parser contracts for fixed-width and CSV parsing
+- **STD-parser-contracts-prd-v2.0.md:** Parser core contracts
+- **STD-parser-contracts-impl-v2.0.md:** Parser implementation templates (§2.1)
 - **STD-scraper-prd-v1.0.md:** Scraper requirements for RVU data discovery
 - **STD-qa-testing-prd-v1.0.md:** Testing requirements for RVU ingestion
 - **REF-cms-pricing-source-map-prd-v1.0.md:** Canonical CMS pricing source inventory

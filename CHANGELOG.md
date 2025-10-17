@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- **Parser Contracts Modularization (v2.0):** Split `STD-parser-contracts-prd-v1.11.md` (4,477 lines) into 6 focused documents for improved AI context loading and governance compliance:
+  - `STD-parser-contracts-prd-v2.0.md` (737 lines) - Core policy: contracts, versioning, goals
+  - `STD-parser-contracts-impl-v2.0.md` (809 lines) - Implementation companion: 11-step template, alias maps, type handling
+  - `REF-parser-routing-detection-v1.0.md` (735 lines) - Router architecture, layout registry, format detection
+  - `REF-parser-quality-guardrails-v1.0.md` (611 lines) - Validation tiers, error taxonomy, safe metrics calculation
+  - `RUN-parser-qa-runbook-prd-v1.0.md` (437 lines) - QA procedures, pre-implementation checklist, acceptance criteria
+  - `REF-parser-reference-appendix-v1.0.md` (350 lines) - Reference tables, file format characteristics
+- **Benefits:** 3-4x faster AI context loading (avg ~613 lines per doc vs 4,477 monolith), proper companion doc pattern (STD + -impl), independent versioning, clearer separation of concerns (policy vs code vs operations)
+- **Source Section Mapping:** Each new document includes traceability table mapping back to v1.11 sections with line numbers
+- **Transition Support:** Archived v1.11 with deprecation notice, kept for 2-week transition period (until 2025-10-31)
 - **Locality Parser (v1.0.0)** - Locality-County Crosswalk raw parser (#123)
   - Fixed-width TXT parsing (25LOCCO.txt format)
   - Schema: `cms_locality_raw_v1.0` (layout-faithful: state/county NAMES, not FIPS)

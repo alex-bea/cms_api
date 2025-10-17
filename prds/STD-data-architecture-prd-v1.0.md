@@ -17,7 +17,8 @@ For complete index see [Master System Catalog](DOC-master-catalog-prd-v1.0.md).
 
 **Cross-References:**
 - **STD-data-architecture-impl-v1.0.md:** Implementation guide (companion document)
-- **STD-parser-contracts-prd-v1.0.md:** Parser contracts for normalize stage (§3.4)
+- **STD-parser-contracts-prd-v2.0.md:** Parser contracts for normalize stage (§6)
+- **STD-parser-contracts-impl-v2.0.md:** Parser implementation templates
 - **STD-observability-monitoring-prd-v1.0:** Comprehensive monitoring standards, five-pillar framework, and unified SLAs
 - **STD-qa-testing-prd-v1.0:** Testing requirements for data pipelines and quality gates
 - **STD-api-security-and-auth-prd-v1.0:** Security requirements for data access and audit logging

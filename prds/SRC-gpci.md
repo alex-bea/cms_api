@@ -10,7 +10,8 @@
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog
 - **PRD-rvu-gpci-prd-v0.1.md:** GPCI ingestion product requirements
 - **PRD-mpfs-prd-v1.0.md:** MPFS uses GPCI for geographic adjustments
-- **STD-parser-contracts-prd-v1.0.md:** Parser implementation standards (§21.4 format verification)
+- **STD-parser-contracts-prd-v2.0.md:** Parser core contracts
+- **RUN-parser-qa-runbook-prd-v1.0.md:** Pre-implementation verification (§1 format verification)
 - **STD-qa-testing-prd-v1.0.md:** QA testing standards (§5.1.1 golden fixture hygiene)
 - **REF-cms-pricing-source-map-prd-v1.0.md:** CMS pricing source inventory
 
@@ -158,7 +159,7 @@ ALIAS_MAP = {
 | `gpci_pe` | 0.500 | 1.800 | 0.800-1.200 | No floor applied |
 | `gpci_mp` | 0.500 | 1.800 | 0.700-1.300 | Varies by state |
 
-**Validation Tiers (STD-parser-contracts §21.3):**
+**Validation Tiers (STD-parser-contracts-impl-v2.0 §2.3):**
 - **ERROR:** Value < 0 or > 10 (impossible)
 - **WARN:** Value > 2.0 (rare but valid, e.g., Alaska)
 - **OK:** 0.5 ≤ value ≤ 2.0 (normal range)
@@ -336,7 +337,9 @@ pytest -m "gpci and edge_case" -v
 
 **Related PRDs:**
 - `PRD-rvu-gpci-prd-v0.1.md` - GPCI ingestion product requirements
-- `STD-parser-contracts-prd-v1.0.md` - Parser standards (v1.8 §21.3-21.4)
+- `STD-parser-contracts-prd-v2.0.md` - Parser core contracts
+- `STD-parser-contracts-impl-v2.0.md` - Implementation templates (§2.1-2.3)
+- `RUN-parser-qa-runbook-prd-v1.0.md` - QA procedures (§1-2)
 - `STD-qa-testing-prd-v1.0.md` - Testing standards (v1.3 §5.1.1-5.1.2)
 
 **Planning Documents:**
