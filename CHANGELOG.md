@@ -69,6 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 - **cms_gpci_v1.0.json**: Superseded by v1.2 (CMS-native naming)
 
+### Removed
+- **Inline FIPS Lookup**: Deleted `locality_fips_lookup.py` (exploration code superseded by Reference Data Manager pattern)
+- **Duplicate Planning Docs**: Removed `GITHUB_TASK_FULL_REFERENCE_INFRA.md` (consolidated into github_tasks_plan.md)
+
 ### Fixed
 - **GPCI Layout Positions**: Corrected 3 column positions based on actual CMS data measurements
 
