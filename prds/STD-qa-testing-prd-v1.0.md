@@ -3,13 +3,13 @@
 ## 0. Overview
 This document defines the **QA & Testing Standard (QTS)** that governs validation across ingestion, services, and user-facing experiences. It specifies the canonical lifecycle for tests, minimum coverage and gating rules, artifact expectations, observability, and operational playbooks. Every product or dataset PRD must reference this standard and include a scope-specific **QA Summary** derived from §12.
 
-**Status:** Draft v1.2 (proposed)  
+**Status:** Draft v1.3 (proposed)  
 **Owners:** Quality Engineering & Platform Reliability  
 **Consumers:** Product, Engineering, Data, Ops  
 **Change control:** ADR + QA guild review + PR sign-off
 
 **Cross-References:**
-- **STD-parser-contracts-prd-v1.0.md (v1.7):** Parser validation phases, error enrichment, and implementation patterns (§21.2, Anti-Pattern 11)
+- **STD-parser-contracts-prd-v1.0.md (v1.8):** Parser validation phases, error enrichment, tiered validation thresholds (§21.2, §21.3, Anti-Pattern 11)
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog and dependency map
 - **DOC-test-patterns-prd-v1.0.md:** Test patterns and best practices guide
 - **RUN-global-operations-prd-v1.0.md:** Operational runbooks and test harness procedures
@@ -337,7 +337,66 @@ def test_extract_quarter_info(text, expected):
 
 2.2 Coverage & Negative Testing (HIGH)
 
-### 2.2.1 Real Data Structure Analysis (REQUIRED)
+### 2.2.1 Test Categorization with Markers (Added 2025-10-17)
+
+**Purpose:** Proper test organization and selective test execution.
+
+**Required pytest Markers:**
+```python
+# pyproject.toml
+[tool.pytest.ini_options]
+markers = [
+    "golden: marks tests as golden/happy path tests (clean fixtures, rejects == 0)",
+    "edge_case: marks tests for real-world data quirks (authentic CMS issues)",
+    "negative: marks tests for error/invalid input cases (expects ParseError)",
+    "integration: marks tests as integration tests",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    ...
+]
+```
+
+**Usage Pattern:**
+```python
+@pytest.mark.golden
+def test_parser_golden_txt():
+    """Clean fixture, happy path, no rejects."""
+    result = parse_data(clean_fixture)
+    assert len(result.rejects) == 0  # ← Golden requirement
+
+@pytest.mark.edge_case
+def test_parser_real_cms_quirk():
+    """Authentic CMS data issue, validates error handling."""
+    result = parse_data(quirky_fixture)  # E.g., duplicate locality 00
+    assert len(result.rejects) > 0  # ← Expected for quirks
+
+@pytest.mark.negative
+def test_parser_invalid_input():
+    """Deliberately malformed data, expects ParseError."""
+    with pytest.raises(ParseError):
+        parse_data(bad_fixture)  # E.g., negative GPCI values
+```
+
+**Test Selection:**
+```bash
+# Run only golden tests (fast, clean path)
+pytest -m golden
+
+# Run edge cases + negatives (comprehensive)
+pytest -m "edge_case or negative"
+
+# Exclude slow tests
+pytest -m "not slow"
+```
+
+**Benefits:**
+- Clear test categorization by purpose
+- Selective test execution in CI/local
+- Proper separation: happy path vs quirks vs errors
+- Standards-aligned test organization
+
+**Reference Implementation:** `tests/ingestion/test_gpci_parser_golden.py` (golden + edge_case markers)
+
+### 2.2.3 Real Data Structure Analysis (REQUIRED)
 
 Before writing parametrized tests:
 
@@ -367,7 +426,7 @@ Before writing parametrized tests:
    - Add cases for actual edge cases discovered
    - Remove cases for scenarios the implementation doesn't handle
 
-### 2.2.2 Coverage Requirements
+### 2.2.4 Coverage Requirements
 	•	Coverage bar: ≥ 90% line coverage for core scraper modules (*_scraper.py, HTML classifier helpers). Measured with pytest-cov and enforced in CI.
 	•	Negative cases: malformed URLs, network timeouts, 3xx/4xx/5xx, HTML without expected anchors, duplicate links, empty ZIPs, corrupt files.
 	•	Mocking:
@@ -603,6 +662,128 @@ OpenLineage event (minimal)
 	•	Version using SemVer (e.g., opps-golden@1.3.0).
 	•	Validate goldens against schema contracts before use.
 	•	Automate refresh when upstream schema/vintage changes.
+
+5.1.1 Golden Fixture Hygiene (Added 2025-10-17)
+
+**Principle:** Golden fixtures test the happy path with clean, idealized data.
+
+**Clean Data Requirements:**
+Golden fixtures MUST contain clean, idealized data:
+- ✅ No duplicate natural keys
+- ✅ No missing required values
+- ✅ No out-of-range values
+- ✅ No data quality issues
+
+**Test Pattern (REQUIRED):**
+```python
+# Golden test assertions - REQUIRED pattern
+@pytest.mark.golden
+def test_parser_golden_txt():
+    result = parse_data(clean_fixture, metadata)
+    
+    # REQUIRED: Zero rejects for clean golden data
+    assert len(result.rejects) == 0, "No rejects expected for clean golden fixture"
+    
+    # REQUIRED: Exact count for determinism
+    assert len(result.data) == 18, "Expected exactly 18 rows"
+    
+    # REQUIRED: Exact values
+    assert result.data.iloc[0]['key_field'] == 'expected_value'
+```
+
+**Real-World Quirks - Separate Testing:**
+Test authentic CMS data issues in dedicated edge case fixtures:
+- Create `tests/fixtures/<dataset>/edge_cases/` directory
+- Document real CMS quirks (duplicate codes, unusual patterns)
+- Use `@pytest.mark.edge_case` marker
+- Assert expected rejects: `assert len(result.rejects) > 0`
+
+**Example (Hybrid Approach):**
+```python
+# Golden test: Clean fixture
+@pytest.mark.golden
+def test_gpci_golden_txt():
+    # Fixture: 18 unique localities (removed duplicate locality 00)
+    assert len(result.data) == 18
+    assert len(result.rejects) == 0  # ← Clean fixtures have no rejects
+
+# Edge case test: Real CMS quirk
+@pytest.mark.edge_case  
+def test_gpci_duplicate_locality_00():
+    # Fixture: Real CMS data where AL and AZ both use locality 00
+    assert len(result.rejects) == 2  # ← Quirk produces expected rejects
+    assert 'duplicate' in str(result.rejects.iloc[0])
+```
+
+**Benefits:**
+- Golden tests establish clean baseline (QTS compliant)
+- Edge tests validate production error handling
+- Clear separation of concerns
+- Standards compliance with real-world validation
+
+**Reference Implementation:** `tests/ingestion/test_gpci_parser_golden.py`
+
+5.1.2 Multi-Format Fixture Parity (Added 2025-10-17)
+
+**Principle:** All format variations (TXT/CSV/XLSX/ZIP) must contain identical data.
+
+**Identical Data Requirement:**
+For parsers supporting multiple formats, all variations MUST have identical data:
+- TXT, CSV, XLSX, ZIP must contain same rows
+- Enables true format consistency validation
+- Prevents fixture drift over time
+
+**Creation Process (REQUIRED):**
+1. **Create Master Dataset:** Start with one authoritative fixture
+   ```bash
+   # Extract 18 clean rows from CMS source file
+   # Remove duplicates, fix any quality issues
+   head -21 GPCI2025.txt > GPCI2025_sample.txt  # 18 data rows
+   ```
+
+2. **Derive Other Formats:** Convert master to other formats
+   ```bash
+   # CSV: Same 18 rows, different format
+   python tools/convert_txt_to_csv.py GPCI2025_sample.txt > GPCI2025_sample.csv
+   
+   # XLSX: Same 18 rows
+   python tools/convert_txt_to_xlsx.py GPCI2025_sample.txt > GPCI2025_sample.xlsx
+   
+   # ZIP: Contains master TXT
+   zip GPCI2025_sample.zip GPCI2025_sample.txt
+   ```
+
+3. **Verify Parity:** All formats must produce identical parsed output
+   ```python
+   # TRUE format consistency test (REQUIRED)
+   assert txt_result.data.equals(csv_result.data), "TXT and CSV must be identical"
+   assert set(txt_result.data['key']) == set(csv_result.data['key'])
+   
+   # PROHIBITED: Flexible assertions hide fixture drift
+   assert len(overlapping) >= 10  # ❌ Wrong - allows drift
+   ```
+
+4. **Document in README:** State explicitly that all formats are identical
+   ```markdown
+   ## Fixture Parity
+   TXT, CSV, and ZIP fixtures contain identical data (18 rows).
+   All formats should parse to identical output.
+   ```
+
+**Exception: Full Dataset Testing**
+If XLSX contains full dataset (100+ rows) for comprehensive load testing:
+- Document in README: "XLSX contains full 100+ row dataset for load testing"
+- Create separate test: `test_<parser>_golden_xlsx_full_dataset()`
+- Don't compare against sample TXT/CSV fixtures
+- Justify why full dataset is needed (e.g., performance testing, rare edge cases)
+
+**Benefits:**
+- Enables true format consistency validation
+- Prevents fixture drift over time
+- Simplifies consistency test assertions
+- QTS §5.1 compliant
+
+**Reference Implementation:** `tests/fixtures/gpci/golden/` (18 identical rows across TXT/CSV/ZIP)
 
 5.2 Baselines & Backward Compatibility
 	•	Store baseline metrics (row counts, distinct keys, distribution summaries) per release.

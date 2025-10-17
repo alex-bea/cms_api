@@ -138,14 +138,7 @@
 - **Status**: ❌ Not implemented
 
 **Requirements:**
-- [ ] Create `cms_pricing/ingestion/ingestors/ipps_ingestor.py`
-- [ ] Implement DIS-compliant IPPS ingester
-- [ ] Handle Inpatient Prospective Payment System data
-- [ ] Support annual releases (FY)
-- [ ] Add schema contracts for IPPS data validation
-- [ ] Implement 5-pillar observability
-- [ ] Add quarantine workflow for rejected records
-- [ ] Create comprehensive test suite following QTS standards
+> **Tasks now tracked in Project:** https://github.com/alex-bea/cms_api/issues/378, https://github.com/alex-bea/cms_api/issues/379, https://github.com/alex-bea/cms_api/issues/380, https://github.com/alex-bea/cms_api/issues/381, https://github.com/alex-bea/cms_api/issues/382, https://github.com/alex-bea/cms_api/issues/383, https://github.com/alex-bea/cms_api/issues/384, https://github.com/alex-bea/cms_api/issues/385
 
 ---
 
@@ -159,14 +152,7 @@
 - **Status**: ❌ Not implemented
 
 **Requirements:**
-- [ ] Create `cms_pricing/ingestion/ingestors/census_geography_ingestor.py`
-- [ ] Implement DIS-compliant Census geography ingester
-- [ ] Handle ZCTA, Gazetteer, FIPS codes
-- [ ] Support annual releases
-- [ ] Add schema contracts for Census data validation
-- [ ] Implement 5-pillar observability
-- [ ] Add quarantine workflow for rejected records
-- [ ] Create comprehensive test suite following QTS standards
+> **Tasks now tracked in Project:** https://github.com/alex-bea/cms_api/issues/386, https://github.com/alex-bea/cms_api/issues/387, https://github.com/alex-bea/cms_api/issues/388, https://github.com/alex-bea/cms_api/issues/389, https://github.com/alex-bea/cms_api/issues/390, https://github.com/alex-bea/cms_api/issues/391, https://github.com/alex-bea/cms_api/issues/392, https://github.com/alex-bea/cms_api/issues/393
 
 ---
 
@@ -178,15 +164,7 @@
 - **Status**: ❌ Not implemented
 
 **Requirements:**
-- [ ] Create `cms_pricing/ingestion/ingestors/hrsa_ingestor.py`
-- [ ] Implement DIS-compliant HRSA ingester
-- [ ] Handle HPSA, MUA/P, NHSC sites data
-- [ ] Support monthly releases
-- [ ] Add schema contracts for HRSA data validation
-- [ ] Implement 5-pillar observability
-- [ ] Add quarantine workflow for rejected records
-- [ ] Create comprehensive test suite following QTS standards
-- [ ] Integrate with geography data for geocoding
+> **Tasks now tracked in Project:** https://github.com/alex-bea/cms_api/issues/394, https://github.com/alex-bea/cms_api/issues/395, https://github.com/alex-bea/cms_api/issues/396, https://github.com/alex-bea/cms_api/issues/397, https://github.com/alex-bea/cms_api/issues/398, https://github.com/alex-bea/cms_api/issues/399, https://github.com/alex-bea/cms_api/issues/400, https://github.com/alex-bea/cms_api/issues/401, https://github.com/alex-bea/cms_api/issues/402
 
 ---
 
@@ -198,15 +176,7 @@
 - **Status**: ❌ Not implemented
 
 **Requirements:**
-- [ ] Create `cms_pricing/ingestion/ingestors/nber_distance_ingestor.py`
-- [ ] Implement DIS-compliant NBER distance ingester
-- [ ] Handle precomputed ZIP-to-ZIP distances
-- [ ] Support ad-hoc releases (static data)
-- [ ] Add schema contracts for NBER data validation
-- [ ] Implement 5-pillar observability
-- [ ] Add quarantine workflow for rejected records
-- [ ] Create comprehensive test suite following QTS standards
-- [ ] Integrate with geography data for validation
+> **Tasks now tracked in Project:** https://github.com/alex-bea/cms_api/issues/403, https://github.com/alex-bea/cms_api/issues/404, https://github.com/alex-bea/cms_api/issues/405, https://github.com/alex-bea/cms_api/issues/406, https://github.com/alex-bea/cms_api/issues/407, https://github.com/alex-bea/cms_api/issues/408, https://github.com/alex-bea/cms_api/issues/409, https://github.com/alex-bea/cms_api/issues/410, https://github.com/alex-bea/cms_api/issues/411
 
 ---
 
