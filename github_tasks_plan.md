@@ -2523,3 +2523,65 @@ def parse_pprrvu(file_obj, filename, metadata) -> ParseResult:
 `planning/parsers/gpci/GITHUB_TASKS_PRD_IMPROVEMENTS.md`
 
 ---
+
+### Task: Locality Parser - Stage 2: FIPS Normalization
+
+**Status:** NOT STARTED (Stage 1 COMPLETE ✅)  
+**Priority:** Medium  
+**Estimated Time:** 90-120 min  
+**Dependencies:** Locality Stage 1 (raw parser complete ✅), Reference data infrastructure (Phase 0 complete ✅)  
+**Related PRDs:**
+- `planning/parsers/locality/TWO_STAGE_ARCHITECTURE.md` (detailed design)
+- `planning/parsers/locality/PHASE_0_REFERENCE_DATA.md` (reference data plan)
+- `STD-data-architecture-impl-v1.0.md` §1.3 (transformation boundaries)
+- `STD-parser-contracts-prd-v1.0.md` §21.1 (normalization patterns)
+
+**Description:**
+
+Implement Stage 2 of the two-stage Locality parser architecture: Transform raw county NAMES → FIPS codes and explode to one-row-per-county.
+
+**Background:**
+- Stage 1 (raw parser) COMPLETE: Parses CMS files preserving state/county NAMES (608 lines, 18 tests, 17 passing)
+- Stage 2 (FIPS normalizer): Derives FIPS codes for downstream joins (GPCI, RVU, MPFS)
+- Two-stage architecture chosen per `STD-data-architecture-impl §1.3` (transformation boundaries)
+
+**Deliverables:**
+
+**Code:**
+- `cms_pricing/ingestion/normalize/normalize_locality_fips.py` (~300 lines)
+- `NormalizeResult(data, quarantine, metrics)` API
+
+**Reference Data (FULL coverage):**
+- `data/reference/census/fips_counties/2025/us_counties.csv` (3,100+ rows)
+- `data/reference/cms/county_aliases/2025/county_aliases.yml` (curated)
+
+**Tests:**
+- `tests/normalize/test_locality_fips_normalization.py` (~200 lines)
+- 8+ tests: 3 golden, 3 edge, 2 negative
+- Coverage ≥90%
+
+**Acceptance Criteria:**
+
+✅ **Coverage:** ≥99.5% of counties successfully derive FIPS codes  
+✅ **Parity:** `SUM(exploded_rows) = SUM(county_count(raw))` (no rows lost/gained)  
+✅ **Uniqueness:** Natural key `(locality_code, state_fips, county_fips)` enforced  
+✅ **Edge Cases:** VA independent cities (5+), LA parishes (64), AK boroughs (29) handled  
+✅ **Tests:** 8+ passing (3 golden, 3 edge, 2 negative), coverage ≥90%  
+✅ **Determinism:** Sorted output, `row_content_hash`, `mapping_confidence` populated
+
+**Time Estimate:**
+- Reference data + alias map: 15 min
+- Exact & alias matching: 30 min
+- Fuzzy matching: 30 min
+- County explosion: 20 min
+- Edge cases (VA/LA/AK): 20 min
+- Tests: 40 min
+- **Total: 155 min (~2.5h with buffer)**
+
+**Cross-References:**
+- `tests/parsers/test_locality_parser.py` (Stage 1 tests)
+- `cms_pricing/ingestion/parsers/locality_parser.py` (Stage 1 implementation)
+- `planning/parsers/locality/TIME_MEASUREMENT.md` (ROI analysis)
+- `prds/SRC-locality.md` (source descriptor)
+
+---
