@@ -684,12 +684,12 @@ Pipeline automatically monitors and alerts on SLA breaches.
 ### 6.1 Prerequisites Checklist
 
 Before starting:
-- [ ] Dataset PRD created (following `STD-data-architecture-prd-v1.0.md` §13)
-- [ ] Source confirmed in `REF-cms-pricing-source-map-prd-v1.0.md`
-- [ ] Scraper available or discovery method defined
-- [ ] Schema contract drafted (JSON format)
-- [ ] Sample data files available for testing
-- [ ] Database schema designed (if new tables needed)
+-  Dataset PRD created (following `STD-data-architecture-prd-v1.0.md` §13)
+-  Source confirmed in `REF-cms-pricing-source-map-prd-v1.0.md`
+-  Scraper available or discovery method defined
+-  Schema contract drafted (JSON format)
+-  Sample data files available for testing
+-  Database schema designed (if new tables needed)
 
 ### 6.2 Step 1: Create Ingestor Class
 
@@ -1355,47 +1355,47 @@ class Test{Dataset}Ingestor:
 Before marking an ingestor as production-ready:
 
 **Interface Compliance:**
-- [ ] Extends `BaseDISIngestor` from `ingestor_spec.py`
-- [ ] Implements all required stage methods
-- [ ] Declares all required properties
-- [ ] Returns correct data types from each stage
+-  Extends `BaseDISIngestor` from `ingestor_spec.py`
+-  Implements all required stage methods
+-  Declares all required properties
+-  Returns correct data types from each stage
 
 **Schema & Validation:**
-- [ ] Schema contract exists in `cms_pricing/ingestion/contracts/`
-- [ ] Registered in schema registry
-- [ ] Validation rules defined for all quality gates (§7 of main PRD)
-- [ ] Quarantine policy implemented
-- [ ] Validation severity levels used correctly
+-  Schema contract exists in `cms_pricing/ingestion/contracts/`
+-  Registered in schema registry
+-  Validation rules defined for all quality gates (§7 of main PRD)
+-  Quarantine policy implemented
+-  Validation severity levels used correctly
 
 **Observability:**
-- [ ] Emits all required observability events
-- [ ] Integrates with `DISObservabilityCollector`
-- [ ] SLA specifications defined
-- [ ] Monitoring dashboards created
-- [ ] Structured logging throughout
+-  Emits all required observability events
+-  Integrates with `DISObservabilityCollector`
+-  SLA specifications defined
+-  Monitoring dashboards created
+-  Structured logging throughout
 
 **Testing (per STD-qa-testing-prd-v1.0):**
-- [ ] Unit tests for each stage method (≥80% coverage)
-- [ ] Integration tests with real data samples
-- [ ] Schema drift detection tests
-- [ ] Validation rule tests
-- [ ] End-to-end pipeline test
-- [ ] Performance tests (if applicable)
+-  Unit tests for each stage method (≥80% coverage)
+-  Integration tests with real data samples
+-  Schema drift detection tests
+-  Validation rule tests
+-  End-to-end pipeline test
+-  Performance tests (if applicable)
 
 **Documentation:**
-- [ ] Dataset PRD created (follows `PRD-{dataset}-prd-v1.0` naming)
-- [ ] Ingestion Summary section completed (§13 template from main PRD)
-- [ ] Schema contracts documented
-- [ ] Reference data dependencies listed
-- [ ] Deviations documented (if any)
-- [ ] Registered in `DOC-master-catalog-prd-v1.0.md`
+-  Dataset PRD created (follows `PRD-{dataset}-prd-v1.0` naming)
+-  Ingestion Summary section completed (§13 template from main PRD)
+-  Schema contracts documented
+-  Reference data dependencies listed
+-  Deviations documented (if any)
+-  Registered in `DOC-master-catalog-prd-v1.0.md`
 
 **Operational:**
-- [ ] Configuration documented
-- [ ] Secrets managed properly
-- [ ] Release/Batch ID generation follows conventions
-- [ ] Logging follows structured logging patterns
-- [ ] Error handling comprehensive
+-  Configuration documented
+-  Secrets managed properly
+-  Release/Batch ID generation follows conventions
+-  Logging follows structured logging patterns
+-  Error handling comprehensive
 
 ### 9.2 Review & Approval Process
 

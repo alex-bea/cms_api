@@ -292,13 +292,13 @@ API contracts exposed from this pack must follow the **STD-api-architecture-prd-
 ---
 
 ## 12) Acceptance Criteria (Phase 1)
-- [ ] **Test‑first:** Cursor has authored unit/integration/data/contract tests reflecting this PRD/PRF **before** any implementation, and they pass in CI.
-- [ ] **Authoritative layout enforced:** Parser fails fast without a linked authoritative layout (cycle PDF or schema) for the target `source_version`; CI gate prevents merge.
-- [ ] Ingest and publish Oct 2025 PPRRVU, GPCI, OPPSCAP, ANES, LOCCO to curated tables.
-- [ ] `vw_*_current` views return correct rows for supplied test dates and sample codes.
-- [ ] Validation report generated with counts, distributions, and anomaly samples.
-- [ ] Bitemporal queries return expected results for corrected vs original windows.
-- [ ] API examples return within latency SLO.
+-  **Test‑first:** Cursor has authored unit/integration/data/contract tests reflecting this PRD/PRF **before** any implementation, and they pass in CI.
+-  **Authoritative layout enforced:** Parser fails fast without a linked authoritative layout (cycle PDF or schema) for the target `source_version`; CI gate prevents merge.
+-  Ingest and publish Oct 2025 PPRRVU, GPCI, OPPSCAP, ANES, LOCCO to curated tables.
+-  `vw_*_current` views return correct rows for supplied test dates and sample codes.
+-  Validation report generated with counts, distributions, and anomaly samples.
+-  Bitemporal queries return expected results for corrected vs original windows.
+-  API examples return within latency SLO.
 
 ---
 
@@ -565,68 +565,68 @@ Automatically discover, download, validate, and ingest CMS RVU artifacts for the
 > Use this as the sprint/backlog source. Populate **Owner** and **Target** dates in planning.
 
 ### 19.1 API Surface & Contracts
-- [ ] **OpenAPI v3 stub (read‑only)** for `/rvu`, `/gpci`, `/oppscap`, `/releases` (if not already in repo); params, pagination, error model, examples. **Owner:** TBD • **Target:** TBD
-- [ ] **SDKs** (Python/TypeScript) with typed clients; examples & quickstarts. **Owner:** TBD • **Target:** TBD
-- [ ] **Caching & ETags** for GET endpoints; document cache headers. **Owner:** TBD • **Target:** TBD
-- [ ] **Rate limiting** & 429 retry guidance; idempotency guidance for downloads. **Owner:** TBD • **Target:** TBD
+-  **OpenAPI v3 stub (read‑only)** for `/rvu`, `/gpci`, `/oppscap`, `/releases` (if not already in repo); params, pagination, error model, examples. **Owner:** TBD • **Target:** TBD
+-  **SDKs** (Python/TypeScript) with typed clients; examples & quickstarts. **Owner:** TBD • **Target:** TBD
+-  **Caching & ETags** for GET endpoints; document cache headers. **Owner:** TBD • **Target:** TBD
+-  **Rate limiting** & 429 retry guidance; idempotency guidance for downloads. **Owner:** TBD • **Target:** TBD
 
 ### 19.2 CSV Parsing & Layouts
 - [x] **CSV/header parsing complete** (hybrid parser + header detection). Maintain regression suite.
-- [ ] **Layout registry YAML** formalization (machine‑readable specs to drive parsers & dbt tests). **Owner:** TBD • **Target:** TBD
-- [ ] **Authoritative layout audit** job (CI) to verify layout presence per `source_version`. **Owner:** TBD • **Target:** TBD
-- [ ] **Golden fixtures** for earlier cycles to extend regression coverage. **Owner:** TBD • **Target:** TBD
-- [ ] **CSV header aliasing** for PPRRVU, OPPSCAP, ANES, LOCCO; strict type coercion & unknown‑column policy. **Status:** **Completed** (hybrid parser + header detection). Follow‑up: maintain regression suite.
-- [ ] **Layout registry YAML** formalization (machine‑readable specs to drive parsers & dbt tests). **Owner:** TBD • **Target:** TBD
-- [ ] **Authoritative layout audit** job that verifies a layout file exists for each `source_version` in scope; fails CI if missing. **Owner:** TBD • **Target:** TBD
-- [ ] **Golden fixtures** (TXT↔CSV parity sets) committed for 2025D; add earlier cycles for regression. **Owner:** TBD • **Target:** TBD
+-  **Layout registry YAML** formalization (machine‑readable specs to drive parsers & dbt tests). **Owner:** TBD • **Target:** TBD
+-  **Authoritative layout audit** job (CI) to verify layout presence per `source_version`. **Owner:** TBD • **Target:** TBD
+-  **Golden fixtures** for earlier cycles to extend regression coverage. **Owner:** TBD • **Target:** TBD
+-  **CSV header aliasing** for PPRRVU, OPPSCAP, ANES, LOCCO; strict type coercion & unknown‑column policy. **Status:** **Completed** (hybrid parser + header detection). Follow‑up: maintain regression suite.
+-  **Layout registry YAML** formalization (machine‑readable specs to drive parsers & dbt tests). **Owner:** TBD • **Target:** TBD
+-  **Authoritative layout audit** job that verifies a layout file exists for each `source_version` in scope; fails CI if missing. **Owner:** TBD • **Target:** TBD
+-  **Golden fixtures** (TXT↔CSV parity sets) committed for 2025D; add earlier cycles for regression. **Owner:** TBD • **Target:** TBD
 
 ### 19.3 Advanced Validations (Data Quality)
-- [ ] **Payability** (Status A/R/T only); exclusions routed per policy. **Owner:** TBD • **Target:** TBD
-- [ ] **NA ⇒ non‑facility PE null** enforcement. **Owner:** TBD • **Target:** TBD
-- [ ] **Global days** semantics persisted and validated (000/010/090/XXX/YYY/ZZZ). **Owner:** TBD • **Target:** TBD
-- [ ] **Supervision code domain** (01,02,03,04,05,06,21,22,66,6A,77,7A,09). **Owner:** TBD • **Target:** TBD
-- [ ] **OPPS CAP** join completeness + cap ≤ component checks. **Owner:** TBD • **Target:** TBD
-- [ ] **Anesthesia CF** pathway validation for anesthesia codes. **Owner:** TBD • **Target:** TBD
+-  **Payability** (Status A/R/T only); exclusions routed per policy. **Owner:** TBD • **Target:** TBD
+-  **NA ⇒ non‑facility PE null** enforcement. **Owner:** TBD • **Target:** TBD
+-  **Global days** semantics persisted and validated (000/010/090/XXX/YYY/ZZZ). **Owner:** TBD • **Target:** TBD
+-  **Supervision code domain** (01,02,03,04,05,06,21,22,66,6A,77,7A,09). **Owner:** TBD • **Target:** TBD
+-  **OPPS CAP** join completeness + cap ≤ component checks. **Owner:** TBD • **Target:** TBD
+-  **Anesthesia CF** pathway validation for anesthesia codes. **Owner:** TBD • **Target:** TBD
 
 ### 19.4 Scraper & 5‑Year Backfill (per §17)
-- [ ] **Crawler implementation** (allowlists, patterns, robots, throttling). **Owner:** TBD • **Target:** TBD
-- [ ] **Downloader + sidecars** (SHA256, bytes, timestamps). **Owner:** TBD • **Target:** TBD
-- [ ] **Manifest writer** and **idempotency gates**. **Owner:** TBD • **Target:** TBD
-- [ ] **Backfill job** (matrix years×cycles + AR); schedule & re‑run strategy. **Owner:** TBD • **Target:** TBD
-- [ ] **Scraper CI tests** (discovery, classification, idempotency, E2E). **Owner:** TBD • **Target:** TBD
+-  **Crawler implementation** (allowlists, patterns, robots, throttling). **Owner:** TBD • **Target:** TBD
+-  **Downloader + sidecars** (SHA256, bytes, timestamps). **Owner:** TBD • **Target:** TBD
+-  **Manifest writer** and **idempotency gates**. **Owner:** TBD • **Target:** TBD
+-  **Backfill job** (matrix years×cycles + AR); schedule & re‑run strategy. **Owner:** TBD • **Target:** TBD
+-  **Scraper CI tests** (discovery, classification, idempotency, E2E). **Owner:** TBD • **Target:** TBD
 
 ### 19.5 Observability & Ops (Production Rollout)
-- [ ] **Promote dashboards** (HTML & JSON) to prod; publish URLs & access. **Owner:** TBD • **Target:** TBD
-- [ ] **Alert rules** finalized (critical/high/medium/low), routes (Email/Slack/Webhook), cooldowns verified. **Owner:** TBD • **Target:** TBD
-- [ ] **Runbook**: incident response, common failures, recovery/rollback steps with examples. **Owner:** TBD • **Target:** TBD
-- [ ] **SLO docs**: ingestion freshness, validation coverage, API latency; **error budget** policy. **Owner:** TBD • **Target:** TBD
-- [ ] **Retention** policy for manifests/QA/alerts (≥1 year) enforced & verified. **Owner:** TBD • **Target:** TBD
+-  **Promote dashboards** (HTML & JSON) to prod; publish URLs & access. **Owner:** TBD • **Target:** TBD
+-  **Alert rules** finalized (critical/high/medium/low), routes (Email/Slack/Webhook), cooldowns verified. **Owner:** TBD • **Target:** TBD
+-  **Runbook**: incident response, common failures, recovery/rollback steps with examples. **Owner:** TBD • **Target:** TBD
+-  **SLO docs**: ingestion freshness, validation coverage, API latency; **error budget** policy. **Owner:** TBD • **Target:** TBD
+-  **Retention** policy for manifests/QA/alerts (≥1 year) enforced & verified. **Owner:** TBD • **Target:** TBD
 
 ### 19.6 Security, Access & Compliance
-- [ ] **RBAC** for raw bucket, curated warehouse, and API; least‑privilege review. **Owner:** TBD • **Target:** TBD
-- [ ] **Secrets management** (no creds in code; rotate tokens/keys). **Owner:** TBD • **Target:** TBD
-- [ ] **Audit logging** verification (access to artifacts, API calls). **Owner:** TBD • **Target:** TBD
-- [ ] **DR/BCP**: backup/restore drills for raw artifacts and curated tables. **Owner:** TBD • **Target:** TBD
+-  **RBAC** for raw bucket, curated warehouse, and API; least‑privilege review. **Owner:** TBD • **Target:** TBD
+-  **Secrets management** (no creds in code; rotate tokens/keys). **Owner:** TBD • **Target:** TBD
+-  **Audit logging** verification (access to artifacts, API calls). **Owner:** TBD • **Target:** TBD
+-  **DR/BCP**: backup/restore drills for raw artifacts and curated tables. **Owner:** TBD • **Target:** TBD
 
 ### 19.7 Data Governance & Catalog
-- [ ] **Data dictionary** (finalize & publish) + link to **machine‑readable schemas**. **Owner:** TBD • **Target:** TBD
-- [ ] **dbt/GE integration**: generate tests from schemas; nightly runs. **Owner:** TBD • **Target:** TBD
-- [ ] **Lineage** in catalog (raw → staging → curated) with column‑level docs. **Owner:** TBD • **Target:** TBD
+-  **Data dictionary** (finalize & publish) + link to **machine‑readable schemas**. **Owner:** TBD • **Target:** TBD
+-  **dbt/GE integration**: generate tests from schemas; nightly runs. **Owner:** TBD • **Target:** TBD
+-  **Lineage** in catalog (raw → staging → curated) with column‑level docs. **Owner:** TBD • **Target:** TBD
 
 ### 19.8 Performance & Capacity
-- [ ] **Perf CI gate** kept green; attach perf artifacts per build. **Owner:** TBD • **Target:** TBD
-- [ ] **Capacity planning**: 10+ years steady state; storage & query cost tracking. **Owner:** TBD • **Target:** TBD
-- [ ] **Index review** on every migration (automatic plan regression checks). **Owner:** TBD • **Target:** TBD
+-  **Perf CI gate** kept green; attach perf artifacts per build. **Owner:** TBD • **Target:** TBD
+-  **Capacity planning**: 10+ years steady state; storage & query cost tracking. **Owner:** TBD • **Target:** TBD
+-  **Index review** on every migration (automatic plan regression checks). **Owner:** TBD • **Target:** TBD
 
 ### 19.9 Deployment & Environments
-- [ ] **IaC** for buckets/DB/indices/pipelines (reproducible environments). **Owner:** TBD • **Target:** TBD
-- [ ] **Env promotion**: dev → stage → prod with data fences & smoke tests. **Owner:** TBD • **Target:** TBD
-- [ ] **Changelog & versioning** for releases (semantic tags; migration notes). **Owner:** TBD • **Target:** TBD
+-  **IaC** for buckets/DB/indices/pipelines (reproducible environments). **Owner:** TBD • **Target:** TBD
+-  **Env promotion**: dev → stage → prod with data fences & smoke tests. **Owner:** TBD • **Target:** TBD
+-  **Changelog & versioning** for releases (semantic tags; migration notes). **Owner:** TBD • **Target:** TBD
 
 ### 19.10 Enablement & Docs
-- [ ] **Quickstarts**: notebook & SQL examples (joins RVU↔GPCI↔OPPSCAP↔ANES↔Locality). **Owner:** TBD • **Target:** TBD
-- [ ] **API usage guides**: pagination, filters, caching, retries, 429 handling. **Owner:** TBD • **Target:** TBD
-- [ ] **Onboarding**: 1‑pager for analysts/eng; office hours plan. **Owner:** TBD • **Target:** TBD
+-  **Quickstarts**: notebook & SQL examples (joins RVU↔GPCI↔OPPSCAP↔ANES↔Locality). **Owner:** TBD • **Target:** TBD
+-  **API usage guides**: pagination, filters, caching, retries, 429 handling. **Owner:** TBD • **Target:** TBD
+-  **Onboarding**: 1‑pager for analysts/eng; office hours plan. **Owner:** TBD • **Target:** TBD
 
 ---
 

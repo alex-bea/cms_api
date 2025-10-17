@@ -13,5 +13,5 @@ CHANGELOG_ENTRY:
 
 ## Governance
 
-- [ ] No live checkboxes added to Markdown
-- [ ] No naked `# TODO` introduced
+-  No live checkboxes added to Markdown
+-  No naked `# TODO` introduced

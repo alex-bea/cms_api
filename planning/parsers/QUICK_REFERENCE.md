@@ -123,14 +123,14 @@ ls -1 planning/parsers/conversion_factor/  # Minimal example
 
 ## ✅ **Verification Checklist**
 
-- [ ] Directory: `planning/parsers/{name}/` exists
-- [ ] Archive: `planning/parsers/{name}/archive/` exists
-- [ ] README exists and has no `{placeholders}`
-- [ ] README has no `TBD` values
-- [ ] Added to master index (`planning/parsers/README.md`)
-- [ ] PRD has backwards reference
-- [ ] Sample data location verified
-- [ ] Schema contract exists (or planned)
+-  Directory: `planning/parsers/{name}/` exists
+-  Archive: `planning/parsers/{name}/archive/` exists
+-  README exists and has no `{placeholders}`
+-  README has no `TBD` values
+-  Added to master index (`planning/parsers/README.md`)
+-  PRD has backwards reference
+-  Sample data location verified
+-  Schema contract exists (or planned)
 
 ---
 

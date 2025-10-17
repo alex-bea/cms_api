@@ -319,14 +319,14 @@ jobs:
 ## 11. Appendix: Quick Reference
 
 ### 11.1 Database Test Checklist
-- [ ] Use dedicated test database URL
-- [ ] Follow strict test lifecycle order
-- [ ] Use Alembic for schema management
-- [ ] Avoid app startup table creation conflicts
-- [ ] Clean up after test execution
-- [ ] Use appropriate fixture scopes
-- [ ] Ensure test isolation
-- [ ] Monitor test performance
+-  Use dedicated test database URL
+-  Follow strict test lifecycle order
+-  Use Alembic for schema management
+-  Avoid app startup table creation conflicts
+-  Clean up after test execution
+-  Use appropriate fixture scopes
+-  Ensure test isolation
+-  Monitor test performance
 
 ### 11.2 Common Commands
 ```bash

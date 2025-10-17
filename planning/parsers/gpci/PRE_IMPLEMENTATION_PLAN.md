@@ -292,18 +292,18 @@ Name: ALABAMA
 ## ✅ **Pre-Implementation Checklist**
 
 **Completed:**
-- [ ] Line lengths measured from sample data
-- [ ] `min_line_length` determined (recommended: 100)
-- [ ] Column positions verified against actual data
-- [ ] `GPCI_2025D_LAYOUT` updated to v2025.4.1
-- [ ] Column names match schema v1.2 exactly:
-  - [ ] `locality_code` (not `locality_id`)
-  - [ ] `gpci_work` (not `work_gpci`)
-  - [ ] `gpci_pe` (not `pe_gpci`)
-  - [ ] `gpci_mp` (not `mp_gpci`)
-- [ ] Registry lookup entries added for 2025 Q1-Q4
-- [ ] Layout verified with sample data (smoke test passed)
-- [ ] Results documented in `LINE_LENGTH_ANALYSIS.md`
+-  Line lengths measured from sample data
+-  `min_line_length` determined (recommended: 100)
+-  Column positions verified against actual data
+-  `GPCI_2025D_LAYOUT` updated to v2025.4.1
+-  Column names match schema v1.2 exactly:
+  -  `locality_code` (not `locality_id`)
+  -  `gpci_work` (not `work_gpci`)
+  -  `gpci_pe` (not `pe_gpci`)
+  -  `gpci_mp` (not `mp_gpci`)
+-  Registry lookup entries added for 2025 Q1-Q4
+-  Layout verified with sample data (smoke test passed)
+-  Results documented in `LINE_LENGTH_ANALYSIS.md`
 
 **Ready for:**
 - ✅ Parser implementation (`IMPLEMENTATION.md`)

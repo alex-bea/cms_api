@@ -295,15 +295,15 @@ See `PPRRVU_HANDOFF.md` section "Fallback Plan" for CSV-first approach.
 ## 🧪 Validation Checklist
 
 After fix:
-- [ ] Import works: `from cms_pricing.ingestion.parsers.pprrvu_parser import parse_pprrvu`
-- [ ] Layout lookup works: `get_layout("2025", "2025Q4", "pprrvu")` returns dict
-- [ ] Schema loading works: Opens `cms_pprrvu_v1.0.json`
-- [ ] Golden test passes: 94 rows parsed
-- [ ] All 7 tests pass
-- [ ] Performance < 2s
-- [ ] Natural keys present: hcpcs, modifier, status_code, effective_from
-- [ ] Deterministic hashes: Repeat parse = same hash
-- [ ] No silent failures: No NaN coercion
+-  Import works: `from cms_pricing.ingestion.parsers.pprrvu_parser import parse_pprrvu`
+-  Layout lookup works: `get_layout("2025", "2025Q4", "pprrvu")` returns dict
+-  Schema loading works: Opens `cms_pprrvu_v1.0.json`
+-  Golden test passes: 94 rows parsed
+-  All 7 tests pass
+-  Performance < 2s
+-  Natural keys present: hcpcs, modifier, status_code, effective_from
+-  Deterministic hashes: Repeat parse = same hash
+-  No silent failures: No NaN coercion
 
 ---
 

@@ -81,22 +81,22 @@ NATURAL_KEYS = ["locality_code", "effective_from"]
 ## 📋 **Critical Checklist**
 
 **Before coding:**
-- [ ] Read `GPCI_PARSER_PLAN_V2.md` (comprehensive plan)
-- [ ] Review schema `cms_gpci_v1.2.json` (CMS-native)
-- [ ] Verify layout alignment (locality_code, gpci_mp)
-- [ ] Measure actual line length from sample data
+- Read `GPCI_PARSER_PLAN_V2.md` (comprehensive plan)
+- Review schema `cms_gpci_v1.2.json` (CMS-native)
+- Verify layout alignment (locality_code, gpci_mp)
+- Measure actual line length from sample data
 
 **During coding:**
-- [ ] Follow 9-step template (STD-parser-contracts §21.1)
-- [ ] Use parser kit utilities (no duplication)
-- [ ] WARN severity for duplicates (not BLOCK)
-- [ ] Exclude enrichment from hash
+- Follow 9-step template (STD-parser-contracts §21.1)
+- Use parser kit utilities (no duplication)
+- WARN severity for duplicates (not BLOCK)
+- Exclude enrichment from hash
 
 **After coding:**
-- [ ] 14/14 tests passing
-- [ ] Golden hash determinism verified
-- [ ] Payment spot-check passes (±$0.01)
-- [ ] Documentation complete
+- Ensure 14/14 tests are passing
+- Confirm golden hash determinism
+- Validate payment spot-check passes (±$0.01)
+- Finish documentation updates
 
 ---
 
@@ -153,5 +153,4 @@ NATURAL_KEYS = ["locality_code", "effective_from"]
 **Ready to implement!** 🚀
 
 Follow `GPCI_PARSER_PLAN_V2.md` for detailed step-by-step implementation.
-
 

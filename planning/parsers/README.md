@@ -184,14 +184,14 @@ Follow GPCI structure as reference:
 
 For each parser, ensure:
 
-- [ ] `planning/parsers/{name}/` directory exists
-- [ ] `README.md` with status, links, and structure
-- [ ] Links to relevant PRD in README
-- [ ] PRD has backwards link to planning docs
-- [ ] `IMPLEMENTATION.md` if parser is being implemented
-- [ ] Archive for historical docs (if any)
-- [ ] Sample data provenance documented (if applicable)
-- [ ] Schema rationale if custom schema (v1.0+)
+-  `planning/parsers/{name}/` directory exists
+-  `README.md` with status, links, and structure
+-  Links to relevant PRD in README
+-  PRD has backwards link to planning docs
+-  `IMPLEMENTATION.md` if parser is being implemented
+-  Archive for historical docs (if any)
+-  Sample data provenance documented (if applicable)
+-  Schema rationale if custom schema (v1.0+)
 
 ---
 

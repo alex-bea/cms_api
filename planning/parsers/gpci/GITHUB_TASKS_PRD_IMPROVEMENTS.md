@@ -20,10 +20,10 @@ Add mandatory "Format Verification" section to parser contract standard requirin
 - Checklist signoff before coding begins
 
 **Acceptance Criteria:**
-- [ ] New section added to STD-parser-contracts-prd-v1.0.md
-- [ ] Checklist template created
-- [ ] Example from GPCI parser included
-- [ ] Version bumped to v1.8
+-  New section added to STD-parser-contracts-prd-v1.0.md
+-  Checklist template created
+-  Example from GPCI parser included
+-  Version bumped to v1.8
 
 **References:** planning/parsers/gpci/LESSONS_LEARNED.md §6
 
@@ -42,10 +42,10 @@ Create reusable template for documenting CMS-specific quirks:
 - MAC vs Locality codes disambiguation
 
 **Deliverables:**
-- [ ] Template file: `prds/_templates/CMS_DATASET_CHARACTERISTICS.md`
-- [ ] GPCI example completed
-- [ ] PPRRVU example completed
-- [ ] Integration with parser PRD template
+-  Template file: `prds/_templates/CMS_DATASET_CHARACTERISTICS.md`
+-  GPCI example completed
+-  PPRRVU example completed
+-  Integration with parser PRD template
 
 **References:** planning/parsers/gpci/LESSONS_LEARNED.md §7
 
@@ -64,10 +64,10 @@ Update STD-parser-contracts to mandate actionable error messages:
 - Error taxonomy expansion
 
 **Acceptance Criteria:**
-- [ ] Error message format specified
-- [ ] Minimum required fields documented
-- [ ] Examples added (good vs bad messages)
-- [ ] Validation added to parser PR template
+-  Error message format specified
+-  Minimum required fields documented
+-  Examples added (good vs bad messages)
+-  Validation added to parser PR template
 
 **References:** planning/parsers/gpci/LESSONS_LEARNED.md §5
 
@@ -88,9 +88,9 @@ Create test coverage matrix template:
 - Format-specific edge cases documented
 
 **Deliverables:**
-- [ ] Matrix template added to STD-qa-testing-prd-v1.0.md
-- [ ] GPCI parser matrix as example
-- [ ] CI enforcement of coverage minimums
+-  Matrix template added to STD-qa-testing-prd-v1.0.md
+-  GPCI parser matrix as example
+-  CI enforcement of coverage minimums
 
 **References:** planning/parsers/gpci/LESSONS_LEARNED.md §8
 
@@ -114,9 +114,9 @@ Add "Phased Implementation" section to parser standards:
 - Incremental progress visibility
 
 **Deliverables:**
-- [ ] Section added to STD-parser-contracts
-- [ ] Phasing template created
-- [ ] GPCI phasing plan as example
+-  Section added to STD-parser-contracts
+-  Phasing template created
+-  GPCI phasing plan as example
 
 **References:** planning/parsers/gpci/LESSONS_LEARNED.md §10
 
@@ -137,10 +137,10 @@ Central reference for CMS-specific knowledge:
 - Whitespace variations
 
 **Deliverables:**
-- [ ] New doc: `prds/REF-cms-data-quirks-v1.0.md`
-- [ ] Indexed by dataset
-- [ ] Cross-referenced from parser PRDs
-- [ ] Updated quarterly
+-  New doc: `prds/REF-cms-data-quirks-v1.0.md`
+-  Indexed by dataset
+-  Cross-referenced from parser PRDs
+-  Updated quarterly
 
 **References:** planning/parsers/gpci/LESSONS_LEARNED.md §7
 
@@ -165,9 +165,9 @@ min_val = float(valid.min()) if len(valid) > 0 else None
 ```
 
 **Deliverables:**
-- [ ] Section added to STD-parser-contracts §10
-- [ ] Code snippets included
-- [ ] Validation helper function created
+-  Section added to STD-parser-contracts §10
+-  Code snippets included
+-  Validation helper function created
 
 **References:** planning/parsers/gpci/LESSONS_LEARNED.md §9
 
@@ -188,9 +188,9 @@ Document content-based format detection strategy:
 - Explicit fallback order
 
 **Deliverables:**
-- [ ] Section added to STD-parser-contracts §3
-- [ ] Detection flowchart created
-- [ ] ZIP handling documented
+-  Section added to STD-parser-contracts §3
+-  Detection flowchart created
+-  ZIP handling documented
 
 **References:** planning/parsers/gpci/LESSONS_LEARNED.md §4
 
@@ -209,9 +209,9 @@ Document header normalization patterns:
 - Unmapped column warnings
 
 **Deliverables:**
-- [ ] Guide: `docs/alias-map-best-practices.md`
-- [ ] GPCI alias map as example
-- [ ] Testing checklist
+-  Guide: `docs/alias-map-best-practices.md`
+-  GPCI alias map as example
+-  Testing checklist
 
 **References:** planning/parsers/gpci/LESSONS_LEARNED.md §2
 
@@ -231,9 +231,9 @@ Comprehensive type casting requirements:
 - Defensive error handling
 
 **Deliverables:**
-- [ ] Section added to STD-parser-contracts §7
-- [ ] Type handling helper functions
-- [ ] Test cases for each variation
+-  Section added to STD-parser-contracts §7
+-  Type handling helper functions
+-  Test cases for each variation
 
 **References:** planning/parsers/gpci/LESSONS_LEARNED.md §3
 

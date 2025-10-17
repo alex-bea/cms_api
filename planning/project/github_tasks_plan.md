@@ -1308,12 +1308,12 @@ Create reference architecture document detailing integration patterns between sc
 - Ensure compliance with audit requirements
 
 **Acceptance Criteria:**
-- [ ] Document follows governance standards
-- [ ] Includes comprehensive integration patterns
-- [ ] Contains code templates and examples
-- [ ] Documents testing strategies and best practices
-- [ ] Cross-references related PRDs appropriately
-- [ ] Passes audit tool validation
+-  Document follows governance standards
+-  Includes comprehensive integration patterns
+-  Contains code templates and examples
+-  Documents testing strategies and best practices
+-  Cross-references related PRDs appropriately
+-  Passes audit tool validation
 
 #### Task 3: Update DOC-master-catalog-prd-v1.0.md
 **Priority:** High  
@@ -1338,11 +1338,11 @@ Update the master catalog to include new architecture PRDs with proper cross-ref
 - Update change log with new entries
 
 **Acceptance Criteria:**
-- [ ] New PRDs added to appropriate sections
-- [ ] Dependency graph updated with new relationships
-- [ ] Cross-references added to related documents
-- [ ] Change log updated appropriately
-- [ ] Passes audit tool validation
+-  New PRDs added to appropriate sections
+-  Dependency graph updated with new relationships
+-  Cross-references added to related documents
+-  Change log updated appropriately
+-  Passes audit tool validation
 
 #### Task 4: Add Cross-References to Related PRDs
 **Priority:** Medium  
@@ -1368,10 +1368,10 @@ Add cross-references to new architecture PRDs in related documents to ensure pro
 - `RUN-global-operations-prd-v1.0.md`
 
 **Acceptance Criteria:**
-- [ ] All related PRDs reference new architecture documents
-- [ ] Cross-references are bidirectional where appropriate
-- [ ] References follow governance standards
-- [ ] Passes audit tool validation
+-  All related PRDs reference new architecture documents
+-  Cross-references are bidirectional where appropriate
+-  References follow governance standards
+-  Passes audit tool validation
 
 #### Task 5: Verify PRD Compliance
 **Priority:** Medium  
@@ -1395,11 +1395,11 @@ Run audit tools to verify governance compliance for new architecture PRDs and up
 - `.github/workflows/doc-catalog-audit.yml` - CI/CD validation
 
 **Acceptance Criteria:**
-- [ ] All audit tools pass without errors
-- [ ] No governance violations detected
-- [ ] All cross-references are valid and bidirectional
-- [ ] Master catalog is properly updated
-- [ ] CI/CD pipeline passes documentation audits
+-  All audit tools pass without errors
+-  No governance violations detected
+-  All cross-references are valid and bidirectional
+-  Master catalog is properly updated
+-  CI/CD pipeline passes documentation audits
 
 ### 🔗 Recent Commits
 - `a20a9d1`: feat: add daily scheduling to all test workflows
@@ -1522,11 +1522,11 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 - Metadata extraction helpers
 
 **Acceptance Criteria:**
-- [ ] MPFS ingestor uses shared parsers (not private RVU methods)
-- [ ] Schema validation blocks on contract violations
-- [ ] All 3 vintage fields populated correctly
-- [ ] Pillar metrics tracked in ingest_run
-- [ ] Tests pass with sample data
+-  MPFS ingestor uses shared parsers (not private RVU methods)
+-  Schema validation blocks on contract violations
+-  All 3 vintage fields populated correctly
+-  Pillar metrics tracked in ingest_run
+-  Tests pass with sample data
 
 ---
 
@@ -1551,12 +1551,12 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 - Updated `validate_stage()` in MPFS ingestor
 
 **Acceptance Criteria:**
-- [ ] Blocking validation stops ingestion on critical errors
-- [ ] Warning validation quarantines rows with soft errors
-- [ ] Reference data validated (HCPCS exists in ref set)
-- [ ] Validation report generated with counts
-- [ ] Quarantine table populated with rejected rows
-- [ ] Tests cover block/warn scenarios
+-  Blocking validation stops ingestion on critical errors
+-  Warning validation quarantines rows with soft errors
+-  Reference data validated (HCPCS exists in ref set)
+-  Validation report generated with counts
+-  Quarantine table populated with rejected rows
+-  Tests cover block/warn scenarios
 
 ---
 
@@ -1583,12 +1583,12 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 - SQL for `v_latest_mpfs_rvu`, `v_latest_mpfs_gpci`, `v_latest_mpfs_link_keys`
 
 **Acceptance Criteria:**
-- [ ] All 6 curated views created successfully
-- [ ] Natural keys properly defined per PRD
-- [ ] Three vintage fields on all rows
-- [ ] Physician CF ≠ Anesthesia CF (separate records)
-- [ ] Latest-effective views return current data only
-- [ ] Tests verify view structure and content
+-  All 6 curated views created successfully
+-  Natural keys properly defined per PRD
+-  Three vintage fields on all rows
+-  Physician CF ≠ Anesthesia CF (separate records)
+-  Latest-effective views return current data only
+-  Tests verify view structure and content
 
 ---
 
@@ -1619,13 +1619,13 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 - Row count comparisons
 
 **Acceptance Criteria:**
-- [ ] Delete-and-insert works correctly (no duplicates)
-- [ ] All data persisted to PostgreSQL
-- [ ] Parquet files exported to `data/curated/mpfs/{release_id}/`
-- [ ] Diff report generated comparing to prior vintage
-- [ ] Ingest run record complete with all 5 pillar metrics
-- [ ] End-to-end test passes with sample data
-- [ ] API can query persisted MPFS data
+-  Delete-and-insert works correctly (no duplicates)
+-  All data persisted to PostgreSQL
+-  Parquet files exported to `data/curated/mpfs/{release_id}/`
+-  Diff report generated comparing to prior vintage
+-  Ingest run record complete with all 5 pillar metrics
+-  End-to-end test passes with sample data
+-  API can query persisted MPFS data
 
 ---
 
@@ -1868,11 +1868,11 @@ PPRRVU parser implementation revealed critical gaps in documentation that caused
 ### Checklist
 
 Before starting next parser:
-- [ ] STD-parser-contracts v1.3 published
-- [ ] Read new sections (error taxonomy, naming, alignment)
-- [ ] Verify layout exists and matches schema
-- [ ] Measure actual data line length
-- [ ] Confirm natural keys in layout
+-  STD-parser-contracts v1.3 published
+-  Read new sections (error taxonomy, naming, alignment)
+-  Verify layout exists and matches schema
+-  Measure actual data line length
+-  Confirm natural keys in layout
 
 ### Related Documents
 
@@ -1922,14 +1922,14 @@ df = pd.read_fwf(file_obj, ...)  # Let pandas stream
 ```
 
 **Implementation Checklist:**
-- [ ] Update `_parser_kit.py`: Ensure `detect_encoding()` accepts bytes (already does)
-- [ ] Update `pprrvu_parser.py`: Use head + seek(0) pattern
-- [ ] Update `cf_parser.py`: Follow new pattern from start
-- [ ] Update template in §21.1 with streaming example
-- [ ] Test: `detect_encoding()` works on 8KB head
-- [ ] Test: `file_obj.seek(0)` resets for pandas
-- [ ] Test: Memory usage bounded (doesn't grow with file size)
-- [ ] Test: All existing tests still pass
+-  Update `_parser_kit.py`: Ensure `detect_encoding()` accepts bytes (already does)
+-  Update `pprrvu_parser.py`: Use head + seek(0) pattern
+-  Update `cf_parser.py`: Follow new pattern from start
+-  Update template in §21.1 with streaming example
+-  Test: `detect_encoding()` works on 8KB head
+-  Test: `file_obj.seek(0)` resets for pandas
+-  Test: Memory usage bounded (doesn't grow with file size)
+-  Test: All existing tests still pass
 
 ---
 
@@ -1954,13 +1954,13 @@ if missing:
 ```
 
 **Implementation Checklist:**
-- [ ] Add `validate_required_metadata()` to `_parser_kit.py`
-- [ ] Add tests in `test_parser_kit.py`
-- [ ] Call from `cf_parser.py` Step 0
-- [ ] Update `pprrvu_parser.py` to include preflight
-- [ ] Update template §21.1 with preflight step
-- [ ] Test: Clear error message with missing fields
-- [ ] Test: All parsers call it first
+-  Add `validate_required_metadata()` to `_parser_kit.py`
+-  Add tests in `test_parser_kit.py`
+-  Call from `cf_parser.py` Step 0
+-  Update `pprrvu_parser.py` to include preflight
+-  Update template §21.1 with preflight step
+-  Test: Clear error message with missing fields
+-  Test: All parsers call it first
 
 ---
 
@@ -2005,13 +2005,13 @@ def validate_layout_schema_alignment(
 ```
 
 **Implementation Checklist:**
-- [ ] Add function to `_parser_kit.py`
-- [ ] Add test to `test_parser_kit.py`
-- [ ] Call from `cf_parser.py` after loading layout+schema
-- [ ] Update template with handshake pattern
-- [ ] Test: Catches layout-schema mismatches
-- [ ] Test: PPRRVU v2025.4.0 (broken) vs v2025.4.1 (fixed)
-- [ ] Test: Called in template
+-  Add function to `_parser_kit.py`
+-  Add test to `test_parser_kit.py`
+-  Call from `cf_parser.py` after loading layout+schema
+-  Update template with handshake pattern
+-  Test: Catches layout-schema mismatches
+-  Test: PPRRVU v2025.4.0 (broken) vs v2025.4.1 (fixed)
+-  Test: Called in template
 
 ---
 
@@ -2036,13 +2036,13 @@ metrics.update({
 ```
 
 **Implementation Checklist:**
-- [ ] Add `detect_data_start()` to `_parser_kit.py` (or keep in parser)
-- [ ] Update `cf_parser.py` to emit metrics
-- [ ] Add CI test per §7.4 (`test_parser_reports_dynamic_skiprows`)
-- [ ] Update template with metrics pattern
-- [ ] Test: Metrics include `skiprows_dynamic`
-- [ ] Test: Metrics include `data_start_pattern`
-- [ ] Test: Value makes sense (0-10 typically)
+-  Add `detect_data_start()` to `_parser_kit.py` (or keep in parser)
+-  Update `cf_parser.py` to emit metrics
+-  Add CI test per §7.4 (`test_parser_reports_dynamic_skiprows`)
+-  Update template with metrics pattern
+-  Test: Metrics include `skiprows_dynamic`
+-  Test: Metrics include `data_start_pattern`
+-  Test: Value makes sense (0-10 typically)
 
 ---
 
@@ -2070,11 +2070,11 @@ def parse_{dataset}(...):
 ### Success Criteria
 
 **Before merging CF parser:**
-- [ ] All 4 code tasks (A-D) implemented
-- [ ] Template documentation (Task E) updated
-- [ ] All tests passing
-- [ ] No breaking changes to PPRRVU parser
-- [ ] `STD-parser-contracts-prd-v1.0.md` updated if needed
+-  All 4 code tasks (A-D) implemented
+-  Template documentation (Task E) updated
+-  All tests passing
+-  No breaking changes to PPRRVU parser
+-  `STD-parser-contracts-prd-v1.0.md` updated if needed
 
 ---
 
@@ -2160,23 +2160,23 @@ def test_golden_parquet_comparison():
 - ✅ Parquet = no whitespace/newline churn
 
 **Implementation Checklist:**
-- [ ] Add §14.2.1 to STD-parser-contracts v1.7 (document pattern)
-- [ ] Create Parquet golden for PPRRVU
-- [ ] Create Parquet golden for CF
-- [ ] Create Parquet golden for GPCI
-- [ ] Create Parquet golden for ANES
-- [ ] Create Parquet golden for OPPSCAP
-- [ ] Create Parquet golden for Locality
-- [ ] Update all golden tests to use `assert_frame_equal()`
-- [ ] Add CI check that Parquet goldens match manual assertions
+-  Add §14.2.1 to STD-parser-contracts v1.7 (document pattern)
+-  Create Parquet golden for PPRRVU
+-  Create Parquet golden for CF
+-  Create Parquet golden for GPCI
+-  Create Parquet golden for ANES
+-  Create Parquet golden for OPPSCAP
+-  Create Parquet golden for Locality
+-  Update all golden tests to use `assert_frame_equal()`
+-  Add CI check that Parquet goldens match manual assertions
 
 ### Success Criteria
 
 **Before v2.0 release:**
-- [ ] All 6 parsers use Parquet golden pattern
-- [ ] STD-parser-contracts §14.2.1 documents pattern
-- [ ] CI enforces Parquet golden freshness
-- [ ] All tests passing (backward compatible migration)
+-  All 6 parsers use Parquet golden pattern
+-  STD-parser-contracts §14.2.1 documents pattern
+-  CI enforces Parquet golden freshness
+-  All tests passing (backward compatible migration)
 
 ### Related
 
@@ -2379,32 +2379,32 @@ def parse_pprrvu(file_obj, filename, metadata) -> ParseResult:
 ### Implementation Checklist
 
 **Phase 1: Shared Module** (60 min)
-- [ ] Create `cms_pricing/ingestion/parsers/_io_kit.py`
-- [ ] Implement `read_tabular()` with CSV/XLSX/ZIP/TSV support
-- [ ] Implement `normalize_column_headers()` with alias mapping
-- [ ] Implement `normalize_currency_value()` for money fields
-- [ ] Implement `validate_date_range()` with future date warnings
-- [ ] Add comprehensive tests (`tests/ingestion/test_io_kit.py`)
+-  Create `cms_pricing/ingestion/parsers/_io_kit.py`
+-  Implement `read_tabular()` with CSV/XLSX/ZIP/TSV support
+-  Implement `normalize_column_headers()` with alias mapping
+-  Implement `normalize_currency_value()` for money fields
+-  Implement `validate_date_range()` with future date warnings
+-  Add comprehensive tests (`tests/ingestion/test_io_kit.py`)
 
 **Phase 2: Refactor Parsers** (120 min)
-- [ ] Refactor PPRRVU to use `_io_kit` (30 min)
-- [ ] Refactor CF to use `_io_kit` (20 min)
-- [ ] Refactor GPCI to use `_io_kit` (20 min)
-- [ ] Refactor ANES to use `_io_kit` (20 min)
-- [ ] Refactor OPPSCAP to use `_io_kit` (15 min)
-- [ ] Refactor Locality to use `_io_kit` (15 min)
+-  Refactor PPRRVU to use `_io_kit` (30 min)
+-  Refactor CF to use `_io_kit` (20 min)
+-  Refactor GPCI to use `_io_kit` (20 min)
+-  Refactor ANES to use `_io_kit` (20 min)
+-  Refactor OPPSCAP to use `_io_kit` (15 min)
+-  Refactor Locality to use `_io_kit` (15 min)
 
 **Phase 3: Verification** (30 min)
-- [ ] All parser tests still pass (no regressions)
-- [ ] New `_io_kit` tests pass (80% coverage target)
-- [ ] Performance benchmarks unchanged
-- [ ] Code reduction: ~900 lines → ~150 lines (shared) + ~100/parser
+-  All parser tests still pass (no regressions)
+-  New `_io_kit` tests pass (80% coverage target)
+-  Performance benchmarks unchanged
+-  Code reduction: ~900 lines → ~150 lines (shared) + ~100/parser
 
 **Phase 4: Documentation** (10 min)
-- [ ] Update STD-parser-contracts v2.0 §16 (directory layout)
-- [ ] Add §21.1.1 "Shared I/O Utilities" subsection
-- [ ] Document migration pattern
-- [ ] Update CHANGELOG.md
+-  Update STD-parser-contracts v2.0 §16 (directory layout)
+-  Add §21.1.1 "Shared I/O Utilities" subsection
+-  Document migration pattern
+-  Update CHANGELOG.md
 
 ### Benefits
 
@@ -2442,12 +2442,12 @@ def parse_pprrvu(file_obj, filename, metadata) -> ParseResult:
 ### Success Criteria
 
 **Before merging v2.0:**
-- [ ] All 6 parsers use `_io_kit` shared utilities
-- [ ] All existing tests pass (0 regressions)
-- [ ] New `_io_kit` tests pass (≥80% coverage)
-- [ ] Code reduction ≥700 lines
-- [ ] Performance benchmarks unchanged (±5%)
-- [ ] STD-parser-contracts v2.0 documents pattern
+-  All 6 parsers use `_io_kit` shared utilities
+-  All existing tests pass (0 regressions)
+-  New `_io_kit` tests pass (≥80% coverage)
+-  Code reduction ≥700 lines
+-  Performance benchmarks unchanged (±5%)
+-  STD-parser-contracts v2.0 documents pattern
 
 ### Timeline
 

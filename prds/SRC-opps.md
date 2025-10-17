@@ -26,10 +26,10 @@ This document describes the CMS Hospital Outpatient Prospective Payment System (
 
 ## TODO
 This is a placeholder file. Full documentation needed including:
-- [ ] Detailed field specifications
-- [ ] Quarterly release schedule
-- [ ] Processing requirements
-- [ ] Integration with OPPS ingester
+-  Detailed field specifications
+-  Quarterly release schedule
+-  Processing requirements
+-  Integration with OPPS ingester
 
 ---
 **Cross-References:**

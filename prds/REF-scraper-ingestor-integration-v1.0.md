@@ -1049,12 +1049,12 @@ Update this document when:
 
 ### D.4 Maintenance Checklist
 
-- [ ] Verify `discovery_manifest.py` line numbers are current
-- [ ] Check ingestor file references are accurate
-- [ ] Update manifest examples if schema evolved
-- [ ] Add new data types as they're implemented
-- [ ] Review error taxonomy for completeness
-- [ ] Update monitoring metrics if changed
+-  Verify `discovery_manifest.py` line numbers are current
+-  Check ingestor file references are accurate
+-  Update manifest examples if schema evolved
+-  Add new data types as they're implemented
+-  Review error taxonomy for completeness
+-  Update monitoring metrics if changed
 
 ---
 

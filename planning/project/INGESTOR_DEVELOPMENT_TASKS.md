@@ -41,17 +41,8 @@
 - `tests/fixtures/mpfs/` (new test data)
 - Fix imports in: `examples/ingestion_example.py`, `scripts/ingest_all.py`, `cms_pricing/cli.py`, `cms_pricing/worker.py`
 
-**DIS Compliance Checklist:**
-- [ ] Land stage: Download and store raw files with manifest
-- [ ] Validate stage: Structural, domain, and statistical validation
-- [ ] Normalize stage: Canonicalize column names and data types
-- [ ] Enrich stage: Join with reference data (GPCI, localities)
-- [ ] Publish stage: Store in curated format with metadata
-- [ ] Schema Registry integration
-- [ ] Quarantine zone for rejects
-- [ ] Reference data integration
-- [ ] Idempotent upserts
-- [ ] Schema drift detection
+**DIS Compliance Checklist:**  
+> **Tracked in Project #5:** Tasks #319–#328 cover the DIS stage gates for MPFS.
 
 ---
 
@@ -188,14 +179,7 @@
 - **Status**: ❌ Not implemented
 
 **Requirements:**
-- [ ] Create `cms_pricing/ingestion/ingestors/nadac_ingestor.py`
-- [ ] Implement DIS-compliant NADAC ingester
-- [ ] Handle National Average Drug Acquisition Cost data
-- [ ] Support weekly releases
-- [ ] Add schema contracts for NADAC data validation
-- [ ] Implement 5-pillar observability
-- [ ] Add quarantine workflow for rejected records
-- [ ] Create comprehensive test suite following QTS standards
+> **Tasks now tracked in Project:** https://github.com/alex-bea/cms_api/issues/412, https://github.com/alex-bea/cms_api/issues/413, https://github.com/alex-bea/cms_api/issues/414, https://github.com/alex-bea/cms_api/issues/415, https://github.com/alex-bea/cms_api/issues/416, https://github.com/alex-bea/cms_api/issues/417, https://github.com/alex-bea/cms_api/issues/418, https://github.com/alex-bea/cms_api/issues/419
 
 ---
 
@@ -211,14 +195,7 @@ Each ingester must implement:
 5. **Publish Stage**: Store in curated format with metadata
 
 ### **Technical Requirements**
-- [ ] Schema Registry integration
-- [ ] Quarantine zone for rejects
-- [ ] Reference data integration
-- [ ] Idempotent upserts
-- [ ] Schema drift detection
-- [ ] 5-pillar observability (Freshness, Volume, Schema, Quality, Lineage)
-- [ ] Comprehensive test suite following QTS standards
-- [ ] API integration following Global API Program standards
+> **Tracked in Project #5:** Tasks #324–#409 (schema/observability/quarantine), #417–#419 (testing & API integration)
 
 ### **File Structure**
 ```

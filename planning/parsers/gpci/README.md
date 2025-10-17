@@ -121,7 +121,7 @@
 **Schema & Contracts:**
 - [x] Schema v1.2 created (`cms_gpci_v1.2.json`)
 - [x] Schema v1.1 deprecated with notice
-- [ ] Layout v2025.4.1 updated (PRE-IMPLEMENTATION Step 3)
+-  Layout v2025.4.1 updated (PRE-IMPLEMENTATION Step 3)
 
 **Planning Documents:**
 - [x] Pre-implementation plan ready

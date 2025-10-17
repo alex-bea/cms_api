@@ -93,19 +93,19 @@
 ## ✅ **Readiness Checklist**
 
 **Schema & Contracts:**
-- [ ] Schema contract created
-- [ ] Layout defined (if fixed-width)
-- [ ] Sample data available
+-  Schema contract created
+-  Layout defined (if fixed-width)
+-  Sample data available
 
 **Planning Documents:**
 - [x] README ready (this file)
-- [ ] Implementation plan complete
-- [ ] Quick start guide (if needed)
+-  Implementation plan complete
+-  Quick start guide (if needed)
 
 **Infrastructure:**
-- [ ] Parser kit utilities available
-- [ ] Schema registry operational
-- [ ] Reference parsers reviewed
+-  Parser kit utilities available
+-  Schema registry operational
+-  Reference parsers reviewed
 
 ---
 

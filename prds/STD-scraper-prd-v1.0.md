@@ -516,34 +516,34 @@ All CMS scrapers follow the same **Discovery → Metadata → Manifest** pattern
 For each new scraper, follow this 4-phase checklist:
 
 **Phase 1: Discovery Strategy**
-- [ ] Identify CMS landing page URL
-- [ ] Map navigation structure (direct links vs. multi-page)
-- [ ] Define file name patterns (regex)
-- [ ] Define quarterly/annual cadence patterns
-- [ ] Document special handling (licenses, redirects, etc.)
+-  Identify CMS landing page URL
+-  Map navigation structure (direct links vs. multi-page)
+-  Define file name patterns (regex)
+-  Define quarterly/annual cadence patterns
+-  Document special handling (licenses, redirects, etc.)
 
 **Phase 2: Scraper Implementation**
-- [ ] Create scraper class inheriting base patterns
-- [ ] Implement `discover_files()` method
-- [ ] Implement page navigation helpers
-- [ ] Implement file extraction logic
-- [ ] Add checksum/metadata extraction
-- [ ] Implement manifest generation
-- [ ] Add logging and observability
+-  Create scraper class inheriting base patterns
+-  Implement `discover_files()` method
+-  Implement page navigation helpers
+-  Implement file extraction logic
+-  Add checksum/metadata extraction
+-  Implement manifest generation
+-  Add logging and observability
 
 **Phase 3: Testing**
-- [ ] Unit tests for pattern matching
-- [ ] Integration tests for discovery
-- [ ] Test with historical data (2+ years)
-- [ ] Validate manifest schema compliance
-- [ ] Performance testing (should complete in <5 minutes)
+-  Unit tests for pattern matching
+-  Integration tests for discovery
+-  Test with historical data (2+ years)
+-  Validate manifest schema compliance
+-  Performance testing (should complete in <5 minutes)
 
 **Phase 4: Integration**
-- [ ] Update `REF-cms-pricing-source-map-prd-v1.0.md`
-- [ ] Create schema contracts (`.json` files)
-- [ ] Link to corresponding ingestor
-- [ ] Add CI/CD workflow for discovery
-- [ ] Document in this PRD
+-  Update `REF-cms-pricing-source-map-prd-v1.0.md`
+-  Create schema contracts (`.json` files)
+-  Link to corresponding ingestor
+-  Add CI/CD workflow for discovery
+-  Document in this PRD
 
 ⸻
 

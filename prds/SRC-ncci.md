@@ -26,10 +26,10 @@ This document describes the National Correct Coding Initiative (NCCI) Medically 
 
 ## TODO
 This is a placeholder file. Full documentation needed including:
-- [ ] Detailed field specifications
-- [ ] Edit type classifications
-- [ ] Processing requirements
-- [ ] Integration with NCCI ingester
+-  Detailed field specifications
+-  Edit type classifications
+-  Processing requirements
+-  Integration with NCCI ingester
 
 ---
 **Cross-References:**

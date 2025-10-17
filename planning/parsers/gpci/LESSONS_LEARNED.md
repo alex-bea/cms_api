@@ -733,11 +733,11 @@ elif count < 100:
 ```
 
 ### Implementation Checklist
-- [ ] Row count validation uses tiers
-- [ ] Range validation uses tiers  
-- [ ] Categorical validation uses tiers
-- [ ] No test-only flags in metadata
-- [ ] Tests validate warnings are logged
+-  Row count validation uses tiers
+-  Range validation uses tiers  
+-  Categorical validation uses tiers
+-  No test-only flags in metadata
+-  Tests validate warnings are logged
 ```
 
 ---

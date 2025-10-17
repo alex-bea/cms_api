@@ -56,10 +56,7 @@ The 2 failing tests mentioned in TESTING_SUMMARY.md **do not exist** in current 
 ### Phase 0 Tasks (MPFS Ingestor Foundation)
 
 **Remaining:** 4 of 6 parsers (67%)
-- [ ] GPCI parser (~120 lines, 2 hours)
-- [ ] ANES parser (~100 lines, 2 hours)  
-- [ ] OPPSCAP parser (~120 lines, 2 hours)
-- [ ] Locality parser (~100 lines, 2 hours)
+> **Tasks now tracked in Project:** https://github.com/alex-bea/cms_api/issues/420, https://github.com/alex-bea/cms_api/issues/421, https://github.com/alex-bea/cms_api/issues/422, https://github.com/alex-bea/cms_api/issues/423
 
 **Total Estimated Time:** 8 hours
 

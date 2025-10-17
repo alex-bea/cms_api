@@ -530,11 +530,11 @@ license:
 ### 2.4.2 Validation Checklist
 
 Before marking tests complete:
-- [ ] All test expectations match actual implementation return types
-- [ ] All business logic branches are tested
-- [ ] All edge cases discovered during analysis are covered
-- [ ] Mocks target actual import paths and call patterns
-- [ ] Test data reflects real-world scenarios
+-  All test expectations match actual implementation return types
+-  All business logic branches are tested
+-  All edge cases discovered during analysis are covered
+-  Mocks target actual import paths and call patterns
+-  Test data reflects real-world scenarios
 
 ⸻
 

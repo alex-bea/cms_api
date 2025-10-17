@@ -300,14 +300,14 @@ vim prds/PRD-mac-locality-prd-v1.0.md
 
 After creating new parser planning:
 
-- [ ] Directory exists: `planning/parsers/{name}/`
-- [ ] Archive exists: `planning/parsers/{name}/archive/`
-- [ ] README exists and customized (no `{placeholders}` or `TBD`)
-- [ ] Entry in master index: `planning/parsers/README.md`
-- [ ] PRD has backwards reference (if PRD exists)
-- [ ] Sample data location verified
-- [ ] Schema contract exists (or planned)
-- [ ] Layout defined (if fixed-width)
+-  Directory exists: `planning/parsers/{name}/`
+-  Archive exists: `planning/parsers/{name}/archive/`
+-  README exists and customized (no `{placeholders}` or `TBD`)
+-  Entry in master index: `planning/parsers/README.md`
+-  PRD has backwards reference (if PRD exists)
+-  Sample data location verified
+-  Schema contract exists (or planned)
+-  Layout defined (if fixed-width)
 
 ---
 

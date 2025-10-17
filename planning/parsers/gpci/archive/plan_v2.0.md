@@ -308,40 +308,40 @@ This test runs **after** all parsers complete, not during GPCI parsing.
 
 ### Schema Contract
 - [x] `cms_gpci_v1.2.json` created with CMS-native naming
-- [ ] Schema v1.1 deprecated (add deprecation note)
+-  Schema v1.1 deprecated (add deprecation note)
 
 ### Layout Registry
-- [ ] Update `GPCI_2025D_LAYOUT` (v2025.4.0 → v2025.4.1)
-- [ ] Rename columns to match schema v1.2
-- [ ] Measure actual `min_line_length` from sample data
-- [ ] Mark enrichment columns as optional
+-  Update `GPCI_2025D_LAYOUT` (v2025.4.0 → v2025.4.1)
+-  Rename columns to match schema v1.2
+-  Measure actual `min_line_length` from sample data
+-  Mark enrichment columns as optional
 
 ### Parser Module
-- [ ] `gpci_parser.py` (~180 lines following v1.7 template)
-- [ ] Column alias map (30 aliases for CSV variants)
-- [ ] Helper functions (_parse_csv, _parse_xlsx, _parse_fixed_width, etc.)
-- [ ] Range validation (_validate_gpci_ranges)
-- [ ] CMS guardrails (_apply_gpci_guardrails)
-- [ ] Schema v1.2 loading
+-  `gpci_parser.py` (~180 lines following v1.7 template)
+-  Column alias map (30 aliases for CSV variants)
+-  Helper functions (_parse_csv, _parse_xlsx, _parse_fixed_width, etc.)
+-  Range validation (_validate_gpci_ranges)
+-  CMS guardrails (_apply_gpci_guardrails)
+-  Schema v1.2 loading
 
 ### Test Fixtures
-- [ ] `tests/fixtures/gpci/golden/GPCI2025_sample.txt` (20 rows)
-- [ ] Include edge cases: Alaska (01), Manhattan (05), Alabama (00), rest-of-state (99)
-- [ ] `tests/fixtures/gpci/golden/GPCI2025_sample.csv`
-- [ ] `tests/fixtures/gpci/golden/GPCI2025_sample.xlsx`
-- [ ] `tests/fixtures/gpci/golden/README.md` (SHA-256, source, CMS release)
-- [ ] `tests/fixtures/gpci/negatives/*.csv` (8 negative cases)
+-  `tests/fixtures/gpci/golden/GPCI2025_sample.txt` (20 rows)
+-  Include edge cases: Alaska (01), Manhattan (05), Alabama (00), rest-of-state (99)
+-  `tests/fixtures/gpci/golden/GPCI2025_sample.csv`
+-  `tests/fixtures/gpci/golden/GPCI2025_sample.xlsx`
+-  `tests/fixtures/gpci/golden/README.md` (SHA-256, source, CMS release)
+-  `tests/fixtures/gpci/negatives/*.csv` (8 negative cases)
 
 ### Test Files
-- [ ] `tests/ingestion/test_gpci_parser_golden.py` (5 tests)
-- [ ] `tests/ingestion/test_gpci_parser_negatives.py` (8 tests)
-- [ ] `tests/integration/test_gpci_payment_spot_check.py` (1 integration test)
+-  `tests/ingestion/test_gpci_parser_golden.py` (5 tests)
+-  `tests/ingestion/test_gpci_parser_negatives.py` (8 tests)
+-  `tests/integration/test_gpci_payment_spot_check.py` (1 integration test)
 
 ### Documentation
-- [ ] Parser docstring with CMS provenance references
-- [ ] Golden fixture README with CMS release notes
-- [ ] Update `CHANGELOG.md` with GPCI completion + schema v1.2
-- [ ] Update `STATUS_REPORT.md` with progress
+-  Parser docstring with CMS provenance references
+-  Golden fixture README with CMS release notes
+-  Update `CHANGELOG.md` with GPCI completion + schema v1.2
+-  Update `STATUS_REPORT.md` with progress
 
 ---
 
@@ -377,38 +377,38 @@ This test runs **after** all parsers complete, not during GPCI parsing.
 ## ✅ **Acceptance Criteria (v1.2 Schema)**
 
 **Code Quality:**
-- [ ] Follows STD-parser-contracts v1.7 §21.1 (9-step template)
-- [ ] Uses parser kit utilities (no code duplication)
-- [ ] Schema v1.2 (CMS-native: `gpci_mp`, lean columns)
-- [ ] Layout v2025.4.1 (aligned with schema)
-- [ ] WARN severity for duplicate keys (not BLOCK)
+-  Follows STD-parser-contracts v1.7 §21.1 (9-step template)
+-  Uses parser kit utilities (no code duplication)
+-  Schema v1.2 (CMS-native: `gpci_mp`, lean columns)
+-  Layout v2025.4.1 (aligned with schema)
+-  WARN severity for duplicate keys (not BLOCK)
 
 **Testing:**
-- [ ] 14/14 tests passing (5 golden + 8 negatives + 1 integration)
-- [ ] Golden test produces identical hash
-- [ ] All rejection paths covered
-- [ ] Determinism test passes
-- [ ] Row count validation: 100-120 expected, fail <90
-- [ ] Payment spot-check within ±$0.01 (integration)
+-  14/14 tests passing (5 golden + 8 negatives + 1 integration)
+-  Golden test produces identical hash
+-  All rejection paths covered
+-  Determinism test passes
+-  Row count validation: 100-120 expected, fail <90
+-  Payment spot-check within ±$0.01 (integration)
 
 **Documentation:**
-- [ ] Comprehensive docstring with CMS references
-- [ ] Golden fixture README with SHA-256 + CMS release
-- [ ] CHANGELOG.md updated with schema v1.2 migration
-- [ ] Cross-references to REF PRDs
+-  Comprehensive docstring with CMS references
+-  Golden fixture README with SHA-256 + CMS release
+-  CHANGELOG.md updated with schema v1.2 migration
+-  Cross-references to REF PRDs
 
 **Performance:**
-- [ ] Parse 115 rows in <100ms
-- [ ] Memory usage <50MB
-- [ ] API P95 ≤ 500ms (integration requirement)
+-  Parse 115 rows in <100ms
+-  Memory usage <50MB
+-  API P95 ≤ 500ms (integration requirement)
 
 **Integration:**
-- [ ] Natural keys match PRD-rvu-gpci §3.3
-- [ ] MAC codes valid (5 digits)
-- [ ] Locality codes zero-padded 2 digits
-- [ ] GPCI values in CMS-realistic bounds [0.30, 2.00]
-- [ ] Ready for warehouse view `vw_gpci_current(date)`
-- [ ] Enrichment columns (state, locality_name, mac) optional
+-  Natural keys match PRD-rvu-gpci §3.3
+-  MAC codes valid (5 digits)
+-  Locality codes zero-padded 2 digits
+-  GPCI values in CMS-realistic bounds [0.30, 2.00]
+-  Ready for warehouse view `vw_gpci_current(date)`
+-  Enrichment columns (state, locality_name, mac) optional
 
 ---
 

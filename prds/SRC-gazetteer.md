@@ -26,10 +26,10 @@ This document describes the Census Gazetteer ZIP code data source used for geogr
 
 ## TODO
 This is a placeholder file. Full documentation needed including:
-- [ ] Detailed field specifications
-- [ ] Data quality validation rules
-- [ ] Processing requirements
-- [ ] Integration with ZIP resolver
+-  Detailed field specifications
+-  Data quality validation rules
+-  Processing requirements
+-  Integration with ZIP resolver
 
 ---
 **Cross-References:**

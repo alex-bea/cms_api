@@ -8,7 +8,7 @@
 
 ## Prohibited Patterns
 
-- Unchecked Markdown checkboxes (`- [ ]`) outside the designated template directories (`docs/templates/**`, `prds/_template/**`).
+- Unchecked Markdown checkboxes (`- `) outside the designated template directories (`docs/templates/**`, `prds/_template/**`).
 - `# TODO` comments that do not include both an owner and a GitHub task identifier.
 
 ## Pull Request Expectations

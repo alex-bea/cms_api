@@ -1421,6 +1421,164 @@ Parsers log metrics during execution. Ingestor aggregates into `metrics.json` an
 
 **v1.1 Enhancement:** Parsers will return metrics in ParseResult for cleaner separation.
 
+### 10.1.1 Safe Metrics Calculation Pattern (Added 2025-10-17)
+
+**Principle:** Metrics calculations must handle empty values, nulls, and edge cases gracefully.
+
+**Common Pitfalls:**
+```python
+# ❌ WRONG: Fails on empty strings or nulls
+min_val = df['column'].min()  # Includes empty strings ""
+max_val = float(df['column'].max())  # ValueError on ""
+
+# ❌ WRONG: Fails on empty DataFrame
+mean_val = df['column'].mean()  # May return NaN, not None
+```
+
+**Correct Pattern:**
+```python
+# ✅ CORRECT: Filter empty values before aggregation
+def safe_min_max(df: pd.DataFrame, column: str) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Calculate min/max safely, handling empty strings and nulls.
+    
+    Returns:
+        (min_val, max_val) or (None, None) if no valid values
+    """
+    # Filter out empty strings and nulls
+    valid_values = df[df[column] != ''][column]
+    valid_values = valid_values[valid_values.notna()]
+    
+    if len(valid_values) == 0:
+        return None, None
+    
+    try:
+        # Convert to numeric if needed
+        numeric_values = pd.to_numeric(valid_values, errors='coerce')
+        numeric_values = numeric_values[numeric_values.notna()]
+        
+        if len(numeric_values) == 0:
+            return None, None
+            
+        return float(numeric_values.min()), float(numeric_values.max())
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Failed to calculate min/max for {column}: {e}")
+        return None, None
+
+# Usage in metrics calculation
+gpci_work_min, gpci_work_max = safe_min_max(df, 'gpci_work')
+
+metrics = {
+    'gpci_work_min': gpci_work_min,  # None if no valid values
+    'gpci_work_max': gpci_work_max,
+}
+```
+
+**Standard Metrics Calculation Pattern:**
+```python
+def calculate_value_metrics(df: pd.DataFrame, column: str, column_type: str = 'numeric') -> Dict[str, Any]:
+    """
+    Calculate standard metrics for a column with safe handling.
+    
+    Args:
+        df: DataFrame
+        column: Column name
+        column_type: 'numeric' or 'categorical'
+    
+    Returns:
+        Dict with min, max, mean, null_count, empty_count
+    """
+    metrics = {
+        f'{column}_null_count': int(df[column].isna().sum()),
+        f'{column}_empty_count': int((df[column] == '').sum()),
+    }
+    
+    if column_type == 'numeric':
+        # Get valid numeric values
+        valid = df[df[column] != ''][column]
+        valid = valid[valid.notna()]
+        
+        if len(valid) > 0:
+            try:
+                numeric = pd.to_numeric(valid, errors='coerce')
+                numeric = numeric[numeric.notna()]
+                
+                if len(numeric) > 0:
+                    metrics[f'{column}_min'] = float(numeric.min())
+                    metrics[f'{column}_max'] = float(numeric.max())
+                    metrics[f'{column}_mean'] = float(numeric.mean())
+                    metrics[f'{column}_median'] = float(numeric.median())
+                else:
+                    metrics.update({f'{column}_{k}': None for k in ['min', 'max', 'mean', 'median']})
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Numeric conversion failed for {column}: {e}")
+                metrics.update({f'{column}_{k}': None for k in ['min', 'max', 'mean', 'median']})
+        else:
+            metrics.update({f'{column}_{k}': None for k in ['min', 'max', 'mean', 'median']})
+    
+    elif column_type == 'categorical':
+        metrics[f'{column}_unique_count'] = int(df[column].nunique())
+        
+        # Top 3 values
+        value_counts = df[column].value_counts().head(3)
+        metrics[f'{column}_top_values'] = value_counts.to_dict()
+    
+    return metrics
+```
+
+**Example Usage in Parser:**
+```python
+# Step 9: Build comprehensive metrics
+parse_duration = time.perf_counter() - start_time
+
+# Calculate GPCI value metrics safely
+gpci_metrics = {}
+for col in ['gpci_work', 'gpci_pe', 'gpci_mp']:
+    gpci_metrics.update(calculate_value_metrics(final_df, col, 'numeric'))
+
+# Calculate locality metrics
+locality_metrics = calculate_value_metrics(final_df, 'locality_code', 'categorical')
+
+metrics = {
+    'total_rows': len(df_input),
+    'valid_rows': len(final_df),
+    'reject_rows': len(rejects_df),
+    'parser_version': PARSER_VERSION,
+    'encoding_detected': encoding,
+    'parse_duration_sec': parse_duration,
+    'schema_id': metadata['schema_id'],
+    **gpci_metrics,  # Merge GPCI metrics
+    **locality_metrics,  # Merge locality metrics
+}
+```
+
+**Validation Warnings Pattern:**
+```python
+# Add warnings for unexpected metric values
+if metrics.get('gpci_work_max') and metrics['gpci_work_max'] > 2.0:
+    logger.warning(
+        f"GPCI Work max {metrics['gpci_work_max']} > 2.0 (unusual but valid). "
+        f"Verify data quality or geographic adjustment policy."
+    )
+
+if metrics.get('gpci_work_min') and metrics['gpci_work_min'] < 0.5:
+    logger.warning(
+        f"GPCI Work min {metrics['gpci_work_min']} < 0.5 (below expected floor). "
+        f"Possible data quality issue."
+    )
+```
+
+**Benefits:**
+- ✅ No ValueError on empty strings
+- ✅ No TypeError on mixed types
+- ✅ Graceful handling of empty DataFrames
+- ✅ Clear None values when no valid data
+- ✅ Consistent metric structure across parsers
+
+**Reference Implementation:** `cms_pricing/ingestion/parsers/gpci_parser.py` lines 480-510
+
+---
+
 **Metrics emitted for each file parsed:**
 
 ```json
@@ -1461,7 +1619,307 @@ Tracked in IngestRun model:
 - `validation_errors`, `validation_warnings`
 - `parse_duration_total_sec`
 
-### 10.3 Logging Requirements
+### 10.3 Safe Metrics Calculation Patterns (Added 2025-10-17)
+
+**Principle:** Metrics calculations must handle empty values, edge cases, and invalid data gracefully to prevent `ValueError`, `ZeroDivisionError`, and other runtime errors.
+
+**Problem:**
+Direct aggregation on columns with empty strings or mixed types causes failures:
+```python
+# ❌ WRONG: Fails if column has empty strings
+min_val = df['gpci_work'].min()  # ValueError: could not convert string to float: ''
+
+# ❌ WRONG: Fails on empty DataFrame
+avg_val = df['value'].mean()  # Returns NaN, not None
+
+# ❌ WRONG: No validation of result
+max_val = df['value'].max()  # Could be impossibly high (data error)
+```
+
+**Solution:** Safe aggregation with filtering, fallbacks, and validation.
+
+---
+
+#### Safe Min/Max Calculation
+
+```python
+def safe_min_max(df: pd.DataFrame, column: str, expected_range: tuple = None) -> Dict[str, Optional[float]]:
+    """
+    Calculate min/max with safe handling of empty values and validation.
+    
+    Args:
+        df: DataFrame containing the column
+        column: Column name to aggregate
+        expected_range: Optional (min, max) tuple for validation
+        
+    Returns:
+        {'min': float or None, 'max': float or None}
+    """
+    # Filter out empty strings and None values
+    valid = df[df[column] != ''][column]
+    valid = valid[valid.notna()]
+    
+    # Return None if no valid values
+    if len(valid) == 0:
+        return {'min': None, 'max': None}
+    
+    # Convert to numeric (safe with error handling)
+    try:
+        numeric = pd.to_numeric(valid, errors='coerce')
+        numeric = numeric.dropna()  # Remove coercion failures
+        
+        if len(numeric) == 0:
+            return {'min': None, 'max': None}
+        
+        min_val = float(numeric.min())
+        max_val = float(numeric.max())
+        
+        # Validate against expected range if provided
+        if expected_range:
+            expected_min, expected_max = expected_range
+            if min_val < expected_min or max_val > expected_max:
+                logger.warning(
+                    f"Metric out of expected range for {column}",
+                    min=min_val,
+                    max=max_val,
+                    expected_range=expected_range
+                )
+        
+        return {'min': min_val, 'max': max_val}
+        
+    except (ValueError, TypeError) as e:
+        logger.error(f"Failed to calculate min/max for {column}: {e}")
+        return {'min': None, 'max': None}
+```
+
+**Usage Example (GPCI Parser):**
+```python
+# Calculate GPCI value ranges with validation
+gpci_work_stats = safe_min_max(
+    final_df, 
+    'gpci_work',
+    expected_range=(0.5, 2.0)  # Validate against known GPCI range
+)
+
+metrics['gpci_work_min'] = gpci_work_stats['min']
+metrics['gpci_work_max'] = gpci_work_stats['max']
+```
+
+---
+
+#### Safe Count Calculation
+
+```python
+def safe_count(df: pd.DataFrame, column: str, value: Any) -> int:
+    """
+    Count occurrences of a value, handling empty strings and None.
+    
+    Args:
+        df: DataFrame
+        column: Column name
+        value: Value to count
+        
+    Returns:
+        Count of matching rows
+    """
+    if value == '' or value is None:
+        # Count actual empty/None, not just falsy values
+        return len(df[df[column].isna() | (df[column] == '')])
+    else:
+        return len(df[df[column] == value])
+```
+
+---
+
+#### Safe Percentage Calculation
+
+```python
+def safe_percentage(numerator: int, denominator: int, decimals: int = 2) -> Optional[float]:
+    """
+    Calculate percentage with division-by-zero protection.
+    
+    Args:
+        numerator: Count of subset
+        denominator: Total count
+        decimals: Decimal places for rounding
+        
+    Returns:
+        Percentage as float, or None if denominator is 0
+    """
+    if denominator == 0:
+        return None
+    
+    percentage = (numerator / denominator) * 100
+    return round(percentage, decimals)
+```
+
+**Usage Example:**
+```python
+reject_rate = safe_percentage(len(rejects), len(df))
+metrics['reject_rate_pct'] = reject_rate  # None if df empty, otherwise 0.00-100.00
+```
+
+---
+
+#### Comprehensive Metrics Pattern
+
+**Standard metrics structure for parsers:**
+
+```python
+# Core counts (always include)
+metrics = {
+    'total_rows': len(df),
+    'valid_rows': len(final_df),
+    'reject_rows': len(rejects_df),
+    'parse_duration_sec': round(elapsed, 3),
+}
+
+# Encoding info
+metrics.update({
+    'encoding_detected': encoding,
+    'encoding_fallback': encoding != 'utf-8',
+})
+
+# Column-specific stats (use safe aggregation)
+for col in numeric_columns:
+    stats = safe_min_max(final_df, col, expected_range=EXPECTED_RANGES.get(col))
+    metrics[f'{col}_min'] = stats['min']
+    metrics[f'{col}_max'] = stats['max']
+
+# Null rates (safe percentage)
+for col in required_columns:
+    null_count = safe_count(df, col, None)
+    metrics[f'{col}_null_count'] = null_count
+    metrics[f'{col}_null_rate_pct'] = safe_percentage(null_count, len(df))
+
+# Categorical distributions (top N)
+for col in categorical_columns:
+    value_counts = df[col].value_counts().head(5).to_dict()
+    metrics[f'{col}_top5'] = value_counts
+
+# Validation summary
+metrics['validation_errors'] = {
+    'category_unknown': len(category_rejects),
+    'range_violation': len(range_rejects),
+    'duplicate_key': len(duplicate_rejects),
+}
+```
+
+---
+
+#### Sanity Checks & Validation
+
+**Add validation to detect data quality issues early:**
+
+```python
+# After calculating metrics, validate ranges
+def validate_metrics(metrics: Dict) -> None:
+    """Sanity check metrics to catch parser bugs or data issues."""
+    
+    # Row count validation
+    assert metrics['total_rows'] >= 0, "Negative row count"
+    assert metrics['valid_rows'] + metrics['reject_rows'] == metrics['total_rows'], \
+        "Row count mismatch: valid + rejects != total"
+    
+    # Duration validation
+    if metrics['parse_duration_sec'] < 0:
+        logger.warning("Negative parse duration detected")
+    
+    # Value range validation (dataset-specific)
+    if 'gpci_work_min' in metrics and metrics['gpci_work_min'] is not None:
+        if metrics['gpci_work_min'] < 0 or metrics['gpci_work_max'] > 10:
+            logger.error(
+                "GPCI values out of possible range",
+                min=metrics['gpci_work_min'],
+                max=metrics['gpci_work_max']
+            )
+    
+    # Reject rate validation
+    if metrics.get('reject_rate_pct', 0) > 50:
+        logger.warning(
+            "High reject rate detected",
+            rate=metrics['reject_rate_pct'],
+            total=metrics['total_rows'],
+            rejects=metrics['reject_rows']
+        )
+
+# Call after metrics calculation
+validate_metrics(metrics)
+```
+
+---
+
+#### Anti-Patterns to Avoid
+
+**1. Direct aggregation without filtering:**
+```python
+# ❌ WRONG: Fails on empty strings
+min_val = df['col'].min()
+
+# ✅ CORRECT: Filter first
+valid = df[df['col'] != '']['col']
+min_val = float(valid.min()) if len(valid) > 0 else None
+```
+
+**2. No fallback for empty DataFrames:**
+```python
+# ❌ WRONG: Returns NaN or fails
+avg = df['col'].mean()
+
+# ✅ CORRECT: Check for empty
+avg = float(df['col'].mean()) if len(df) > 0 else None
+```
+
+**3. No validation of calculated values:**
+```python
+# ❌ WRONG: Silently accepts impossible values
+max_gpci = df['gpci_work'].max()  # Could be 999.0 (data error)
+
+# ✅ CORRECT: Validate against expected range
+max_gpci = df['gpci_work'].max()
+if max_gpci > 2.0:
+    logger.error(f"Impossible GPCI value: {max_gpci}")
+```
+
+**4. Mixed types in aggregation:**
+```python
+# ❌ WRONG: Breaks if column has strings and numbers
+total = df['amount'].sum()
+
+# ✅ CORRECT: Convert to numeric first
+numeric = pd.to_numeric(df['amount'], errors='coerce')
+total = float(numeric.sum()) if len(numeric) > 0 else None
+```
+
+---
+
+#### Implementation Checklist
+
+For each parser:
+- [ ] Use `safe_min_max()` for numeric column ranges
+- [ ] Use `safe_percentage()` for rates and proportions
+- [ ] Filter empty strings before aggregation
+- [ ] Return `None` for empty DataFrames (not NaN or 0)
+- [ ] Validate metrics against expected ranges
+- [ ] Log warnings for unexpected metric values
+- [ ] Assert join invariant: `total_rows == valid_rows + reject_rows`
+- [ ] Include encoding_detected and parse_duration_sec
+
+---
+
+**Reference Implementation:**
+- `cms_pricing/ingestion/parsers/gpci_parser.py` - Lines 400-450 (metrics calculation)
+- `planning/parsers/gpci/LESSONS_LEARNED.md` - §9 Metrics calculation lessons
+
+**Benefits:**
+- Prevents runtime errors from empty/invalid data
+- Provides actionable warnings for data quality issues
+- Enables safe comparison of metrics across releases
+- Reduces debugging time when metrics are unexpected
+
+---
+
+### 10.4 Logging Requirements
 
 **Every parse operation MUST log:**
 
@@ -1895,44 +2353,44 @@ tests/fixtures/
 ## 18. Acceptance Criteria
 
 **Parser Implementation:**
-- [ ] Parser follows function signature contract (§6.1)
-- [ ] Returns `ParseResult(data, rejects, metrics)` per v1.1 spec (§5.3)
-- [ ] Accepts metadata dict, injects metadata columns (§6.4)
-- [ ] Returns DataFrame with explicit dtypes (no object for codes)
-- [ ] Output sorted by natural key (pinned columns per dataset)
-- [ ] Includes 64-char row_content_hash column (schema-driven precision)
-- [ ] Handles encoding with CP1252 cascade (§5.2)
-- [ ] Content sniffing via file_head parameter (§6.2)
-- [ ] Logs with release_id, file_sha256, schema_id, encoding_detected
-- [ ] Pre-checks categorical domains before conversion (§8.2.1)
-- [ ] Separates valid/reject rows explicitly (no silent NaN coercion)
-- [ ] Validates against schema contract
-- [ ] Performance meets SLAs (§5.5)
+-  Parser follows function signature contract (§6.1)
+-  Returns `ParseResult(data, rejects, metrics)` per v1.1 spec (§5.3)
+-  Accepts metadata dict, injects metadata columns (§6.4)
+-  Returns DataFrame with explicit dtypes (no object for codes)
+-  Output sorted by natural key (pinned columns per dataset)
+-  Includes 64-char row_content_hash column (schema-driven precision)
+-  Handles encoding with CP1252 cascade (§5.2)
+-  Content sniffing via file_head parameter (§6.2)
+-  Logs with release_id, file_sha256, schema_id, encoding_detected
+-  Pre-checks categorical domains before conversion (§8.2.1)
+-  Separates valid/reject rows explicitly (no silent NaN coercion)
+-  Validates against schema contract
+-  Performance meets SLAs (§5.5)
 
 **Testing:**
-- [ ] Unit tests pass for parser function
-- [ ] Golden-file test produces identical output (hash-verified)
-- [ ] Schema validation test catches contract violations
-- [ ] Layout version test detects breaking changes
-- [ ] Performance test meets benchmarks
-- [ ] Integration test with ingestor passes
+-  Unit tests pass for parser function
+-  Golden-file test produces identical output (hash-verified)
+-  Schema validation test catches contract violations
+-  Layout version test detects breaking changes
+-  Performance test meets benchmarks
+-  Integration test with ingestor passes
 
 **Documentation:**
-- [ ] Parser function has comprehensive docstring
-- [ ] Schema contract registered in `contracts/`
-- [ ] Layout registered in `layout_registry.py` (if fixed-width)
-- [ ] Cross-referenced from dataset PRD
+-  Parser function has comprehensive docstring
+-  Schema contract registered in `contracts/`
+-  Layout registered in `layout_registry.py` (if fixed-width)
+-  Cross-referenced from dataset PRD
 
 **Compliance:**
-- [ ] No private method calls to other ingestors
-- [ ] Backwards compatible (if replacing existing parser)
-- [ ] Deprecation notices added (if applicable)
-- [ ] CI passes all quality gates
+-  No private method calls to other ingestors
+-  Backwards compatible (if replacing existing parser)
+-  Deprecation notices added (if applicable)
+-  CI passes all quality gates
 
 **Versioning:**
-- [ ] Changing hash spec (§5.2) or schema column order requires **MAJOR** parser version bump
-- [ ] Hash algorithm, delimiter (`\x1f`), or normalization rules are part of formal contract
-- [ ] Breaking changes properly documented with migration path
+-  Changing hash spec (§5.2) or schema column order requires **MAJOR** parser version bump
+-  Hash algorithm, delimiter (`\x1f`), or normalization rules are part of formal contract
+-  Breaking changes properly documented with migration path
 
 ---
 
@@ -2696,12 +3154,12 @@ if rowcount_msg:
 | **OK** | Normal range | No message | Production typical values |
 
 **Implementation Checklist:**
-- [ ] Row count validation uses tiers
-- [ ] Range validation uses tiers (value boundaries)
-- [ ] Categorical validation uses tiers
-- [ ] No `skip_*` or `test_mode` flags in metadata
-- [ ] Tests validate INFO/WARN messages are logged
-- [ ] Documentation explains each tier
+-  Row count validation uses tiers
+-  Range validation uses tiers (value boundaries)
+-  Categorical validation uses tiers
+-  No `skip_*` or `test_mode` flags in metadata
+-  Tests validate INFO/WARN messages are logged
+-  Documentation explains each tier
 
 **Prohibited Patterns:**
 ```python
@@ -2744,38 +3202,221 @@ OK:    0.5 <= value <= 2.0 (typical GPCI range)
 
 ---
 
-### 21.4 Per-Parser Acceptance Checklist
+### 21.4 Format Verification Pre-Implementation Checklist (Added 2025-10-17)
+
+**Principle:** Verify all format variations BEFORE writing parser code to prevent format-specific debugging.
+
+**Problem:**
+Starting parser implementation without understanding format variations leads to:
+- Unexpected failures when format B/C/D encountered
+- Rework of parsing logic for each format
+- Test failures after "complete" implementation
+- 2-3 hours debugging per format variant
+
+**Solution:** Complete format verification checklist before writing code.
+
+#### Pre-Implementation Verification Checklist
+
+**Step 1: Inventory All Formats (15 min)**
+-  List all expected formats: TXT, CSV, XLSX, ZIP
+-  Obtain sample file for each format
+-  Document source location/URL for each sample
+-  Verify samples are from correct product_year/quarter
+
+**Step 2: Inspect Headers & Structure (30 min)**
+
+For each format:
+-  **TXT:** Measure actual line length (not estimated)
+  ```bash
+  head -20 sample.txt | tail -10 | awk '{print length}'
+  # Document: min=165, max=173, set min_line_length=160
+  ```
+
+-  **CSV:** Document exact header row structure
+  ```bash
+  head -5 sample.csv
+  # Document: Row 1 = title, Row 2 = headers, Row 3 = data start
+  # Note: skiprows=2 needed
+  ```
+
+-  **XLSX:** Document sheet structure
+  ```python
+  # Check: How many sheets? Which sheet has data?
+  # Document: Sheet name, header row index, data start row
+  ```
+
+-  **ZIP:** List inner files and their formats
+  ```bash
+  unzip -l sample.zip
+  # Document: Inner file names, formats, which to parse
+  ```
+
+**Step 3: Header Normalization Mapping (30 min)**
+
+-  Extract all unique column names from ALL formats
+  ```python
+  # TXT headers (from layout or first row)
+  # CSV headers (from header row)
+  # XLSX headers (from header row)
+  ```
+
+-  Create comprehensive alias map
+  ```python
+  ALIAS_MAP = {
+      # TXT format
+      'locality code': 'locality_code',
+      # CSV format  
+      'locality_code': 'locality_code',
+      # XLSX format
+      '2025 PW GPCI': 'gpci_work',
+      '2025_pw_gpci_(with_1.0_floor)': 'gpci_work',
+  }
+  ```
+
+-  Verify all aliases map to schema columns
+  ```python
+  schema_cols = set(schema['columns'].keys())
+  alias_targets = set(ALIAS_MAP.values())
+  assert alias_targets.issubset(schema_cols), f"Unmapped: {alias_targets - schema_cols}"
+  ```
+
+**Step 4: Validate Layouts Against Real Data (20 min)**
+
+For fixed-width formats:
+-  Load layout specification
+-  Parse first 10 data rows with layout
+-  Verify column boundaries are correct
+  ```python
+  # Check: Does layout['hcpcs']['start':end'] extract "99213"?
+  # Check: Are there extra spaces or truncation?
+  ```
+
+-  Measure actual vs expected line lengths
+  ```python
+  # Expected from layout: min_line_length=200
+  # Actual from file: 173 chars
+  # Action: Update layout min_line_length to 165
+  ```
+
+**Step 5: Document Format-Specific Quirks (15 min)**
+
+Create format quirks table:
+```markdown
+| Format | Quirk | Impact | Solution |
+|--------|-------|--------|----------|
+| TXT | Fixed-width, min_line_length=165 | Header detection | Use dynamic detection |
+| CSV | 2 header rows | Pandas reads wrong row | skiprows=2 |
+| XLSX | Full dataset (~113 rows) | Has duplicates | Expect rejects |
+| ZIP | Inner file is TXT | Format detection | Content sniffing |
+```
+
+**Step 6: Create Format Test Matrix (10 min)**
+
+Document test plan:
+```markdown
+| Format | Test Type | Fixture | Expected Rows | Expected Rejects |
+|--------|-----------|---------|---------------|------------------|
+| TXT | golden | GPCI2025_sample.txt | 18 | 0 |
+| CSV | golden | GPCI2025_sample.csv | 18 | 0 |
+| XLSX | full | GPCI2025.xlsx | >=100 | >0 (duplicates) |
+| ZIP | golden | GPCI2025_sample.zip | 18 | 0 |
+| TXT | edge_case | duplicate_locality_00.txt | 3 input, 1 valid | 2 |
+```
+
+**Step 7: Signoff Checklist**
+
+Before writing parser code, verify:
+-  All formats inspected and documented
+-  Header structures understood for each format
+-  Alias map covers all column name variations
+-  Layout validated against real data
+-  Format quirks documented
+-  Test matrix created
+-  Sample fixtures obtained
+
+**Time Investment:** ~2 hours pre-implementation verification
+
+**Time Saved:** 4-6 hours debugging format issues during/after implementation
+
+**Reference Example:**
+- `planning/parsers/gpci/PRE_IMPLEMENTATION_PLAN.md` - Complete GPCI verification
+- `planning/parsers/gpci/LESSONS_LEARNED.md` - §6 Format verification lesson
+
+**Common Failures Prevented:**
+- TXT file with unexpected line length → All rows skipped
+- CSV with multiple header rows → Wrong columns extracted
+- XLSX with different column names → KeyError on required fields
+- ZIP containing CSV instead of TXT → Wrong parser applied
+
+---
+
+### 21.5 Per-Parser Acceptance Checklist
 
 **Routing & Natural Keys:**
-- [ ] Correct dataset, schema_id, natural_keys from route_to_parser()
-- [ ] Routing latency p95 ≤ 20ms
-- [ ] Natural keys: uniqueness enforced, duplicates → NATURAL_KEY_DUPLICATE
+-  Correct dataset, schema_id, natural_keys from route_to_parser()
+-  Routing latency p95 ≤ 20ms
+-  Natural keys: uniqueness enforced, duplicates → NATURAL_KEY_DUPLICATE
 
 **Validation:**
-- [ ] Categoricals: unknowns/nulls handled per policy
-- [ ] Rejects include: row_id, schema_id, release_id, validation_rule_id, validation_column, validation_context
-- [ ] Join invariant: len(valid) + len(rejects) == len(input)
+-  Categoricals: unknowns/nulls handled per policy
+-  Rejects include: row_id, schema_id, release_id, validation_rule_id, validation_column, validation_context
+-  Join invariant: len(valid) + len(rejects) == len(input)
 
 **Precision & Determinism:**
-- [ ] Numerics: precision preserved (schema-driven rounding)
-- [ ] Determinism: repeat → identical row_content_hash
-- [ ] Chunked vs single-shot: identical outputs
+-  Numerics: precision preserved (schema-driven rounding)
+-  Determinism: repeat → identical row_content_hash
+-  Chunked vs single-shot: identical outputs
 
 **Performance:**
-- [ ] 10K rows: validate ≤ 300ms
-- [ ] E2E soft guard ≤ 1.5s (hard fail at 2s)
+-  10K rows: validate ≤ 300ms
+-  E2E soft guard ≤ 1.5s (hard fail at 2s)
 
 **Testing:**
-- [ ] Golden fixture created with SHA-256 documented
-- [ ] 5 unit tests: golden, schema, encoding, error, empty
-- [ ] Integration test: route → parse → validate → finalize
+-  Golden fixture created with SHA-256 documented
+-  5 unit tests: golden, schema, encoding, error, empty
+-  Integration test: route → parse → validate → finalize
 
 **Documentation:**
-- [ ] Comprehensive docstring with examples
-- [ ] Golden fixture README with source + hash
-- [ ] Parser version constant (SemVer)
+-  Comprehensive docstring with examples
+-  Golden fixture README with source + hash
+-  Parser version constant (SemVer)
 
-### 21.5 Golden-First Development Workflow
+### 21.6 Incremental (Phased) Implementation Strategy (Added 2025-10-17)
+
+**Principle:** Implement parsers in phases, adding one format at a time, to isolate errors and demonstrate incremental progress.
+
+**Problem:** Attempting all formats simultaneously leads to difficult error isolation, longer time to first working test, and complex debugging.
+
+**Solution:** Three-phase implementation.
+
+**Phase 1: Single Format + Core Logic (3-4h)**
+- Choose simplest format (TXT or CSV)
+- Implement core parser structure (§21.1)
+- Create single-format golden test
+- Iterate until passing
+- ✅ Checkpoint: One format working, 0 rejects
+
+**Phase 2: Additional Formats (2-3h)**
+- Pre-inspect each format (§21.4)
+- Add format-specific parsing
+- Create golden test per format
+- Add consistency tests
+- ✅ Checkpoint per format: Parses correctly, matches Phase 1 output
+
+**Phase 3: Edge Cases & Negative Tests (1-2h)**
+- Document known quirks (from SRC-{dataset}.md)
+- Create edge case fixtures
+- Write edge case tests (`@pytest.mark.edge_case`)
+- Add negative tests (`@pytest.mark.negative`)
+- ✅ Checkpoint: All error paths validated
+
+**Benefits:** 40% faster time to first test, isolated debugging, incremental progress visibility
+
+**Reference:** `planning/parsers/gpci/LESSONS_LEARNED.md` §10
+
+---
+
+### 21.7 Golden-First Development Workflow
 
 **Recommended approach for new parsers:**
 

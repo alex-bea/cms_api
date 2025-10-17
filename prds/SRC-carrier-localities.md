@@ -26,10 +26,10 @@ This document describes the Carrier Locality crosswalk data source used for mapp
 
 ## TODO
 This is a placeholder file. Full documentation needed including:
-- [ ] Detailed field specifications
-- [ ] Locality code definitions
-- [ ] Processing requirements
-- [ ] Integration with geography services
+-  Detailed field specifications
+-  Locality code definitions
+-  Processing requirements
+-  Integration with geography services
 
 ---
 **Cross-References:**

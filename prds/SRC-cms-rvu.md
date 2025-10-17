@@ -26,10 +26,10 @@ This document describes the CMS Medicare Physician Fee Schedule (MPFS) Resource-
 
 ## TODO
 This is a placeholder file. Full documentation needed including:
-- [ ] Detailed field specifications
-- [ ] File format variations
-- [ ] Processing requirements
-- [ ] Integration with MPFS ingester
+-  Detailed field specifications
+-  File format variations
+-  Processing requirements
+-  Integration with MPFS ingester
 
 ---
 **Cross-References:**

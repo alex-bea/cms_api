@@ -170,18 +170,18 @@ pytest -m gpci -v
 ```
 
 ### **Before Merge:**
-- [ ] Run full test suite and verify all pass
-- [ ] Check linter (no errors)
-- [ ] Review CHANGELOG entry
-- [ ] Verify router integration
-- [ ] Test with real RVU25D bundle
+-  Run full test suite and verify all pass
+-  Check linter (no errors)
+-  Review CHANGELOG entry
+-  Verify router integration
+-  Test with real RVU25D bundle
 
 ### **After Tests Pass:**
-- [ ] Commit parser + tests
-- [ ] Push to GitHub
-- [ ] Update PRD-rvu-gpci-prd to v0.2
-- [ ] Update GitHub tasks (mark GPCI complete)
-- [ ] Plan next parser (OPPSCAP or Locality)
+-  Commit parser + tests
+-  Push to GitHub
+-  Update PRD-rvu-gpci-prd to v0.2
+-  Update GitHub tasks (mark GPCI complete)
+-  Plan next parser (OPPSCAP or Locality)
 
 ---
 
