@@ -82,14 +82,7 @@
 - **Status**: ❌ Not implemented
 
 **Requirements:**
-- [ ] Create `cms_pricing/ingestion/ingestors/asc_ingestor.py`
-- [ ] Implement DIS-compliant ASC ingester
-- [ ] Handle Ambulatory Surgical Center fee schedule data
-- [ ] Support quarterly releases
-- [ ] Add schema contracts for ASC data validation
-- [ ] Implement 5-pillar observability
-- [ ] Add quarantine workflow for rejected records
-- [ ] Create comprehensive test suite following QTS standards
+> **Tasks now tracked in Project:** https://github.com/alex-bea/cms_api/issues/345, https://github.com/alex-bea/cms_api/issues/346, https://github.com/alex-bea/cms_api/issues/347, https://github.com/alex-bea/cms_api/issues/348, https://github.com/alex-bea/cms_api/issues/349, https://github.com/alex-bea/cms_api/issues/350, https://github.com/alex-bea/cms_api/issues/351, https://github.com/alex-bea/cms_api/issues/352
 
 **Files to Create/Modify:**
 - `cms_pricing/ingestion/ingestors/asc_ingestor.py` (new)
@@ -109,14 +102,7 @@
 - **Status**: ❌ Not implemented
 
 **Requirements:**
-- [ ] Create `cms_pricing/ingestion/ingestors/clfs_ingestor.py`
-- [ ] Implement DIS-compliant CLFS ingester
-- [ ] Handle Clinical Laboratory Fee Schedule data
-- [ ] Support quarterly releases
-- [ ] Add schema contracts for CLFS data validation
-- [ ] Implement 5-pillar observability
-- [ ] Add quarantine workflow for rejected records
-- [ ] Create comprehensive test suite following QTS standards
+> **Tasks now tracked in Project:** https://github.com/alex-bea/cms_api/issues/353, https://github.com/alex-bea/cms_api/issues/354, https://github.com/alex-bea/cms_api/issues/355, https://github.com/alex-bea/cms_api/issues/356, https://github.com/alex-bea/cms_api/issues/357, https://github.com/alex-bea/cms_api/issues/358, https://github.com/alex-bea/cms_api/issues/359, https://github.com/alex-bea/cms_api/issues/360
 
 ---
 
@@ -128,15 +114,7 @@
 - **Status**: ❌ Not implemented
 
 **Requirements:**
-- [ ] Create `cms_pricing/ingestion/ingestors/dmepos_ingestor.py`
-- [ ] Implement DIS-compliant DMEPOS ingester
-- [ ] Handle Durable Medical Equipment pricing data
-- [ ] Support quarterly releases
-- [ ] Add schema contracts for DMEPOS data validation
-- [ ] Implement 5-pillar observability
-- [ ] Add quarantine workflow for rejected records
-- [ ] Create comprehensive test suite following QTS standards
-- [ ] Integrate with geography data for rural adjustments
+> **Tasks now tracked in Project:** https://github.com/alex-bea/cms_api/issues/361, https://github.com/alex-bea/cms_api/issues/362, https://github.com/alex-bea/cms_api/issues/363, https://github.com/alex-bea/cms_api/issues/364, https://github.com/alex-bea/cms_api/issues/365, https://github.com/alex-bea/cms_api/issues/366, https://github.com/alex-bea/cms_api/issues/367, https://github.com/alex-bea/cms_api/issues/368, https://github.com/alex-bea/cms_api/issues/369
 
 ---
 
@@ -148,14 +126,7 @@
 - **Status**: ❌ Not implemented
 
 **Requirements:**
-- [ ] Create `cms_pricing/ingestion/ingestors/asp_ingestor.py`
-- [ ] Implement DIS-compliant ASP ingester
-- [ ] Handle Average Sales Price data for Part B drugs
-- [ ] Support quarterly releases
-- [ ] Add schema contracts for ASP data validation
-- [ ] Implement 5-pillar observability
-- [ ] Add quarantine workflow for rejected records
-- [ ] Create comprehensive test suite following QTS standards
+> **Tasks now tracked in Project:** https://github.com/alex-bea/cms_api/issues/370, https://github.com/alex-bea/cms_api/issues/371, https://github.com/alex-bea/cms_api/issues/372, https://github.com/alex-bea/cms_api/issues/373, https://github.com/alex-bea/cms_api/issues/374, https://github.com/alex-bea/cms_api/issues/375, https://github.com/alex-bea/cms_api/issues/376, https://github.com/alex-bea/cms_api/issues/377
 
 ---
 
