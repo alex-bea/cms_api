@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `RUN-parser-qa-runbook-prd-v1.0.md` (437 lines) - QA procedures, pre-implementation checklist, acceptance criteria
   - `REF-parser-reference-appendix-v1.0.md` (350 lines) - Reference tables, file format characteristics
 - **Benefits:** 3-4x faster AI context loading (avg ~613 lines per doc vs 4,477 monolith), proper companion doc pattern (STD + -impl), independent versioning, clearer separation of concerns (policy vs code vs operations)
+- **2025-10-18 Follow-up:** Restored key v1.11 guidance and strengthened automation:
+  - Added “Implementation snapshot” to `STD-parser-contracts-prd-v2.0.md` summarizing ParseResult, encoding cascade, categorical guardrail, router sniffing, and metadata requirements.
+  - Reintroduced CSV/Excel pitfall examples in `STD-parser-contracts-impl-v2.0.md` (duplicate headers, Excel coercion, NBSP cleanup, CRLF handling).
+  - `REF-parser-routing-detection-v1.0.md` already contained all routing/layout content—no changes needed.
+  - Verified `REF-parser-quality-guardrails-v1.0.md` and `REF-parser-reference-appendix-v1.0.md` already carried exported sections; no action required.
+  - Enhanced `RUN-parser-qa-runbook-prd-v1.0.md` with an SLA summary, richer Step 2c variance guidance, updated test matrix, and tightened sign-off steps.
+  - Upgraded `tools/prd_modularizer.py` with `--auto-compare`, automated comparison reports, and suggestion synthesis so future splits automatically flag missing sections; added CLI help and documented the workflow.
 - **Source Section Mapping:** Each new document includes traceability table mapping back to v1.11 sections with line numbers
 - **Transition Support:** Archived v1.11 with deprecation notice, kept for 2-week transition period (until 2025-10-31)
 - **Locality Parser (v1.1.0) - Stage 1 Complete** - Locality-County Crosswalk raw parser
@@ -35,7 +42,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Authority Matrix:** TXT > CSV > XLSX for 2025D (documented variance: XLSX 78% overlap)
   - **Variance artifacts:** Auto-generated diff reports (missing/extra CSVs, parity JSON)
   - **Helpers:** `tests/helpers/variance_testing.py` with canon_locality() and write_variance_artifacts()
-  - **Stage 2 Planned:** GitHub task added for FIPS normalization (90-120 min estimated)
+- **Locality Parser (v1.2.0) - Stage 2 Complete** - FIPS Normalization with LSAD tie-breaking
+  - **Transform:** County NAMES → FIPS codes (3,222 counties from Census TIGER/Line 2025)
+  - **Set-logic expansion:** ALL COUNTIES, ALL EXCEPT X/Y, REST OF STATE (with expansion_method markers)
+  - **Canonical naming:** Preserves proper casing & diacritics (e.g., "Doña Ana County")
+  - **LSAD tie-breaking:** Disambiguates duplicates using fee_area hints + default preference order
+    - St. Louis County (MO 189) vs St. Louis city (MO 510)
+    - Richmond County (VA 159) vs Richmond city (VA 760)
+  - **State-specific rules:** VA independent cities (no blanket "City" strip), LA parishes (strip suffix in keys only), AK boroughs/census areas
+  - **Alias normalization:** Normalized keys for matching (ST. → SAINT), partial/exact replacement
+  - **Tiered matching:** exact → alias → fuzzy (optional with guardrails)
+  - **Deterministic output:** Zero-padding (state_fips: 2, county_fips: 3), sorted by NK, stable row_content_hash (SHA-256)
+  - **Enhanced metrics:** Match methods (exact/alias/fuzzy), expansion counts, per-state coverage tracking
+  - **Natural keys:** Primary (locality_code, state_fips, county_fips), Secondary (mac, locality_code, county_fips) for mis-wire detection
+  - **Implementation:** `normalize_locality_fips.py` (780 lines), comprehensive quarantine with reasons
+  - **Tests:** 4/4 passing (100%) - St. Louis, Richmond, ALL COUNTIES expansion, quarantine
+  - **Reference data:** Enhanced `county_aliases.yml` v2.0 with by_state rules and MO/VA disambiguation
+  - **Time actual:** 2.3 hours (within 2-2.5h enhanced plan estimate, Steps 1-10 complete)
+  - **Architecture:** Two-stage pipeline per STD-data-architecture-impl §1.3 (Stage 1 ✅ → Stage 2 ✅)
+  - **Authority:** Census TIGER/Line 2025 Gazetteer Counties (frozen, versioned, SHA-256 verified)
+  - **Next:** Integration testing (Stage 1 → Stage 2), documentation (SRC-locality.md updates)
+- **Census Reference Data Scraper** - GitHub task #33a added
+  - Automated scraper for Census TIGER/Line county data (annual refresh)
+  - Downloads 2025 Gazetteer Counties National file
+  - Validates record count (~3,200 counties/equivalents), spot-checks key counties
+  - Generates `us_counties.csv` with authority_version metadata
+  - Updates manifest.json with SHA-256, record count, download date
+  - Aligns with STD-scraper-prd-v1.0.md patterns
+  - Priority: Medium (annual refresh needed; manual process currently works)
 - **Reference Data Infrastructure** - Dual-mode reference data access (#125)
   - `REF_MODE` feature flag (inline vs curated)
   - Fail-closed policies for data publishing
@@ -460,4 +494,3 @@ Complete production-grade infrastructure for CMS data parsing with deterministic
 [Unreleased]: https://github.com/alex-bea/cms_api/compare/v0.1.0-phase0...HEAD
 [0.1.0-phase0]: https://github.com/alex-bea/cms_api/compare/v0.0.1...v0.1.0-phase0
 [0.0.1]: https://github.com/alex-bea/cms_api/releases/tag/v0.0.1
-
