@@ -659,6 +659,61 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 ---
 
+### Task 33a: Census Reference Data Scraper (TIGER/Line Counties)
+
+**Category:** Data Infrastructure
+**Priority:** Medium
+**Estimated Time:** 1-2 days
+**Labels:** reference-data, scraper, census, medium-priority
+
+**Description:**
+**Phase:** Reference Data Automation
+
+**Task:** Census Reference Data Scraper (TIGER/Line Counties & Gazetteer)
+
+**Purpose:** Automated scraper for Census TIGER/Line county reference data to ensure `us_counties.csv` stays current with annual Census releases.
+
+**Scope:**
+- Scraper for Census 2025 Gazetteer Counties National file
+- Downloads from: https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2025_Gazetteer/2025_Gaz_counties_national.zip
+- Validates record count (~3,200 counties/equivalents)
+- Spot-checks key counties (VA independent cities, LA parishes, AK boroughs, diacritics)
+- Generates `us_counties.csv` with authority_version metadata
+- Updates manifest.json with SHA-256, record count, download date
+- Runs on demand or scheduled (annual refresh)
+
+**Deliverables:**
+- `cms_pricing/ingestion/scrapers/census_gazetteer_scraper.py`
+- Integration with existing scraper CLI (`cms_pricing/ingestion/scrapers/cli.py`)
+- Unit tests for parsing and validation
+- Documentation in `SRC-gazetteer.md` (new)
+
+**Benefits:**
+- Ensures reference data stays current with Census annual releases
+- Auditable provenance (source URL, download date, SHA-256)
+- Aligns with STD-scraper-prd-v1.0.md patterns
+- Prevents manual download/conversion errors
+
+**Dependencies:**
+- REF-geography-source-map-prd-v1.0.md (existing)
+- STD-data-architecture-impl-v1.0.md §4.2 (Dual-Mode Reference Data)
+- STD-scraper-prd-v1.0.md (scraper patterns)
+
+**Acceptance Criteria:**
+- Scraper downloads 2025 Gazetteer file successfully
+- Validates ~3,220 records ±10
+- Spot-checks pass (Doña Ana, Alexandria city, Orleans Parish, Bethel Census Area)
+- Generates us_counties.csv matching expected schema (8 columns)
+- Updates manifest.json with correct metadata
+- CLI integration: `python -m cms_pricing.ingestion.scrapers.cli census-counties --year 2025`
+- Unit tests cover parsing, validation, error handling
+
+**Priority:** Medium (annual refresh needed; manual process currently works)
+
+**Source:** Locality Parser Stage 2 implementation (2025-10-17)
+
+---
+
 ### Task 34: Task 9: HRSA Ingester**
 
 **Category:** Data Ingestion
