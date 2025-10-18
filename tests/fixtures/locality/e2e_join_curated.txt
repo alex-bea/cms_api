@@ -1,0 +1,4 @@
+    10112       00    ALABAMA                STATEWIDE                                                 ALL COUNTIES
+    02102       01    ALASKA                 STATEWIDE                                                 ALL COUNTIES EXCEPT ALEUTIANS EAST BOROUGH, ALEUTIANS WEST CENSUS AREA
+                                                                                                       ALEUTIANS EAST BOROUGH, ALEUTIANS WEST CENSUS AREA
+

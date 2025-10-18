@@ -388,14 +388,14 @@ Medicare AdmiLocality         State                                             
 """
     
     # Fixture: Matching GPCI data (properly aligned to GPCI_2025D_LAYOUT)
-    # Columns: MAC (0-5), State (16-18), Locality (24-26), Locality Name (28-78), GPCI Work (121-126), GPCI PE (133-138), GPCI MP (145-150)
+    # Column positions per GPCI_2025D_LAYOUT: MAC (0-5), Locality (24-26), GPCI Work (121-127), GPCI PE (133-139), GPCI MP (145-151)
     gpci_fixture = """ADDENDUM E. FINAL CY 2025 GEOGRAPHIC PRACTICE COST INDICES (GPCIs) BY STATE AND MEDICARE LOCALITY
 
 Medicare Admi State  Locality                                      Locality Name                                      2025 PW GPCI2025 PE GPCI2025 MP GPCI
-01112           CA      18   LOS ANGELES-LONG BEACH-ANAHEIM                                                             1.055       1.190       0.667
-01112           CA      26   REST OF CALIFORNIA                                                                         1.009       1.037       0.571
-00903           VA      01   RICHMOND METRO                                                                             1.000       1.000       0.520
-00903           MO      02   STATEWIDE                                                                                  0.998       0.995       0.515
+01112           CA      18  LOS ANGELES-LONG BEACH-ANAHEIM                                                               1.055       1.190       0.667
+01112           CA      26  REST OF CALIFORNIA                                                                           1.009       1.037       0.571
+00903           VA      01  RICHMOND METRO                                                                               1.000       1.000       0.520
+00903           MO      02  STATEWIDE                                                                                    0.998       0.995       0.515
 """
     
     # Parse locality (Stage 1 + Stage 2)
@@ -443,7 +443,7 @@ Medicare Admi State  Locality                                      Locality Name
     
     # Left join: locality → GPCI on (mac, locality_code)
     joined = locality_df.merge(
-        gpci_df[['mac', 'locality_code_join', 'gpci_work', 'gpci_pe', 'gpci_malpractice']],
+        gpci_df[['mac', 'locality_code_join', 'gpci_work', 'gpci_pe', 'gpci_mp']],
         on=['mac', 'locality_code_join'],
         how='left',
         indicator=True
