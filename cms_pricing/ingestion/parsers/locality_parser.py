@@ -514,7 +514,8 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
         "NEW JERSEY", "NEW MEXICO", "NEW YORK", "NORTH CAROLINA", "NORTH DAKOTA", "OHIO",
         "OKLAHOMA", "OREGON", "PENNSYLVANIA", "RHODE ISLAND", "SOUTH CAROLINA", "SOUTH DAKOTA",
         "TENNESSEE", "TEXAS", "UTAH", "VERMONT", "VIRGINIA", "WASHINGTON", "WEST VIRGINIA",
-        "WISCONSIN", "WYOMING", "DISTRICT OF COLUMBIA", "PUERTO RICO", "GUAM", "VIRGIN ISLANDS"
+        "WISCONSIN", "WYOMING", "DISTRICT OF COLUMBIA", "PUERTO RICO", "GUAM", "VIRGIN ISLANDS",
+        "HAWAII/GUAM"  # CMS uses combined format for Hawaii
     }
     
     rows = []
@@ -595,8 +596,11 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
                 matched_state = valid_state
                 break
         
-        # Is this a continuation row? (blank state + non-blank fee_area)
-        is_continuation = (state_value == "" or state_normalized == "") and fee_area_value != ""
+        # Is this a continuation row?
+        # Continuation = invalid state + valid MAC/locality codes
+        # Fee_area can be blank or filled (doesn't matter)
+        has_codes = mac_value != "" and locality_value != ""
+        is_continuation = not is_valid_state and has_codes
         
         filled_fields = []
         
@@ -608,18 +612,20 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
             
         elif is_continuation:
             # Continuation row: Forward-fill from last valid state
-            if last_valid_state is None:
-                logger.warning(
-                    "continuation_without_state",
+            if last_valid_state is not None:
+                row["state_name"] = last_valid_state
+                filled_fields.append("state_name")
+            else:
+                # No prior valid state (e.g., CA rows with no header in sample file)
+                # Emit empty state_name - let Stage 2 infer from county names
+                row["state_name"] = ""
+                logger.debug(
+                    "continuation_without_prior_state",
                     line_no=line_no,
-                    reason="First locality line has blank state - cannot forward-fill",
                     mac=mac_value,
-                    locality=locality_value
+                    locality=locality_value,
+                    action="emitting_empty_state_for_stage2_inference"
                 )
-                continue  # Skip this row (cannot determine state)
-            
-            row["state_name"] = last_valid_state
-            filled_fields.append("state_name")
             
             # Also forward-fill mac and locality if blank
             if mac_value == "" and rows:

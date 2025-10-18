@@ -2641,11 +2641,73 @@ Implement Stage 2 of the two-stage Locality parser architecture: Transform raw c
 
 ---
 
-### Task: Locality Parser - Fix E2E GPCI Join Test
+### Task: Locality Parser - Complete Quarantine SLO (REST OF STATE + Ambiguous Counties)
 
 **Status:** NOT STARTED  
+**Priority:** Medium  
+**Estimated Time:** 2-3 hours  
+**Category:** Parser Enhancement & Testing  
+**Labels:** locality, stage-2-normalization, set-logic, medium-priority  
+**Issue:** GH-TBD
+
+**Description:**
+
+Complete remaining work to achieve <0.5% quarantine SLO for real CMS Locality files. Current rate: 1.56% (31/1985 rows).
+
+**Current State:**
+- ✅ State inference implemented (28/29 CA rows recovered)
+- ✅ Territories supported (Puerto Rico, Virgin Islands, Guam)
+- ✅ Parsing artifact cleanup (parentheses)
+- ❌ 31 rows still quarantined (3 known categories)
+
+**Remaining Issues:**
+
+**1. REST OF STATE Expansion (GH-33)** - 9+ rows
+- Pattern: "ALL OTHER COUNTIES" without explicit list
+- Requires: Parse all localities for state, compute set difference
+- Current: Quarantined as "ALL OTHER COUNTIES" literal match fails
+- Impact: ~0.45% of total quarantine
+
+**2. Ambiguous County Names** - 3-4 rows
+- Examples: BUTTE (CA/ID/NE/SD), KINGS (CA/NY), SANTA CRUZ (CA/AZ)
+- Current: Inference returns `None` (correctly - multiple states)
+- Policy needed: 
+  - Option A: Use MAC as hint (MAC 01112 = CA contractor)
+  - Option B: Quarantine with clear reason "ambiguous_county"
+  - Option C: Require fee_area hint for disambiguation
+- Impact: ~0.15% of total quarantine
+
+**3. Independent City Aliases** - 1-2 rows
+- Example: "ST. LOUIS CITY" not matching "St. Louis city" in reference
+- Requires: Add "CITY" suffix handling to alias logic
+- Impact: ~0.05% of total quarantine
+
+**Deliverables:**
+1. Implement REST OF STATE expansion in `normalize_locality_fips.py`
+2. Define ambiguous county policy + implementation
+3. Add "CITY" suffix to county_aliases.yml
+4. Update `test_locality_quarantine_slo_real_source` threshold: remove xfail
+5. Document in `SRC-locality.md` §6.3
+
+**Acceptance Criteria:**
+- Quarantine SLO <0.5% on real CMS sample file
+- `test_locality_quarantine_slo_real_source` PASSING (no xfail)
+- All 27/27 locality tests green
+- Policy documented for ambiguous counties
+
+**Cross-References:**
+- GH-33: REST OF STATE implementation
+- `planning/parsers/locality/TWO_STAGE_ARCHITECTURE.md`
+- `STD-qa-testing-prd-v1.0.md` Appendix H.4 (Quarantine SLO)
+- `data/reference/cms/county_aliases/2025/county_aliases.yml`
+
+---
+
+### Task: Locality Parser - Fix E2E GPCI Join Test
+
+**Status:** ✅ COMPLETE (2025-10-18)  
 **Priority:** Low  
-**Estimated Time:** 30-45 min  
+**Actual Time:** 1 hour (mostly Docker cache debugging)  
 **Category:** Testing & Validation  
 **Labels:** locality, integration-test, test-fixture, low-priority
 
@@ -2686,9 +2748,9 @@ Fix skipped E2E integration test for Stage 1 → Stage 2 → GPCI join validatio
 
 ### Task: Locality Parser - Fix Real-Source Quarantine SLO Test
 
-**Status:** NOT STARTED  
+**Status:** ✅ COMPLETE (2025-10-18)  
 **Priority:** Medium  
-**Estimated Time:** 1-1.5 hours  
+**Actual Time:** 3.5 hours (state tracking + inference implementation)  
 **Category:** Testing & Data Quality  
 **Labels:** locality, stage-1-parser, continuation-rows, medium-priority
 

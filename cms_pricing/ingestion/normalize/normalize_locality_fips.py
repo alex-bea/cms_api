@@ -123,6 +123,10 @@ def normalize_key(name: str, state_fips: Optional[str] = None) -> str:
     # Uppercase, collapse spaces, trim
     clean = ' '.join(ascii_name.upper().split())
     
+    # Clean parsing artifacts from Stage 1 (fee_area bleed, wrapped text)
+    clean = clean.replace(')', '').replace('(', '')  # Remove all parentheses
+    clean = ' '.join(clean.split())  # Re-collapse spaces after artifact removal
+    
     # State-specific suffix stripping (for matching only!)
     if state_fips == '22':  # Louisiana
         # Strip " PARISH" from key, but NOT from canonical output
@@ -257,6 +261,74 @@ SET_LOGIC_PATTERNS = {
     'all_except': re.compile(r'^ALL COUNTIES EXCEPT (.+)$', re.IGNORECASE),
     'rest_of': re.compile(r'^REST OF (?:STATE|[A-Z ]+)$', re.IGNORECASE),
 }
+
+
+def infer_state_from_counties(
+    county_names_raw: str,
+    counties_df: pd.DataFrame,
+    states_df: pd.DataFrame
+) -> Optional[Tuple[str, str, str]]:
+    """
+    Infer state from county names when state header is missing.
+    
+    Strategy:
+    1. Explode county list
+    2. Match each county to reference data (exact match on normalized keys)
+    3. Collect all states that contain matched counties
+    4. If exactly 1 state covers ALL matched counties, return it
+    
+    Returns:
+        (state_fips, state_name, confidence_note) or None
+    """
+    # Explode county list
+    county_list = explode_county_list(county_names_raw)
+    if not county_list:
+        return None
+    
+    # Prepare normalized county reference for matching
+    counties_normalized = counties_df.copy()
+    counties_normalized['county_key'] = counties_normalized['county_name'].str.upper().str.strip()
+    
+    # Match each county to reference data (collect candidate states)
+    candidate_states_per_county = []
+    matched_count = 0
+    
+    for county_name in county_list:
+        county_key = county_name.strip().upper()
+        
+        # Try exact match (county name without "County" suffix)
+        matches = counties_normalized[counties_normalized['county_key'] == county_key]
+        
+        # Also try with "COUNTY" suffix stripped
+        if len(matches) == 0:
+            county_key_no_suffix = county_key.replace(" COUNTY", "").replace(" PARISH", "").strip()
+            matches = counties_normalized[counties_normalized['county_key'].str.startswith(county_key_no_suffix)]
+        
+        if len(matches) > 0:
+            # Collect state FIPS from all matches for this county
+            states_for_county = set(matches['state_fips'].unique())
+            candidate_states_per_county.append(states_for_county)
+            matched_count += 1
+    
+    # Need at least 1 matched county to infer
+    if matched_count == 0:
+        return None
+    
+    # Find states that appear in ALL matched counties (intersection)
+    common_states = candidate_states_per_county[0] if candidate_states_per_county else set()
+    for states_set in candidate_states_per_county[1:]:
+        common_states = common_states & states_set
+    
+    # If exactly 1 state contains all matched counties, infer it
+    if len(common_states) == 1:
+        inferred_state_fips = list(common_states)[0]
+        state_row = states_df[states_df['state_fips'] == inferred_state_fips]
+        if len(state_row) > 0:
+            inferred_state_name = state_row['state_name'].iloc[0]
+            confidence = f"inferred_from_{matched_count}_of_{len(county_list)}_counties"
+            return (inferred_state_fips, inferred_state_name, confidence)
+    
+    return None  # Ambiguous (multiple states) or no match
 
 
 def detect_set_logic(county_names: str) -> Tuple[str, Optional[str]]:
@@ -685,6 +757,12 @@ def normalize_locality_fips(
     # Create state name → state_fips mapping
     state_map = dict(zip(states_df['state_name'].str.upper(), states_df['state_fips']))
     
+    # Add manual entries for territories and CMS-specific formats
+    state_map['PUERTO RICO'] = '72'
+    state_map['VIRGIN ISLANDS'] = '78'
+    state_map['GUAM'] = '66'
+    state_map['HAWAII/GUAM'] = '15'  # CMS combines Hawaii + Guam
+    
     # Compute authority fingerprint for drift detection
     authority_fingerprint = _compute_authority_fingerprint(counties_df)
     
@@ -717,25 +795,50 @@ def normalize_locality_fips(
         # Real CMS files split "STATEWIDE" across columns: "ALABAMA                STATE" + "WIDE"
         state_name = state_name_raw.replace("STATEWIDE", "").replace("WIDE", "").replace("STATE", "").strip()
         
-        # Derive state_fips
+        # Derive state_fips from state_name
         state_fips = state_map.get(state_name)
+        state_inference_attempted = False  # Guard against infinite inference loops
+        
+        # If no state_fips, attempt inference from county names (handles incomplete CMS headers)
         if not state_fips:
-            logger.warning("Unknown state", state_name=state_name)
-            quarantine_rows.append({
-                'mac': mac,
-                'locality_code': locality_code,
-                'state_name': state_name,
-                'county_names': county_names_raw,
-                'reason': 'unknown_state',
-            })
-            metrics['match_methods']['unknown_state'] += 1
-            continue
+            logger.info(
+                "state_unmapped_attempting_inference",
+                state_name=state_name,
+                county_names=county_names_raw[:80]
+            )
+            
+            inference = infer_state_from_counties(county_names_raw, counties_df, states_df)
+            if inference:
+                state_fips, inferred_state_name, confidence_note = inference
+                logger.info(
+                    "state_inferred_from_counties",
+                    original_state=state_name,
+                    inferred_state=inferred_state_name,
+                    inferred_fips=state_fips,
+                    confidence=confidence_note
+                )
+                # Use inferred state for processing
+                state_name = inferred_state_name
+                state_inference_attempted = True
+                metrics['match_methods']['state_inferred'] = metrics['match_methods'].get('state_inferred', 0) + 1
+            else:
+                # Cannot infer state - quarantine entire row
+                logger.warning("Unknown state - inference failed", state_name=state_name)
+                quarantine_rows.append({
+                    'mac': mac,
+                    'locality_code': locality_code,
+                    'state_name': state_name,
+                    'county_names': county_names_raw,
+                    'reason': 'unknown_state',
+                })
+                metrics['match_methods']['unknown_state'] += 1
+                continue
         
         # Detect set-logic
         expansion_method, exception_str = detect_set_logic(county_names_raw)
         metrics['expansion_methods'][expansion_method] += 1
         
-        # Expand set-logic
+        # Expand set-logic (with current state)
         if expansion_method == 'all_counties':
             county_list = expand_all_counties(state_fips, counties_df)
         elif expansion_method == 'all_except':
@@ -745,10 +848,62 @@ def normalize_locality_fips(
         else:  # 'list'
             county_list = explode_county_list(county_names_raw)
         
+        # Pre-check: If first county doesn't match, attempt state inference (surgical fix for header gaps)
+        # This handles cases where Stage 1 forward-filled wrong state (e.g., CA rows after AR header)
+        if len(county_list) > 0 and not state_inference_attempted:
+            first_county_key = normalize_key(county_list[0], state_fips)
+            test_match = match_exact(first_county_key, state_fips, counties_df, fee_area)
+            
+            if not test_match:
+                # First county doesn't match current state - attempt inference
+                logger.debug(
+                    "first_county_no_match_attempting_inference",
+                    county_key=first_county_key,
+                    state_name=state_name,
+                    state_fips=state_fips,
+                    county_names=county_names_raw[:60]
+                )
+                
+                inference = infer_state_from_counties(county_names_raw, counties_df, states_df)
+                if inference:
+                    # State inferred - update and re-expand
+                    inferred_state_fips, inferred_state_name, confidence_note = inference
+                    logger.info(
+                        "state_corrected_via_county_inference",
+                        original_state=state_name,
+                        original_fips=state_fips,
+                        inferred_state=inferred_state_name,
+                        inferred_fips=inferred_state_fips,
+                        confidence=confidence_note
+                    )
+                    
+                    # Update state variables
+                    state_fips = inferred_state_fips
+                    state_name = inferred_state_name
+                    state_inference_attempted = True
+                    metrics['match_methods']['state_inferred'] = metrics['match_methods'].get('state_inferred', 0) + 1
+                    
+                    # CRITICAL: Re-expand with corrected state (replaces county_list)
+                    if expansion_method == 'all_counties':
+                        county_list = expand_all_counties(state_fips, counties_df)
+                    elif expansion_method == 'all_except':
+                        county_list = expand_all_except(state_fips, exception_str, counties_df)
+                    elif expansion_method == 'rest_of_state':
+                        county_list = expand_rest_of_state(state_fips, locality_code, raw_df, counties_df)
+                    else:  # 'list'
+                        county_list = explode_county_list(county_names_raw)
+                    
+                    logger.debug(
+                        "re_expanded_with_inferred_state",
+                        county_count=len(county_list),
+                        expansion_method=expansion_method,
+                        new_state=state_name
+                    )
+        
         metrics['total_rows_exploded'] += len(county_list)
         
         # Match each county
-        for county_name_raw in county_list:
+        for county_idx, county_name_raw in enumerate(county_list):
             county_key = normalize_key(county_name_raw, state_fips)
             
             # Try exact match (with fee_area hint for disambiguation)
@@ -789,7 +944,7 @@ def normalize_locality_fips(
                             metrics['match_methods']['unknown_county'] += 1
                             continue
                     else:
-                        # No match and fuzzy disabled - quarantine
+                        # No match - quarantine (inference handled at row level)
                         quarantine_rows.append({
                             'mac': mac,
                             'locality_code': locality_code,
