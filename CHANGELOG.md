@@ -21,16 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Benefits:** 3-4x faster AI context loading (avg ~613 lines per doc vs 4,477 monolith), proper companion doc pattern (STD + -impl), independent versioning, clearer separation of concerns (policy vs code vs operations)
 - **Source Section Mapping:** Each new document includes traceability table mapping back to v1.11 sections with line numbers
 - **Transition Support:** Archived v1.11 with deprecation notice, kept for 2-week transition period (until 2025-10-31)
-- **Locality Parser (v1.0.0)** - Locality-County Crosswalk raw parser (#123)
-  - Fixed-width TXT parsing (25LOCCO.txt format)
-  - Schema: `cms_locality_raw_v1.0` (layout-faithful: state/county NAMES, not FIPS)
-  - Layout: `LOCCO_2025D_LAYOUT` v2025.4.2 (corrected column positions)
-  - Natural keys: `['mac', 'locality_code']`
-  - Features: Header skipping, state forward-fill, auto-deduplication
-  - Handles CMS data quirks: duplicate 05302/99 row auto-removed
-  - Tests: 4 golden tests (100% pass rate)
-  - Two-stage architecture: Raw parser → FIPS enricher (#124)
-  - Follows STD-parser-contracts v1.9 §21.1 (11-step template)
+- **Locality Parser (v1.1.0) - Stage 1 Complete** - Locality-County Crosswalk raw parser
+  - **Multi-format support:** TXT (fixed-width), CSV, XLSX
+  - **Schema:** `cms_locality_raw_v1.0` (layout-faithful: state/county NAMES, not FIPS)
+  - **Layout:** `LOCCO_2025D_LAYOUT` v2025.4.2 (corrected column positions, zero-padding)
+  - **Natural keys:** `['mac', 'locality_code']`
+  - **Features:** Dynamic header detection, state forward-fill on continuation rows, zero-padding (MAC: 5 digits, locality: 2 digits), preserves duplicates (raw layer semantics)
+  - **QTS Compliance:** Implements §5.1.3 Authentic Source Variance Testing with threshold-based parity (NK ≥98%, row ≤1%)
+  - **Tests:** 18 tests (17 passing, 1 skipped): 3 golden, 2 real-source, 5 edge case, 5 negative, 3 other
+  - **Documentation:** `prds/SRC-locality.md` (422 lines - comprehensive source descriptor)
+  - **Time Analysis:** `planning/parsers/locality/TIME_MEASUREMENT.md` - Validated 48-64% time savings vs GPCI baseline (4.2h vs 8h)
+  - **Two-stage architecture:** Raw parser (Stage 1 ✅) → FIPS normalizer (Stage 2 - planned)
+  - **Authority Matrix:** TXT > CSV > XLSX for 2025D (documented variance: XLSX 78% overlap)
+  - **Variance artifacts:** Auto-generated diff reports (missing/extra CSVs, parity JSON)
+  - **Helpers:** `tests/helpers/variance_testing.py` with canon_locality() and write_variance_artifacts()
+  - **Stage 2 Planned:** GitHub task added for FIPS normalization (90-120 min estimated)
 - **Reference Data Infrastructure** - Dual-mode reference data access (#125)
   - `REF_MODE` feature flag (inline vs curated)
   - Fail-closed policies for data publishing
@@ -43,9 +48,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Houses: `reference_mode.py` (REF_MODE feature flag and guardrails)
 - **Changelog Sync Automation** - GitHub Project integration (#126)
   - Tool: `tools/mark_tasks_done.py` syncs CHANGELOG with Project #5
+  - Enhanced with `--commits-since <ref>` to scan git log for issue references
   - Workflow: `.github/workflows/changelog-sync.yml` auto-triggers
   - Auto-closes issues and moves project cards to Done
   - Supports dry-run mode for testing
+- **Normative Language Audit Tool** - `tools/audit_normative_language.py`
+  - Prevents policy drift into guidance documents (REF-*, RUN-*)
+  - Flags MUST/SHALL/REQUIRED in non-STD documents
+  - Integrated into `run_all_audits.py` suite
+  - Skips code blocks, inline code, tables (smart detection)
+  - Status: ✅ PASSING (10 docs checked, 0 violations)
+- **QTS §5.1.3 Standard** - Authentic Source Variance Testing
+  - New testing standard for real CMS file format variance
+  - Threshold-based parity: NK overlap ≥98%, row variance ≤1% or ≤2 rows
+  - Format Authority Matrix pattern (TXT > CSV > XLSX)
+  - Variance report artifacts: missing/extra CSVs + parity JSON
+  - `@pytest.mark.real_source` marker for real-file tests
+  - `xfail(strict=True)` for ticketed mismatches
+  - Prohibits blanket `skip` of parity tests
+  - Documented in `STD-qa-testing-prd-v1.0.md` v1.4 → v1.5
+- **Parser Contracts §21.4 Step 2c** - Real Data Format Variance Analysis
+  - 5-step pre-implementation variance detection checklist
+  - Decision tree for variance levels (<2%, 2-10%, ≥10%)
+  - Authority Matrix selection guidance
+  - Diff artifacts planning
+  - Saves 30-60 min debugging per parser
+  - Documented in `STD-parser-contracts-prd-v1.0.md` v1.10 → v1.11
 - **GPCI Parser (v1.0.0)** - Geographic Practice Cost Indices parser
   - Supports TXT (fixed-width), CSV, XLSX, ZIP formats
   - Schema: `cms_gpci_v1.2` (CMS-native naming: `gpci_mp`, `locality_code`)
