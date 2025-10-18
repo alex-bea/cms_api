@@ -70,6 +70,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **GitHub tasks:** Added 2 tasks for fixing skipped tests (E2E GPCI join, real-source quarantine SLO)
   - **Documentation:** SRC-locality v1.1 → v1.2 with §3.1.2 E2E example, §6.3 Quarantine SLO, §6.4 Authority Drift
   - **Time:** 1.5h (within 1.5-2h hardening estimate)
+- **Locality Parser - State Inference & E2E Fixes** (Resilience for incomplete CMS headers)
+  - **State forward-fill fix:** Independent `last_valid_state` tracking prevents state bleeding across boundaries (e.g., AR → CA when CA header missing)
+  - **County-based state inference:** Stage 2 fallback when state unmapped - explodes county list, matches to Census reference, infers state if exactly 1 candidate
+    - Recovered 28/29 CA rows from sample file (96.6% success rate)
+    - Quarantine reduction: 7.21% → 1.56% (78% improvement, down from 143 to 31 rows)
+    - Guards: One attempt per row, ambiguous counties quarantined with reason
+  - **Territory support:** Added Puerto Rico (72), Virgin Islands (78), Guam (66), Hawaii/Guam (15) to state_map
+  - **Parsing artifact cleanup:** Strip parentheses/brackets from county names in `normalize_key()`
+  - **E2E GPCI join test:** ✅ PASSING - Fixed GPCI fixture alignment (positions 121, 133, 145), 100% join rate
+  - **Test status:** 26/27 passing (96%), 1 xfail (strict, expires 2025-12-31) for remaining gaps (REST OF STATE, ambiguous counties, ST. LOUIS CITY alias)
+  - **GitHub task:** Created "Complete Quarantine SLO" task tracking 3 remaining issues
+  - **Time:** 3.5 hours (state tracking 1.5h + GPCI join 1h + inference 1h)
 - **QTS v1.4 → v1.6** - Normalization & Enrichment Testing Patterns
   - **Appendix H added:** 6 new testing patterns for Stage 2+ normalization/enrichment pipelines
     - H.1: Set-Logic Expansion Testing (ALL/EXCEPT/REST OF cardinality validation, expansion_method tracking)
