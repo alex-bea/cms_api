@@ -533,10 +533,10 @@ This runbook provides operational procedures for parser development, QA, and pro
 Extract fixture → Write test → Implement → Verify → Commit
 
 ### 2.2 Acceptance Checklist
-- [ ] All formats parse successfully
-- [ ] Schema-compliant output
-- [ ] Natural key uniqueness validated
-- [ ] Coverage ≥ 90%
+- [x] All formats parse successfully
+- [x] Schema-compliant output
+- [x] Natural key uniqueness validated
+- [x] Coverage ≥ 90%
 
 ## 3. Metrics & Observability
 {§10: Observability & Metrics - 250 lines}
