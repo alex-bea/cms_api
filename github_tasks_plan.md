@@ -2581,9 +2581,9 @@ def parse_pprrvu(file_obj, filename, metadata) -> ParseResult:
 
 ### Task: Locality Parser - Stage 2: FIPS Normalization
 
-**Status:** NOT STARTED (Stage 1 COMPLETE ✅)  
+**Status:** ✅ COMPLETE (2025-10-18)  
 **Priority:** Medium  
-**Estimated Time:** 90-120 min  
+**Actual Time:** 2.3 hours (within 2-2.5h enhanced estimate)  
 **Dependencies:** Locality Stage 1 (raw parser complete ✅), Reference data infrastructure (Phase 0 complete ✅)  
 **Related PRDs:**
 - `planning/parsers/locality/TWO_STAGE_ARCHITECTURE.md` (detailed design)
@@ -2638,5 +2638,112 @@ Implement Stage 2 of the two-stage Locality parser architecture: Transform raw c
 - `cms_pricing/ingestion/parsers/locality_parser.py` (Stage 1 implementation)
 - `planning/parsers/locality/TIME_MEASUREMENT.md` (ROI analysis)
 - `prds/SRC-locality.md` (source descriptor)
+
+---
+
+### Task: Locality Parser - Fix E2E GPCI Join Test
+
+**Status:** NOT STARTED  
+**Priority:** Low  
+**Estimated Time:** 30-45 min  
+**Category:** Testing & Validation  
+**Labels:** locality, integration-test, test-fixture, low-priority
+
+**Description:**
+
+Fix skipped E2E integration test for Stage 1 → Stage 2 → GPCI join validation.
+
+**Current Issue:**
+- Test: `tests/integration/test_locality_e2e.py::test_locality_e2e_gpci_join_smoke`
+- Status: Skipped with reason "TODO: Fix GPCI fixture format - needs proper fixed-width alignment"
+- Problem: GPCI test fixture doesn't match `GPCI_2025D_LAYOUT` fixed-width specification
+
+**Deliverables:**
+1. Create properly aligned GPCI test fixture
+   - Use `GPCI_2025D_LAYOUT` column positions
+   - Include test data for CA localities (18, 26), VA (01), MO (02)
+   - Verify with `tools/verify_layout_positions.py`
+2. Update test to use correct fixture
+3. Verify test passes (join rate ≥99.5%, CA ROS spot-checks)
+
+**Acceptance Criteria:**
+- Test unmarked from skip (no `@pytest.mark.skip`)
+- Test passes in Docker CI
+- Validates: join rate ≥99.5%, no duplicate NKs, CA ROS excludes LA/Orange, CA 18 includes only LA/Orange
+
+**Files:**
+- `tests/integration/test_locality_e2e.py` (line 364)
+- `tests/fixtures/integration/gpci_join_sample.txt` (new fixture)
+
+**Cross-References:**
+- `cms_pricing/ingestion/parsers/gpci_parser.py` (GPCI parser)
+- `cms_pricing/ingestion/parsers/layout_registry.py` (GPCI_2025D_LAYOUT)
+- QTS v1.6 Appendix H.5 (Join Validation Patterns)
+
+**Priority:** Low (core functionality works; this is observability/validation enhancement)
+
+---
+
+### Task: Locality Parser - Fix Real-Source Quarantine SLO Test
+
+**Status:** NOT STARTED  
+**Priority:** Medium  
+**Estimated Time:** 1-1.5 hours  
+**Category:** Testing & Data Quality  
+**Labels:** locality, stage-1-parser, continuation-rows, medium-priority
+
+**Description:**
+
+Fix Stage 1 parser continuation row handling for real CMS files to enable quarantine SLO testing.
+
+**Current Issue:**
+- Test: `tests/integration/test_locality_e2e.py::test_locality_quarantine_slo_real_source`
+- Status: Skipped with reason "TODO: Fix Stage 1 continuation row parsing - state_name truncated on real file"
+- Problem: Continuation rows have state_name field truncated/bleeding into city names (e.g., "SAN F" instead of blank)
+- Root cause: Fixed-width column boundaries not handling continuation rows correctly
+
+**Symptoms:**
+```
+WARNING: Unknown state: "SAN F"  (should be blank, forward-filled)
+WARNING: Unknown state: "VALLE"  (Vallejo - should be continuation)
+WARNING: Unknown state: "BAKER"  (Bakersfield - should be continuation)
+```
+
+**Investigation Needed:**
+1. Verify `LOCCO_2025D_LAYOUT` column positions (state_name: cols 19-50)
+2. Check if continuation rows have different spacing/alignment
+3. Review forward-fill logic in `_parse_txt_fixed_width`
+4. Test with `tools/verify_layout_positions.py` on real CMS file
+
+**Deliverables:**
+1. Fix `locality_parser.py` continuation row handling
+   - Detect continuation rows more robustly
+   - Correctly identify when state_name is truly blank vs truncated
+   - Ensure forward-fill only applies to blank fields
+2. Update `LOCCO_2025D_LAYOUT` if column positions are incorrect
+3. Add edge case test for continuation rows with city names
+4. Verify quarantine SLO test passes with real file
+
+**Acceptance Criteria:**
+- Test unmarked from skip
+- Test passes with real `sample_data/rvu25d_0/25LOCCO.txt`
+- Quarantine rate ≤0.5%
+- All states recognized (≥50 states with data)
+- No "Unknown state" warnings for city names
+
+**Files:**
+- `cms_pricing/ingestion/parsers/locality_parser.py` (forward-fill logic)
+- `cms_pricing/ingestion/parsers/layout_registry.py` (LOCCO_2025D_LAYOUT)
+- `tests/integration/test_locality_e2e.py` (line 491)
+- `tests/parsers/test_locality_parser.py` (add edge case test)
+
+**Cross-References:**
+- `planning/parsers/locality/PHASE_1_RAW_PARSER_PLAN.md` (Stage 1 design)
+- STD-parser-contracts-impl-v2.0.md §2.1 (11-step parser template)
+- QTS v1.6 Appendix H.4 (Quarantine SLO Enforcement)
+
+**Priority:** Medium (blocks quarantine SLO validation; Stage 2 works correctly)
+
+**Source:** Locality Parser Stage 2 hardening (2025-10-18)
 
 ---
