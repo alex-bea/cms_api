@@ -1,7 +1,7 @@
 {
-  "passed": 2,
-  "total": 12,
-  "failed": 10,
+  "passed": 11,
+  "total": 14,
+  "failed": 3,
   "results": [
     {
       "name": "Documentation Catalog",
@@ -12,50 +12,62 @@
     {
       "name": "Documentation Links",
       "category": "audit",
-      "status": "failed",
-      "exit_code": 1
+      "status": "passed",
+      "exit_code": 0
     },
     {
       "name": "Cross-References",
       "category": "audit",
-      "status": "failed",
-      "exit_code": 1
+      "status": "passed",
+      "exit_code": 0
     },
     {
       "name": "Documentation Metadata",
       "category": "audit",
-      "status": "failed",
-      "exit_code": 1
+      "status": "passed",
+      "exit_code": 0
+    },
+    {
+      "name": "Documentation Size Budgets",
+      "category": "audit",
+      "status": "passed",
+      "exit_code": 0
+    },
+    {
+      "name": "Normative Language Guardrail",
+      "category": "audit",
+      "status": "passed",
+      "exit_code": 0
     },
     {
       "name": "Documentation Dependencies",
       "category": "audit",
-      "status": "failed",
-      "exit_code": 1
+      "status": "passed",
+      "exit_code": 0
     },
     {
       "name": "Companion Documents",
       "category": "audit",
-      "status": "failed",
-      "exit_code": 1
+      "status": "passed",
+      "exit_code": 0
     },
     {
       "name": "Source Map Verification",
       "category": "audit",
-      "status": "failed",
-      "exit_code": 1
+      "status": "passed",
+      "exit_code": 0
     },
     {
       "name": "Schema/API Mapper Alignment",
       "category": "audit",
-      "status": "failed",
-      "exit_code": 1
+      "status": "passed",
+      "exit_code": 0
     },
     {
       "name": "Layout/Schema Alignment",
       "category": "audit",
       "status": "failed",
-      "exit_code": 1
+      "exit_code": -11
     },
     {
       "name": "Makefile .PHONY",
