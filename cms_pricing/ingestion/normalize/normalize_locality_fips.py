@@ -709,9 +709,13 @@ def normalize_locality_fips(
     for _, raw_row in raw_df.iterrows():
         mac = raw_row['mac']
         locality_code = raw_row['locality_code']
-        state_name = raw_row['state_name'].strip().upper()
+        state_name_raw = raw_row['state_name'].strip().upper()
         county_names_raw = raw_row['county_names']
         fee_area = raw_row.get('fee_area', '')  # Optional hint for disambiguation
+        
+        # Normalize state name: Strip "STATEWIDE" / "STATE" / "WIDE" suffixes from CMS formatting
+        # Real CMS files split "STATEWIDE" across columns: "ALABAMA                STATE" + "WIDE"
+        state_name = state_name_raw.replace("STATEWIDE", "").replace("WIDE", "").replace("STATE", "").strip()
         
         # Derive state_fips
         state_fips = state_map.get(state_name)
@@ -797,6 +801,32 @@ def normalize_locality_fips(
                         })
                         metrics['match_methods']['unknown_county'] += 1
                         continue
+            
+            # Belt-and-suspenders: Cross-check state_fips vs county_geoid
+            # GEOID format: SSCCC (2 state + 3 county)
+            county_state_fips = county_geoid[:2] if len(county_geoid) >= 2 else None
+            if county_state_fips != state_fips:
+                logger.error(
+                    "state_county_fips_mismatch",
+                    state_fips=state_fips,
+                    state_name=state_name,
+                    county_geoid=county_geoid,
+                    county_name=county_name_canonical,
+                    reason="County GEOID does not match state FIPS (forward-fill error?)"
+                )
+                quarantine_rows.append({
+                    'mac': mac,
+                    'locality_code': locality_code,
+                    'state_fips': state_fips,
+                    'state_name': state_name,
+                    'county_name_raw': county_name_raw,
+                    'county_key': county_key,
+                    'county_geoid': county_geoid,
+                    'county_name_canonical': county_name_canonical,
+                    'reason': 'state_county_fips_mismatch',
+                })
+                metrics['match_methods']['state_mismatch'] += 1
+                continue
             
             # Add normalized row
             normalized_rows.append({

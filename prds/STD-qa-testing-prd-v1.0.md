@@ -1599,16 +1599,16 @@ canonical_name = reference_data['canonical_name']  # "Doña Ana County" (proper 
 
 ### H.8 Implementation Checklist
 
-Before shipping a normalization/enrichment pipeline:
+Before shipping a normalization/enrichment pipeline, verify:
 
-- [ ] **Set-logic tests** (if applicable): ALL, EXCEPT, REST OF with cardinality validation
-- [ ] **Disambiguation tests** (if applicable): Tie-breaking with and without hints
-- [ ] **Authority fingerprint**: Tracked in metrics with version + checksum
-- [ ] **Quarantine SLO**: Real-source test with ≤0.5% threshold (or documented waiver)
-- [ ] **Join validation**: E2E test with downstream dataset, ≥99.5% join rate
-- [ ] **Canonical preservation**: Diacritics, proper casing, suffixes tested
-- [ ] **Determinism**: Identical hashes across runs (idempotence test)
-- [ ] **Metrics structure**: Expansion methods, match methods, coverage by dimension
+- **Set-logic tests** (if applicable): ALL, EXCEPT, REST OF with cardinality validation
+- **Disambiguation tests** (if applicable): Tie-breaking with and without hints
+- **Authority fingerprint**: Tracked in metrics with version + checksum
+- **Quarantine SLO**: Real-source test with ≤0.5% threshold (or documented waiver)
+- **Join validation**: E2E test with downstream dataset, ≥99.5% join rate
+- **Canonical preservation**: Diacritics, proper casing, suffixes tested
+- **Determinism**: Identical hashes across runs (idempotence test)
+- **Metrics structure**: Expansion methods, match methods, coverage by dimension
 
 ### H.9 Practical Example: Locality Parser Stage 2
 

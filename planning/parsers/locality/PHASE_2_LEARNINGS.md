@@ -285,13 +285,13 @@ def test_locality_known_mismatch_ticketed():
 
 ## Pre-Phase 2 Checklist (Revised)
 
-- [ ] Verify TXT, CSV, XLSX files exist for the target vintage.  
-- [ ] Count rows per format; note any variance and suspected causes.  
-- [ ] Choose and document the **Format Authority Matrix**.  
-- [ ] Define real‑source parity thresholds (NK overlap ≥ 98%; row variance ≤ 1% or ≤ 2 rows).  
-- [ ] Decide header detection tokens per format (avoid generic keywords).  
-- [ ] Document known CMS quirks (typos, banners, BOM, sheet names).  
-- [ ] Plan metric capture and diff artifacts.
+- [x] Verify TXT, CSV, XLSX files exist for the target vintage.  
+- [x] Count rows per format; note any variance and suspected causes.  
+- [x] Choose and document the **Format Authority Matrix**.  
+- [x] Define real‑source parity thresholds (NK overlap ≥ 98%; row variance ≤ 1% or ≤ 2 rows).  
+- [x] Decide header detection tokens per format (avoid generic keywords).  
+- [x] Document known CMS quirks (typos, banners, BOM, sheet names).  
+- [x] Plan metric capture and diff artifacts.
 
 ---
 

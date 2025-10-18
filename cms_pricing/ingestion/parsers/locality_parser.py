@@ -504,10 +504,25 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
         min_line_length=layout['min_line_length']
     )
     
+    # Valid US state names for continuation row detection
+    # Fee_area text bleeding into state column will NOT match these
+    VALID_US_STATES = {
+        "ALABAMA", "ALASKA", "ARIZONA", "ARKANSAS", "CALIFORNIA", "COLORADO", "CONNECTICUT",
+        "DELAWARE", "FLORIDA", "GEORGIA", "HAWAII", "IDAHO", "ILLINOIS", "INDIANA", "IOWA",
+        "KANSAS", "KENTUCKY", "LOUISIANA", "MAINE", "MARYLAND", "MASSACHUSETTS", "MICHIGAN",
+        "MINNESOTA", "MISSISSIPPI", "MISSOURI", "MONTANA", "NEBRASKA", "NEVADA", "NEW HAMPSHIRE",
+        "NEW JERSEY", "NEW MEXICO", "NEW YORK", "NORTH CAROLINA", "NORTH DAKOTA", "OHIO",
+        "OKLAHOMA", "OREGON", "PENNSYLVANIA", "RHODE ISLAND", "SOUTH CAROLINA", "SOUTH DAKOTA",
+        "TENNESSEE", "TEXAS", "UTAH", "VERMONT", "VIRGINIA", "WASHINGTON", "WEST VIRGINIA",
+        "WISCONSIN", "WYOMING", "DISTRICT OF COLUMBIA", "PUERTO RICO", "GUAM", "VIRGIN ISLANDS"
+    }
+    
     rows = []
     skipped_header_count = 0
     skipped_blank_count = 0
     forward_filled_count = 0
+    last_valid_state = None  # Track last valid state independently (not rows[-1])
+    layout_probe_logged = False
     
     for line_no, line in enumerate(text_content.splitlines(), start=1):
         # Skip blank lines
@@ -547,26 +562,92 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
             
             row[col_name] = value
         
-        # Forward-fill mac, locality_code, and state_name from previous row if blank (continuation rows)
+        # Layout probe: Log first few data lines for verification
+        if not layout_probe_logged and len(rows) < 3:
+            logger.info(
+                "layout_probe",
+                line_no=line_no,
+                span_0_12=f"|{line[0:12]}|",
+                span_12_18=f"|{line[12:18]}|",
+                span_18_50=f"|{line[18:50]}|",
+                span_50_120=f"|{line[50:120][:40]}...|" if len(line) > 50 else f"|{line[50:]}|",
+                span_120_plus=f"|{line[120:150]}...|" if len(line) > 120 else ""
+            )
+            if len(rows) == 2:
+                layout_probe_logged = True
+        
+        # Strict state detection: Track last valid state independently
+        mac_value = row.get("mac", "").strip()
+        locality_value = row.get("locality_code", "").strip()
+        state_value = row.get("state_name", "").strip().upper()
+        fee_area_value = row.get("fee_area", "").strip()
+        
+        # Normalize state: Strip "STATEWIDE"/"STATE"/"WIDE" suffixes (CMS formatting quirk)
+        state_normalized = state_value.replace("STATEWIDE", "").replace("WIDE", "").replace("STATE", "").strip()
+        
+        # Strict validation: Does state column start with a valid US state?
+        # Format: "STATE_NAME" or "STATE_NAME  METRO_AREA" (e.g., "FLORIDA FORT", "GEORGIA ATLAN")
+        is_valid_state = False
+        matched_state = None
+        for valid_state in VALID_US_STATES:
+            if state_normalized.startswith(valid_state):
+                is_valid_state = True
+                matched_state = valid_state
+                break
+        
+        # Is this a continuation row? (blank state + non-blank fee_area)
+        is_continuation = (state_value == "" or state_normalized == "") and fee_area_value != ""
+        
         filled_fields = []
-        if rows:  # Only forward-fill if we have a previous row
-            if row.get("mac", "") == "":
+        
+        if is_valid_state:
+            # Valid state row: Update tracking
+            row["state_name"] = matched_state  # Use matched state name (without metro suffix)
+            last_valid_state = matched_state
+            logger.debug("valid_state_detected", line_no=line_no, state=matched_state, raw_span=state_value)
+            
+        elif is_continuation:
+            # Continuation row: Forward-fill from last valid state
+            if last_valid_state is None:
+                logger.warning(
+                    "continuation_without_state",
+                    line_no=line_no,
+                    reason="First locality line has blank state - cannot forward-fill",
+                    mac=mac_value,
+                    locality=locality_value
+                )
+                continue  # Skip this row (cannot determine state)
+            
+            row["state_name"] = last_valid_state
+            filled_fields.append("state_name")
+            
+            # Also forward-fill mac and locality if blank
+            if mac_value == "" and rows:
                 row["mac"] = rows[-1].get("mac", "")
                 filled_fields.append("mac")
-            if row.get("locality_code", "") == "":
+            if locality_value == "" and rows:
                 row["locality_code"] = rows[-1].get("locality_code", "")
                 filled_fields.append("locality_code")
-            if row.get("state_name", "") == "":
-                row["state_name"] = rows[-1].get("state_name", "")
-                filled_fields.append("state_name")
-            
-            if filled_fields:
-                forward_filled_count += 1
-                logger.debug(
-                    "forward_filled",
-                    line_no=line_no,
-                    fields=filled_fields
-                )
+                
+        else:
+            # Non-state, non-continuation (e.g., header noise, fee_area bleed)
+            logger.debug(
+                "skipped_non_state_line",
+                line_no=line_no,
+                state_span=state_value,
+                state_normalized=state_normalized,
+                reason="Not a valid state and not a continuation row"
+            )
+            continue  # Skip this row
+        
+        # Track forward-fill count
+        if filled_fields:
+            forward_filled_count += 1
+            logger.debug(
+                "forward_filled",
+                line_no=line_no,
+                fields=filled_fields
+            )
         
         rows.append(row)
     

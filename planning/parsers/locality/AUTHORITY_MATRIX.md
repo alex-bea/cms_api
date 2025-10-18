@@ -57,10 +57,10 @@ Given XLSX has 15% row variance (exceeds threshold), we:
 5. 📋 Consider using `@pytest.mark.xfail(strict=True)` with issue reference
 
 **Next Actions:**
-- [ ] Create GitHub issue for XLSX variance investigation
-- [ ] Determine if XLSX is from different vintage
-- [ ] Decide: Fix XLSX file OR document as permanent known variance
-- [ ] If permanent: Add `xfail` marker with issue ID and expiry date
+- [x] Create GitHub issue for XLSX variance investigation
+- [x] Determine if XLSX is from different vintage
+- [x] Decide: Fix XLSX file OR document as permanent known variance
+- [x] If permanent: Add `xfail` marker with issue ID and expiry date
 
 ---
 

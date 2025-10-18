@@ -1,0 +1,23 @@
+{
+  "policy": {
+    "description": "Parser contract policy surfaces (normative).",
+    "paths": [
+      "prds/STD-parser-contracts-prd-v2.0.md"
+    ]
+  },
+  "implementation": {
+    "description": "Implementation guidance for parser authors.",
+    "paths": [
+      "prds/STD-parser-contracts-impl-v2.0.md",
+      "prds/REF-parser-quality-guardrails-v1.0.md",
+      "prds/REF-parser-routing-detection-v1.0.md"
+    ]
+  },
+  "qa": {
+    "description": "Operational QA and runbook references.",
+    "paths": [
+      "prds/RUN-parser-qa-runbook-prd-v1.0.md",
+      "prds/REF-parser-reference-appendix-v1.0.md"
+    ]
+  }
+}

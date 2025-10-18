@@ -654,30 +654,30 @@ def test_locality_county_names_with_slashes():
 ## Deliverables Checklist
 
 ### Code
-- [ ] _normalize_header() helper function
-- [ ] CANONICAL_ALIAS_MAP added (normalized keys)
-- [ ] _find_header_row_csv() dynamic header detection
-- [ ] _parse_csv() with encoding/BOM handling
-- [ ] _find_data_sheet_xlsx() auto-sheet selection
-- [ ] _parse_xlsx() with dtype control
-- [ ] Format normalization (zero-pad locality_code, strip whitespace)
-- [ ] Router updated for .csv and .xlsx extensions
-- [ ] Deterministic column order enforced
-- [ ] Per-format metrics logging
+- [x] _normalize_header() helper function
+- [x] CANONICAL_ALIAS_MAP added (normalized keys)
+- [x] _find_header_row_csv() dynamic header detection
+- [x] _parse_csv() with encoding/BOM handling
+- [x] _find_data_sheet_xlsx() auto-sheet selection
+- [x] _parse_xlsx() with dtype control
+- [x] Format normalization (zero-pad locality_code, strip whitespace)
+- [x] Router updated for .csv and .xlsx extensions
+- [x] Deterministic column order enforced
+- [x] Per-format metrics logging
 
 ### Tests
-- [ ] _canonicalize_for_comparison() helper
-- [ ] test_locality_format_consistency() with full DataFrame equality
-- [ ] test_locality_csv_golden() with zero-padding verification
-- [ ] test_locality_xlsx_golden() with sheet info check
-- [ ] test_locality_csv_with_bom() (BOM handling)
-- [ ] test_locality_county_names_with_slashes() (delimiter edge case)
-- [ ] All tests pass (100% pass rate)
+- [x] _canonicalize_for_comparison() helper
+- [x] test_locality_format_consistency() with full DataFrame equality
+- [x] test_locality_csv_golden() with zero-padding verification
+- [x] test_locality_xlsx_golden() with sheet info check
+- [x] test_locality_csv_with_bom() (BOM handling)
+- [x] test_locality_county_names_with_slashes() (delimiter edge case)
+- [x] All tests pass (100% pass rate)
 
 ### Documentation
-- [ ] Parser docstring updated with supported formats
-- [ ] CANONICAL_ALIAS_MAP documented with CMS quirks
-- [ ] Format normalization rules documented
+- [x] Parser docstring updated with supported formats
+- [x] CANONICAL_ALIAS_MAP documented with CMS quirks
+- [x] Format normalization rules documented
 
 ---
 

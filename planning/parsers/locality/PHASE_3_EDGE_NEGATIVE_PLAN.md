@@ -388,35 +388,35 @@ pytest tests/parsers/test_locality_parser.py --cov=cms_pricing/ingestion/parsers
 ## Deliverables Checklist
 
 ### Edge Case Tests
-- [ ] test_locality_duplicate_natural_keys_real_data()
-- [ ] test_locality_csv_with_utf8_bom()
-- [ ] test_locality_county_names_special_chars()
-- [ ] test_locality_continuation_rows_forward_fill()
-- [ ] test_locality_xlsx_multi_sheet_auto_select()
-- [ ] test_locality_zero_padding_edge_cases()
+- [x] test_locality_duplicate_natural_keys_real_data()
+- [x] test_locality_csv_with_utf8_bom()
+- [x] test_locality_county_names_special_chars()
+- [x] test_locality_continuation_rows_forward_fill()
+- [x] test_locality_xlsx_multi_sheet_auto_select()
+- [x] test_locality_zero_padding_edge_cases()
 
 ### Negative Tests
-- [ ] test_locality_missing_required_metadata()
-- [ ] test_locality_unsupported_format()
-- [ ] test_locality_empty_file()
-- [ ] test_locality_csv_missing_columns()
-- [ ] test_locality_csv_no_header_row()
-- [ ] test_locality_xlsx_no_data_sheet()
-- [ ] test_locality_binary_garbage()
+- [x] test_locality_missing_required_metadata()
+- [x] test_locality_unsupported_format()
+- [x] test_locality_empty_file()
+- [x] test_locality_csv_missing_columns()
+- [x] test_locality_csv_no_header_row()
+- [x] test_locality_xlsx_no_data_sheet()
+- [x] test_locality_binary_garbage()
 
 ### Performance Tests
-- [ ] test_locality_parse_performance() (with pytest-benchmark)
-- [ ] test_locality_memory_usage()
+- [x] test_locality_parse_performance() (with pytest-benchmark)
+- [x] test_locality_memory_usage()
 
 ### Coverage
-- [ ] Run coverage report
-- [ ] Verify ≥90% line coverage
-- [ ] Document any uncovered lines with rationale
+- [x] Run coverage report
+- [x] Verify ≥90% line coverage
+- [x] Document any uncovered lines with rationale
 
 ### Documentation
-- [ ] Update test file docstring with Phase 3 additions
-- [ ] Document known edge cases in README or docstrings
-- [ ] Update PHASE_3 plan with results
+- [x] Update test file docstring with Phase 3 additions
+- [x] Document known edge cases in README or docstrings
+- [x] Update PHASE_3 plan with results
 
 ---
 
