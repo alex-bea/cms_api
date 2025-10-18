@@ -1,40 +1,55 @@
 #!/usr/bin/env python3
-"""
-Audit PRD documents for normative language violations.
+"""Audit governance docs for misplaced normative language."""
 
-Per STD-doc-governance-prd-v1.0.md, documents should follow these conventions:
-- STD-* (Standards): Normative language (MUST, SHALL, REQUIRED) allowed
-- REF-* (References): Descriptive language only (should, recommended)
-- RUN-* (Runbooks): Descriptive language only (should, recommended)
-- PRD-* (Products): Context-dependent (generally descriptive)
-
-This tool enforces governance separation by flagging normative language in
-guidance documents (REF, RUN).
-
-Usage:
-    python tools/audit_normative_language.py
-
-Exit codes:
-    0: Passed (no violations)
-    1: Failed (violations found)
-
-Cross-References:
-- STD-doc-governance-prd-v1.0.md §1.1 (Document type prefixes)
-- Parser Contracts v2.0 modularization (prevents policy drift)
-"""
+from __future__ import annotations
 
 import re
-from pathlib import Path
 import sys
+from pathlib import Path
+from typing import Dict, List, Tuple
 
-# Normative keywords (RFC 2119 language)
-NORMATIVE_WORDS = ['MUST', 'SHALL', 'REQUIRED', 'MUST NOT', 'SHALL NOT', 'SHOULD NOT']
+NORMATIVE_WORDS = ["MUST", "SHALL", "REQUIRED", "MUST NOT", "SHALL NOT", "SHOULD NOT"]
 
-# Documents where normative language is ALLOWED
-ALLOWED_PREFIXES = ['STD-']
+PRDS_DIR = Path("prds")
 
-# Documents where normative language is PROHIBITED
-PROHIBITED_PREFIXES = ['REF-', 'RUN-']
+
+def parse_metadata(lines: List[str]) -> Dict[str, object]:
+    meta: Dict[str, object] = {}
+    idx = 0
+    started = False
+    while idx < len(lines):
+        raw = lines[idx]
+        stripped = raw.strip()
+        if not stripped:
+            if started:
+                break
+            idx += 1
+            continue
+        if stripped.startswith("#"):
+            break
+        if ":" not in raw:
+            break
+        key, value = raw.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        started = True
+        if key == "requires":
+            requires: List[str] = []
+            idx += 1
+            while idx < len(lines):
+                lookahead = lines[idx]
+                if not lookahead.strip():
+                    break
+                if lookahead.lstrip().startswith("- "):
+                    requires.append(lookahead.strip().lstrip("-").strip())
+                    idx += 1
+                    continue
+                break
+            meta["requires"] = requires
+            continue
+        meta[key] = value
+        idx += 1
+    return meta
 
 
 def is_in_code_block(line_num, lines):
@@ -61,18 +76,9 @@ def is_in_table(line):
     return line.strip().startswith('|') and '|' in line
 
 
-def audit_file(filepath):
-    """
-    Audit single file for normative language violations.
-    
-    Args:
-        filepath: Path to markdown file
-        
-    Returns:
-        List of (line_num, word, line_content) violations
-    """
+def audit_file(filepath: Path) -> List[Tuple[int, str, str]]:
     try:
-        lines = filepath.read_text(encoding='utf-8').splitlines()
+        lines = filepath.read_text(encoding="utf-8").splitlines()
     except UnicodeDecodeError:
         print(f"[WARN] Could not decode {filepath.name} (skipping)")
         return []
@@ -96,38 +102,59 @@ def audit_file(filepath):
         
         # Check for normative words
         for word in NORMATIVE_WORDS:
-            pattern = r'\b' + word + r'\b'
+            pattern = r"\b" + word + r"\b"
             if re.search(pattern, clean_line):
                 violations.append((i, word, line.strip()[:80]))  # Truncate long lines
     
     return violations
 
 
-def main():
-    """Main audit function."""
-    prds_dir = Path('prds')
-    
-    if not prds_dir.exists():
+def main() -> None:
+    if not PRDS_DIR.exists():
         print("[ERROR] prds/ directory not found. Run from repo root.")
         sys.exit(1)
     
     errors = []
+    metadata_errors = []
     checked_count = 0
     
-    # Check REF-* and RUN-* docs (normative language prohibited)
-    for prefix in PROHIBITED_PREFIXES:
-        pattern = f'{prefix}*.md'
-        for doc in prds_dir.glob(pattern):
-            # Skip archived documents
-            if 'ARCHIVED' in doc.name:
-                continue
-                
+    for doc in sorted(PRDS_DIR.glob("*.md")):
+        if "ARCHIVED" in doc.name.upper():
+            continue
+
+        lines = doc.read_text(encoding="utf-8").splitlines()
+        metadata = parse_metadata(lines)
+        doc_type = metadata.get("doc_type")
+        normative_flag = str(metadata.get("normative", "false")).strip().lower()
+
+        if not doc_type:
+            if doc.name.startswith(("STD-parser", "REF-parser", "RUN-parser")):
+                metadata_errors.append((doc, "Missing `doc_type` metadata."))
+            continue
+
+        if normative_flag not in {"true", "false"}:
+            metadata_errors.append((doc, "Invalid `normative` flag (expected true/false)."))
+            continue
+
+        is_normative = normative_flag == "true"
+        if doc_type != "STD" and is_normative:
+            metadata_errors.append(
+                (doc, "`normative: true` is only allowed for STD documents.")
+            )
+            continue
+
+        if doc_type in {"REF", "RUN", "STD"} and not is_normative:
             checked_count += 1
             violations = audit_file(doc)
             if violations:
                 errors.append((doc.name, violations))
-    
-    # Report results
+
+    if metadata_errors:
+        print("[ERROR] Metadata validation failed for documentation header(s):\n")
+        for doc, message in metadata_errors:
+            print(f"  {doc.name}: {message}")
+        sys.exit(1)
+
     if errors:
         print(f"[ERROR] Normative language found in {len(errors)} guidance document(s):")
         print()
@@ -151,5 +178,5 @@ def main():
         sys.exit(0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

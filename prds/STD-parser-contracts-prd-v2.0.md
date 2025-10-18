@@ -1,3 +1,9 @@
+doc_type: STD
+normative: true
+requires:
+  - STD-doc-governance-prd-v1.0.md#3-metadata-requirements
+  - STD-doc-governance-prd-v1.0.md#6-cross-referencing-guidelines
+
 # Parser Contracts Standard
 
 **Status:** Draft v2.0  
@@ -37,6 +43,13 @@ Parsers return `ParseResult(data, rejects, metrics)`; the ingestor writes Arrow/
 - **Deterministic output** - sorted by natural key + formal content hash spec
 - **Tiered validation** - block on critical, warn on soft failures
 - **Comprehensive provenance** - full audit trail via IngestRun model
+
+**Implementation snapshot (v2.0):**
+- `ParseResult(data, rejects, metrics)` return type with natural-key sorting and 64-char `row_content_hash` (see §6.1, §6.3)
+- Router accepts both filename and `file_head` for magic-byte/BOM detection (see §6.2 and `REF-parser-routing-detection-v1.0.md` §2)
+- Encoding cascade includes UTF-8, UTF-16, CP1252 fallbacks with logging on downgrade (see `STD-parser-contracts-impl-v2.0.md` §1.1)
+- Categorical guardrail rejects unknown codes before dtype conversion (`STD-parser-contracts-prd-v2.0.md` §8.2; implementation in companion §2.2)
+- Natural keys and metadata fields (`release_id`, `product_year`, `quarter_vintage`, etc.) injected by the ingestor, not parsers (§6.4)
 
 ---
 
@@ -765,4 +778,3 @@ This document contains content from the following sections of the archived `STD-
 *End of Core Standard Document*
 
 *For implementation details, see companion documents listed in §20.*
-

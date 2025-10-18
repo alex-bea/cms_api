@@ -1,3 +1,8 @@
+doc_type: REF
+normative: false
+requires:
+  - STD-parser-contracts-prd-v2.0.md#62-router-contract
+
 # Parser Routing & Format Detection Reference
 
 **Purpose:** Router architecture, format detection patterns, and layout registry implementation  
@@ -344,9 +349,9 @@ def get_layout(
 4. Return `None` if not found
 
 **Critical Semantics:**
-- **`end` is EXCLUSIVE** - For `read_fwf(colspecs=[(start, end)])` and `line[start:end]` slicing
-- **Dict order ≠ positional order** - MUST sort columns by `start` before building colspecs
-- **Column names MUST match schema** - No API names (`work_rvu` ❌, use `rvu_work` ✅)
+- **`end` is EXCLUSIVE** - For `read_fwf(colspecs=[(start, end)])` and `line[start:end]` slicing (see `STD-parser-contracts-prd-v2.0.md` §6.2)
+- **Dict order ≠ positional order** - Sort columns by `start` before building colspecs (enforced by layout CI; `STD-parser-contracts-prd-v2.0.md` §6.2)
+- **Column names match schema** - Use canonical schema names, not API aliases (see `STD-parser-contracts-prd-v2.0.md` §6.6)
 - **`min_line_length`** = minimum observed data-line length (heuristic, not hard requirement)
 
 ### 3.3 Layout Versioning
@@ -413,15 +418,13 @@ df = pd.read_fwf(file, skiprows=data_start)
 
 ## 4. Layout-Schema Alignment
 
-### 4.1 Normative Requirements
+### 4.1 CI Guardrails (per STD §6.2)
 
-**MUST Rules (CI-enforceable):**
-
-1. **MUST** sort fixed-width columns by `start` position before building colspecs
-2. **MUST** treat layout `end` as EXCLUSIVE for `read_fwf()` and slicing
-3. **MUST** detect data start dynamically (no hardcoded skiprows)
-4. **MUST** call `get_layout()` using keyword arguments
-5. **MUST** use schema canonical column names (not API names)
+1. Sort fixed-width columns by `start` position before building colspecs (`STD-parser-contracts-prd-v2.0.md` §6.2.2)
+2. Treat layout `end` as EXCLUSIVE for `read_fwf()` and slicing (`STD-parser-contracts-prd-v2.0.md` §6.2.2)
+3. Detect data start dynamically (no hardcoded `skiprows`; `STD-parser-contracts-prd-v2.0.md` §6.2.3)
+4. Call `get_layout()` using keyword arguments (`STD-parser-contracts-prd-v2.0.md` §6.2.1)
+5. Use schema canonical column names (not API names; `STD-parser-contracts-prd-v2.0.md` §6.6)
 
 ### 4.2 Alignment Checklist
 
@@ -764,4 +767,3 @@ This reference contains content from the following sections of `STD-parser-contr
 
 *For core contracts, see STD-parser-contracts-prd-v2.0.md*  
 *For implementation guidance, see STD-parser-contracts-impl-v2.0.md*
-

@@ -127,6 +127,9 @@ Each document must include at minimum (in the header block):
 - Owners (role or team)
 - Consumers
 - Change control process
+- `doc_type` (STD, REF, RUN, PRD, BP, SCR, DOC…)
+- `normative` (`true` only for STD policy documents)
+- `requires` list of upstream standards this doc depends on (`<doc>#section` references)
 
 **Additional requirements for the Master Catalog (`DOC-master-catalog`):**
 - Owner, Status, Version, **Review cadence**, and **Diagram standard** (e.g., C4).
@@ -137,6 +140,11 @@ Each document must include at minimum (in the header block):
 Each document must include a governance header immediately after the title with the following fields:
 
 ```
+doc_type: <STD/REF/RUN/...>
+normative: <true|false>
+requires:
+  - <STD-doc>#section-id
+
 **Status:** <Draft/Adopted/Deprecated> <version>
 **Owners:** <team or role>
 **Consumers:** <teams that rely on the doc>
@@ -201,6 +209,7 @@ The repository MUST maintain a `CHANGELOG.md` file at the project root following
   - Companion guides: `^(STD|BP|PRD|SCR|RUN|DOC)-[a-z0-9-]+-impl-v[0-9]+\.[0-9]+\.md$`
 - Pre-commit hook verifies that any new or renamed doc has a corresponding row in the Master Catalog tables; missing entries block merge.
 - Companion documents are validated for proper cross-references and slug consistency.
+- RFC 2119 keywords (`MUST`, `SHALL`, `REQUIRED`) are permitted only when `doc_type: STD` and `normative: true`; REF/RUN guidance must reference the governing STD section instead of restating policy.
 - Status transitions (Draft → Adopted → Deprecated/Retired) must include evidence of approval by the designated Owner and Security (or delegate) in the PR.
 
 ## 8. Change Log

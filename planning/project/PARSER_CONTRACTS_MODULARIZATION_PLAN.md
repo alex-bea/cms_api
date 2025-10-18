@@ -60,6 +60,13 @@
     --compare implementation=prds/STD-parser-contracts-impl-v2.0.md
   ```
   The output warns about any missing titles so they can be restored before merge.
+- **Auto-review mode:**
+  ```bash
+  python tools/prd_modularizer.py prds/STD-parser-contracts-prd-v1.11-ARCHIVED.md \
+    --auto-compare --comparison-report planning/tests/modularization_v1.11/comparison.md \
+    --suggestions-output planning/tests/modularization_v1.11/suggestions.md
+  ```
+  Automatically compares each category against existing modular docs (if found) and produces a suggestions file listing sections that need manual reintegration.
 - **Section extraction:** Use `--export category=path` to copy the original markdown for a bucket into a new document without rewriting. Example:
   ```bash
   python tools/prd_modularizer.py prds/STD-parser-contracts-prd-v1.0.md \
@@ -67,6 +74,11 @@
     --export-mode append
   ```
   This appends the router/layout sections exactly as written in v1.0, so only the governance header and new overview need to be authored manually.
+- **Supporting audits:**
+  - `tools/audit_normative_language.py` — ensures RFC keywords only appear in `doc_type: STD` documents.
+  - `tools/audit_doc_sizes.py` — enforces the parser doc size budgets (STD ≤800, REF ≤900, RUN ≤800, Appendix ≤400).
+  - `tools/generate_content_parity_report.py` — writes `tools/reports/content_parity.json` for reviewer verification.
+  - `.cursor/context-profiles.json` — drives Cursor prompt presets so policy/implementation/QA contexts load the right files.
 
 ---
 

@@ -1,3 +1,9 @@
+doc_type: STD
+normative: false
+requires:
+  - STD-parser-contracts-prd-v2.0.md#6-contracts
+  - STD-parser-contracts-prd-v2.0.md#12-compatibility-versioning
+
 # Parser Contracts Implementation Guide (v2.0)
 
 **Companion to:** STD-parser-contracts-prd-v2.0.md  
@@ -301,7 +307,7 @@ def compute_row_hash(
 
 ### 2.1 Standard 11-Step Parser Structure
 
-Every parser MUST follow this structure:
+Every parser follows this structure to satisfy the policy in `STD-parser-contracts-prd-v2.0.md` §6:
 
 ```python
 def parse_{dataset}(
@@ -394,7 +400,7 @@ def parse_{dataset}(
 
 ### 2.2 Validation Phases & Rejects Handling
 
-**Phase Order (MUST):**
+**Phase Order (per STD §8.2):**
 
 1. **Type Coercion** - Convert strings to canonical types
 2. **Post-Cast Validation** - Range checks, business rules (AFTER canonicalization)
@@ -725,6 +731,54 @@ if msg:
     logger.warning(msg)
 ```
 
+### 5.4 CSV & Excel Pitfalls
+
+**Duplicate Headers (Pandas auto-renames):**
+```python
+# ❌ WRONG
+df = pd.read_csv(path)  # description, amount, description → description, amount, description.1
+
+# ✅ CORRECT
+raw = pd.read_csv(path, nrows=0)
+duplicates = raw.columns[raw.columns.duplicated()].tolist()
+if duplicates:
+    raise ParseError("Duplicate headers detected", duplicates=duplicates)
+```
+
+**Excel Date / Float Coercion:**
+```python
+# ❌ WRONG
+df = pd.read_excel(path)  # 19.31 → 19.309999..., dates become ambiguous
+
+# ✅ CORRECT
+df = pd.read_excel(path, dtype=str)
+df['rate'] = canonicalize_numeric_col(df['rate'], precision=4)
+```
+
+**Whitespace & NBSP in Codes:**
+```python
+# ❌ WRONG
+df['hcpcs'] = df['hcpcs'].str.upper()
+
+# ✅ CORRECT
+df['hcpcs'] = (
+    df['hcpcs']
+    .str.replace('\u00a0', ' ', regex=False)
+    .str.strip()
+    .str.upper()
+)
+```
+
+**CRLF in Fixed-Width Files:**
+```python
+# ❌ WRONG
+lengths = [len(line) for line in raw_lines]  # Includes \r\n
+
+# ✅ CORRECT
+clean_lines = [line.rstrip('\r\n') for line in raw_lines]
+lengths = [len(line) for line in clean_lines]
+```
+
 ---
 
 ## 6. Implementation Checklist
@@ -840,4 +894,3 @@ This companion guide contains content from the following sections of `STD-parser
 
 *For policy and contracts, see STD-parser-contracts-prd-v2.0.md*  
 *For operational procedures, see RUN-parser-qa-runbook-prd-v1.0.md*
-

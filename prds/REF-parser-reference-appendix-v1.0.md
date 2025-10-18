@@ -1,3 +1,8 @@
+doc_type: REF
+normative: false
+requires:
+  - STD-parser-contracts-prd-v2.0.md#6-contracts
+
 # Parser Reference Appendix
 
 **Purpose:** Static reference tables, format characteristics, and compatibility notes  
@@ -375,4 +380,3 @@ This appendix contains content from the following sections of `STD-parser-contra
 
 *For core contracts, see STD-parser-contracts-prd-v2.0.md*  
 *For implementation guidance, see STD-parser-contracts-impl-v2.0.md*
-

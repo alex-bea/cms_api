@@ -1,3 +1,9 @@
+doc_type: RUN
+normative: false
+requires:
+  - STD-parser-contracts-prd-v2.0.md#5-scope-requirements
+  - STD-parser-contracts-prd-v2.0.md#12-compatibility-versioning
+
 # Parser QA & Operations Runbook
 
 **Purpose:** Operational procedures, QA checklists, and SLAs for parser development  
@@ -13,6 +19,19 @@
 - **REF-parser-routing-detection-v1.0.md:** Router architecture
 - **REF-parser-quality-guardrails-v1.0.md:** Validation and metrics
 - **STD-qa-testing-prd-v1.0.md:** QTS compliance requirements
+
+---
+
+## Operational Constraints & Alerts (summary)
+
+These mirror `STD-parser-contracts-prd-v2.0.md` §5.5 and §12; keep them in mind while working through the runbook.
+
+- **Performance:** ≥ 5M rows/hour on 4 vCPU; keep p95 parse time ≤ 5 minutes for 2M rows; cold start ≤ 10 seconds.
+- **Memory:** ≤ 2GB peak RSS for 5M-row files; recycle file handles and run GC between files.
+- **Correctness:** Deterministic output (hash-verified) and zero silent drops (every rejection logged/quarantined).
+- **Alerts:** Reject-rate thresholds are dataset-specific (default 5%); any parser failure or schema drift raises an alert.
+
+See §3 for the detailed SLA table and enforcement guidance.
 
 ---
 
@@ -48,10 +67,10 @@ This runbook provides operational procedures for parser development, QA, and pro
 
 ### Step 1: Inventory All Formats (15 min)
 
--  List all expected formats: TXT, CSV, XLSX, ZIP
--  Obtain sample file for each format
--  Document source location/URL for each
--  Verify samples from correct product_year/quarter
+- List all expected formats: TXT, CSV, XLSX, ZIP.
+- Gather at least one authentic sample for each format and vintage.
+- Document source location/URL and download date for each sample.
+- Verify samples match the target `product_year` / `quarter_vintage`.
 
 ### Step 2a: Inspect Headers & Structure (30 min)
 
@@ -109,25 +128,28 @@ python tools/verify_layout_positions.py \
 
 ### Step 2c: Real Data Format Variance Analysis (5-10 min)
 
-**Purpose:** Detect format variance in real CMS files before coding.
+**Purpose:** Detect and plan for format variance when using authentic CMS source files.
+
+**Problem:** Real CMS files often diverge by format (TXT ≠ CSV ≠ XLSX) because of vintages, manual edits, or export quirks. Missing these differences up front leads to 30-60 minutes of debugging and can violate QTS parity expectations.
 
 **Checklist:**
 
 1. **Row counts by format**
    ```bash
+   # Count data rows in each format
    wc -l sample_data/*/25LOCCO.txt
-   python -c "import pandas as pd; print(len(pd.read_csv('25LOCCO.csv')))"
-   python -c "import pandas as pd; print(len(pd.read_excel('25LOCCO.xlsx')))"
+   python -c "import pandas as pd; print(len(pd.read_csv('sample_data/rvu25d_0/25LOCCO.csv')))"
+   python -c "import pandas as pd; print(len(pd.read_excel('sample_data/rvu25d_0/25LOCCO.xlsx')))"
    ```
 
 2. **Select Format Authority Matrix**
-   - Choose authoritative format (typically TXT)
-   - Document rationale
-   - Record in `planning/parsers/<parser>/AUTHORITY_MATRIX.md`
+   - Choose authoritative format for this vintage (typically TXT for fixed-width sources).
+   - Document rationale, e.g. “TXT chosen as authority for 2025D because it is the canonical CMS format.”
+   - Record outcome in `planning/parsers/<parser>/AUTHORITY_MATRIX.md`.
 
 3. **Define parity thresholds** (per QTS §5.1.3)
-   - Natural-key overlap: ≥ 98%
-   - Row-count variance: ≤ 1% OR ≤ 2 rows
+   - Natural-key overlap ≥ 98%.
+   - Row-count variance ≤ 1% OR ≤ 2 rows (whichever is stricter).
 
 4. **Plan diff artifacts**
    - `<parser>_parity_missing_in_<format>.csv`
@@ -135,25 +157,27 @@ python tools/verify_layout_positions.py \
    - `<parser>_parity_summary.json`
 
 5. **Document observations**
-   - Encodings per format
-   - Sheet names (XLSX)
-   - Header row positions
-   - Known CMS quirks
+   - Encodings detected per format (UTF-8, CP1252, BOM).
+   - Sheet names (XLSX), header start rows, skiprows needed.
+   - Known CMS quirks (typos, banners, trailing spaces, duplicate rows).
 
 **Decision Tree:**
 ```
-If row variance < 2%:
-  → Proceed with real-source parity tests
+If row count variance < 2%:
+  → Proceed with @pytest.mark.real_source parity tests (QTS §5.1.3).
 
-If variance 2-10%:
-  → Document variance, implement with diff artifacts
+If row count variance ≥ 2% and < 10%:
+  → Document variance, implement parity diff artifacts, investigate root cause in parallel.
 
-If variance ≥ 10%:
-  → STOP, investigate file provenance
+If row count variance ≥ 10%:
+  → Stop and investigate file provenance before coding (likely mismatched vintages or corrupted files).
 ```
 
-**Time:** 5-10 min  
-**Saves:** 30-60 min debugging
+**Time Investment:** 5-10 minutes  
+**Time Saved:** 30-60 minutes debugging + prevents QTS parity violations.
+
+**Cross-Reference:** `STD-qa-testing-prd-v1.0.md` §5.1.3 (Authentic Source Variance Testing).  
+**Reference Implementation:** `planning/parsers/locality/AUTHORITY_MATRIX.md`, `planning/parsers/locality/PHASE_2_LEARNINGS.md`.
 
 ### Step 3: Header Normalization Mapping (30 min)
 
@@ -191,22 +215,23 @@ Create quirks table:
 
 ### Step 6: Create Format Test Matrix (10 min)
 
-| Format | Test Type | Fixture | Expected Rows | Rejects |
-|--------|-----------|---------|---------------|---------|
+| Format | Test Type | Fixture | Expected Rows | Expected Rejects |
+|--------|-----------|---------|---------------|------------------|
 | TXT | golden | sample.txt | 18 | 0 |
 | CSV | golden | sample.csv | 18 | 0 |
-| XLSX | full | full.xlsx | >=100 | >0 |
+| XLSX | full | full.xlsx | ≥100 | >0 (duplicates) |
+| ZIP | golden | sample.zip | 18 | 0 |
+| TXT | edge_case | duplicate_locality_00.txt | 3 input, 1 valid | 2 (~67%) |
 
 ### Step 7: Signoff Checklist
 
-Before writing parser code:
--  All formats inspected and documented
--  Header structures understood
--  Alias map covers all variations
--  Layout validated against real data
--  Format quirks documented
--  Test matrix created
--  Sample fixtures obtained
+Before writing parser code, confirm:
+- All formats inspected and documented (inventory + variance analysis).
+- Header structures understood; alias map covers every column variation.
+- Layout validated against real data (min line length measured from samples).
+- Format-specific quirks captured (encodings, skiprows, duplicate behaviour).
+- Test matrix created with fixtures, expected rows, and reject expectations.
+- Sample fixtures checked into `tests/fixtures/{dataset}/`.
 
 **Time Investment:** ~2 hours  
 **Time Saved:** 4-6 hours debugging
@@ -232,9 +257,9 @@ shasum -a 256 tests/fixtures/{dataset}/golden/sample.txt
 - Run test (will fail - parser doesn't exist)
 
 **Step 3: Implement parser** (60-90 min)
-- Follow 11-step template (STD-parser-contracts-impl §2.1)
-- Use parser kit utilities
-- Test iteratively until golden test passes
+- Follow the 9-step template in `STD-parser-contracts-impl-v2.0.md` §2.1.
+- Use parser kit utilities (`_parser_kit`) instead of bespoke helpers.
+- Test iteratively until the golden test passes.
 
 **Step 4: Add remaining tests** (20 min)
 - Schema compliance
@@ -464,4 +489,3 @@ This runbook contains content from the following sections of `STD-parser-contrac
 
 *For implementation guidance, see STD-parser-contracts-impl-v2.0.md*  
 *For validation patterns, see REF-parser-quality-guardrails-v1.0.md*
-

@@ -332,7 +332,8 @@ def expand_rest_of_state(state_fips: str, locality_code: str, raw_df: pd.DataFra
     )
     
     # For now: return all counties (will be refined in future)
-    # TODO: Implement proper REST OF logic by parsing all localities for state
+    # TODO(alex, GH-33a): Implement proper REST OF logic by parsing all localities for state
+    # Requires vintage-specific locality map to compute explicit counties already assigned
     return expand_all_counties(state_fips, counties_df)
 
 

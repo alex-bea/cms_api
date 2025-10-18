@@ -1,3 +1,9 @@
+doc_type: REF
+normative: false
+requires:
+  - STD-parser-contracts-prd-v2.0.md#6-contracts
+  - STD-parser-contracts-prd-v2.0.md#8-validation-requirements
+
 # Parser Quality Guardrails Reference
 
 **Purpose:** Validation patterns, error taxonomy, and metrics/observability implementation  
@@ -141,7 +147,7 @@ result: ValidationResult = enforce_categorical_dtypes(
 ```
 
 **No Silent NaN Coercion:**
-- Invalid values MUST be rejected explicitly
+- Invalid values are rejected explicitly by the categorical guardrail (`STD-parser-contracts-prd-v2.0.md` §8.2)
 - Never silently convert to NaN
 - Severity: WARN (quarantine + continue) or BLOCK (fail) per business rule
 - Audit trail in rejects DataFrame
@@ -643,4 +649,3 @@ This reference contains content from the following sections of `STD-parser-contr
 
 *For core contracts, see STD-parser-contracts-prd-v2.0.md*  
 *For implementation templates, see STD-parser-contracts-impl-v2.0.md*
-
