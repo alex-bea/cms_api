@@ -135,6 +135,41 @@ def normalize_key(name: str, state_fips: Optional[str] = None) -> str:
 # Reference Data Loaders
 # =============================================================================
 
+def _compute_authority_fingerprint(counties_df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Compute fingerprint of reference data for drift detection.
+    
+    Tracks:
+    - Total county count
+    - By-state distribution
+    - By-type distribution
+    - GEOID checksum (short hash for quick comparison)
+    
+    Args:
+        counties_df: Full counties reference DataFrame
+        
+    Returns:
+        Dict with fingerprint metrics
+        
+    Usage:
+        Compare fingerprints across runs to detect Census data updates
+        Alert if checksum changes (requires re-validation)
+    """
+    geoid_list = sorted(counties_df['county_geoid'].tolist())
+    geoid_checksum = hashlib.sha256(
+        '|'.join(geoid_list).encode('utf-8')
+    ).hexdigest()[:16]  # First 16 chars for readability
+    
+    return {
+        'total_counties': len(counties_df),
+        'by_state_counts': counties_df.groupby('state_fips').size().to_dict(),
+        'by_type_counts': counties_df.groupby('county_type').size().to_dict(),
+        'geoid_checksum': geoid_checksum,
+        'authority_version': 'Census TIGER/Line 2025',
+        'authority_date': '2025-09-08',  # Census release date
+    }
+
+
 def load_fips_crosswalk(ref_dir: Optional[Path] = None) -> Tuple[pd.DataFrame, pd.DataFrame, Dict]:
     """
     Load FIPS reference data: states, counties, aliases.
@@ -650,6 +685,9 @@ def normalize_locality_fips(
     # Create state name → state_fips mapping
     state_map = dict(zip(states_df['state_name'].str.upper(), states_df['state_fips']))
     
+    # Compute authority fingerprint for drift detection
+    authority_fingerprint = _compute_authority_fingerprint(counties_df)
+    
     # Initialize outputs
     normalized_rows = []
     quarantine_rows = []
@@ -664,6 +702,7 @@ def normalize_locality_fips(
         'rows_quarantined': 0,
         'coverage_by_state': {},
         'authority_version': authority_version,
+        'authority_fingerprint': authority_fingerprint,
     }
     
     # Process each raw row
