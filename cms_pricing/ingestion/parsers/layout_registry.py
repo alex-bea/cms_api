@@ -102,11 +102,11 @@ OPPSCAP_2025D_LAYOUT = {
     'columns': {
         'hcpcs': {'start': 0, 'end': 5, 'type': 'string', 'nullable': False},
         'modifier': {'start': 5, 'end': 7, 'type': 'string', 'nullable': True},
-        'proc_status': {'start': 8, 'end': 9, 'type': 'string', 'nullable': False},
-        'mac': {'start': 10, 'end': 15, 'type': 'string', 'nullable': False},
-        'locality_id': {'start': 17, 'end': 19, 'type': 'string', 'nullable': False},
-        'price_fac': {'start': 22, 'end': 28, 'type': 'decimal', 'nullable': False},
-        'price_nonfac': {'start': 32, 'end': 38, 'type': 'decimal', 'nullable': False},
+        'status': {'start': 7, 'end': 9, 'type': 'string', 'nullable': False},
+        'mac': {'start': 9, 'end': 15, 'type': 'string', 'nullable': False},
+        'locality_code': {'start': 15, 'end': 20, 'type': 'string', 'nullable': False},
+        'facility_price': {'start': 20, 'end': 28, 'type': 'decimal', 'nullable': False},
+        'nonfacility_price': {'start': 28, 'end': 36, 'type': 'decimal', 'nullable': False},
     }
 }
 

@@ -1436,19 +1436,31 @@ class RVUIngestor(BaseDISIngestor):
         """Normalize OPPSCap column names and types"""
         column_mapping = {
             'HCPCS': 'hcpcs',
+            'MOD': 'modifier',
             'MODIFIER': 'modifier',
-            'CAP_APPLIES': 'opps_cap_applies',
-            'CAP_AMOUNT': 'cap_amount_usd',
-            'CAP_METHOD': 'cap_method'
+            'PROCSTAT': 'status',
+            'CARRIER': 'mac',
+            'LOCALITY': 'locality_code',
+            'FACILITY PRICE': 'facility_price',
+            'NON-FACILTY PRICE': 'nonfacility_price',
+            'NON-FACILITY PRICE': 'nonfacility_price'
         }
         
-        df = df.rename(columns=column_mapping)
+        df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
         
-        # Type conversions
-        if 'cap_amount_usd' in df.columns:
-            df['cap_amount_usd'] = pd.to_numeric(df['cap_amount_usd'], errors='coerce')
-        if 'opps_cap_applies' in df.columns:
-            df['opps_cap_applies'] = df['opps_cap_applies'].map({'Y': True, 'N': False})
+        # Normalize values
+        if 'modifier' in df.columns:
+            df['modifier'] = df['modifier'].replace({'': None}).str.strip()
+        if 'status' in df.columns:
+            df['status'] = df['status'].astype(str).str.strip().str.upper()
+        if 'mac' in df.columns:
+            df['mac'] = df['mac'].astype(str).str.strip().str.zfill(5)
+        if 'locality_code' in df.columns:
+            df['locality_code'] = df['locality_code'].astype(str).str.strip().str.zfill(2)
+        if 'facility_price' in df.columns:
+            df['facility_price'] = pd.to_numeric(df['facility_price'], errors='coerce')
+        if 'nonfacility_price' in df.columns:
+            df['nonfacility_price'] = pd.to_numeric(df['nonfacility_price'], errors='coerce')
         
         return df
     
