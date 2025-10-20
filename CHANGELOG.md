@@ -98,6 +98,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Test status:** ✅ **23/23 tests passing** (17 parser + 6 integration, xfail removed)
   - **Production ready:** REST OF STATE complement logic validated, deterministic output, comprehensive logging
   - **Time:** 2.5 hours (pattern fix 15min + state extraction 30min + set-logic polish 25min + testing/debugging 1.25h)
+- **Locality Parser - Quick Wins (Ambiguous Counties & Truncation)** (Final quarantine reduction)
+  - **MAC-based state hints:** Tie-breaking for ambiguous multi-state counties
+    - Added `MAC_STATE_MAP` to `infer_state_from_counties()` - CA contractors (01112, 01182) → state_fips=06
+    - **Fixed:** BUTTE (CA vs ID/SD/MT), KINGS (CA vs NY), SANTA CRUZ (CA vs AZ) - 3 counties rescued via MAC hint
+    - Logging: `state_inferred_via_mac_hint` events for observability
+  - **Truncation aliases:** Fixed-width TXT line wrapping workarounds (3 counties)
+    - PASSA → PASSAIC (NJ), SULL → SULLIVAN (NY) - marked as temporary pending Stage 1 multi-line stitching
+    - Note: WEST → WESTCHESTER (NY) alias added but not matching (potential conflict with "West" in other states)
+  - **St. Louis City:** Added "ST. LOUIS CITY" → "ST. LOUIS" alias (MO), LSAD tie-breaking to select Independent City type
+  - **Quarantine SLO:** ✅ **0.29% (9/3,105 rows)** - down from 0.45% (14/3,110), **42% better than 0.50% threshold**
+    - **Improvement:** -36% quarantine reduction (14 → 9 rows)
+    - **Breakdown:** 3 from MAC hints, 2 from truncation aliases
+  - **Remaining 9 rows (0.29%, acceptable):**
+    - 3 DC multi-state locality (ALEXANDRIA/ARLINGTON/FAIRFAX need per-county state inference)
+    - 2 VA fragmented ALL EXCEPT pattern (requires pattern stitching)
+    - 2 truncation issues (MATEO SAN FRANCISCO word-order, A single-char)
+    - 1 St. Louis City (alias application debugging needed)
+    - 1 WEST truncation (alias conflict or not applying)
+  - **Test status:** ✅ **23/23 passing** (all green)
+  - **Time:** 25 minutes (aliases 10min, MAC hints 10min, testing 5min)
 - **QTS v1.4 → v1.6** - Normalization & Enrichment Testing Patterns
   - **Appendix H added:** 6 new testing patterns for Stage 2+ normalization/enrichment pipelines
     - H.1: Set-Logic Expansion Testing (ALL/EXCEPT/REST OF cardinality validation, expansion_method tracking)
