@@ -67,6 +67,27 @@ This runbook provides operational procedures for parser development, QA, and pro
 
 ### Step 1: Inventory All Formats (15 min)
 
+**Before Starting:**
+1. **Check existing layout registry FIRST** (Added 2025-10-20)
+   ```bash
+   # Check if layout already exists
+   grep -i "<dataset>" cms_pricing/ingestion/parsers/layout_registry.py
+   ```
+   - If layout exists: Verify positions against current vintage, reuse if valid
+   - If layout missing: Proceed with layout creation
+   - **Impact:** Saves 30-60 minutes if layout already defined
+
+2. **Verify schema contract matches file structure** (Added 2025-10-20)
+   ```bash
+   # Compare schema columns to actual file
+   head -1 sample.csv  # Check CSV headers
+   cat schema.json | jq '.columns | keys'  # Check schema columns
+   ```
+   - Schema columns must match actual file headers/positions
+   - Mismatch = schema created before file inspection (common issue)
+   - **Impact:** Prevents complete schema rewrite mid-implementation
+
+**Format Inventory:**
 - List all expected formats: TXT, CSV, XLSX, ZIP.
 - Gather at least one authentic sample for each format and vintage.
 - Document source location/URL and download date for each sample.
@@ -171,6 +192,9 @@ If row count variance ≥ 2% and < 10%:
 
 If row count variance ≥ 10%:
   → Stop and investigate file provenance before coding (likely mismatched vintages or corrupted files).
+  → DEFER divergent format to separate investigation/v2 scope (Added 2025-10-20)
+  → Don't force-fit incompatible formats into same parser
+  → Example: OPPSCAP XLSX (1,735 rows) vs TXT (16,100 rows) = -89% variance → deferred
 ```
 
 **Time Investment:** 5-10 minutes  

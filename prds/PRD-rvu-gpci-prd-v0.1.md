@@ -35,7 +35,8 @@ Reference **REF-cms-pricing-source-map-prd-v1.0.md** before any RVU/GPCI ingesti
 - **Sources & Cadence:** Quarterly PPRRVU bundles (A/B/C/D + corrections), annual GPCI, annual OPPS-based caps, annual ANES conversion factors, locality-to-county crosswalk; authoritative layout PDFs accompany each release  
 - **Schema Contracts:** `cms_pricing/ingestion/contracts/cms_pprrvu_v1.0.json`, `cms_oppscap_v1.0.json`, `cms_gpci_v1.0.json`, `cms_anescf_v1.0.json`, `cms_localitycounty_v1.0.json`  
 - **Landing Layout:** `/raw/rvu/{release_id}/files/*` with DIS-compliant `manifest.json` capturing source URLs, SHA256, size, license, release notes, and fetched timestamp  
-- **Natural Keys & Partitioning:** RVU keyed by `(hcpcs, modifier, effective_from)`; GPCI keyed by `(valuation_year, locality_id)`; OPPSCAP keyed by `(hcpcs, modifier, locality_id)`; curated partitions by `vintage_date` and dataset type  
+- **Natural Keys & Partitioning:** RVU keyed by `(hcpcs, modifier, effective_from)`; GPCI keyed by `(valuation_year, locality_id)`; OPPSCAP keyed by `(hcpcs, modifier, mac, locality_code)`; curated partitions by `vintage_date` and dataset type
+  - **Note:** OPPSCAP NK verified 2025-10-20 - prices vary by both MAC (contractor) and locality (geography); 96 unique prices for same HCPCS+modifier across 115 MAC/locality combinations  
 - **Validations & Gates:** Structural & schema validation, authoritative layout enforcement, decimal precision checks, policy indicator enumerations, locality/GPCI coverage ≥99.5%, delta comparisons vs prior release, recomputed payment parity smoke tests  
 - **Quarantine Policy:** Rule failures routed to `/stage/rvu/{release_id}/reject/` with error metadata; publish blocked on critical issues and missing effective dating  
 - **Enrichment & Crosswalks:** Locality-to-county mapping to support ZIP pricing; calculate effective ranges using CMS notes; maintain release lineage via `release_id` + `published_at`  

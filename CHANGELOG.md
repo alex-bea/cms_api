@@ -181,6 +181,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Documentation:** `STD-observability-monitoring-prd-v1.0.md` Appendix C updated with contract enforcement
   - **Impact:** Prevents silent breaking changes to metrics (dashboard stability)
   - **Time:** 20 minutes (contract: 10min, validator: 5min, tests: 5min)
+- **OPPSCAP Parser - Phase 1 Complete** (Layout verification & schema update)
+  - **Context:** Pre-implementation verification following RUN-parser-qa-runbook Steps 1-4
+  - **Time:** 25 minutes (vs 60 min estimated - layout already existed)
+  - **Deliverables:**
+    1. **Schema contract v1.1:** `cms_oppscap_v1.1.json` (BREAKING CHANGE from v1.0)
+       - Fixed: Matches actual file structure (facility_price, nonfacility_price, status, mac, locality_code)
+       - Corrected NK: `(hcpcs, modifier, mac, locality_code)` - added MAC based on data analysis
+       - Old v1.0: Had incorrect columns (opps_cap_applies, cap_amount_usd, cap_method) - schema created before file inspection
+    2. **Authority Matrix:** `planning/parsers/oppscap/AUTHORITY_MATRIX.md`
+       - TXT authority (16,100 rows), CSV parity (+2 rows, 0.01%), XLSX deferred (-89% variance)
+    3. **Layout verification:** Confirmed existing `OPPSCAP_2025D_LAYOUT` in `layout_registry.py:98-111`
+    4. **Natural key analysis:** Verified prices vary by MAC+locality (8,855 unique combinations)
+  - **Learnings (5 patterns):**
+    1. **NK verification critical:** PRD had wrong NK, prevented duplicate key errors (1-2h saved)
+    2. **Schema must match reality:** v1.0 schema didn't match file, created v1.1 (prevents rework)
+    3. **>10% variance = defer:** XLSX 89% different, deferred to v2 (prevents scope creep)
+    4. **Check layout_registry first:** Existing layout saved 35 minutes
+    5. **CMS header typos common:** "NON-FACILTY PRICE" typo, needs alias handling
+  - **PRD Updates (5 changes):**
+    1. `PRD-rvu-gpci-prd-v0.1.md` line 38: Fixed OPPSCAP NK to include MAC
+    2. `RUN-parser-qa-runbook-prd-v1.0.md` Step 1: Check layout_registry.py first
+    3. `RUN-parser-qa-runbook-prd-v1.0.md` Step 2c: Defer >10% variance formats
+    4. `RUN-parser-qa-runbook-prd-v1.0.md` Step 1: Verify schema matches file structure
+    5. `STD-parser-contracts-impl-v2.0.md` §1.3: Include CMS typo variants in alias maps
+  - **Files:**
+    - `cms_pricing/ingestion/contracts/cms_oppscap_v1.1.json` (new)
+    - `planning/parsers/oppscap/AUTHORITY_MATRIX.md` (new)
+    - `planning/parsers/oppscap/OPPSCAP_PARSER_PLAN.md` (updated with learnings)
+  - **Next:** Phase 2 (Parser implementation)
 - **QTS v1.4 → v1.6** - Normalization & Enrichment Testing Patterns
   - **Appendix H added:** 6 new testing patterns for Stage 2+ normalization/enrichment pipelines
     - H.1: Set-Logic Expansion Testing (ALL/EXCEPT/REST OF cardinality validation, expansion_method tracking)

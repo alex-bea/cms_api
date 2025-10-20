@@ -162,6 +162,10 @@ def apply_aliases(df: pd.DataFrame, alias_map: Dict[str, str]) -> pd.DataFrame:
 - Case-insensitive matching
 - Document year-specific patterns
 - Log unmapped columns
+- **Include known CMS typos with comments** (Added 2025-10-20)
+  - Example: `'NON-FACILTY PRICE': 'nonfacility_price'  # CMS typo (missing I)`
+  - Prevents parser failures on CMS data quality issues
+  - Documents source data problems for observability
 
 **Testing:**
 ```python

@@ -1,0 +1,149 @@
+{
+  "dataset_name": "cms_oppscap",
+  "version": "1.1",
+  "generated_at": "2025-10-20T20:00:00Z",
+  "hash_spec_version": "1",
+  "natural_keys": [
+    "hcpcs",
+    "modifier",
+    "mac",
+    "locality_code"
+  ],
+  "column_order": [
+    "hcpcs",
+    "modifier",
+    "status",
+    "mac",
+    "locality_code",
+    "facility_price",
+    "nonfacility_price"
+  ],
+  "hash_metadata_exclusions": [
+    "release_id",
+    "vintage_date",
+    "product_year",
+    "quarter_vintage",
+    "source_filename",
+    "source_file_sha256",
+    "source_uri",
+    "parsed_at",
+    "row_content_hash"
+  ],
+  "columns": {
+    "hcpcs": {
+      "name": "hcpcs",
+      "type": "str",
+      "nullable": false,
+      "description": "HCPCS/CPT code (5 characters)",
+      "pattern": "^[A-Z0-9]{5}$",
+      "sample_values": ["0633T", "99213", "G0001"]
+    },
+    "modifier": {
+      "name": "modifier",
+      "type": "str",
+      "nullable": true,
+      "description": "HCPCS modifier code (2 characters, e.g., TC, 26)",
+      "pattern": "^[A-Z0-9]{2}$",
+      "sample_values": ["TC", "26", "53", null]
+    },
+    "status": {
+      "name": "status",
+      "type": "str",
+      "nullable": false,
+      "description": "Procedure status code (1 character)",
+      "domain": ["A", "C", "X", "R", "T"],
+      "sample_values": ["C", "A"]
+    },
+    "mac": {
+      "name": "mac",
+      "type": "str",
+      "nullable": false,
+      "description": "Medicare Administrative Contractor code (5 digits, zero-padded)",
+      "pattern": "^[0-9]{5}$",
+      "sample_values": ["01112", "05302", "12202"]
+    },
+    "locality_code": {
+      "name": "locality_code",
+      "type": "str",
+      "nullable": false,
+      "description": "Locality code (2 digits, zero-padded)",
+      "pattern": "^[0-9]{2}$",
+      "sample_values": ["01", "05", "99"]
+    },
+    "facility_price": {
+      "name": "facility_price",
+      "type": "Decimal",
+      "precision": 2,
+      "scale": 2,
+      "rounding_mode": "HALF_UP",
+      "multipleOf": 0.01,
+      "nullable": false,
+      "description": "OPPS cap amount for facility setting in USD",
+      "unit": "USD",
+      "min_value": 0.0,
+      "sample_values": [150.69, 152.38, 125.72]
+    },
+    "nonfacility_price": {
+      "name": "nonfacility_price",
+      "type": "Decimal",
+      "precision": 2,
+      "scale": 2,
+      "rounding_mode": "HALF_UP",
+      "multipleOf": 0.01,
+      "nullable": false,
+      "description": "OPPS cap amount for non-facility setting in USD",
+      "unit": "USD",
+      "min_value": 0.0,
+      "sample_values": [150.69, 152.38, 125.72]
+    },
+    "row_content_hash": {
+      "name": "row_content_hash",
+      "type": "str",
+      "nullable": false,
+      "description": "64-character SHA-256 hex digest of row content per STD-parser-contracts v2.0. Computed from columns in declared order excluding metadata fields.",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "primary_keys": [
+    "hcpcs",
+    "modifier",
+    "mac",
+    "locality_code"
+  ],
+  "partition_columns": [],
+  "business_rules": [
+    "HCPCS codes must be 5 characters (uppercase alphanumeric)",
+    "Modifier must be 2 characters if present (uppercase alphanumeric)",
+    "MAC must be 5 digits (zero-padded)",
+    "Locality code must be 2 digits (zero-padded)",
+    "Prices must be non-negative",
+    "Natural key (hcpcs, modifier, mac, locality_code) must be unique per release"
+  ],
+  "quality_thresholds": {
+    "null_rate_threshold": 0.05,
+    "duplicate_rate_threshold": 0.0
+  },
+  "storage_note": "Prices stored as Decimal(10,2) for exact precision. Canonicalized before hashing for determinism.",
+  "changelog": [
+    {
+      "version": "1.1",
+      "date": "2025-10-20",
+      "changes": [
+        "BREAKING: Updated schema to match actual OPPSCAP file structure",
+        "Removed: opps_cap_applies, cap_amount_usd, cap_method (v1.0 fields not in file)",
+        "Added: status, mac, locality_code, facility_price, nonfacility_price",
+        "Updated natural keys from (hcpcs, modifier, effective_from) to (hcpcs, modifier, mac, locality_code)",
+        "Verified: Prices vary by MAC and locality - both required in NK",
+        "Added: Decimal precision (2dp), rounding_mode, scale for hash stability"
+      ]
+    },
+    {
+      "version": "1.0",
+      "date": "2025-09-30",
+      "changes": [
+        "Initial OPPSCAP schema contract (incorrect structure)"
+      ]
+    }
+  ]
+}
+
