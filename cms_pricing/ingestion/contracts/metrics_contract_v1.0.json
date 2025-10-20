@@ -1,0 +1,193 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "version": "1.0.0",
+  "generated_at": "2025-10-20T19:15:00Z",
+  "description": "Metrics contract for normalization and enrichment pipelines. Freezes metric keys to prevent silent breaking changes in observability.",
+  "governance": {
+    "owner": "Data Platform Engineering",
+    "change_control": "ADR required for breaking changes",
+    "enforcement": "CI validates actual metrics against this contract"
+  },
+  
+  "parser_metrics": {
+    "description": "Stage 1 (Raw Parser) metrics structure",
+    "required_keys": [
+      "rows_parsed",
+      "rows_rejected",
+      "encoding_used",
+      "parse_time_sec"
+    ],
+    "optional_keys": [
+      "bom_detected",
+      "header_start_row",
+      "layout_version"
+    ]
+  },
+  
+  "normalization_pipeline_metrics": {
+    "description": "Stage 2 (FIPS Normalization / Entity Resolution) metrics structure",
+    "required_keys": [
+      "total_rows_in",
+      "total_rows_exploded",
+      "total_rows_out",
+      "rows_quarantined",
+      "expansion_methods",
+      "match_methods",
+      "authority_fingerprint"
+    ],
+    "optional_keys": [
+      "quarantine_rate",
+      "coverage_by_state",
+      "coverage"
+    ],
+    
+    "expansion_methods": {
+      "description": "How entities were expanded (set-logic operations)",
+      "type": "object",
+      "allowed_values": [
+        "list",
+        "all_counties",
+        "all_except",
+        "rest_of_state",
+        "all_county_equivalents"
+      ],
+      "example": {
+        "list": 57,
+        "all_counties": 35,
+        "all_except": 2,
+        "rest_of_state": 16
+      }
+    },
+    
+    "match_methods": {
+      "description": "How entities were matched to reference data",
+      "type": "object",
+      "allowed_values": [
+        "exact",
+        "alias",
+        "fuzzy",
+        "rest_of_state",
+        "state_inferred",
+        "state_mismatch",
+        "unknown_county",
+        "unknown_state"
+      ],
+      "example": {
+        "exact": 2193,
+        "alias": 7,
+        "fuzzy": 0,
+        "rest_of_state": 1036,
+        "state_inferred": 28,
+        "state_mismatch": 3,
+        "unknown_county": 0,
+        "unknown_state": 0
+      }
+    },
+    
+    "authority_fingerprint": {
+      "description": "Reference data version tracking for drift detection",
+      "type": "object",
+      "required_keys": [
+        "authority_version",
+        "total_counties",
+        "geoid_checksum"
+      ],
+      "optional_keys": [
+        "authority_date",
+        "by_state_counts",
+        "by_type_counts"
+      ],
+      "example": {
+        "authority_version": "Census TIGER/Line 2025",
+        "total_counties": 3222,
+        "geoid_checksum": "abc123def456...",
+        "authority_date": "2025-09-08",
+        "by_state_counts": {"01": 67, "06": 58},
+        "by_type_counts": {"County": 3000, "Independent City": 41, "Parish": 64}
+      }
+    },
+    
+    "coverage": {
+      "description": "Optional coverage metrics by dimension",
+      "type": "object",
+      "optional": true,
+      "structure": {
+        "by_state": "object mapping state_fips to {localities, counties_assigned}",
+        "by_expansion_method": "object mapping method to {localities, entities}"
+      }
+    }
+  },
+  
+  "enrichment_pipeline_metrics": {
+    "description": "Stage 3+ (Enrichment) metrics structure",
+    "required_keys": [
+      "rows_in",
+      "rows_enriched",
+      "rows_quarantined",
+      "join_rate"
+    ],
+    "optional_keys": [
+      "join_methods",
+      "imputation_counts",
+      "confidence_distribution"
+    ]
+  },
+  
+  "quarantine_structure": {
+    "description": "Quarantine DataFrame required columns",
+    "required_columns": [
+      "reason"
+    ],
+    "recommended_columns": [
+      "mac",
+      "locality_code",
+      "state_fips",
+      "county_name_raw",
+      "county_key"
+    ],
+    "reason_enum": [
+      "no_match",
+      "unknown_state",
+      "unknown_county",
+      "state_county_fips_mismatch",
+      "ambiguous_match",
+      "no_fuzzy_match"
+    ]
+  },
+  
+  "breaking_change_policy": {
+    "adding_keys": "non-breaking (CI warning only)",
+    "removing_required_keys": "BREAKING (requires ADR + major version bump)",
+    "renaming_keys": "BREAKING (requires ADR + deprecation period)",
+    "changing_enum_values": "BREAKING if removed, non-breaking if added"
+  },
+  
+  "validation_rules": {
+    "R001": {
+      "rule": "All required_keys must be present in metrics dict",
+      "severity": "BLOCK"
+    },
+    "R002": {
+      "rule": "expansion_methods values must be from allowed_values enum",
+      "severity": "WARN"
+    },
+    "R003": {
+      "rule": "match_methods values must be from allowed_values enum",
+      "severity": "WARN"
+    },
+    "R004": {
+      "rule": "authority_fingerprint must include geoid_checksum",
+      "severity": "BLOCK"
+    },
+    "R005": {
+      "rule": "quarantine DataFrame must include 'reason' column",
+      "severity": "BLOCK"
+    }
+  },
+  
+  "reference_implementations": {
+    "locality_parser": "cms_pricing/ingestion/normalize/normalize_locality_fips.py:1250-1270",
+    "tests": "tests/integration/test_locality_e2e.py::test_locality_quarantine_slo_real_source"
+  }
+}
+

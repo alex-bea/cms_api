@@ -570,4 +570,8 @@ def test_locality_quarantine_slo_real_source():
     assert 'expansion_methods' in stage2.metrics
     assert 'match_methods' in stage2.metrics
     assert stage2.metrics['authority_version'] == 'Census TIGER/Line 2025'
+    
+    # Validate metrics contract compliance (freeze metric keys)
+    from tests.helpers.metrics_contract import assert_metrics_contract
+    assert_metrics_contract(stage2.metrics, 'normalization_pipeline', allow_warnings=True)
 

@@ -619,6 +619,13 @@ logger.warning(
 - REST OF expansion logged for 16 localities
 - Multi-state matching logged for 3 VA counties
 - See: `cms_pricing/ingestion/normalize/normalize_locality_fips.py` (metrics at line 1250-1270)
+
+**Metrics Contract Enforcement:**
+- Contract: `cms_pricing/ingestion/contracts/metrics_contract_v1.0.json`
+- Validator: `tools/validate_metrics_contract.py`
+- Test helper: `tests/helpers/metrics_contract.py::assert_metrics_contract()`
+- CI validation: Enforced in integration tests (`test_locality_e2e.py:576`)
+- Breaking change policy: Removing/renaming required keys requires ADR + major version bump
 - Dashboards & Alerts (8.3)
 - Metadata & Catalog Requirements (10.1)
 - SLAs defaults (Appendix G)

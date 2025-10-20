@@ -166,6 +166,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Files Updated:** 6 PRD files (5 standards + 1 runbook)
   - **Impact:** Future parsers avoid 2-3 hours debugging per similar issue
   - **Time:** 95 minutes (architectural: 60min, bugs: 35min)
+- **Metrics Contract Enforcement** (Observability stability)
+  - **Contract:** `cms_pricing/ingestion/contracts/metrics_contract_v1.0.json`
+    - Freezes metric key names for normalization/enrichment pipelines
+    - Required keys: `total_rows_in`, `total_rows_exploded`, `total_rows_out`, `rows_quarantined`, `expansion_methods`, `match_methods`, `authority_fingerprint`
+    - Enum values: expansion_methods (list, all_counties, all_except, rest_of_state), match_methods (exact, alias, fuzzy, rest_of_state, state_inferred, state_mismatch, unknown_*)
+    - Breaking change policy: Removing/renaming required keys requires ADR + major version bump
+  - **Validator:** `tools/validate_metrics_contract.py` (CLI + programmatic API)
+    - Rules: R001-R005 (required keys, enum values, fingerprint structure, quarantine columns)
+    - Exit codes: 0=pass, 1=blocking violations, 2=warnings only
+  - **Test Helper:** `tests/helpers/metrics_contract.py::assert_metrics_contract()`
+    - pytest-friendly assertions for metrics validation
+    - Integrated into `test_locality_quarantine_slo_real_source` (line 576)
+  - **Documentation:** `STD-observability-monitoring-prd-v1.0.md` Appendix C updated with contract enforcement
+  - **Impact:** Prevents silent breaking changes to metrics (dashboard stability)
+  - **Time:** 20 minutes (contract: 10min, validator: 5min, tests: 5min)
 - **QTS v1.4 → v1.6** - Normalization & Enrichment Testing Patterns
   - **Appendix H added:** 6 new testing patterns for Stage 2+ normalization/enrichment pipelines
     - H.1: Set-Logic Expansion Testing (ALL/EXCEPT/REST OF cardinality validation, expansion_method tracking)
