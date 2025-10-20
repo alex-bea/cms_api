@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Layout Registry - Quarter Notation Standardization** - Unified CMS letter convention
+  - **Problem:** Mixed quarter notation across system (GPCI used 'A/B/C/D', OPPSCAP used 'Q1/Q2/Q3/Q4')
+  - **Solution:** Standardized on **CMS letter format** (A, B, C, D) across all LAYOUT_REGISTRY keys
+  - **Mapping:** A=Q1 (Jan), B=Q2 (Apr), C=Q3 (Jul), D=Q4 (Oct)
+  - **Rationale:** Matches CMS file naming convention (e.g., `RVU25D`, `GPCI25C`)
+  - **Backward compatibility:** `get_layout()` now accepts both formats:
+    - CMS letters: `"A"`, `"B"`, `"C"`, `"D"` (preferred)
+    - Q-notation: `"Q1"`, `"Q2"`, `"Q3"`, `"Q4"` (auto-converted)
+    - Composite: `"2025Q4"`, `"2025_Q4"` (parsed and converted)
+  - **Files changed:** `cms_pricing/ingestion/parsers/layout_registry.py` (updated LAYOUT_REGISTRY, enhanced `get_layout()`)
+  - **Impact:** All parsers (PPRRVU, GPCI, OPPSCAP, ANES, Locality) now use consistent notation
+  - **Testing:** ✅ Verified both 'D' and 'Q4' produce identical parsing results
+
 - **OPPSCAP Parser (v1.0.0) - Phase 2 Complete** - OPPS-based Payment Caps parser
   - **Multi-format support:** TXT (fixed-width, authoritative), CSV (parity testing)
   - **Schema:** `cms_oppscap_v1.1` (HCPCS, modifier, status, MAC, locality, facility/nonfacility prices)

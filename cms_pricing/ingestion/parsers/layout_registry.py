@@ -156,25 +156,32 @@ LOCCO_2025D_LAYOUT = {
 
 LAYOUT_REGISTRY = {
     # Format: (dataset, year, quarter) -> layout
-    ('pprrvu', '2025', 'Q4'): PPRRVU_2025D_LAYOUT,
-    ('pprrvu', '2025', 'Q3'): PPRRVU_2025D_LAYOUT,  # Same layout for Q3
-    ('pprrvu', '2025', 'Q2'): PPRRVU_2025D_LAYOUT,  # Same layout for Q2
-    ('pprrvu', '2025', 'Q1'): PPRRVU_2025D_LAYOUT,  # Same layout for Q1
+    # Quarter notation: CMS letters (A=Q1, B=Q2, C=Q3, D=Q4)
+    # Matches CMS file naming convention (e.g., RVU25D, GPCI25C)
     
-    # GPCI 2025 layouts (all quarters use same 2025D layout)
+    # PPRRVU layouts (D = October/Q4 release)
+    ('pprrvu', '2025', 'D'): PPRRVU_2025D_LAYOUT,
+    ('pprrvu', '2025', 'C'): PPRRVU_2025D_LAYOUT,  # Same layout for July/Q3
+    ('pprrvu', '2025', 'B'): PPRRVU_2025D_LAYOUT,  # Same layout for Apr/Q2
+    ('pprrvu', '2025', 'A'): PPRRVU_2025D_LAYOUT,  # Same layout for Jan/Q1
+    
+    # GPCI layouts (all quarters use same 2025D layout)
     ('gpci', '2025', 'A'): GPCI_2025D_LAYOUT,
     ('gpci', '2025', 'B'): GPCI_2025D_LAYOUT,
     ('gpci', '2025', 'C'): GPCI_2025D_LAYOUT,
     ('gpci', '2025', 'D'): GPCI_2025D_LAYOUT,
     ('gpci', '2025', None): GPCI_2025D_LAYOUT,  # Annual fallback
     
-    ('oppscap', '2025', 'Q4'): OPPSCAP_2025D_LAYOUT,
-    ('oppscap', '2025', 'Q3'): OPPSCAP_2025D_LAYOUT,
+    # OPPSCAP layouts (D = October/Q4)
+    ('oppscap', '2025', 'D'): OPPSCAP_2025D_LAYOUT,
+    ('oppscap', '2025', 'C'): OPPSCAP_2025D_LAYOUT,
     
-    ('anes', '2025', 'Q4'): ANES_2025D_LAYOUT,
+    # ANES layouts (D = October/Q4)
+    ('anes', '2025', 'D'): ANES_2025D_LAYOUT,
     ('anes', '2025', None): ANES_2025D_LAYOUT,  # Annual
     
-    ('locco', '2025', 'Q4'): LOCCO_2025D_LAYOUT,
+    # Locality layouts (D = October/Q4)
+    ('locco', '2025', 'D'): LOCCO_2025D_LAYOUT,
     ('locco', '2025', None): LOCCO_2025D_LAYOUT,  # Annual
 }
 
@@ -189,7 +196,7 @@ def get_layout(
     
     Args:
         product_year: Year (e.g., "2025")
-        quarter_vintage: Quarter vintage (e.g., "2025Q4", "2025_annual")
+        quarter_vintage: Quarter in CMS letter format (A/B/C/D) or Q-notation (Q1/Q2/Q3/Q4)
         dataset: Dataset type (e.g., "pprrvu", "gpci")
     
     Returns:
@@ -197,13 +204,32 @@ def get_layout(
         
     Raises:
         ValueError: If no layout found and dataset requires fixed-width parsing
+        
+    Note:
+        Accepts multiple quarter formats for backward compatibility:
+        - CMS letters: "A", "B", "C", "D" (preferred, matches CMS file naming)
+        - Q-notation: "Q1", "Q2", "Q3", "Q4"
+        - Composite: "2025Q4", "2025_Q4"
+        All formats are normalized to CMS letters for registry lookup.
     """
-    # Extract quarter from quarter_vintage
-    if 'Q' in quarter_vintage:
-        quarter = quarter_vintage.split('Q')[-1]
-        quarter = f"Q{quarter}"
-    else:
-        quarter = None
+    # Normalize quarter_vintage to CMS letter format (A/B/C/D)
+    quarter = None
+    if quarter_vintage:
+        # Direct CMS letter notation (A, B, C, D) - preferred
+        if quarter_vintage in ['A', 'B', 'C', 'D']:
+            quarter = quarter_vintage
+        # Q-notation (Q1, Q2, Q3, Q4) - backward compatible
+        elif quarter_vintage in ['Q1', 'Q2', 'Q3', 'Q4']:
+            quarter_map = {'Q1': 'A', 'Q2': 'B', 'Q3': 'C', 'Q4': 'D'}
+            quarter = quarter_map[quarter_vintage]
+        # Composite format (2025Q4, 2025_Q4) - extract and map
+        elif 'Q' in quarter_vintage:
+            q_part = quarter_vintage.split('Q')[-1].strip('_')
+            quarter_map = {'1': 'A', '2': 'B', '3': 'C', '4': 'D'}
+            quarter = quarter_map.get(q_part, None)
+        # Unknown format - leave as None (annual fallback)
+        else:
+            quarter = None
     
     # Try specific quarter first
     key = (dataset, product_year, quarter)
