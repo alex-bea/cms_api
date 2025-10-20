@@ -267,7 +267,8 @@ SET_LOGIC_PATTERNS = {
 def infer_state_from_counties(
     county_names_raw: str,
     counties_df: pd.DataFrame,
-    states_df: pd.DataFrame
+    states_df: pd.DataFrame,
+    mac_hint: Optional[str] = None
 ) -> Optional[Tuple[str, str, str]]:
     """
     Infer state from county names when state header is missing.
@@ -277,10 +278,26 @@ def infer_state_from_counties(
     2. Match each county to reference data (exact match on normalized keys)
     3. Collect all states that contain matched counties
     4. If exactly 1 state covers ALL matched counties, return it
+    5. If ambiguous (multiple states), use MAC hint as tie-breaker
+    
+    Args:
+        county_names_raw: Raw county names string
+        counties_df: Counties reference DataFrame
+        states_df: States reference DataFrame
+        mac_hint: Optional MAC code for tie-breaking ambiguous counties
     
     Returns:
         (state_fips, state_name, confidence_note) or None
     """
+    # MAC → State mapping for known contractors (tie-breaking ambiguous counties)
+    MAC_STATE_MAP = {
+        '01112': '06',  # California contractor
+        '01182': '06',  # California contractor (Southern CA)
+        '02102': '02',  # Alaska
+        '02202': '16',  # Idaho
+        '02302': '41',  # Oregon
+        '02402': '53',  # Washington
+    }
     # Explode county list
     county_list = explode_county_list(county_names_raw)
     if not county_list:
@@ -328,6 +345,23 @@ def infer_state_from_counties(
             inferred_state_name = state_row['state_name'].iloc[0]
             confidence = f"inferred_from_{matched_count}_of_{len(county_list)}_counties"
             return (inferred_state_fips, inferred_state_name, confidence)
+    
+    # If ambiguous (multiple states), use MAC hint as tie-breaker
+    if len(common_states) > 1 and mac_hint and mac_hint in MAC_STATE_MAP:
+        mac_state_fips = MAC_STATE_MAP[mac_hint]
+        if mac_state_fips in common_states:
+            state_row = states_df[states_df['state_fips'] == mac_state_fips]
+            if len(state_row) > 0:
+                inferred_state_name = state_row['state_name'].iloc[0]
+                confidence = f"inferred_from_mac_hint_{mac_hint}_ambiguous_{len(common_states)}_states"
+                logger.info(
+                    "state_inferred_via_mac_hint",
+                    mac=mac_hint,
+                    county_names=county_names_raw[:60],
+                    ambiguous_states=sorted(common_states),
+                    chosen_state=mac_state_fips
+                )
+                return (mac_state_fips, inferred_state_name, confidence)
     
     return None  # Ambiguous (multiple states) or no match
 
@@ -897,7 +931,7 @@ def normalize_locality_fips(
                 county_names=county_names_raw[:80]
             )
             
-            inference = infer_state_from_counties(county_names_raw, counties_df, states_df)
+            inference = infer_state_from_counties(county_names_raw, counties_df, states_df, mac_hint=mac)
             if inference:
                 state_fips, inferred_state_name, confidence_note = inference
                 logger.info(
@@ -948,7 +982,7 @@ def normalize_locality_fips(
                     county_names=county_names_raw[:60]
                 )
                 
-                inference = infer_state_from_counties(county_names_raw, counties_df, states_df)
+                inference = infer_state_from_counties(county_names_raw, counties_df, states_df, mac_hint=mac)
                 if inference:
                     # State inferred - update and re-expand
                     inferred_state_fips, inferred_state_name, confidence_note = inference
