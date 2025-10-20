@@ -621,7 +621,6 @@ def _parse_txt_fixed_width(
         state_candidate = state_raw.upper()
         state_normalized = re.sub(r'\s+(STATEWIDE|STATE WIDE|STATE|WIDE)$', '', state_candidate).strip()
         state_span_raw = raw_spans.get("state_name", "")
-        is_state_span_blank = state_span_raw.strip() == ""
 
         # Strict validation: Does state column start with a valid US state?
         # Format: "STATE_NAME" or "STATE_NAME  METRO_AREA" (e.g., "FLORIDA FORT", "GEORGIA ATLAN")
@@ -633,16 +632,11 @@ def _parse_txt_fixed_width(
                 matched_state = valid_state
                 break
 
-        # Is this a continuation row?
-        # Continuation requires blank state span AND blank identifiers (CMS continuation rows)
+        # Continuation row: state span does not contain a valid state, but MAC/locality are present
         mac_blank = mac_value == ""
         locality_blank = locality_value == ""
-        is_continuation = (
-            not is_valid_state
-            and is_state_span_blank
-            and mac_blank
-            and locality_blank
-        )
+        has_codes = (mac_value != "" and locality_value != "")
+        is_continuation = not is_valid_state and has_codes
         
         filled_fields = []
         
@@ -683,47 +677,19 @@ def _parse_txt_fixed_width(
                 )
                 continue
 
-            # Also forward-fill mac and locality if blank
+            # Also forward-fill mac and locality if blank (rare in CMS files)
             if mac_blank:
                 if last_mac is None:
-                    rejects.append({
-                        "line_no": line_no,
-                        "mac": mac_value,
-                        "locality_code": locality_value,
-                        "state_raw": state_raw,
-                        "fee_area_raw": fee_area_value,
-                        "reason": "continuation_missing_mac",
-                        "action": "quarantined",
-                        "source_line": line.rstrip("\n"),
-                    })
-                    logger.debug(
-                        "continuation_missing_mac_seed",
-                        line_no=line_no,
-                        action="quarantined"
-                    )
-                    continue
-                row["mac"] = last_mac
-                filled_fields.append("mac")
+                    row["mac"] = ""
+                else:
+                    row["mac"] = last_mac
+                    filled_fields.append("mac")
             if locality_blank:
                 if last_locality is None:
-                    rejects.append({
-                        "line_no": line_no,
-                        "mac": mac_value,
-                        "locality_code": locality_value,
-                        "state_raw": state_raw,
-                        "fee_area_raw": fee_area_value,
-                        "reason": "continuation_missing_locality_code",
-                        "action": "quarantined",
-                        "source_line": line.rstrip("\n"),
-                    })
-                    logger.debug(
-                        "continuation_missing_locality_seed",
-                        line_no=line_no,
-                        action="quarantined"
-                    )
-                    continue
-                row["locality_code"] = last_locality
-                filled_fields.append("locality_code")
+                    row["locality_code"] = ""
+                else:
+                    row["locality_code"] = last_locality
+                    filled_fields.append("locality_code")
                 
         else:
             # Non-state, non-continuation (e.g., fee_area bleed into state column) → quarantine

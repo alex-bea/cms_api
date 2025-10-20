@@ -26,7 +26,8 @@ import hashlib
 import re
 import unicodedata
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple
+from collections import defaultdict
+from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple
 
 import pandas as pd
 import structlog
@@ -259,7 +260,7 @@ def load_fips_crosswalk(ref_dir: Optional[Path] = None) -> Tuple[pd.DataFrame, p
 SET_LOGIC_PATTERNS = {
     'all_counties': re.compile(r'^ALL COUNTIES$', re.IGNORECASE),
     'all_except': re.compile(r'^ALL COUNTIES EXCEPT (.+)$', re.IGNORECASE),
-    'rest_of': re.compile(r'^REST OF (?:STATE|[A-Z ]+)$', re.IGNORECASE),
+    'rest_of': re.compile(r'^(REST OF .+|ALL OTHER COUNTIES?)$', re.IGNORECASE),
 }
 
 
@@ -756,6 +757,7 @@ def normalize_locality_fips(
     
     # Create state name → state_fips mapping
     state_map = dict(zip(states_df['state_name'].str.upper(), states_df['state_fips']))
+    state_name_by_fips = dict(zip(states_df['state_fips'], states_df['state_name']))
     
     # Add manual entries for territories and CMS-specific formats
     state_map['PUERTO RICO'] = '72'
@@ -773,7 +775,15 @@ def normalize_locality_fips(
     # Metrics
     metrics = {
         'total_rows_in': len(raw_df),
-        'match_methods': {'exact': 0, 'alias': 0, 'fuzzy': 0, 'unknown_state': 0, 'unknown_county': 0},
+        'match_methods': {
+            'exact': 0,
+            'alias': 0,
+            'fuzzy': 0,
+            'rest_of_state': 0,
+            'state_mismatch': 0,
+            'unknown_state': 0,
+            'unknown_county': 0,
+        },
         'expansion_methods': {'list': 0, 'all_counties': 0, 'all_except': 0, 'rest_of_state': 0},
         'total_rows_exploded': 0,
         'total_rows_out': 0,
@@ -782,6 +792,11 @@ def normalize_locality_fips(
         'authority_version': authority_version,
         'authority_fingerprint': authority_fingerprint,
     }
+
+    # Track explicit county assignments (by GEOID) for REST-OF-STATE complements
+    explicit_counties_by_state: Dict[str, Set[str]] = defaultdict(set)
+    state_candidates_by_mac: Dict[str, Set[str]] = defaultdict(set)
+    deferred_rest_rows: List[Dict[str, Any]] = []
     
     # Process each raw row
     for _, raw_row in raw_df.iterrows():
@@ -793,9 +808,82 @@ def normalize_locality_fips(
         
         # Normalize state name: Strip "STATEWIDE" / "STATE" / "WIDE" suffixes from CMS formatting
         # Real CMS files split "STATEWIDE" across columns: "ALABAMA                STATE" + "WIDE"
-        state_name = state_name_raw.replace("STATEWIDE", "").replace("WIDE", "").replace("STATE", "").strip()
+        # Also handle continuation rows with truncated metro names: "WASHINGTON             SEATT"
+        state_name_cleaned = state_name_raw.replace("STATEWIDE", "").replace("WIDE", "").replace("STATE", "").strip()
         
-        # Derive state_fips from state_name
+        # Extract just the state name (before any metro suffix)
+        # Check if it starts with a known state
+        state_name = state_name_cleaned
+        for known_state in state_map.keys():
+            if state_name_cleaned.startswith(known_state):
+                state_name = known_state
+                break
+        
+        # Detect set-logic FIRST (before state inference)
+        # REST OF STATE rows need deferral, not state inference
+        expansion_method, exception_str = detect_set_logic(county_names_raw)
+        metrics['expansion_methods'][expansion_method] += 1
+        
+        # If REST OF STATE, defer immediately (state derived from prior rows)
+        if expansion_method == 'rest_of_state':
+            state_fips_hint = state_map.get(state_name)
+            candidates = state_candidates_by_mac.get(mac, set())
+            chosen_state_fips = None
+            chosen_state_name = state_name
+
+            if candidates:
+                if state_fips_hint in candidates:
+                    chosen_state_fips = state_fips_hint
+                elif len(candidates) == 1:
+                    chosen_state_fips = next(iter(candidates))
+                else:
+                    chosen_state_fips = sorted(candidates)[0]
+                    logger.warning(
+                        "rest_of_state_multiple_state_candidates",
+                        mac=mac,
+                        locality_code=locality_code,
+                        candidates=sorted(candidates)
+                    )
+                chosen_state_name = state_name_by_fips.get(chosen_state_fips, chosen_state_name)
+            else:
+                chosen_state_fips = state_fips_hint
+                if chosen_state_fips:
+                    chosen_state_name = state_name_by_fips.get(chosen_state_fips, chosen_state_name)
+
+            if not chosen_state_fips:
+                logger.warning(
+                    "rest_of_state_unknown_state",
+                    mac=mac,
+                    locality_code=locality_code,
+                    county_names=county_names_raw[:60]
+                )
+                quarantine_rows.append({
+                    'mac': mac,
+                    'locality_code': locality_code,
+                    'state_name': state_name,
+                    'county_names': county_names_raw,
+                    'reason': 'rest_of_state_unknown_state',
+                })
+                metrics['match_methods']['unknown_state'] += 1
+                continue
+
+            deferred_rest_rows.append({
+                'mac': mac,
+                'locality_code': locality_code,
+                'state_fips': chosen_state_fips,
+                'state_name': chosen_state_name,
+                'fee_area': fee_area,
+                'county_names_raw': county_names_raw,
+            })
+            logger.debug(
+                "rest_of_state_deferred",
+                state_fips=chosen_state_fips,
+                locality_code=locality_code,
+                state_name=chosen_state_name
+            )
+            continue
+        
+        # Derive state_fips from state_name (for non-REST-OF-STATE rows)
         state_fips = state_map.get(state_name)
         state_inference_attempted = False  # Guard against infinite inference loops
         
@@ -834,17 +922,11 @@ def normalize_locality_fips(
                 metrics['match_methods']['unknown_state'] += 1
                 continue
         
-        # Detect set-logic
-        expansion_method, exception_str = detect_set_logic(county_names_raw)
-        metrics['expansion_methods'][expansion_method] += 1
-        
-        # Expand set-logic (with current state)
+        # Expand set-logic (expansion_method already detected above)
         if expansion_method == 'all_counties':
             county_list = expand_all_counties(state_fips, counties_df)
         elif expansion_method == 'all_except':
             county_list = expand_all_except(state_fips, exception_str, counties_df)
-        elif expansion_method == 'rest_of_state':
-            county_list = expand_rest_of_state(state_fips, locality_code, raw_df, counties_df)
         else:  # 'list'
             county_list = explode_county_list(county_names_raw)
         
@@ -999,6 +1081,128 @@ def normalize_locality_fips(
                 'source_release_id': source_release_id,
                 'authority_version': authority_version,
             })
+            
+            # Track coverage and assigned counties for REST-OF-STATE complement
+            explicit_counties_by_state[state_fips].add(county_geoid)
+            state_candidates_by_mac[mac].add(state_fips)
+            metrics['coverage_by_state'][state_fips] = metrics['coverage_by_state'].get(state_fips, 0) + 1
+    
+    # Build DataFrames
+    if deferred_rest_rows:
+        for rest_ctx in deferred_rest_rows:
+            state_fips = rest_ctx['state_fips']
+            locality_code = rest_ctx['locality_code']
+            mac = rest_ctx['mac']
+            state_name = rest_ctx['state_name']
+            fee_area = rest_ctx['fee_area']
+            
+            if not state_fips:
+                candidates = state_candidates_by_mac.get(mac, set())
+                if len(candidates) == 1:
+                    state_fips = next(iter(candidates))
+                    state_name = state_name_by_fips.get(state_fips, state_name)
+                elif len(candidates) > 1:
+                    state_fips = sorted(candidates)[0]
+                    state_name = state_name_by_fips.get(state_fips, state_name)
+                    logger.warning(
+                        "rest_of_state_postpass_multiple_candidates",
+                        mac=mac,
+                        locality_code=locality_code,
+                        candidates=sorted(candidates)
+                    )
+                else:
+                    # Last resort: Try fee_area hints (e.g., "SEATTLE" → WA, "PORTLAND" → OR)
+                    # Common patterns in CMS data
+                    fee_area_upper = rest_ctx['fee_area'].upper()
+                    state_hints = {
+                        'SEATTLE': '53',  # Washington
+                        'WASHINGTON': '53',
+                        'MANHATTAN': '36',  # New York
+                        'QUEENS': '36',
+                        'NYC': '36',
+                        'NEW YORK': '36',
+                        'PORTLAND': '41',  # Oregon (not ME - OR has MAC 02302)
+                        'BOSTON': '25',  # Massachusetts
+                        'MASSACHUSETTS': '25',
+                        'MAINE': '23',
+                        'SOUTHERN MAINE': '23',
+                    }
+                    for hint, hint_fips in state_hints.items():
+                        if hint in fee_area_upper:
+                            state_fips = hint_fips
+                            state_name = state_name_by_fips.get(hint_fips, state_name)
+                            logger.info(
+                                "rest_of_state_inferred_from_fee_area",
+                                mac=mac,
+                                locality_code=locality_code,
+                                fee_area_hint=hint,
+                                inferred_state=state_name,
+                                inferred_fips=state_fips
+                            )
+                            break
+                    
+                    # If still no state, quarantine
+                    if not state_fips:
+                        logger.warning(
+                            "rest_of_state_postpass_no_state",
+                            mac=mac,
+                            locality_code=locality_code,
+                            fee_area=fee_area_upper[:50]
+                        )
+                        quarantine_rows.append({
+                            'mac': mac,
+                            'locality_code': locality_code,
+                            'state_name': state_name,
+                            'county_names': rest_ctx['county_names_raw'],
+                            'reason': 'rest_of_state_unknown_state',
+                        })
+                        metrics['match_methods']['unknown_state'] += 1
+                        continue
+            
+            state_counties_df = counties_df[counties_df['state_fips'] == state_fips]
+            assigned_geoids = explicit_counties_by_state.get(state_fips, set())
+            remaining_df = state_counties_df[~state_counties_df['county_geoid'].isin(assigned_geoids)]
+            
+            if remaining_df.empty:
+                logger.warning(
+                    "rest_of_state_no_remaining_counties",
+                    state_fips=state_fips,
+                    locality_code=locality_code,
+                    assigned=len(assigned_geoids)
+                )
+                continue
+            
+            remaining_count = len(remaining_df)
+            metrics['total_rows_exploded'] += remaining_count
+            explicit_counties_by_state[state_fips].update(remaining_df['county_geoid'].tolist())
+            state_candidates_by_mac[mac].add(state_fips)
+            metrics['match_methods']['rest_of_state'] += remaining_count
+            metrics['coverage_by_state'][state_fips] = metrics['coverage_by_state'].get(state_fips, 0) + remaining_count
+            
+            logger.info(
+                "rest_of_state_expanded",
+                state_fips=state_fips,
+                locality_code=locality_code,
+                assigned=remaining_count,
+                previously_assigned=len(assigned_geoids)
+            )
+            
+            for _, county_row in remaining_df.iterrows():
+                normalized_rows.append({
+                    'locality_code': locality_code,
+                    'mac': mac,
+                    'state_fips': state_fips,
+                    'county_fips': county_row['county_fips'],
+                    'county_geoid': county_row['county_geoid'],
+                    'county_name': county_row['county_name'],
+                    'county_name_canonical': county_row['county_name_canonical'],
+                    'county_type': county_row['county_type'],
+                    'match_method': 'rest_of_state',
+                    'mapping_confidence': 1.0,
+                    'expansion_method': 'rest_of_state',
+                    'source_release_id': source_release_id,
+                    'authority_version': authority_version,
+                })
     
     # Build DataFrames
     if normalized_rows:
@@ -1063,4 +1267,3 @@ def normalize_locality_fips(
         quarantine=df_quarantine,
         metrics=metrics,
     )
-
