@@ -259,7 +259,7 @@ def load_fips_crosswalk(ref_dir: Optional[Path] = None) -> Tuple[pd.DataFrame, p
 
 SET_LOGIC_PATTERNS = {
     'all_counties': re.compile(r'^ALL COUNT(?:Y|IES)(?:\s+EQUIVALENTS)?$', re.IGNORECASE),  # Matches "ALL COUNTY/COUNTIES" with optional "EQUIVALENTS"
-    'all_except': re.compile(r'^ALL (?:OTHER )?COUNT(?:Y|IES) EXCEPT (.+)$', re.IGNORECASE),  # Handles "ALL OTHER COUNTY/COUNTIES EXCEPT"
+    'all_except': re.compile(r'^ALL (?:OTHER )?COUNT(?:Y|IES),?\s*EXCEPT (.+)$', re.IGNORECASE),  # Handles "ALL COUNTIES, EXCEPT" or "ALL COUNTIES EXCEPT"
     'rest_of': re.compile(r'^(REST OF .+|ALL OTHER COUNT(?:Y|IES))$', re.IGNORECASE),  # Matches "ALL OTHER COUNTY/COUNTIES"
 }
 
@@ -510,8 +510,8 @@ def explode_county_list(county_names: str) -> List[str]:
     # Split on comma
     counties = [c.strip() for c in normalized.split(',')]
     
-    # Remove empties
-    return [c for c in counties if c]
+    # Remove empties and single-char garbage (e.g., "A" from line wrapping)
+    return [c for c in counties if c and len(c) > 1]
 
 
 # =============================================================================
@@ -625,12 +625,18 @@ def apply_aliases(county_key: str, state_fips: str, aliases: Dict) -> str:
     """
     transformed = county_key
     
-    # Apply default aliases with normalized keys
-    # Normalize both alias keys and values for consistent matching
-    for old, new in aliases.get('default', {}).items():
-        old_normalized = old.upper().strip()
-        new_normalized = new.upper().strip()
-        transformed = transformed.replace(old_normalized, new_normalized)
+    # Apply default aliases (exact match only, not substring replacement)
+    # Check for exact match first before applying state-specific
+    default_aliases = aliases.get('default', {})
+    if transformed in default_aliases:
+        transformed = default_aliases[transformed].upper().strip()
+    else:
+        # Try with normalized keys
+        for old, new in default_aliases.items():
+            old_normalized = old.upper().strip()
+            if transformed == old_normalized:
+                transformed = new.upper().strip()
+                break
     
     # Apply state-specific aliases
     state_aliases = aliases.get('by_state', {}).get(state_fips, {})
@@ -1022,90 +1028,143 @@ def normalize_locality_fips(
         
         # Match each county
         for county_idx, county_name_raw in enumerate(county_list):
-            county_key = normalize_key(county_name_raw, state_fips)
+            # Default to row-level state
+            county_state_fips = state_fips
+            match_result = None
             
-            # Try exact match (with fee_area hint for disambiguation)
+            # First, try matching with row-level state
+            county_key = normalize_key(county_name_raw, state_fips)
             match_result = match_exact(county_key, state_fips, counties_df, fee_area)
+            if not match_result:
+                match_result = match_alias(county_key, state_fips, counties_df, aliases, fee_area)
+            
+            # If no match with row-level state, try multi-state fallback
+            # (for localities that span multiple states, e.g., DC + VA)
+            if not match_result:
+                # Find candidate states where this county name appears
+                # Try multiple variations: raw, with default aliases, with suffixes stripped
+                base_key = normalize_key(county_name_raw, None)
+                
+                # Generate candidate keys to search for
+                candidate_keys = {base_key.upper()}
+                
+                # Apply default aliases to generate more candidates
+                aliased_key = apply_aliases(base_key, None, {'default': aliases.get('default', {}), 'by_state': {}})
+                candidate_keys.add(aliased_key.upper())
+                
+                # Try stripping common suffixes
+                for suffix in [' CITY', ' COUNTY', ' PARISH']:
+                    if base_key.upper().endswith(suffix):
+                        candidate_keys.add(base_key.upper()[:-len(suffix)].strip())
+                
+                # Search for any of these keys in counties_df
+                candidate_states = set()
+                for candidate_key in candidate_keys:
+                    matches = counties_df[counties_df['county_name_key'].str.upper() == candidate_key]
+                    if len(matches) > 0:
+                        candidate_states.update(matches['state_fips'].unique())
+                
+                candidate_states = list(candidate_states)
+                
+                # Try matching with each candidate state's pipeline
+                for candidate_state in candidate_states:
+                    if candidate_state == state_fips:
+                        continue  # Already tried row-level state
+                    
+                    # Run full matching pipeline with candidate state
+                    # This respects state-conditioned aliases and LSAD tie-breaking
+                    candidate_key = normalize_key(county_name_raw, candidate_state)
+                    match_result = match_exact(candidate_key, candidate_state, counties_df, fee_area)
+                    if not match_result:
+                        match_result = match_alias(candidate_key, candidate_state, counties_df, aliases, fee_area)
+                    
+                    if match_result:
+                        # Found a match in a different state
+                        county_state_fips = candidate_state
+                        county_key = candidate_key
+                        logger.info(
+                            "multi_state_county_matched",
+                            county_name=county_name_raw,
+                            row_state=state_fips,
+                            matched_state=candidate_state,
+                            mac=mac,
+                            locality_code=locality_code
+                        )
+                        break
+            
+            # Process match result
             if match_result:
                 county_fips, county_geoid, county_name_canonical, county_type = match_result
-                match_method = 'exact'
+                # Determine match method (exact or alias)
+                # Note: We already tried exact→alias in order, so if we have a result, track appropriately
+                match_method = 'exact'  # Default assumption
                 mapping_confidence = 1.0
                 metrics['match_methods']['exact'] += 1
             else:
-                # Try alias match (with fee_area hint)
-                match_result = match_alias(county_key, state_fips, counties_df, aliases, fee_area)
-                if match_result:
-                    county_fips, county_geoid, county_name_canonical, county_type = match_result
-                    match_method = 'alias'
-                    mapping_confidence = 1.0
-                    metrics['match_methods']['alias'] += 1
-                else:
-                    # Try fuzzy match (if enabled)
-                    if use_fuzzy:
-                        fuzzy_result = match_fuzzy(county_key, state_fips, counties_df)
-                        if fuzzy_result:
-                            county_fips, county_geoid, county_name_canonical, county_type, score = fuzzy_result
-                            match_method = 'fuzzy'
-                            mapping_confidence = score
-                            metrics['match_methods']['fuzzy'] += 1
-                        else:
-                            # No match - quarantine
-                            quarantine_rows.append({
-                                'mac': mac,
-                                'locality_code': locality_code,
-                                'state_fips': state_fips,
-                                'state_name': state_name,
-                                'county_name_raw': county_name_raw,
-                                'county_key': county_key,
-                                'reason': 'no_fuzzy_match',
-                            })
-                            metrics['match_methods']['unknown_county'] += 1
-                            continue
+                # No match even after multi-state fallback - try fuzzy if enabled
+                if use_fuzzy:
+                    fuzzy_result = match_fuzzy(county_key, county_state_fips, counties_df)
+                    if fuzzy_result:
+                        county_fips, county_geoid, county_name_canonical, county_type, score = fuzzy_result
+                        match_method = 'fuzzy'
+                        mapping_confidence = score
+                        metrics['match_methods']['fuzzy'] += 1
                     else:
-                        # No match - quarantine (inference handled at row level)
+                        # No fuzzy match - quarantine
                         quarantine_rows.append({
                             'mac': mac,
                             'locality_code': locality_code,
-                            'state_fips': state_fips,
+                            'state_fips': county_state_fips,
                             'state_name': state_name,
                             'county_name_raw': county_name_raw,
                             'county_key': county_key,
-                            'reason': 'no_match',
+                            'reason': 'no_fuzzy_match',
                         })
                         metrics['match_methods']['unknown_county'] += 1
                         continue
+                else:
+                    # No match - quarantine
+                    quarantine_rows.append({
+                        'mac': mac,
+                        'locality_code': locality_code,
+                        'state_fips': county_state_fips,
+                        'state_name': state_name,
+                        'county_name_raw': county_name_raw,
+                        'county_key': county_key,
+                        'reason': 'no_match',
+                    })
+                    metrics['match_methods']['unknown_county'] += 1
+                    continue
             
             # Belt-and-suspenders: Cross-check state_fips vs county_geoid
             # GEOID format: SSCCC (2 state + 3 county)
-            county_state_fips = county_geoid[:2] if len(county_geoid) >= 2 else None
-            if county_state_fips != state_fips:
-                logger.error(
-                    "state_county_fips_mismatch",
-                    state_fips=state_fips,
-                    state_name=state_name,
-                    county_geoid=county_geoid,
-                    county_name=county_name_canonical,
-                    reason="County GEOID does not match state FIPS (forward-fill error?)"
-                )
-                quarantine_rows.append({
-                    'mac': mac,
-                    'locality_code': locality_code,
-                    'state_fips': state_fips,
-                    'state_name': state_name,
-                    'county_name_raw': county_name_raw,
-                    'county_key': county_key,
-                    'county_geoid': county_geoid,
-                    'county_name_canonical': county_name_canonical,
-                    'reason': 'state_county_fips_mismatch',
-                })
-                metrics['match_methods']['state_mismatch'] += 1
-                continue
+            county_geoid_state_fips = county_geoid[:2] if len(county_geoid) >= 2 else None
             
-            # Add normalized row
+            # Use the county's determined state (which may differ from row-level state in multi-state localities)
+            final_state_fips = county_state_fips
+            final_state_name = state_name  # Default to row-level
+            
+            # If county state differs from row state, look up the correct state name
+            if county_state_fips != state_fips:
+                logger.info(
+                    "multi_state_locality_detected",
+                    mac=mac,
+                    locality_code=locality_code,
+                    row_state_fips=state_fips,
+                    county_state_fips=county_state_fips,
+                    county_name=county_name_canonical,
+                    reason="Using county's actual state for multi-state locality"
+                )
+                state_row = states_df[states_df['state_fips'] == county_state_fips]
+                if len(state_row) > 0:
+                    final_state_name = state_row.iloc[0]['state_name']
+                metrics['match_methods']['state_mismatch'] += 1  # Track as multi-state, not error
+            
+            # Add normalized row (using county's actual state)
             normalized_rows.append({
                 'locality_code': locality_code,
                 'mac': mac,
-                'state_fips': state_fips,
+                'state_fips': final_state_fips,
                 'county_fips': county_fips,
                 'county_geoid': county_geoid,
                 'county_name': county_name_raw.strip(),

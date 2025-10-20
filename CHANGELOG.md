@@ -118,6 +118,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - 1 WEST truncation (alias conflict or not applying)
   - **Test status:** ✅ **23/23 passing** (all green)
   - **Time:** 25 minutes (aliases 10min, MAC hints 10min, testing 5min)
+- **Locality Parser - 0% Quarantine Achievement** (Perfect coverage)
+  - **Final fixes (6 iterations):**
+    1. **VA ALL EXCEPT comma pattern:** Fixed regex to handle "ALL COUNTIES, EXCEPT" (with comma before EXCEPT)
+    2. **CA MATEO word-order:** Added alias for line-wrapped parenthesis artifact ("MATEO SAN FRANCISCO" → "SAN MATEO")
+    3. **MO ST. LOUIS CITY:** Removed duplicate alias section causing chaining bug
+    4. **FL single-char filter:** Strip garbage single-character county names (e.g., "A" from line wrapping)
+    5. **NY WEST alias bug:** Fixed substring replacement bug (WEST → WE**SAINT**) - changed to exact-match-only for aliases
+    6. **DC multi-state locality:** Intelligent candidate state finder with suffix stripping + multi-state matching pipeline
+       - **Implementation:** Reuses existing `match_exact` → `match_alias` pipeline for each candidate state
+       - **Respects:** State-conditioned aliases (county_aliases.yml) + LSAD tie-breaking automatically
+       - **Handles:** 3 VA independent cities in DC locality (Alexandria City, Arlington, Fairfax)
+       - **Approach:** Generate candidate keys (raw, aliased, suffix-stripped), find states, run full matching pipeline per state
+  - **Quarantine SLO:** ✅ **0.00% (0/3,229 rows)** - down from 0.29% (9/3,105), **PERFECT COVERAGE**
+    - **All 9 remaining rows rescued** (6 iterations, ~60 minutes total)
+    - **Multi-state handling:** 3 counties correctly matched across DC/VA boundary (state_mismatch=3)
+  - **Test status:** ✅ **6/6 integration tests passing** (including `test_locality_quarantine_slo_real_source`)
+  - **Production ready:** No quarantine artifacts, all localities normalized to FIPS codes
+  - **Files modified:**
+    - `cms_pricing/ingestion/normalize/normalize_locality_fips.py` (lines 262, 514, 628-639, 1041-1067)
+    - `data/reference/cms/county_aliases/2025/county_aliases.yml` (CA section line 60, duplicate MO removed)
+  - **Time:** 60 minutes (fix #1-#5: 30min, fix #6 multi-state: 30min)
 - **QTS v1.4 → v1.6** - Normalization & Enrichment Testing Patterns
   - **Appendix H added:** 6 new testing patterns for Stage 2+ normalization/enrichment pipelines
     - H.1: Set-Logic Expansion Testing (ALL/EXCEPT/REST OF cardinality validation, expansion_method tracking)

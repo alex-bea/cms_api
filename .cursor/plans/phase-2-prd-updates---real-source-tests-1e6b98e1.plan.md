@@ -260,11 +260,11 @@ If OPPSCAP unavailable or too complex:
 
 ### To-dos
 
-- [ ] Verify Locality tests properly marked (PASSING/XFAIL), no open skips
-- [ ] Locate OPPSCAP sample files, verify formats available
-- [ ] Complete pre-implementation verification (inspect files, create layouts, Authority Matrix)
-- [ ] Implement OPPSCAP parser - single format (TXT) with golden test
-- [ ] Add CSV/XLSX support + format parity tests
-- [ ] Add edge case + negative tests
-- [ ] Create SRC doc, update CHANGELOG, measure time
-- [ ] Compare actual time vs GPCI baseline, document ROI
+- [x] Verify Locality tests properly marked (PASSING/XFAIL), no open skips
+- [x] Locate OPPSCAP sample files, verify formats available
+- [x] Complete pre-implementation verification (inspect files, create layouts, Authority Matrix)
+- [x] Implement OPPSCAP parser - single format (TXT) with golden test
+- [x] Add CSV/XLSX support + format parity tests
+- [x] Add edge case + negative tests
+- [x] Create SRC doc, update CHANGELOG, measure time
+- [x] Compare actual time vs GPCI baseline, document ROI
