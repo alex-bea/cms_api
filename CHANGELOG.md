@@ -11,7 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Layout Registry - Quarter Notation Standardization** - Unified CMS letter convention
+- **PRD Updates - Quarter Notation Standard Codification** (Standardized across 6 PRDs)
+  - **Context:** Codified CMS letter quarter notation (A/B/C/D) across all PRDs following implementation (commit f906623) and standards documentation (commit 7b9e51f)
+  - **PRDs Updated (6 total, ~350 lines added):**
+    1. **REF-parser-routing-detection-v1.0.md** - Added §3.4 "Quarter Notation Convention" with registry format, mapping table, backward compatibility notes, rules R-LAYOUT-001/002
+    2. **STD-parser-contracts-impl-v2.0.md** - Enhanced §1.1 `quarter_vintage` field with mapping table (A=Q1, B=Q2, C=Q3, D=Q4), examples (preferred vs supported)
+    3. **REF-parser-reference-appendix-v1.0.md** - Added §A.2 "Quarter Release Notation" with CMS file naming patterns, quarter letter mapping, internal representation guidance
+    4. **RUN-parser-qa-runbook-prd-v1.0.md** - Added Step 1b "Extract Metadata from Filenames" with quarter extraction code, common mistakes (correct vs incorrect)
+    5. **STD-data-architecture-impl-v1.0.md** - Added §1.2.3 "Quarter Vintage Encoding" with database storage (`CHAR(1)`), API response format, ingestor patterns, rules R-DATA-007/008
+    6. **STD-observability-monitoring-prd-v1.0.md** - Added §3.4 "Quarter Vintage in Structured Logging" with log event patterns, metrics tagging, alert queries, dashboard display
+  - **Coverage Achieved:** Parser infrastructure, data architecture, operations, observability, reference documentation
+  - **Code Examples:** 25+ ready-to-use snippets across all layers (code, DB, API, logs, metrics)
+  - **Rules Defined:** 4 rules (R-LAYOUT-001/002 for layout registry, R-DATA-007/008 for data architecture)
+  - **Cross-References:** All sections reference `planning/standards/QUARTER_NOTATION_STANDARD.md` and related PRDs
+  - **Time Saved:** ~2 hours for future developers (clear guidance eliminates confusion)
+  - **Benefits:** Consistent notation across all documentation layers, aligns with CMS file naming, backward compatible
+
+- **Layout Registry - Quarter Notation Standardization** - Unified CMS letter convention (Implementation)
   - **Problem:** Mixed quarter notation across system (GPCI used 'A/B/C/D', OPPSCAP used 'Q1/Q2/Q3/Q4')
   - **Solution:** Standardized on **CMS letter format** (A, B, C, D) across all LAYOUT_REGISTRY keys
   - **Mapping:** A=Q1 (Jan), B=Q2 (Apr), C=Q3 (Jul), D=Q4 (Oct)
@@ -23,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Files changed:** `cms_pricing/ingestion/parsers/layout_registry.py` (updated LAYOUT_REGISTRY, enhanced `get_layout()`)
   - **Impact:** All parsers (PPRRVU, GPCI, OPPSCAP, ANES, Locality) now use consistent notation
   - **Testing:** ✅ Verified both 'D' and 'Q4' produce identical parsing results
+  - **Documentation:** See `planning/standards/QUARTER_NOTATION_STANDARD.md` for reference
 
 - **OPPSCAP Parser (v1.0.0) - Phase 2 Complete** - OPPS-based Payment Caps parser
   - **Multi-format support:** TXT (fixed-width, authoritative), CSV (parity testing)
