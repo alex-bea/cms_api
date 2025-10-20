@@ -198,6 +198,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Source Descriptors**: Added SRC-TEMPLATE.md and updated SRC-gpci.md
 
 ### Changed
+- **Locality Parser (Stage 1 hardening):** Tightened fixed-width TXT parsing to follow STD-parser-contracts v2.0 guardrails.
+  - Continuation rows now require blank identifiers; missing state headers are quarantined instead of forward-filled across states.
+  - Added identifier format guards (MAC 5-digit, locality 2-digit), zero-padding at parse-time, and suffix-only state normalization.
+  - Structured rejects (line, identifiers, reason, source_line) and layout-probe spans improve QA triage and observability.
+  - **Casing preservation:** Stage 1 now preserves source casing/diacritics in text fields (state_name, fee_area, county_names); only identifier codes (MAC, locality_code) are uppercased. Stage 2 handles case normalization for matching. Prevents loss of proper names like "Doña Ana County".
 - **Reference Mode Module**: Moved `reference_mode.py` from `normalize/` to `infra/` for better architectural layering
   - Infrastructure-level config (REF_MODE, ReferenceConfig) separated from processing stages
   - Updated reference in STD-data-architecture-impl §4.2

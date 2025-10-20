@@ -23,7 +23,7 @@ Expected Rows: 100-150 (~109 unique after dedup)
 import hashlib
 import time
 import re
-from typing import IO, Dict, Any, BinaryIO, Tuple, Optional
+from typing import IO, Dict, Any, BinaryIO, Tuple, Optional, List
 from io import BytesIO
 import pandas as pd
 import structlog
@@ -72,6 +72,16 @@ def _normalize_header(col: str) -> str:
 PARSER_VERSION = "v1.1.0"  # Phase 2: Added CSV/XLSX support
 SCHEMA_ID = "cms_locality_raw_v1.0"
 NATURAL_KEYS = ["mac", "locality_code"]
+REJECT_COLUMNS = [
+    "line_no",
+    "mac",
+    "locality_code",
+    "state_raw",
+    "fee_area_raw",
+    "reason",
+    "action",
+    "source_line",
+]
 
 # Canonical alias map (normalized: lowercase, single-spaced)
 # Handles CMS CSV quirks: typo ("Adminstrative"), trailing spaces
@@ -154,6 +164,8 @@ def parse_locality_raw(
     # Step 2: Detect format and route to appropriate parser
     filename_lower = filename.lower()
     
+    rejects_df = pd.DataFrame(columns=REJECT_COLUMNS)
+
     if filename_lower.endswith('.csv'):
         # CSV format: Dynamic header detection, alias mapping
         # _parse_csv handles encoding detection internally
@@ -176,14 +188,20 @@ def parse_locality_raw(
             confidence=confidence
         )
         text_content = raw_bytes.decode(detected_encoding, errors='replace')
-        df = _parse_txt_fixed_width(text_content, metadata)
+        df, rejects_df = _parse_txt_fixed_width(text_content, metadata)
         
     else:
         raise ParseError(f"Unsupported format: {filename}. Expected: .txt, .csv, .xlsx")
     
-    # Step 6: Normalize string columns (trim, uppercase)
-    string_cols = ['mac', 'locality_code', 'state_name', 'fee_area', 'county_names']
-    df = normalize_string_columns(df, string_cols)
+    # Step 6: Preserve source casing/diacritics - only trim whitespace
+    # Stage 2 (FIPS normalizer) handles case normalization for matching
+    for col in ['state_name', 'fee_area', 'county_names']:
+        if col in df.columns:
+            df[col] = df[col].str.strip()
+    
+    # Only uppercase identifier codes (not text fields)
+    df['mac'] = df['mac'].str.strip().str.upper()
+    df['locality_code'] = df['locality_code'].str.strip().str.upper()
     
     # Step 7: Check natural key uniqueness (LOG ONLY - preserve raw duplicates)
     # Raw layer preserves duplicates exactly as in source (QTS §5.1.3 philosophy)
@@ -200,14 +218,18 @@ def parse_locality_raw(
     
     # Step 8: Build metrics
     parse_duration_sec = time.time() - start_time
+    reject_count = len(rejects_df)
+    valid_rows = len(df)
+    total_rows = valid_rows + reject_count
     metrics = build_parser_metrics(
-        total_rows=len(df),
-        valid_rows=len(df),
-        reject_rows=0,  # Phase 1: no rejects (layout-faithful)
+        total_rows=total_rows,
+        valid_rows=valid_rows,
+        reject_rows=reject_count,
         encoding_detected=detected_encoding,
         parse_duration_sec=parse_duration_sec,
         parser_version=PARSER_VERSION,
-        schema_id=SCHEMA_ID
+        schema_id=SCHEMA_ID,
+        data_start_pattern=LOCCO_2025D_LAYOUT.get('data_start_pattern')
     )
     
     logger.info(
@@ -225,7 +247,7 @@ def parse_locality_raw(
     # Step 10: Return ParseResult
     return ParseResult(
         data=df,
-        rejects=[],  # Phase 1: layout-faithful, no rejects
+        rejects=rejects_df,
         metrics=metrics
     )
 
@@ -478,7 +500,10 @@ def _parse_xlsx(file_obj: BinaryIO, metadata: Dict[str, Any]) -> pd.DataFrame:
     return df
 
 
-def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.DataFrame:
+def _parse_txt_fixed_width(
+    text_content: str,
+    metadata: Dict[str, Any]
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Parse fixed-width TXT using layout registry.
     
@@ -497,6 +522,7 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
     """
     
     layout = LOCCO_2025D_LAYOUT
+    data_start_pattern = layout.get('data_start_pattern')
     
     logger.info(
         "parse_txt_fixed_width",
@@ -518,11 +544,14 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
         "HAWAII/GUAM"  # CMS uses combined format for Hawaii
     }
     
-    rows = []
+    rows: List[Dict[str, Any]] = []
+    rejects: List[Dict[str, Any]] = []
     skipped_header_count = 0
     skipped_blank_count = 0
     forward_filled_count = 0
-    last_valid_state = None  # Track last valid state independently (not rows[-1])
+    last_valid_state_raw: Optional[str] = None
+    last_mac: Optional[str] = None
+    last_locality: Optional[str] = None
     layout_probe_logged = False
     
     for line_no, line in enumerate(text_content.splitlines(), start=1):
@@ -531,11 +560,15 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
             skipped_blank_count += 1
             continue
         
-        # Skip header lines (contain column titles)
-        line_lower = line.strip().lower()
-        if ('medicare' in line_lower and 'locality' in line_lower) or line_lower.startswith('mac'):
+        # Skip non-data lines using layout data start pattern when available
+        if data_start_pattern and not re.match(data_start_pattern, line):
             skipped_header_count += 1
-            logger.debug("skipped_header_line", line_no=line_no, preview=line[:50])
+            logger.debug(
+                "skipped_header_line",
+                line_no=line_no,
+                preview=line[:80],
+                reason="data_start_pattern_mismatch"
+            )
             continue
         
         # Check minimum line length
@@ -550,6 +583,7 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
         
         # Extract columns using fixed-width positions
         row = {}
+        raw_spans: Dict[str, str] = {}
         for col_name, col_spec in layout['columns'].items():
             start = col_spec['start']
             end = col_spec['end']
@@ -557,22 +591,23 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
             # Extract substring
             if end is None:
                 # Rest of line
-                value = line[start:].strip() if start < len(line) else ""
+                raw_value = line[start:] if start < len(line) else ""
             else:
-                value = line[start:end].strip() if start < len(line) else ""
+                raw_value = line[start:end] if start < len(line) else ""
             
-            row[col_name] = value
+            raw_spans[col_name] = raw_value
+            row[col_name] = raw_value.strip()
         
         # Layout probe: Log first few data lines for verification
         if not layout_probe_logged and len(rows) < 3:
+            probe_spans = {
+                name: f"|{span[:40]}...|" if len(span) > 40 else f"|{span}|"
+                for name, span in raw_spans.items()
+            }
             logger.info(
                 "layout_probe",
                 line_no=line_no,
-                span_0_12=f"|{line[0:12]}|",
-                span_12_18=f"|{line[12:18]}|",
-                span_18_50=f"|{line[18:50]}|",
-                span_50_120=f"|{line[50:120][:40]}...|" if len(line) > 50 else f"|{line[50:]}|",
-                span_120_plus=f"|{line[120:150]}...|" if len(line) > 120 else ""
+                spans=probe_spans
             )
             if len(rows) == 2:
                 layout_probe_logged = True
@@ -580,12 +615,14 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
         # Strict state detection: Track last valid state independently
         mac_value = row.get("mac", "").strip()
         locality_value = row.get("locality_code", "").strip()
-        state_value = row.get("state_name", "").strip().upper()
+        state_raw = row.get("state_name", "")
         fee_area_value = row.get("fee_area", "").strip()
-        
-        # Normalize state: Strip "STATEWIDE"/"STATE"/"WIDE" suffixes (CMS formatting quirk)
-        state_normalized = state_value.replace("STATEWIDE", "").replace("WIDE", "").replace("STATE", "").strip()
-        
+
+        state_candidate = state_raw.upper()
+        state_normalized = re.sub(r'\s+(STATEWIDE|STATE WIDE|STATE|WIDE)$', '', state_candidate).strip()
+        state_span_raw = raw_spans.get("state_name", "")
+        is_state_span_blank = state_span_raw.strip() == ""
+
         # Strict validation: Does state column start with a valid US state?
         # Format: "STATE_NAME" or "STATE_NAME  METRO_AREA" (e.g., "FLORIDA FORT", "GEORGIA ATLAN")
         is_valid_state = False
@@ -595,54 +632,117 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
                 is_valid_state = True
                 matched_state = valid_state
                 break
-        
+
         # Is this a continuation row?
-        # Continuation = invalid state + valid MAC/locality codes
-        # Fee_area can be blank or filled (doesn't matter)
-        has_codes = mac_value != "" and locality_value != ""
-        is_continuation = not is_valid_state and has_codes
+        # Continuation requires blank state span AND blank identifiers (CMS continuation rows)
+        mac_blank = mac_value == ""
+        locality_blank = locality_value == ""
+        is_continuation = (
+            not is_valid_state
+            and is_state_span_blank
+            and mac_blank
+            and locality_blank
+        )
         
         filled_fields = []
         
+        row_is_valid_state = False
         if is_valid_state:
             # Valid state row: Update tracking
-            row["state_name"] = matched_state  # Use matched state name (without metro suffix)
-            last_valid_state = matched_state
-            logger.debug("valid_state_detected", line_no=line_no, state=matched_state, raw_span=state_value)
+            row["state_name"] = state_raw
+            logger.debug(
+                "valid_state_detected",
+                line_no=line_no,
+                state=matched_state,
+                raw_span=state_raw
+            )
+            row_is_valid_state = True
             
         elif is_continuation:
             # Continuation row: Forward-fill from last valid state
-            if last_valid_state is not None:
-                row["state_name"] = last_valid_state
+            if last_valid_state_raw is not None:
+                row["state_name"] = last_valid_state_raw
                 filled_fields.append("state_name")
             else:
-                # No prior valid state (e.g., CA rows with no header in sample file)
-                # Emit empty state_name - let Stage 2 infer from county names
-                row["state_name"] = ""
+                rejects.append({
+                    "line_no": line_no,
+                    "mac": mac_value,
+                    "locality_code": locality_value,
+                    "state_raw": state_raw,
+                    "fee_area_raw": fee_area_value,
+                    "reason": "continuation_without_seed_state",
+                    "action": "quarantined",
+                    "source_line": line.rstrip("\n"),
+                })
                 logger.debug(
                     "continuation_without_prior_state",
                     line_no=line_no,
                     mac=mac_value,
                     locality=locality_value,
-                    action="emitting_empty_state_for_stage2_inference"
+                    action="quarantined"
                 )
-            
+                continue
+
             # Also forward-fill mac and locality if blank
-            if mac_value == "" and rows:
-                row["mac"] = rows[-1].get("mac", "")
+            if mac_blank:
+                if last_mac is None:
+                    rejects.append({
+                        "line_no": line_no,
+                        "mac": mac_value,
+                        "locality_code": locality_value,
+                        "state_raw": state_raw,
+                        "fee_area_raw": fee_area_value,
+                        "reason": "continuation_missing_mac",
+                        "action": "quarantined",
+                        "source_line": line.rstrip("\n"),
+                    })
+                    logger.debug(
+                        "continuation_missing_mac_seed",
+                        line_no=line_no,
+                        action="quarantined"
+                    )
+                    continue
+                row["mac"] = last_mac
                 filled_fields.append("mac")
-            if locality_value == "" and rows:
-                row["locality_code"] = rows[-1].get("locality_code", "")
+            if locality_blank:
+                if last_locality is None:
+                    rejects.append({
+                        "line_no": line_no,
+                        "mac": mac_value,
+                        "locality_code": locality_value,
+                        "state_raw": state_raw,
+                        "fee_area_raw": fee_area_value,
+                        "reason": "continuation_missing_locality_code",
+                        "action": "quarantined",
+                        "source_line": line.rstrip("\n"),
+                    })
+                    logger.debug(
+                        "continuation_missing_locality_seed",
+                        line_no=line_no,
+                        action="quarantined"
+                    )
+                    continue
+                row["locality_code"] = last_locality
                 filled_fields.append("locality_code")
                 
         else:
-            # Non-state, non-continuation (e.g., header noise, fee_area bleed)
+            # Non-state, non-continuation (e.g., fee_area bleed into state column) → quarantine
+            rejects.append({
+                "line_no": line_no,
+                "mac": mac_value,
+                "locality_code": locality_value,
+                "state_raw": state_raw,
+                "fee_area_raw": fee_area_value,
+                "reason": "invalid_state_name",
+                "action": "quarantined",
+                "source_line": line.rstrip("\n"),
+            })
             logger.debug(
-                "skipped_non_state_line",
+                "invalid_state_span",
                 line_no=line_no,
-                state_span=state_value,
-                state_normalized=state_normalized,
-                reason="Not a valid state and not a continuation row"
+                state_span=state_span_raw,
+                normalized=state_normalized,
+                action="quarantined"
             )
             continue  # Skip this row
         
@@ -654,8 +754,41 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
                 line_no=line_no,
                 fields=filled_fields
             )
-        
+        mac_after_fill = row.get("mac", "").strip()
+        locality_after_fill = row.get("locality_code", "").strip()
+
+        mac_valid = bool(re.fullmatch(r'\d{1,5}', mac_after_fill))
+        locality_valid = bool(re.fullmatch(r'\d{1,2}', locality_after_fill))
+
+        if not mac_valid or not locality_valid:
+            rejects.append({
+                "line_no": line_no,
+                "mac": mac_after_fill,
+                "locality_code": locality_after_fill,
+                "state_raw": row.get("state_name", ""),
+                "fee_area_raw": fee_area_value,
+                "reason": "invalid_identifiers",
+                "action": "quarantined",
+                "source_line": line.rstrip("\n"),
+            })
+            logger.debug(
+                "invalid_identifiers",
+                line_no=line_no,
+                mac=mac_after_fill,
+                locality=locality_after_fill,
+                action="quarantined"
+            )
+            continue
+
+        # Apply zero-padding for consistency (Stage 1 preserves textual parity)
+        row["mac"] = mac_after_fill.zfill(5)
+        row["locality_code"] = locality_after_fill.zfill(2)
+
         rows.append(row)
+        if row_is_valid_state:
+            last_valid_state_raw = row["state_name"]
+        last_mac = row["mac"]
+        last_locality = row["locality_code"]
     
     logger.info(
         "txt_parse_complete",
@@ -669,27 +802,11 @@ def _parse_txt_fixed_width(text_content: str, metadata: Dict[str, Any]) -> pd.Da
         raise ParseError("No data rows found after skipping headers/blanks")
     
     df = pd.DataFrame(rows)
+    rejects_df = pd.DataFrame(rejects, columns=REJECT_COLUMNS)
     
-    # Format normalization (for consistency with CSV/XLSX)
-    df['locality_code'] = df['locality_code'].str.strip().str.zfill(2)  # Zero-pad: "0" → "00"
-    
-    return df
+    return df, rejects_df
 
 
 # ============================================================================
 # Helper Functions (for future CSV/XLSX support in Phase 2)
 # ============================================================================
-
-def _normalize_header(header: str) -> str:
-    """
-    Normalize CSV/XLSX header to canonical column name.
-    
-    Args:
-        header: Raw header string
-        
-    Returns:
-        Canonical column name or original if no alias
-    """
-    normalized = header.strip().lower()
-    return CANONICAL_ALIAS_MAP.get(normalized, header)
-
