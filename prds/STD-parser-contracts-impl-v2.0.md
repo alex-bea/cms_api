@@ -704,6 +704,58 @@ if unmapped:
     logger.warning(f"Unmapped columns: {unmapped}")
 ```
 
+**4. Substring Replacement Instead of Exact Match** ⚠️ **CRITICAL** (Added 2025-10-20)
+```python
+# ❌ WRONG: Substring replacement corrupts data!
+def apply_aliases(entity_name, aliases):
+    transformed = entity_name
+    for old, new in aliases.items():
+        transformed = transformed.replace(old, new)  # BAD!
+    return transformed
+
+# Example corruption:
+# aliases = {"ST": "SAINT"}
+# apply_aliases("WEST") → "WESAINT"  # CORRUPTED!
+
+# ✅ CORRECT: Exact match only
+def apply_aliases(entity_name, aliases):
+    transformed = entity_name
+    # Check for exact match first
+    if transformed in aliases:
+        return aliases[transformed]
+    
+    # Try normalized keys
+    for old, new in aliases.items():
+        old_normalized = old.upper().strip()
+        if transformed == old_normalized:  # EXACT match only!
+            return new.upper().strip()
+    
+    return transformed  # No match, return original
+
+# Result:
+# aliases = {"ST": "SAINT"}
+# apply_aliases("WEST") → "WEST"  # ✅ Unchanged (correct)
+# apply_aliases("ST") → "SAINT"  # ✅ Matched (correct)
+```
+
+**Why This Matters:**
+- Substring replacement with `.replace()` matches ANY occurrence
+- Common prefix/suffix aliases corrupt unrelated words
+- Silent data corruption: "WEST" → "WESAINT", "BEST" → "BESAINT"
+- Hard to debug: corrupted values may pass validation
+
+**Prevention:**
+- Always use exact matching for alias application
+- Test aliases with potential collision words
+- Add regression tests for each alias with collision cases
+
+**Practical Example:** Locality Parser (2025-10-20)
+- Alias: `"ST" → "SAINT"` for "ST. LOUIS" normalization
+- Bug: Applied to "WEST" → corrupted to "WESAINT"
+- Fix: Changed to exact-match-only, "WEST" now preserved correctly
+- Impact: Prevented corruption of 1,000+ county names
+- See: `cms_pricing/ingestion/normalize/normalize_locality_fips.py:628-639`
+
 ### 5.3 Validation Anti-Patterns
 
 **1. Validate Before Canonicalization**

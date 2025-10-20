@@ -1586,7 +1586,127 @@ canonical_name = reference_data['canonical_name']  # "Doña Ana County" (proper 
 
 **Applies to:** Entity normalization, name standardization, canonical lookups
 
-### H.7 When to Use These Patterns
+### H.7 Multi-State / Cross-Boundary Normalization Testing (Added 2025-10-20)
+
+**Problem:** Some datasets span multiple states/groups where entity names from different groups appear in the same record (e.g., DC + VA localities).
+
+**Pattern:**
+```python
+@pytest.mark.edge_case
+def test_multi_state_locality_dc_va():
+    """Test DC locality spanning multiple states (DC + VA independent cities)."""
+    raw_df = pd.DataFrame([{
+        'mac': '12202',
+        'locality_code': '01',
+        'state_name': 'DISTRICT OF COLUMBIA',
+        'county_names': 'DISTRICT OF COLUMBIA; ALEXANDRIA CITY; ARLINGTON; FAIRFAX',
+    }])
+    
+    result = normalize(raw_df)
+    
+    # Should expand to 4 rows (1 DC + 3 VA)
+    assert len(result.data) == 4
+    
+    # VA independent cities should match VA state (51), NOT DC (11)
+    va_cities = result.data[result.data['state_fips'] == '51']
+    assert len(va_cities) == 3  # Alexandria, Arlington, Fairfax
+    
+    # Track multi-state handling
+    assert result.metrics['match_methods']['state_mismatch'] >= 3
+```
+
+**Candidate Key Generation:**
+```python
+def generate_candidate_keys(entity_name: str, aliases: Dict) -> Set[str]:
+    """Generate variations for cross-state matching."""
+    base_key = entity_name.upper().strip()
+    
+    candidates = {
+        base_key,                           # Raw
+        apply_aliases(base_key, aliases),   # Aliased
+    }
+    
+    # Add suffix-stripped variations
+    for suffix in [' CITY', ' COUNTY', ' PARISH']:
+        if base_key.endswith(suffix):
+            candidates.add(base_key[:-len(suffix)].strip())
+    
+    return candidates
+```
+
+**Multi-State Matching Pipeline:**
+```python
+# For each county in the list:
+for county_name in county_list:
+    # 1. Try row-level state first
+    match = match_exact(county_name, row_state, counties_df) or \
+            match_alias(county_name, row_state, counties_df, aliases)
+    
+    # 2. If no match, try multi-state fallback
+    if not match:
+        candidates = generate_candidate_keys(county_name, aliases)
+        
+        for candidate_key in candidates:
+            # Find which states have this county
+            potential_states = counties_df[
+                counties_df['county_name_key'] == candidate_key
+            ]['state_fips'].unique()
+            
+            # Try matching with each candidate state
+            for candidate_state in potential_states:
+                if candidate_state == row_state:
+                    continue  # Already tried
+                
+                # Run full pipeline with candidate state (respects state-specific aliases!)
+                match = match_exact(county_name, candidate_state, counties_df) or \
+                        match_alias(county_name, candidate_state, counties_df, aliases)
+                
+                if match:
+                    # Success! Use this state
+                    final_state = candidate_state
+                    logger.info("multi_state_county_matched", 
+                                county=county_name, 
+                                row_state=row_state,
+                                matched_state=candidate_state)
+                    break
+    
+    # 3. If still no match, quarantine
+    if not match:
+        quarantine.append({'county': county_name, 'reason': 'no_match'})
+```
+
+**Requirements:**
+- ✅ Test row-level state differs from entity's actual state
+- ✅ Generate candidate keys (raw, aliased, suffix-stripped)
+- ✅ Run full matching pipeline for each candidate state (respects state-specific aliases)
+- ✅ Track `state_mismatch` metric for observability
+- ✅ Log `multi_state_county_matched` events
+
+**Observability:**
+```python
+{
+    'match_methods': {
+        'state_mismatch': 3,  # Counties matched in different state than row
+    },
+    'multi_state_details': {
+        'localities_with_cross_state': 1,
+        'counties_matched_different_state': 3,
+    },
+}
+```
+
+**Practical Example:** Locality Parser (2025-10-20)
+- DC locality (MAC 12202) includes 3 VA independent cities
+- Candidate matching: tried DC (failed), then VA via suffix-stripped "ALEXANDRIA" (succeeded)
+- 3 multi-state counties correctly matched without quarantine  
+- Quarantine rate: 0.06% → 0.00% after multi-state implementation
+- See: `cms_pricing/ingestion/normalize/normalize_locality_fips.py:1041-1075`
+
+**Applies to:** Cross-boundary datasets, metro areas, contractor regions, any multi-group normalization
+
+---
+
+### H.8 When to Use These Patterns
 
 | Pattern | Use When | Don't Use When |
 |---------|----------|----------------|
@@ -1596,8 +1716,9 @@ canonical_name = reference_data['canonical_name']  # "Doña Ana County" (proper 
 | **H.4 Quarantine SLO** | Production normalization with fuzzy/imperfect matching | Parsing only (no enrichment) |
 | **H.5 Join Validation** | Multi-stage pipelines with downstream joins | Single-stage parsers |
 | **H.6 Canonical Keys** | Normalization with authority lookups | Direct parsing (no enrichment) |
+| **H.7 Multi-State** | Cross-boundary datasets, multi-group entities | Single-group datasets |
 
-### H.8 Implementation Checklist
+### H.9 Implementation Checklist
 
 Before shipping a normalization/enrichment pipeline, verify:
 
@@ -1609,8 +1730,9 @@ Before shipping a normalization/enrichment pipeline, verify:
 - **Canonical preservation**: Diacritics, proper casing, suffixes tested
 - **Determinism**: Identical hashes across runs (idempotence test)
 - **Metrics structure**: Expansion methods, match methods, coverage by dimension
+- **Multi-state handling** (if applicable): Candidate matching tested, state_mismatch tracked
 
-### H.9 Practical Example: Locality Parser Stage 2
+### H.10 Practical Example: Locality Parser Stage 2
 
 **Implementation:** `cms_pricing/ingestion/normalize/normalize_locality_fips.py`  
 **Tests:** `tests/normalize/test_locality_fips_normalization.py` (4/4 passing)  

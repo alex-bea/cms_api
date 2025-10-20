@@ -179,6 +179,65 @@ If row count variance ≥ 10%:
 **Cross-Reference:** `STD-qa-testing-prd-v1.0.md` §5.1.3 (Authentic Source Variance Testing).  
 **Reference Implementation:** `planning/parsers/locality/AUTHORITY_MATRIX.md`, `planning/parsers/locality/PHASE_2_LEARNINGS.md`.
 
+### Step 2d: Set-Logic & Complement Pattern Detection (10 min) (Added 2025-10-20)
+
+**Purpose:** Detect if dataset contains set-logic patterns (ALL, ALL EXCEPT, REST OF) that require special expansion handling.
+
+**Problem:** Set-logic patterns like "REST OF STATE" require two-pass processing (defer until all explicit assignments collected). Missing this up front causes incorrect expansions and quarantine.
+
+**Checklist:**
+
+1. **Scan for set-logic keywords**
+   ```bash
+   # Search for set-logic patterns in sample files
+   grep -iE "(ALL COUNTIES|ALL.*EXCEPT|REST OF|ALL OTHER)" sample_data/*/25LOCCO.txt
+   ```
+
+2. **Document patterns found**
+   - `ALL COUNTIES` or `ALL COUNTY EQUIVALENTS` → Expand to full set
+   - `ALL COUNTIES EXCEPT X, Y` or `ALL COUNTIES, EXCEPT X, Y` → Expand and exclude
+   - `REST OF STATE` or `ALL OTHER COUNTIES` → Complement of explicit assignments
+
+3. **Identify grouping dimension**
+   - Geographic: State (for county expansions)
+   - Provider: Network/system (for provider groups)
+   - Temporal: Year/quarter (for time-based complements)
+
+4. **Plan two-pass algorithm** (if REST OF detected)
+   - Pass 1: Process explicit rows, track assignments
+   - Pass 2: Process REST OF with complement set
+   - See: `STD-data-architecture-impl-v1.0.md` §1.3.G
+
+5. **Set expansion_method tracking**
+   - Add `expansion_method` field to output schema
+   - Values: `list`, `all_counties`, `all_except`, `rest_of_state`
+   - Required for observability and debugging
+
+**Decision Tree:**
+```
+If no set-logic patterns found:
+  → Proceed with standard list parsing
+
+If ALL/ALL EXCEPT found (no REST OF):
+  → Implement single-pass with set expansion
+
+If REST OF found:
+  → REQUIRED: Implement two-pass algorithm (defer REST OF until Pass 2)
+  → Add metrics tracking: expansion_methods, per-group counts
+  → Add logging: rest_of_state_expanded events
+```
+
+**Time Investment:** 10 minutes  
+**Time Saved:** 1-2 hours debugging incorrect expansions + prevents data quality issues
+
+**Cross-Reference:** 
+- `STD-data-architecture-impl-v1.0.md` §1.3.G (REST-OF-STATE two-pass algorithm)
+- `STD-qa-testing-prd-v1.0.md` Appendix H.1 (Set-Logic Expansion Testing)
+
+**Reference Implementation:** Locality Parser (2025-10-18)
+- 16 REST OF STATE localities, 1,042 counties expanded
+- See: `cms_pricing/ingestion/normalize/normalize_locality_fips.py:900-1025`
+
 ### Step 3: Header Normalization Mapping (30 min)
 
 - Extract all unique column names from ALL formats

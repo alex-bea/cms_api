@@ -139,6 +139,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `cms_pricing/ingestion/normalize/normalize_locality_fips.py` (lines 262, 514, 628-639, 1041-1067)
     - `data/reference/cms/county_aliases/2025/county_aliases.yml` (CA section line 60, duplicate MO removed)
   - **Time:** 60 minutes (fix #1-#5: 30min, fix #6 multi-state: 30min)
+- **PRD Updates - Locality Learnings Integration** (Architectural patterns + Implementation bugs)
+  - **Context:** Captured learnings from Locality 0% quarantine achievement (10 patterns, ~3h total effort)
+  - **Priority 1 - Architectural Patterns (60 min):**
+    1. **REST-OF-STATE two-pass algorithm** → `STD-data-architecture-impl-v1.0.md` §1.3.G + `RUN-parser-qa-runbook-prd-v1.0.md` Step 2d
+       - Defer REST OF rows until Pass 2, compute complement (ALL - explicit assignments)
+       - 16 localities, 1,042 counties correctly expanded
+    2. **Stage 1/2 boundary design** → `STD-data-architecture-impl-v1.0.md` §1.3.H.1
+       - Stage 1: Trust MAC spans, emit empty state when blank (no guessing)
+       - Stage 2: Infer state from county names, re-expand set-logic with inferred state
+       - Prevents cross-MAC bleeding (AR → CA)
+    3. **Ambiguous match policy** → `REF-parser-quality-guardrails-v1.0.md` Appendix A (§7)
+       - Resolution hierarchy: state aliases → MAC hints → multi-state fallback → fee_area hints → quarantine
+       - Known edge cases documented (Butte, Kings, Santa Cruz, St. Louis, DC/VA)
+    4. **Observability metrics** → `STD-observability-monitoring-prd-v1.0.md` Appendix C
+       - Expansion methods, match methods, authority fingerprint, coverage by dimension
+       - Required log events: rest_of_state_expanded, state_inferred, multi_state_county_matched
+  - **Priority 2 - Implementation Bugs (35 min):**
+    5. **Alias substring replacement bug** → `STD-parser-contracts-impl-v2.0.md` §5.2 Anti-Pattern #4
+       - Critical bug: `.replace("ST", "SAINT")` corrupts "WEST" → "WESAINT"
+       - Fix: Exact-match-only for alias application
+    6. **Multi-state candidate matching** → `STD-qa-testing-prd-v1.0.md` Appendix H.7
+       - Test pattern for cross-boundary datasets (DC + VA localities)
+       - Candidate key generation (raw, aliased, suffix-stripped)
+       - Full matching pipeline per candidate state
+  - **Files Updated:** 6 PRD files (5 standards + 1 runbook)
+  - **Impact:** Future parsers avoid 2-3 hours debugging per similar issue
+  - **Time:** 95 minutes (architectural: 60min, bugs: 35min)
 - **QTS v1.4 → v1.6** - Normalization & Enrichment Testing Patterns
   - **Appendix H added:** 6 new testing patterns for Stage 2+ normalization/enrichment pipelines
     - H.1: Set-Logic Expansion Testing (ALL/EXCEPT/REST OF cardinality validation, expansion_method tracking)

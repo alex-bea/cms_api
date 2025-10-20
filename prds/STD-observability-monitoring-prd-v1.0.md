@@ -492,6 +492,133 @@ observability_histogram = Histogram('observability_duration_seconds', 'Observabi
 **From DIS PRD Section 8:**
 - Observability Pillars (8.1)
 - Data SLAs (8.2)
+
+### Appendix C — Normalization Pipeline Metrics (Added 2025-10-20)
+
+**Context:** Stage 2+ normalization pipelines (FIPS derivation, entity resolution, enrichment) require specialized metrics beyond basic parser metrics.
+
+**Required Metrics Structure:**
+
+```python
+{
+    # Expansion metrics (for set-logic operations)
+    'expansion_methods': {
+        'list': 57,              # Explicit list parsing
+        'all_counties': 35,      # "ALL COUNTIES" expansion
+        'all_except': 2,         # "ALL EXCEPT X, Y" expansion
+        'rest_of_state': 16,     # "REST OF STATE" complement
+    },
+    
+    # Match metrics (how entities were resolved)
+    'match_methods': {
+        'exact': 2183,           # Direct exact matches
+        'alias': 7,              # Matched via alias map
+        'fuzzy': 0,              # Fuzzy matching (if enabled)
+        'rest_of_state': 1036,   # From REST OF expansion
+        'state_inferred': 28,    # State inferred from county names
+        'state_mismatch': 3,     # Multi-state localities
+        'unknown_county': 0,     # Unmatched (quarantined)
+        'unknown_state': 0,      # State inference failed
+    },
+    
+    # Authority fingerprint (drift detection)
+    'authority_fingerprint': {
+        'total_counties': 3222,
+        'total_states': 51,
+        'geoid_checksum': 'sha256:abc123...',
+        'authority_version': '2025',
+        'authority_date': '2025-01-01',
+    },
+    
+    # Coverage metrics (by dimension)
+    'coverage': {
+        'by_state': {
+            '01': {'localities': 2, 'counties_assigned': 67},
+            '06': {'localities': 8, 'counties_assigned': 58},
+            # ... per state
+        },
+        'by_expansion_method': {
+            'list': {'localities': 57, 'entities': 1180},
+            'rest_of_state': {'localities': 16, 'entities': 1042},
+        },
+    },
+    
+    # Quality metrics
+    'rows_in': 110,              # Input rows
+    'rows_exploded': 3229,       # After set-logic expansion
+    'rows_out': 3229,            # Successfully normalized
+    'rows_quarantined': 0,       # Quarantined
+    'quarantine_rate': 0.0000,   # 0.00%
+}
+```
+
+**Required Log Events:**
+
+```python
+# REST OF STATE expansion
+logger.info(
+    "rest_of_state_expanded",
+    state_fips=state_fips,
+    locality_code=locality_code,
+    assigned=len(rest_counties),              # Counties in REST OF
+    previously_assigned=len(explicit_counties),  # Already assigned
+)
+
+# State inference
+logger.info(
+    "state_inferred_via_counties",
+    inferred_state_fips=state_fips,
+    inferred_state_name=state_name,
+    county_names=county_names_raw,
+    confidence="high",
+)
+
+# Multi-state matching
+logger.info(
+    "multi_state_county_matched",
+    county_name=county_name_raw,
+    row_state=row_state_fips,
+    matched_state=final_state_fips,
+    mac=mac,
+    locality_code=locality_code,
+)
+
+# Quarantine (if any)
+logger.warning(
+    "entity_quarantined",
+    entity_name=entity_name,
+    reason="no_match",  # or unknown_state, ambiguous_match, etc.
+    state_fips=state_fips,
+    candidates=[...],  # For ambiguous matches
+)
+```
+
+**Dashboard Requirements:**
+
+**Metrics to Display:**
+- Quarantine rate trend (target: ≤0.5%)
+- Expansion method distribution (pie chart)
+- Match method distribution (bar chart)
+- Coverage by state (heatmap)
+- Authority drift detection (checksum comparison vs last run)
+
+**Alerts to Configure:**
+- Quarantine rate > 0.5% → P2 (review quarantine artifact)
+- Authority checksum changed → P3 (review reference data updates)
+- Unknown state/county > 0 → P2 (investigate data quality)
+- REST OF complement empty → P4 (validate set-logic configuration)
+
+**Artifacts on Alert:**
+- Quarantine CSV with all quarantined rows + reasons
+- Summary JSON with full metrics structure
+- Diff CSV showing authority data changes (if checksum changed)
+
+**Practical Example:** Locality Parser (2025-10-20)
+- All metrics emitted per spec above
+- Quarantine artifact emitted on breach (≤0.5% → none emitted at 0.00%)
+- REST OF expansion logged for 16 localities
+- Multi-state matching logged for 3 VA counties
+- See: `cms_pricing/ingestion/normalize/normalize_locality_fips.py` (metrics at line 1250-1270)
 - Dashboards & Alerts (8.3)
 - Metadata & Catalog Requirements (10.1)
 - SLAs defaults (Appendix G)

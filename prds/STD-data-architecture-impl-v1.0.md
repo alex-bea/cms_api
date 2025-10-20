@@ -268,6 +268,140 @@ def enrich_locality_fips(raw_df, ref_states, ref_counties, aliases):
 
 ---
 
+**H.1) Stage 1 Continuation Row Handling & Stage 2 State Inference** (Added 2025-10-20)
+
+**Context:** Fixed-width TXT files often have continuation rows where identifying columns (MAC, locality) are present but contextual columns (state) bleed/truncate/are blank.
+
+**Problem:** Missing or bleeding state headers cause Stage 1 forward-fill to propagate wrong state across MAC boundaries (e.g., Arkansas rows bleeding into California block).
+
+**Design Decision:**
+
+**Stage 1 (Raw Parser) - Trust MAC Spans, Emit Empty State:**
+```python
+# Stage 1: Layout-faithful parsing, trust MAC/locality boundaries
+def parse_locality_raw(file_obj, filename, metadata):
+    """Parse fixed-width file, trust MAC spans even when state bleeds."""
+    
+    last_valid_state = None
+    rows = []
+    
+    for line in file_obj:
+        mac_value = line[0:10].strip()
+        locality_value = line[10:16].strip()
+        state_value = line[16:50].strip()
+        county_names = line[50:150].strip()
+        
+        # Trust MAC/locality spans (these define row boundaries)
+        has_codes = mac_value != "" and locality_value != ""
+        
+        # Is state column valid?
+        is_valid_state = state_value in VALID_US_STATES
+        
+        if is_valid_state:
+            # Valid state header - update tracking
+            last_valid_state = state_value
+            rows.append({
+                'mac': mac_value,
+                'locality_code': locality_value,
+                'state_name': state_value,  # Use header state
+                'county_names': county_names,
+            })
+        elif has_codes:
+            # Continuation row: MAC/locality present, state blank/bleeding
+            rows.append({
+                'mac': mac_value,
+                'locality_code': locality_value,
+                'state_name': '',  # ⭐ Emit EMPTY - Stage 2 will infer!
+                'county_names': county_names,
+            })
+        else:
+            # Skip non-data lines (headers, footers, blanks)
+            continue
+    
+    return ParseResult(data=pd.DataFrame(rows), rejects=[], metrics={})
+```
+
+**Key Principles (Stage 1):**
+- ✅ Trust MAC/locality code spans (these define record boundaries)
+- ✅ Emit empty `state_name` when state column is blank/invalid
+- ✅ Do NOT guess or forward-fill across MAC boundaries
+- ✅ Preserve layout fidelity (keep what CMS ships)
+
+**Stage 2 (Normalizer) - Infer State from County Names:**
+```python
+# Stage 2: FIPS normalization with state inference
+def normalize_locality_fips(raw_df, counties_df, states_df, aliases):
+    """Derive FIPS codes, infer missing states from county names."""
+    
+    normalized_rows = []
+    
+    for _, row in raw_df.iterrows():
+        state_fips = None
+        state_name = row['state_name']
+        
+        # Lookup state FIPS from name
+        if state_name:
+            state_fips = states_df[states_df['state_name'] == state_name.upper()]['state_fips'].iloc[0]
+        
+        # ⭐ If no state_fips, infer from county names
+        if not state_fips:
+            state_fips, state_name = infer_state_from_counties(
+                row['county_names'], counties_df, states_df
+            )
+            if not state_fips:
+                # Cannot infer - quarantine
+                quarantine_rows.append({'reason': 'unknown_state', ...})
+                continue
+        
+        # Detect set-logic (ALL, EXCEPT, REST OF)
+        expansion_method = detect_set_logic(row['county_names'])
+        
+        # ⭐ CRITICAL: Re-expand set-logic with inferred state
+        if expansion_method == 'all_counties':
+            county_list = expand_all_counties(state_fips, counties_df)
+        elif expansion_method == 'rest_of_state':
+            county_list = expand_rest_of_state(state_fips, locality_code, ...)
+        else:
+            county_list = explode_county_list(row['county_names'])
+        
+        # Match counties to FIPS...
+        for county_name in county_list:
+            county_key = normalize_key(county_name, state_fips)
+            match = match_exact(county_key, state_fips, counties_df) or \
+                    match_alias(county_key, state_fips, counties_df, aliases)
+            
+            if match:
+                normalized_rows.append({
+                    'mac': row['mac'],
+                    'locality_code': row['locality_code'],
+                    'state_fips': state_fips,  # Use inferred state
+                    'county_fips': match['county_fips'],
+                    'county_name_canonical': match['county_name_canonical'],
+                    'match_method': 'exact' if exact else 'alias',
+                })
+```
+
+**Key Principles (Stage 2):**
+- ✅ Infer state from county names when Stage 1 emits empty state
+- ✅ Re-expand set-logic (ALL, EXCEPT, REST OF) with inferred state
+- ✅ Only quarantine if inference fails or is ambiguous
+- ✅ Log state inference events for observability
+
+**Why This Works:**
+- Stage 1 stays simple: trust layout, no inference/guessing
+- Stage 2 has reference data to infer correctly
+- Prevents cross-MAC bleeding (AR → CA)
+- Handles missing CA headers in sample files gracefully
+
+**Practical Example:** Locality Parser (2025-10-18)
+- Sample file missing California state header
+- Stage 1 emitted empty `state_name` for CA continuation rows
+- Stage 2 inferred state=06 from county names (e.g., "LOS ANGELES")
+- 28 localities successfully inferred, 0 quarantined for missing CA header
+- See: `cms_pricing/ingestion/parsers/locality_parser.py:630-670`, `cms_pricing/ingestion/normalize/normalize_locality_fips.py:920-975`
+
+---
+
 #### I) Boundary Tests (Required)
 
 **Test: Parser Doesn't Enrich**
@@ -325,6 +459,95 @@ def test_locality_enrich_derives_fips():
 - **Single-stage:** GPCI parser (file has locality codes as-is)
 
 ---
+
+#### G) Set-Logic & Complement Patterns (REST-OF-STATE) (Added 2025-10-20)
+
+**Context:** Geographic and set-based expansions (e.g., "ALL COUNTIES", "ALL EXCEPT X/Y", "REST OF STATE") require special handling when the complement set depends on other rows' assignments.
+
+**Problem:** "REST OF STATE" = all entities NOT assigned to other localities/groups. Cannot compute until all explicit assignments are collected.
+
+**Solution: Two-Pass Algorithm**
+
+**Pass 1 - Collect Explicit Assignments:**
+```python
+explicit_entities_by_group = defaultdict(set)  # e.g., {state_fips: {county_geoid, ...}}
+deferred_rest_rows = []
+
+for row in raw_df:
+    expansion_method = detect_set_logic(row['entity_names'])
+    
+    if expansion_method == 'rest_of_state':
+        # Defer REST OF rows until Pass 2
+        deferred_rest_rows.append({
+            'row': row,
+            'group_key': row['state_fips'],  # or other grouping dimension
+            'locality_code': row['locality_code'],
+        })
+        continue
+    
+    # Process explicit rows (list, all_counties, all_except)
+    if expansion_method == 'all_counties':
+        entities = expand_all_entities(row['group_key'], reference_df)
+    elif expansion_method == 'all_except':
+        entities = expand_all_except(row['group_key'], row['exceptions'], reference_df)
+    else:  # 'list'
+        entities = explode_entity_list(row['entity_names'])
+    
+    # Track which entities are assigned
+    for entity in entities:
+        explicit_entities_by_group[row['group_key']].add(entity)
+    
+    # Emit normalized rows...
+```
+
+**Pass 2 - Process REST OF with Complement:**
+```python
+for rest_ctx in deferred_rest_rows:
+    group_key = rest_ctx['group_key']
+    
+    # Get ALL entities in this group
+    all_group_entities = reference_df[reference_df['group_key'] == group_key]
+    
+    # Compute complement: ALL - explicitly_assigned
+    assigned_set = explicit_entities_by_group.get(group_key, set())
+    rest_entities = all_group_entities[~all_group_entities['entity_id'].isin(assigned_set)]
+    
+    # Emit normalized rows for REST OF entities
+    for _, entity_row in rest_entities.iterrows():
+        normalized_rows.append({
+            'locality_code': rest_ctx['locality_code'],
+            'group_key': group_key,
+            'entity_id': entity_row['entity_id'],
+            'entity_name': entity_row['entity_name'],
+            'expansion_method': 'rest_of_state',
+            # ... other fields
+        })
+    
+    logger.info(
+        "rest_of_state_expanded",
+        group_key=group_key,
+        locality_code=rest_ctx['locality_code'],
+        assigned=len(rest_entities),
+        previously_assigned=len(assigned_set),
+    )
+```
+
+**Observability Requirements:**
+- Track `expansion_methods` in metrics: `{'list': N, 'all_counties': M, 'rest_of_state': K}`
+- Log REST OF expansion counts per group
+- Emit warning if REST OF complement is empty (all entities already assigned)
+
+**When to Use:**
+- Geographic complements (REST OF STATE → remaining counties)
+- Provider group complements (ALL OTHER PROVIDERS)
+- Time-based complements (REMAINING QUARTERS)
+- Any domain where "the rest" is meaningful
+
+**Practical Example:** Locality Parser (2025-10-18)
+- 16 REST OF STATE localities across 10 states
+- 1,042 counties correctly expanded
+- Prevented double-assignment (counties can't be in multiple localities)
+- See: `cms_pricing/ingestion/normalize/normalize_locality_fips.py:900-1025`
 
 **Cross-References:**
 - **STD-data-architecture-prd §3.4** (Normalize stage requirements)

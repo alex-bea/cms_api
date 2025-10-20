@@ -602,6 +602,147 @@ raise ParseError(
 
 ---
 
+## 7. Appendix A - Ambiguous Match Resolution Policy (Added 2025-10-20)
+
+**Context:** Normalization pipelines often encounter ambiguous matches where an entity name appears in multiple states/groups or matches multiple reference records.
+
+**Problem:** Without a clear resolution policy, ambiguous matches either fail arbitrarily or quarantine excessively, reducing data quality.
+
+**Resolution Hierarchy:**
+
+### 7.1 Ambiguous Match Resolution Order
+
+Apply these strategies in order until match succeeds or quarantine:
+
+**1. State-Conditioned Aliases (Highest Priority)**
+- Use state-specific alias maps first (e.g., `county_aliases.yml` → `by_state[state_fips]`)
+- Example: VA "ALEXANDRIA CITY" → "ALEXANDRIA" (strips CITY for VA independent cities)
+- **Why:** State context provides strongest disambiguation signal
+
+**2. MAC/Group Hints (Contractor/Organization Context)**
+- Use known MAC→state or contractor→region mappings for tie-breaking
+- Example: MAC '01112' (CA contractor) + ambiguous "BUTTE" → Force state_fips='06' (CA)
+- **Why:** Organizational boundaries often align with geographic boundaries
+
+**3. Multi-State Candidate Matching (Cross-Boundary Fallback)**
+- Generate candidate keys (raw, aliased, suffix-stripped)
+- Search reference data across all states
+- Run full matching pipeline (`match_exact` → `match_alias`) for each candidate state
+- Use first successful match
+- **Why:** Handles legitimate cross-boundary cases (e.g., DC + VA localities)
+
+**4. Fee Area/Context Hints (Entity Type Disambiguation)**
+- Use contextual hints for LSAD type tie-breaking
+- Example: "St. Louis" + fee_area="STATEWIDE" → County (189), fee_area="ST. LOUIS CITY" → City (510)
+- **Why:** Context reveals intended entity type
+
+**5. Quarantine with Candidates Listed**
+- If all strategies fail or multiple matches remain ambiguous
+- Quarantine row with `reason='ambiguous_match'`
+- Include candidate matches in quarantine metadata for manual review
+- **Why:** Preserves data for manual resolution, prevents silent data loss
+
+### 7.2 Known Edge Cases (CMS Geographic Data)
+
+**Multi-State County Names:**
+- **Butte:** Appears in CA (029), ID (023), SD (019), MT (009)
+  - **Resolution:** Use MAC hint for CA contractors (01112, 01182)
+  - **Default:** Quarantine if no MAC hint available
+
+- **Kings:** Appears in CA (031), NY (047)
+  - **Resolution:** Use MAC hint for CA contractors
+  - **Default:** Prefer CA (larger population, more common in CMS data)
+
+- **Santa Cruz:** Appears in CA (087), AZ (023)
+  - **Resolution:** Use MAC hint for CA contractors
+  - **Default:** Prefer CA
+
+**Independent City vs County (Same Name):**
+- **St. Louis:** County (MO 189) vs City (MO 510)
+  - **Resolution:** Use fee_area hints ("CITY" → 510, otherwise → 189)
+  - **Default:** Prefer County (more common)
+
+- **Richmond:** County (VA 159) vs City (VA 760)
+  - **Resolution:** LSAD tie-breaking with fee_area hints
+  - **Default:** Prefer County
+
+**DC Multi-State Localities:**
+- **Pattern:** Single locality spanning DC (11) + VA independent cities (51)
+  - **Example:** ALEXANDRIA CITY (51510), ARLINGTON (51013), FAIRFAX (51059/51600)
+  - **Resolution:** Multi-state candidate matching (§7.1.3)
+  - **Observability:** Log `multi_state_county_matched` events
+
+### 7.3 Implementation Guardrails
+
+**Required Metrics:**
+```python
+{
+    'match_methods': {
+        'exact': 2183,           # Direct matches
+        'alias': 7,              # Alias-based matches  
+        'state_inferred': 28,    # State inferred from counties
+        'state_mismatch': 3,     # Multi-state localities
+        'unknown_county': 0,     # Unmatched (quarantined)
+    },
+    'ambiguous_resolved_via': {
+        'state_alias': 5,        # State-specific aliases
+        'mac_hint': 3,           # MAC-based state inference
+        'multi_state_fallback': 3,  # Cross-state candidate matching
+        'lsad_tiebreak': 0,      # Type-based disambiguation
+        'quarantined': 0,        # Ambiguous, could not resolve
+    },
+}
+```
+
+**Required Logging:**
+```python
+# Log all ambiguous match resolutions
+logger.info(
+    "ambiguous_match_resolved",
+    entity_name=county_name_raw,
+    method="mac_hint",  # or state_alias, multi_state_fallback, etc.
+    row_state=state_fips_from_row,
+    resolved_state=final_state_fips,
+    mac=mac,
+    locality_code=locality_code,
+)
+
+# Log quarantined ambiguous matches
+logger.warning(
+    "ambiguous_match_quarantined",
+    entity_name=county_name_raw,
+    candidates=[{'state': '06', 'fips': '029'}, {'state': '16', 'fips': '023'}],
+    reason="no_mac_hint_available",
+)
+```
+
+**Testing Requirements:**
+- Test each known edge case (Butte, Kings, St. Louis, Richmond)
+- Test multi-state localities (DC + VA)
+- Test fallback to quarantine when all strategies fail
+- Verify metrics track resolution methods correctly
+
+### 7.4 When to Apply This Pattern
+
+**Use ambiguous match resolution when:**
+- ✅ Entity names appear in multiple states/groups
+- ✅ LSAD types create same-name conflicts (county vs city)
+- ✅ Cross-boundary datasets (multi-state localities)
+- ✅ Reference data has legitimate duplicates
+
+**Don't use when:**
+- ❌ Reference data has errors (fix reference data first)
+- ❌ Ambiguity from typos (use fuzzy matching + quarantine)
+- ❌ Business logic required (move to enrichment stage)
+
+**Practical Example:** Locality Parser (2025-10-20)
+- 3 multi-state counties resolved (ALEXANDRIA CITY, ARLINGTON, FAIRFAX)
+- 3 ambiguous CA counties resolved via MAC hints (BUTTE, KINGS, SANTA CRUZ)
+- 0 quarantined for ambiguity (all resolvable with policy)
+- See: `cms_pricing/ingestion/normalize/normalize_locality_fips.py:1041-1075`
+
+---
+
 ## 8. Source Section Mapping (v1.11 → quality v1.0)
 
 **For reference during transition:**
