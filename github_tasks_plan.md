@@ -1532,7 +1532,7 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 2. ✅ Extract RVU parsing logic to shared `parsers/` module (PPRRVU complete)
 3. ✅ Create Schema Registry with SemVer contracts (10 schemas complete)
 4. ✅ Build file-name → parser routing table (routing complete)
-5. ⏳ Remaining parsers: GPCI, ANES, OPPSCAP, Locality (4 of 6 remaining)
+5. ⏳ Remaining parsers: GPCI, ANES, Locality (3 of 6 remaining, OPPSCAP ✅ complete)
 
 **Deliverables:**
 - `cms_pricing/ingestion/parsers/` module (infrastructure complete)
@@ -1541,9 +1541,9 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
   - ✅ `_parser_kit.py` - Shared utilities (17+ functions)
   - ✅ `layout_registry.py` - Fixed-width layouts (v2025.4.1)
   - ❌ `gpci_parser.py` - GPCI parsing contract (NOT STARTED)
-  - ❌ `locality_parser.py` - Locality parsing contract (NOT STARTED)
+  - ✅ `locality_parser.py` - Locality parsing contract (Stage 1+2 COMPLETE)
   - ❌ `anes_parser.py` - Anesthesia CF parsing contract (NOT STARTED)
-  - ❌ `oppscap_parser.py` - OPPS cap parsing contract (NOT STARTED)
+  - ✅ `oppscap_parser.py` - OPPS cap parsing contract (v1.0.0 COMPLETE - 16K rows, 0.45s, 100% parity)
 - ✅ `cms_pricing/ingestion/contracts/` - Schema contracts (10 complete)
 - ✅ `cms_pricing/mappers/` - Column transformation layer
 - ✅ Parser routing table (`route_to_parser()` implemented)
@@ -1552,7 +1552,7 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 - ✅ Parser infrastructure complete (kit, registry, routing)
 - ✅ Schema contracts registered for all 10 file types
 - ✅ Parser routing table maps filenames → parsers
-- ⏳ 2 of 6 parsers complete (PPRRVU, CF)
+- ⏳ 4 of 6 parsers complete (PPRRVU, CF, Locality, OPPSCAP)
 - ✅ Tests pass for completed parsers (18/18 passing)
 - ✅ No breaking changes to existing code
 

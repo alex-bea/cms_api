@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **OPPSCAP Parser (v1.0.0) - Phase 2 Complete** - OPPS-based Payment Caps parser
+  - **Multi-format support:** TXT (fixed-width, authoritative), CSV (parity testing)
+  - **Schema:** `cms_oppscap_v1.1` (HCPCS, modifier, status, MAC, locality, facility/nonfacility prices)
+  - **Layout:** `OPPSCAP_2025D_LAYOUT` v2025.4.0 (from layout_registry)
+  - **Natural keys:** `['hcpcs', 'modifier', 'mac', 'locality_code']`
+  - **Features:** Fixed-width parsing, zero-padding (MAC: 5 digits, locality: 2 digits), nullable modifier, canonical price formatting (Decimal 10,2), CMS typo handling ("NON-FACILTY PRICE")
+  - **Validation rules:** 7 BLOCK rules (R-OPPSCAP-001 to 007) - HCPCS/modifier patterns, MAC/locality formats, price non-negativity, NK uniqueness
+  - **Performance:** Parses 16,100 rows in ~0.45s TXT, ~0.42s CSV (<5s target met)
+  - **Parity:** 100% NK overlap between TXT and CSV (≥98% target exceeded)
+  - **Deterministic output:** Row content hashing (SHA-256), stable sorting by NK
+  - **Smoke tests:** ✅ All passed (TXT: 16,100 rows/0 rejects, CSV: 16,100 valid/1 reject, 100% parity)
+  - **11-step template:** Follows STD-parser-contracts v2.0 §2.1 (encoding detection, format detection, parsing, normalization, type coercion, validation, metadata injection, sorting, hashing, metrics)
+  - **Phase 1 foundation:** Built on `cms_oppscap_v1.1.json` schema, `OPPSCAP_2025D_LAYOUT`, authority matrix (TXT authority, CSV parity, XLSX deferred)
+
 - **Parser Contracts Modularization (v2.0):** Split `STD-parser-contracts-prd-v1.11.md` (4,477 lines) into 6 focused documents for improved AI context loading and governance compliance:
   - `STD-parser-contracts-prd-v2.0.md` (737 lines) - Core policy: contracts, versioning, goals
   - `STD-parser-contracts-impl-v2.0.md` (809 lines) - Implementation companion: 11-step template, alias maps, type handling
