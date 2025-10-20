@@ -88,12 +88,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - **Pattern detection:** Updated regex to match "ALL OTHER COUNTIES" (actual CMS format vs "REST OF STATE" in fee_area)
     - **State extraction:** Handles truncated metro names in state column ("WASHINGTON SEATT" → "WASHINGTON")
     - **Example:** FL locality 99 = All FL counties - (Broward, Collier, Indian River, Lee, Martin, Palm Beach, Dade, Monroe) = 59 counties
-  - **Quarantine SLO:** ✅ **ACHIEVED 0.50% (15/3,011 rows)** - down from 1.56% (31/1,985)
+  - **Set-logic enhancements:** Comprehensive pattern matching for CMS variations
+    - **"ALL COUNTY EQUIVALENTS":** Now matches territories (Puerto Rico, Virgin Islands) - added 78 counties
+    - **"ALL OTHER COUNTIES EXCEPT X":** Maryland pattern now expands correctly (23 counties)
+    - **Semicolon delimiter:** DC + suburbs now splits correctly ("DISTRICT OF COLUMBIA; ALEXANDRIA CITY")
+  - **Quarantine SLO:** ✅ **EXCEEDED TARGET - 0.45% (14/3,110 rows)** - down from 1.56% (31/1,985), **10% buffer below 0.50% threshold**
     - **unknown_state:** 0 rows (down from 14) - all REST OF STATE localities now have valid states
-    - **unknown_county:** 15 rows (ambiguous multi-state counties: BUTTE, KINGS, SANTA CRUZ, etc.)
-  - **Test status:** ✅ **6/6 integration tests passing** (removed xfail marker)
+    - **unknown_county:** 14 rows (down from 15) - remaining are legitimate ambiguous multi-state counties (BUTTE in 4 states, KINGS/SANTA CRUZ in 2, truncated names)
+  - **Test status:** ✅ **23/23 tests passing** (17 parser + 6 integration, xfail removed)
   - **Production ready:** REST OF STATE complement logic validated, deterministic output, comprehensive logging
-  - **Time:** 2 hours (pattern fix 15min + state extraction 30min + testing/debugging 1.25h)
+  - **Time:** 2.5 hours (pattern fix 15min + state extraction 30min + set-logic polish 25min + testing/debugging 1.25h)
 - **QTS v1.4 → v1.6** - Normalization & Enrichment Testing Patterns
   - **Appendix H added:** 6 new testing patterns for Stage 2+ normalization/enrichment pipelines
     - H.1: Set-Logic Expansion Testing (ALL/EXCEPT/REST OF cardinality validation, expansion_method tracking)

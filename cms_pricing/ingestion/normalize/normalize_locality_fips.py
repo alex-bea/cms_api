@@ -258,9 +258,9 @@ def load_fips_crosswalk(ref_dir: Optional[Path] = None) -> Tuple[pd.DataFrame, p
 # =============================================================================
 
 SET_LOGIC_PATTERNS = {
-    'all_counties': re.compile(r'^ALL COUNTIES$', re.IGNORECASE),
-    'all_except': re.compile(r'^ALL COUNTIES EXCEPT (.+)$', re.IGNORECASE),
-    'rest_of': re.compile(r'^(REST OF .+|ALL OTHER COUNTIES?)$', re.IGNORECASE),
+    'all_counties': re.compile(r'^ALL COUNT(?:Y|IES)(?:\s+EQUIVALENTS)?$', re.IGNORECASE),  # Matches "ALL COUNTY/COUNTIES" with optional "EQUIVALENTS"
+    'all_except': re.compile(r'^ALL (?:OTHER )?COUNT(?:Y|IES) EXCEPT (.+)$', re.IGNORECASE),  # Handles "ALL OTHER COUNTY/COUNTIES EXCEPT"
+    'rest_of': re.compile(r'^(REST OF .+|ALL OTHER COUNT(?:Y|IES))$', re.IGNORECASE),  # Matches "ALL OTHER COUNTY/COUNTIES"
 }
 
 
@@ -451,7 +451,7 @@ def expand_rest_of_state(state_fips: str, locality_code: str, raw_df: pd.DataFra
 
 def explode_county_list(county_names: str) -> List[str]:
     """
-    Split county names on delimiters (comma, slash, AND).
+    Split county names on delimiters (comma, slash, semicolon, AND).
     
     IMPORTANT: Do NOT split on hyphens (e.g., Miami-Dade is ONE county)
     
@@ -464,11 +464,13 @@ def explode_county_list(county_names: str) -> List[str]:
     Examples:
         "LOS ANGELES/ORANGE" → ["LOS ANGELES", "ORANGE"]
         "LOS ANGELES, ORANGE" → ["LOS ANGELES", "ORANGE"]
+        "DISTRICT OF COLUMBIA; ALEXANDRIA CITY" → ["DISTRICT OF COLUMBIA", "ALEXANDRIA CITY"]
         "DADE AND MONROE" → ["DADE", "MONROE"]
         "MIAMI-DADE" → ["MIAMI-DADE"] (NOT split!)
     """
-    # Normalize delimiters: / and " AND " → ,
+    # Normalize delimiters: /, ;, and " AND " → ,
     normalized = county_names.replace('/', ',')
+    normalized = normalized.replace(';', ',')
     normalized = re.sub(r'\s+AND\s+', ',', normalized, flags=re.IGNORECASE)
     
     # Split on comma
