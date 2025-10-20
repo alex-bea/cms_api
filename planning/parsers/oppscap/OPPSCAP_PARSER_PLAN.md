@@ -585,6 +585,7 @@ EOF
 ## 10. Next Steps (Immediate)
 
 **Before Coding:**
+0. ✅ Review `DOC-parser-build-playbook-v1.0.md` (Draft) and ensure checklist alignment
 1. ⬜ Investigate XLSX variance (document outcome; v1 scope TXT/CSV only)
 2. ⬜ Finalize schema update to v1.1 (align columns + validation rules)
 3. ⬜ Verify TXT fixed-width positions (layout tool + probe logging)

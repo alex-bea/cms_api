@@ -422,7 +422,7 @@ Medicare Admi State  Locality                                      Locality Name
     
     metadata_gpci = {
         'release_id': 'GPCI_2025D_TEST',
-        'schema_id': 'cms_gpci_v1.2',
+        'schema_id': 'cms_gpci_v1.3',
         'product_year': '2025',
         'quarter_vintage': 'D',
         'vintage_date': '2025-04-01',

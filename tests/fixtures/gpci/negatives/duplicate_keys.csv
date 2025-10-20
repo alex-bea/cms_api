@@ -1,4 +1,6 @@
-locality_code,gpci_work,gpci_pe,gpci_mp
-01,1.500,1.081,0.592
-01,1.500,1.081,0.592
+Geographic Practice Cost Indices - Duplicate Keys Test
+
+mac,locality_code,gpci_work,gpci_pe,gpci_mp
+01112,01,1.500,1.081,0.592
+01112,01,1.500,1.081,0.592
 

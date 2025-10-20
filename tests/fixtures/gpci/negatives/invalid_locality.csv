@@ -1,3 +1,5 @@
-locality_code,gpci_work,gpci_pe,gpci_mp
-XX,1.000,0.869,0.575
+Geographic Practice Cost Indices - Invalid Locality Test
+
+mac,locality_code,gpci_work,gpci_pe,gpci_mp
+01112,XX,1.000,0.869,0.575
 

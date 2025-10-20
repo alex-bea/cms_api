@@ -19,7 +19,7 @@ from cms_pricing.ingestion.parsers._parser_kit import ValidationSeverity
 # Test metadata
 TEST_METADATA = {
     'release_id': 'test_rvu25d_negatives',
-    'schema_id': 'cms_gpci_v1.2',
+    'schema_id': 'cms_gpci_v1.3',
     'product_year': '2025',
     'quarter_vintage': 'D',
     'vintage_date': datetime(2025, 10, 17, 10, 0, 0),
@@ -104,7 +104,7 @@ def test_gpci_duplicate_keys_quarantined(fixtures_dir):
     assert len(result.rejects) >= 1, "Duplicates should be in rejects"
     
     # Verify no duplicates in final data
-    locality_counts = result.data.groupby(['locality_code', 'effective_from']).size()
+    locality_counts = result.data.groupby(['mac', 'locality_code', 'effective_from']).size()
     assert (locality_counts == 1).all(), "Final data should have no duplicates"
 
 
@@ -235,4 +235,3 @@ def test_gpci_missing_required_column_fails(fixtures_dir):
     # Error should mention missing column
     error_msg = str(exc_info.value).lower()
     assert 'gpci_work' in error_msg or 'missing' in error_msg or 'column' in error_msg
-

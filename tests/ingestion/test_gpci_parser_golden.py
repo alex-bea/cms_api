@@ -12,13 +12,15 @@ from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 
+import pandas as pd
+
 from cms_pricing.ingestion.parsers.gpci_parser import parse_gpci, PARSER_VERSION
 
 
 # Test metadata (shared across all golden tests)
 TEST_METADATA = {
     'release_id': 'test_rvu25d_20251017',
-    'schema_id': 'cms_gpci_v1.2',
+    'schema_id': 'cms_gpci_v1.3',
     'product_year': '2025',
     'quarter_vintage': 'D',
     'vintage_date': datetime(2025, 10, 17, 10, 0, 0),
@@ -69,7 +71,7 @@ def test_gpci_golden_txt(fixtures_dir):
     assert result.metrics['reject_rows'] == 0
     
     # Verify schema compliance (core columns)
-    required_cols = ['locality_code', 'gpci_work', 'gpci_pe', 'gpci_mp', 
+    required_cols = ['mac', 'locality_code', 'gpci_work', 'gpci_pe', 'gpci_mp', 
                      'effective_from', 'effective_to']
     for col in required_cols:
         assert col in result.data.columns, f"Missing required column: {col}"
@@ -98,13 +100,14 @@ def test_gpci_golden_txt(fixtures_dir):
     assert result.metrics['valid_rows'] == 18
     assert result.metrics['reject_rows'] == 0
     assert result.metrics['parser_version'] == PARSER_VERSION
-    assert result.metrics['schema_id'] == 'cms_gpci_v1.2'
+    assert result.metrics['schema_id'] == 'cms_gpci_v1.3'
     assert 'gpci_value_stats' in result.metrics
     
-    # Verify sorted by natural keys
-    assert result.data['locality_code'].is_monotonic_increasing or \
-           (result.data['locality_code'] == result.data['locality_code'].shift()).any(), \
-           "Data should be sorted by natural keys"
+    # Verify sorted by natural keys: ['mac', 'locality_code', 'effective_from']
+    sorted_df = result.data.sort_values(['mac', 'locality_code', 'effective_from']).reset_index(drop=True)
+    result_reset = result.data.reset_index(drop=True)
+    assert result_reset.equals(sorted_df), \
+           "Data should be sorted by natural keys ['mac', 'locality_code', 'effective_from']"
 
 
 @pytest.mark.golden
@@ -125,10 +128,11 @@ def test_gpci_golden_csv(fixtures_dir):
     assert len(result.data) == 18, f"Expected exactly 18 rows (same as TXT), got {len(result.data)}"
     assert len(result.rejects) == 0, f"No rejects expected for clean golden fixture, got {len(result.rejects)}"
     
-    # Verify schema compliance
-    assert 'locality_code' in result.data.columns
-    assert 'gpci_work' in result.data.columns
-    assert 'row_content_hash' in result.data.columns
+    # Verify schema compliance (all required columns per cms_gpci_v1.3)
+    required_cols = ['mac', 'locality_code', 'gpci_work', 'gpci_pe', 'gpci_mp', 
+                     'effective_from', 'effective_to', 'row_content_hash']
+    for col in required_cols:
+        assert col in result.data.columns, f"Missing required column: {col}"
     
     # Verify Alaska values match TXT fixture (locality 00 quarantined)
     alaska = result.data[result.data['locality_code'] == '01']
@@ -159,29 +163,43 @@ def test_gpci_golden_xlsx(fixtures_dir):
     with open(fixture, 'rb') as f:
         result = parse_gpci(f, 'GPCI2025_sample.xlsx', TEST_METADATA)
     
-    # Verify row count (fixture has ~113 rows, many duplicates from multiple quarters)
+    # Verify row count (fixture has ~113 rows)
     # Note: XLSX has full dataset, not just a sample like CSV/TXT
-    # Natural key is (locality_code, effective_from), so multiple quarters → duplicates
-    assert len(result.data) >= 20, \
-        f"Expected at least 20 unique localities, got {len(result.data)}"
+    # With corrected NK (mac, locality, effective_from), each MAC+locality+date is unique
+    # No false duplicates from different quarters (they have different effective_from)
+    assert len(result.data) >= 100, \
+        f"Expected at least 100 unique rows, got {len(result.data)}"
     assert result.metrics['total_rows'] >= 100, "XLSX should have full dataset"
     
-    # Large number of duplicates expected (multiple quarters in file)
-    assert len(result.rejects) > 0, "XLSX has duplicate quarters, should have rejects"
+    # With corrected NK, should have minimal rejects (only true duplicates)
+    # Allow some rejects for data quality issues, but not the 60+ from old NK
+    assert len(result.rejects) < 10, \
+        f"Expected <10 rejects with corrected NK, got {len(result.rejects)}"
     
-    # Verify schema compliance
-    assert 'locality_code' in result.data.columns
-    assert 'gpci_work' in result.data.columns
-    assert 'row_content_hash' in result.data.columns
+    # Verify schema compliance (all required columns per cms_gpci_v1.3)
+    required_cols = ['mac', 'locality_code', 'gpci_work', 'gpci_pe', 'gpci_mp', 
+                     'effective_from', 'effective_to', 'row_content_hash']
+    for col in required_cols:
+        assert col in result.data.columns, f"Missing required column: {col}"
     
     # Verify all GPCI values are valid
-    gpci_work = result.data['gpci_work'].astype(float)
-    gpci_pe = result.data['gpci_pe'].astype(float)
-    gpci_mp = result.data['gpci_mp'].astype(float)
+    # Use pd.to_numeric (canonicalize_numeric_col returns strings)
+    gpci_work = pd.to_numeric(result.data['gpci_work'], errors='coerce')
+    gpci_pe = pd.to_numeric(result.data['gpci_pe'], errors='coerce')
+    gpci_mp = pd.to_numeric(result.data['gpci_mp'], errors='coerce')
     
-    assert (gpci_work >= 0.20).all() and (gpci_work <= 2.50).all()
-    assert (gpci_pe >= 0.20).all() and (gpci_pe <= 2.50).all()
-    assert (gpci_mp >= 0.20).all() and (gpci_mp <= 2.50).all()
+    # After footer filtering, should have no NaN in required columns
+    assert gpci_work.notna().all(), f"gpci_work should have no NaN after footer filtering, found {gpci_work.isna().sum()}"
+    assert gpci_pe.notna().all(), f"gpci_pe should have no NaN after footer filtering, found {gpci_pe.isna().sum()}"
+    assert gpci_mp.notna().all(), f"gpci_mp should have no NaN after footer filtering, found {gpci_mp.isna().sum()}"
+    
+    # Split range checks for clarity (per user guidance)
+    assert (gpci_work >= 0.20).all(), "All gpci_work values should be >= 0.20"
+    assert (gpci_work <= 2.50).all(), "All gpci_work values should be <= 2.50"
+    assert (gpci_pe >= 0.20).all(), "All gpci_pe values should be >= 0.20"
+    assert (gpci_pe <= 2.50).all(), "All gpci_pe values should be <= 2.50"
+    assert (gpci_mp >= 0.20).all(), "All gpci_mp values should be >= 0.20"
+    assert (gpci_mp <= 2.50).all(), "All gpci_mp values should be <= 2.50"
     
     # Verify metrics
     assert result.metrics['locality_count'] == len(result.data)
@@ -249,7 +267,8 @@ def test_gpci_determinism(fixtures_dir):
     assert locality_match, "Locality order must be deterministic (sorted by natural keys)"
     
     # Verify all data columns are identical (not just hash)
-    core_cols = ['locality_code', 'gpci_work', 'gpci_pe', 'gpci_mp', 'effective_from']
+    # Include all NK fields per schema v1.3
+    core_cols = ['mac', 'locality_code', 'gpci_work', 'gpci_pe', 'gpci_mp', 'effective_from']
     for col in core_cols:
         assert result1.data[col].equals(result2.data[col]), \
             f"Column {col} must be identical across runs"
@@ -259,7 +278,7 @@ def test_gpci_determinism(fixtures_dir):
 @pytest.mark.gpci
 def test_gpci_schema_v1_2_compliance(fixtures_dir):
     """
-    Verify parser output complies with cms_gpci_v1.2 schema contract.
+    Verify parser output complies with cms_gpci_v1.3 schema contract.
     
     Checks:
     - CMS-native column names (locality_code, gpci_mp not gpci_malp)
@@ -337,20 +356,22 @@ def test_gpci_metadata_injection(fixtures_dir):
 @pytest.mark.gpci
 def test_gpci_natural_key_sort(fixtures_dir):
     """
-    Verify output is sorted by natural keys: ['locality_code', 'effective_from'].
+    Verify output is sorted by natural keys: ['mac', 'locality_code', 'effective_from'].
     
-    Per STD-parser-contracts §5.2 (Deterministic Output).
+    Per STD-parser-contracts §6.3 (Deterministic Output) and schema v1.3.
     """
     fixture = fixtures_dir / 'GPCI2025_sample.txt'
     
     with open(fixture, 'rb') as f:
         result = parse_gpci(f, 'GPCI2025_sample.txt', TEST_METADATA)
     
-    # Verify sorted by locality_code
-    locality_codes = result.data['locality_code'].tolist()
-    sorted_codes = sorted(locality_codes)
-    assert locality_codes == sorted_codes, \
-        "Data must be sorted by locality_code (natural key)"
+    # Verify sorted by natural keys (mac, locality_code, effective_from)
+    nk_tuples = list(zip(result.data['mac'], 
+                         result.data['locality_code'],
+                         result.data['effective_from']))
+    sorted_nk_tuples = sorted(nk_tuples)
+    assert nk_tuples == sorted_nk_tuples, \
+        "Data must be sorted by natural keys ['mac', 'locality_code', 'effective_from']"
     
     # Verify index is 0, 1, 2, ... (reset after sort)
     assert list(result.data.index) == list(range(len(result.data))), \
@@ -430,9 +451,12 @@ def test_gpci_txt_csv_consistency(fixtures_dir):
     assert txt_localities == csv_localities, \
         f"TXT and CSV should have identical localities. Diff: {txt_localities ^ csv_localities}"
     
-    # Verify GPCI values match exactly for Alaska (locality 01)
-    txt_ak = txt_result.data[txt_result.data['locality_code'] == '01'].iloc[0]
-    csv_ak = csv_result.data[csv_result.data['locality_code'] == '01'].iloc[0]
+    # Verify GPCI values match exactly for Alaska (MAC 02102, locality 01)
+    # Filter by full NK (mac + locality) to avoid ambiguity
+    txt_ak = txt_result.data[(txt_result.data['mac'] == '02102') & 
+                             (txt_result.data['locality_code'] == '01')].iloc[0]
+    csv_ak = csv_result.data[(csv_result.data['mac'] == '02102') & 
+                             (csv_result.data['locality_code'] == '01')].iloc[0]
     
     assert txt_ak['gpci_work'] == csv_ak['gpci_work'] == '1.500'
     assert txt_ak['gpci_pe'] == csv_ak['gpci_pe'] == '1.081'
@@ -443,13 +467,17 @@ def test_gpci_txt_csv_consistency(fixtures_dir):
 @pytest.mark.gpci
 def test_gpci_real_cms_duplicate_locality_00(fixtures_dir):
     """
-    Edge case: Real CMS quirk where AL and AZ both use locality 00.
+    Edge case: Real CMS quirk where AL and AZ both use locality 00 (different MACs).
     
-    Tests duplicate natural key handling with authentic CMS data.
-    Per STD-qa-testing-prd §2.2 (negative testing requirements).
+    With corrected NK ['mac', 'locality_code', 'effective_from']:
+    - Different MACs with same locality → UNIQUE (not duplicates)
+    - Only same MAC+locality+date → TRUE duplicate
+    
+    Tests that locality 00 in different states (different MACs) are treated as unique.
+    Per STD-qa-testing-prd §2.2 (edge case testing requirements).
     
     Fixture: GPCI2025_duplicate_locality_00.txt
-    Expected: Duplicate detection and quarantine (WARN severity)
+    Expected: All 3 rows valid (no false duplicates based on locality alone)
     """
     from pathlib import Path
     
@@ -461,16 +489,20 @@ def test_gpci_real_cms_duplicate_locality_00(fixtures_dir):
     # Should have 3 input rows
     assert result.metrics['total_rows'] == 3, f"Expected 3 input rows, got {result.metrics['total_rows']}"
     
-    # Should detect BOTH locality 00 rows as duplicates (Alabama AND Arizona)
-    # Natural key is (locality_code, effective_from), so both 00s have same key
-    assert len(result.rejects) == 2, f"Should quarantine both locality 00 rows, got {len(result.rejects)}"
-    assert len(result.data) == 1, f"Should keep only Alaska (unique key), got {len(result.data)}"
+    # With corrected NK (mac, locality, effective_from):
+    # Different MACs with locality='00' are UNIQUE (not duplicates)
+    # All 3 rows should be valid (no false duplicates)
+    assert len(result.data) == 3, \
+        f"Expected 3 valid rows (different MACs = different localities), got {len(result.data)}"
+    assert len(result.rejects) == 0, \
+        f"Expected 0 rejects (no true duplicates), got {len(result.rejects)}"
     
-    # Verify both locality 00s were quarantined (none in valid data)
+    # Verify locality 00 rows are present (not quarantined as duplicates)
     locality_00_rows = result.data[result.data['locality_code'] == '00']
-    assert len(locality_00_rows) == 0, "Both locality 00 rows should be quarantined"
+    assert len(locality_00_rows) == 2, \
+        "Both locality 00 rows should be valid (different MACs)"
     
-    # Alaska (unique key) should be the only valid row
-    assert result.data.iloc[0]['locality_code'] == '01', "Alaska should be only valid row"
-    assert result.data.iloc[0]['gpci_work'] == '1.500'
-
+    # Verify they have different MACs (this makes them unique)
+    locality_00_macs = set(locality_00_rows['mac'])
+    assert len(locality_00_macs) == 2, \
+        "Locality 00 rows should have different MACs (not true duplicates)"

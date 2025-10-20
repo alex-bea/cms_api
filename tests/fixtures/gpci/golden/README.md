@@ -201,7 +201,7 @@ shasum -a 256 GPCI2025_sample.* > SHA256SUMS
 
 - **Parser:** `cms_pricing/ingestion/parsers/gpci_parser.py`
 - **Tests:** `tests/ingestion/test_gpci_parser_golden.py`
-- **Schema:** `cms_pricing/ingestion/contracts/cms_gpci_v1.2.json`
+- **Schema:** `cms_pricing/ingestion/contracts/cms_gpci_v1.3.json`
 - **Layout:** `cms_pricing/ingestion/parsers/layout_registry.py` (GPCI_2025D_LAYOUT v2025.4.1)
 - **Sample Data Provenance:** `planning/parsers/gpci/DATA_PROVENANCE.md`
 - **Implementation Plan:** `planning/parsers/gpci/IMPLEMENTATION.md`

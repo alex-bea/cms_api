@@ -115,6 +115,57 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 ## Detailed Task List
 
+### Task 64: Operationalize RVU Ingestor Pipeline
+
+**Category:** Data Ingestion  
+**Priority:** High  
+**Estimated Time:** 2-3 days  
+**Labels:** ingestion, high-priority, rvu, backend
+
+**Context:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py:1098` still emits mock DataFrames, so discovery never progresses past the adaptation step. Parsers for RVU bundle members already exist (`cms_pricing/ingestion/parsers/{pprrvu,gpci,oppscap}.py`), but they are not invoked, and no data is published or validated.
+
+**Detailed Steps:**
+1. Replace `_adapt_raw_data_sync` to iterate the discovered ZIP payloads, route each member through the appropriate parser, and return real `AdaptedBatch` objects with schema metadata.  
+2. Wire validators and publishers so `Land → Validate → Normalize → Publish` aligns with `prds/STD-data-architecture-prd-v1.0.md` expectations, including provenance fields and discovery manifest integration.  
+3. Add regression tests under `tests/ingestion/` that simulate a quarterly release using fixture ZIPs to ensure parsers, validation, and publishing execute end-to-end.  
+4. Update `CHANGELOG.md` and relevant PRDs to record the transition from mock data to full ingestion, and document any new configuration or operational runbooks.
+
+---
+
+### Task 65: Expand Layout Registry for Historical Vintages
+
+**Category:** Data Ingestion  
+**Priority:** High  
+**Estimated Time:** 1-2 days  
+**Labels:** ingestion, schema, high-priority, documentation
+
+**Context:** The layout registry (`cms_pricing/ingestion/parsers/layout_registry.py:35-186`) only includes 2025 SemVer entries. Newly scraped historical files fall back to CSV heuristics or fail fixed-width parsing, blocking backfills and quarterly comparisons required by `prds/REF-cms-pricing-source-map-prd-v1.0.md`.
+
+**Detailed Steps:**
+1. Inventory past-year RVU bundles using the discovery manifests (`data/ingestion/cms_simple/raw/.../manifest.json`) and populate layout specs for each dataset/year/quarter combination back to the required baseline.  
+2. Diff column widths and positions against schema contracts (e.g., `cms_pricing/ingestion/contracts/cms_gpci_v1.3.json`) to ensure SemVer bumps match breaking vs compatible changes.  
+3. Add parser unit tests that load historical fixtures to verify layout selection, and introduce CI drift checks that fail when CMS shifts column positions without a corresponding layout update.  
+4. Document the expanded coverage in the source map PRD and update parser plans (e.g., `planning/parsers/oppscap/OPPSCAP_PARSER_PLAN.md`) so future vintages reference the maintained registry.
+
+---
+
+### Task 66: Harden Discovery-to-Curated Test Coverage
+
+**Category:** Testing  
+**Priority:** Medium  
+**Estimated Time:** 1 week  
+**Labels:** testing, ingestion, medium-priority, qa
+
+**Context:** Current tests such as `test_cms_rvu_scraper.py` are demo scripts that print results without assertions, leaving gaps in validating quarterly rollover handling, vintage metadata, and publish stages (`STD-parser-contracts-prd-v2.0.md` requires deterministic outputs and row-content hashes).
+
+**Detailed Steps:**
+1. Convert scraper demos into pytest suites with mocked HTTP responses, asserting discovery manifests contain year/quarter metadata and SHA-256 digests.  
+2. Add integration tests that feed discovered files through RVU/MPFS/OPPS ingestors, asserting curated Parquet artifacts include vintage fields, natural-key uniqueness, and hash stability.  
+3. Provide fixture data covering multiple quarters/years to verify historical backfill behavior and schema drift alerts.  
+4. Update QA documentation (`STD-parser-contracts-prd-v2.0.md` companions) with the new test matrix and ensure CI gates execute the suite before deployment.
+
+---
+
 ### Task 1: CMS Website Scraper
 
 **Category:** Data Ingestion
@@ -1532,7 +1583,7 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 2. ✅ Extract RVU parsing logic to shared `parsers/` module (PPRRVU complete)
 3. ✅ Create Schema Registry with SemVer contracts (10 schemas complete)
 4. ✅ Build file-name → parser routing table (routing complete)
-5. ⏳ Remaining parsers: GPCI, ANES, Locality (3 of 6 remaining, OPPSCAP ✅ complete)
+5. ⏳ Remaining parsers: ANES (1 of 6 remaining, OPPSCAP ✅ GPCI ✅ Locality ✅ complete)
 
 **Deliverables:**
 - `cms_pricing/ingestion/parsers/` module (infrastructure complete)
@@ -1540,7 +1591,7 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
   - ✅ `conversion_factor_parser.py` - CF parsing contract (755 lines, golden + 11 negatives)
   - ✅ `_parser_kit.py` - Shared utilities (17+ functions)
   - ✅ `layout_registry.py` - Fixed-width layouts (v2025.4.1)
-  - ❌ `gpci_parser.py` - GPCI parsing contract (NOT STARTED)
+  - ✅ `gpci_parser.py` - GPCI parsing contract (v1.3 COMPLETE - 109 localities, 20/20 tests, 0.03s, corrected NK)
   - ✅ `locality_parser.py` - Locality parsing contract (Stage 1+2 COMPLETE)
   - ❌ `anes_parser.py` - Anesthesia CF parsing contract (NOT STARTED)
   - ✅ `oppscap_parser.py` - OPPS cap parsing contract (v1.0.0 COMPLETE - 16K rows, 0.45s, 100% parity)
@@ -1552,7 +1603,7 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 - ✅ Parser infrastructure complete (kit, registry, routing)
 - ✅ Schema contracts registered for all 10 file types
 - ✅ Parser routing table maps filenames → parsers
-- ⏳ 4 of 6 parsers complete (PPRRVU, CF, Locality, OPPSCAP)
+- ⏳ 5 of 6 parsers complete (PPRRVU, CF, Locality, OPPSCAP, GPCI)
 - ✅ Tests pass for completed parsers (18/18 passing)
 - ✅ No breaking changes to existing code
 
@@ -1904,6 +1955,7 @@ PPRRVU parser implementation revealed critical gaps in documentation that caused
 
 3. **Review Before Implementation** (10 min)
    - Read updated STD-parser-contracts v1.3
+   - Review DOC-parser-build-playbook-v1.0.md (Draft)
    - Verify layout has all schema columns
    - Check min_line_length against actual data
    - Confirm column names match schema exactly
@@ -1926,6 +1978,7 @@ PPRRVU parser implementation revealed critical gaps in documentation that caused
 Before starting next parser:
 -  STD-parser-contracts v1.3 published
 -  Read new sections (error taxonomy, naming, alignment)
+-  Review DOC-parser-build-playbook-v1.0.md (Draft)
 -  Verify layout exists and matches schema
 -  Measure actual data line length
 -  Confirm natural keys in layout

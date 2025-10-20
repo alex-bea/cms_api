@@ -1,4 +1,6 @@
-locality_code,gpci_work,gpci_pe,gpci_mp
-01,3.000,1.081,0.592
-02,1.000,3.500,0.854
+Geographic Practice Cost Indices - Test Fixture
+
+mac,locality_code,gpci_work,gpci_pe,gpci_mp
+01112,01,3.000,1.081,0.592
+02102,02,1.000,3.500,0.854
 

@@ -31,14 +31,14 @@ from cms_pricing.ingestion.parsers.gpci_parser import parse_gpci
 # Bundle: RVU25D (2025 Q4)
 
 SPOTCHECK_FIXTURES = {
-    '00': {  # Alabama
+    ('10112', '00'): {  # Alabama MAC/locality
         'locality_name': 'ALABAMA',
         'gpci_work_expected': 1.000,
         'gpci_pe_expected': 0.869,
         'gpci_mp_expected': 0.575,
         'note': 'Baseline locality (work GPCI = 1.000)'
     },
-    '01': {  # Alaska
+    ('02102', '01'): {  # Alaska MAC/locality
         'locality_name': 'ALASKA',
         'gpci_work_expected': 1.500,  # Floor applied
         'gpci_pe_expected': 1.081,
@@ -62,7 +62,7 @@ def parsed_gpci():
     
     metadata = {
         'release_id': 'integration_test_rvu25d',
-        'schema_id': 'cms_gpci_v1.2',
+        'schema_id': 'cms_gpci_v1.3',
         'product_year': '2025',
         'quarter_vintage': 'D',
         'vintage_date': datetime(2025, 10, 17, 10, 0, 0),
@@ -94,10 +94,12 @@ def test_gpci_spotcheck_alabama(parsed_gpci):
     
     Tolerance: ±0.001 (3 decimal precision)
     """
-    expected = SPOTCHECK_FIXTURES['00']
+    key = ('10112', '00')
+    expected = SPOTCHECK_FIXTURES[key]
     
     # Find Alabama in parsed data
-    alabama = parsed_gpci[parsed_gpci['locality_code'] == '00']
+    mac, locality = key
+    alabama = parsed_gpci[(parsed_gpci['mac'] == mac) & (parsed_gpci['locality_code'] == locality)]
     assert len(alabama) > 0, "Alabama (locality 00) should be in parsed data"
     
     alabama = alabama.iloc[0]
@@ -130,10 +132,12 @@ def test_gpci_spotcheck_alaska(parsed_gpci):
     
     Verifies parser ingests published values (floor already applied by CMS).
     """
-    expected = SPOTCHECK_FIXTURES['01']
+    key = ('02102', '01')
+    expected = SPOTCHECK_FIXTURES[key]
     
     # Find Alaska in parsed data
-    alaska = parsed_gpci[parsed_gpci['locality_code'] == '01']
+    mac, locality = key
+    alaska = parsed_gpci[(parsed_gpci['mac'] == mac) & (parsed_gpci['locality_code'] == locality)]
     
     if len(alaska) == 0:
         pytest.skip("Alaska not in fixture (sample has only 20 rows)")
@@ -169,7 +173,7 @@ def test_gpci_full_file_parse():
     
     metadata = {
         'release_id': 'full_file_test',
-        'schema_id': 'cms_gpci_v1.2',
+        'schema_id': 'cms_gpci_v1.3',
         'product_year': '2025',
         'quarter_vintage': 'D',
         'vintage_date': datetime(2025, 10, 17, 10, 0, 0),
@@ -249,4 +253,3 @@ def test_negative_fixtures_exist(fixtures_dir):
     for fixture_name in required_fixtures:
         fixture_path = fixtures_dir / fixture_name
         assert fixture_path.exists(), f"Missing negative fixture: {fixture_name}"
-

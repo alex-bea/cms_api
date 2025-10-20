@@ -18,6 +18,7 @@ requires:
 - **REF-parser-quality-guardrails-v1.0.md:** Validation, errors, metrics patterns
 - **RUN-parser-qa-runbook-prd-v1.0.md:** QA procedures, checklists, SLAs
 - **REF-parser-reference-appendix-v1.0.md:** Reference tables and examples
+- **DOC-parser-build-playbook-v1.0.md:** Parser build workflow checklist (Draft)
 
 **Cross-References:**
 - **STD-data-architecture-prd-v1.0.md:** DIS pipeline and normalize stage requirements

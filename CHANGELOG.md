@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GPCI Parser v1.3 - Natural Key Correction & Validation Hardening** - Geographic Practice Cost Indices
+  - **Schema Update:** Corrected Natural Key from `['locality_code', 'effective_from']` to `['mac', 'locality_code', 'effective_from']`
+  - **Rationale:** `locality_code='00'` appears in multiple states (AL, AZ, etc.); MAC disambiguates
+  - **Impact:** Fixed 63 false duplicates (56% of 112 rows) → 0 duplicates on real data
+  - **Schema:** `cms_gpci_v1.3.json` (BREAKING: NK changed, bumped major version)
+  - **Validation Enhancements:**
+    - WARN range logging [0.30, 2.00] (unusual values logged, not rejected)
+    - HARD range enforcement [0.20, 2.50] with explicit negative check (< 0)
+    - Duplicate handling with `keep='first'` (preserves one copy, quarantines rest)
+    - Tiered row count validation: <10=INFO, 50-89=FAIL, 90-120=normal, >120=WARN
+    - CMS footer filtering (removes disclaimer rows with invalid MAC patterns)
+  - **Test Results:** 20/20 tests passing (100%) - 11 golden + 9 negative
+  - **Real Data:** 109 localities parsed, 0 rejects, 0 duplicates, 0.03s parse time
+  - **Fixtures Updated:** All negative fixtures have MAC column, proper 2-line CMS headers
+  - **Test Assertions:** Updated to validate 3-field NK, schema v1.3 compliance, split range checks
+  - **QTS Compliance:** §5.1.1 golden fixtures clean, §G.4 string/numeric validation pattern
+  - **Time:** 2 hours (NK diagnosis + schema update + parser hardening + test updates)
+
 - **PRD Updates - Quarter Notation Standard Codification** (Standardized across 6 PRDs)
   - **Context:** Codified CMS letter quarter notation (A/B/C/D) across all PRDs following implementation (commit f906623) and standards documentation (commit 7b9e51f)
   - **PRDs Updated (6 total, ~350 lines added):**
@@ -40,6 +58,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Impact:** All parsers (PPRRVU, GPCI, OPPSCAP, ANES, Locality) now use consistent notation
   - **Testing:** ✅ Verified both 'D' and 'Q4' produce identical parsing results
   - **Documentation:** See `planning/standards/QUARTER_NOTATION_STANDARD.md` for reference
+
+- **Parser Build Playbook (Draft):** Added `DOC-parser-build-playbook-v1.0.md` capturing the end-to-end parser workflow (source docs → samples → schema/layout → tests → documentation).
+
+### Changed
+
+- **GPCI Schema v1.3:** Updated natural key to `(mac, locality_code, effective_from)` and made `mac` required to avoid cross-MAC duplicates.
+- **GPCI Parser:** Aligned with schema v1.3 (MAC zero-padding, duplicate handling/logging, schema ID updates).
 
 - **OPPSCAP Parser (v1.0.0) - Phase 2 Complete** - OPPS-based Payment Caps parser
   - **Multi-format support:** TXT (fixed-width, authoritative), CSV (parity testing)

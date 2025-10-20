@@ -1,3 +1,5 @@
-locality_code,gpci_work,gpci_pe,gpci_mp
-01,-0.500,1.081,0.592
+Geographic Practice Cost Indices - Negative Values Test
+
+mac,locality_code,gpci_work,gpci_pe,gpci_mp
+01112,01,-0.500,1.081,0.592
 
