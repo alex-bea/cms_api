@@ -20,7 +20,8 @@
     "optional_keys": [
       "bom_detected",
       "header_start_row",
-      "layout_version"
+      "layout_version",
+      "rejects_by_reason"
     ]
   },
   
@@ -38,7 +39,8 @@
     "optional_keys": [
       "quarantine_rate",
       "coverage_by_state",
-      "coverage"
+      "coverage",
+      "rejects_by_reason"
     ],
     
     "expansion_methods": {
@@ -190,4 +192,3 @@
     "tests": "tests/integration/test_locality_e2e.py::test_locality_quarantine_slo_real_source"
   }
 }
-

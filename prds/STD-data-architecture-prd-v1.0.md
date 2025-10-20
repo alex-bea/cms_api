@@ -68,8 +68,16 @@ We separate concerns into **Land → Validate → Normalize → Enrich → Publi
 ### 3.4 Normalize (Stage)
 - Canonicalize column names (snake_case), zero‑pad codes (FIPS/ZCTA), standardize units and time semantics.
 - Emit a **Schema Contract** (JSON) and **Column Dictionary** (name, type, unit, description, domain).
+- When sources include set-logic rows (`ALL COUNTIES`, `ALL COUNTY EQUIVALENTS`, `ALL COUNTIES, EXCEPT …`, `REST OF STATE`), normalize in two passes: (1) collect explicit assignments per state/territory, (2) expand REST/“ALL OTHER” rows with the complement set. Track `expansion_method`, `coverage_by_state`, and `rest_of_state_expanded` metrics.
+- Preserve continuation rows even when state spans contain bleed; rely on fixed-width MAC/locality spans and allow downstream state re‑inference. When multiple states share a county name, apply state-conditioned matching (exact → alias → fuzzy) and use MAC/locality hints to break ties; quarantine only when ambiguity remains.
 
 **Transformation Boundary:** Parsers in normalize stage are layout-faithful (no reference joins or derivations). See **STD-data-architecture-impl §1.3** for transformation boundary patterns.
+
+```yaml
+rule_id: STD-DATA-ARCH-R001
+clause: rest_of_state_normalize_two_pass
+summary: "Normalize stage must tolerate state bleed, perform two-pass REST OF STATE complements (including territories), capture metrics, and defer to state-conditioned matching before quarantining ambiguous counties."
+```
 
 ### 3.5 Enrich
 - Join to `/ref/` reference tables (e.g., Census crosswalks, Gazetteer centroids, FIPS codes).

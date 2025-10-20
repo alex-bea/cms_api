@@ -548,6 +548,34 @@ if count < 100:
 
 **Benefits:** 40% faster time to first test, isolated debugging
 
+### 2.5 CMS Locality Set-Logic & State Handling
+
+Use this playbook when parsing CMS locality-style files that include `ALL COUNTIES`, `ALL EXCEPT`, `REST OF STATE`, territory equivalents, or mixed-state localities.
+
+1. **Stage 1 continuation guardrails**
+   - Trust the fixed-width MAC/locality spans even when the state column bleeds fee-area text; forward-fill the last valid state value. If no state has been seen yet, emit an empty string so Stage 2 can infer it.
+   - Do not drop continuation rows unless both MAC and locality spans are blank.
+
+2. **Two-pass REST OF STATE expansion**
+   - **Pass 1:** For each state (and territory), collect GEOIDs assigned to explicit localities (`expansion_method ∈ {'list','all_counties','all_except'}`).
+   - **Pass 2:** When a `rest_of_state` / `ALL OTHER …` locality is encountered, expand it to the complement (`all_state_counties − explicit_assignments`). Log `rest_of_state_expanded` counts in parser metrics.
+
+3. **Set-logic pattern support**
+   - Recognise `ALL COUNTY EQUIVALENTS`, `ALL COUNTIES, EXCEPT …`, `ALL OTHER COUNTIES EXCEPT …`, and split county lists on commas, slashes, `AND`, or semicolons before matching.
+
+4. **Per-county state matching**
+   - If a row-level state cannot be resolved, attempt matching in each candidate state via `match_exact → match_alias → match_fuzzy` so state-scoped aliases (e.g., VA independent cities) apply.
+   - Use MAC/locality hints to break ties when county names exist in multiple states; quarantine only when ambiguity remains after tie-breakers.
+
+5. **Observability**
+   - Emit metrics for `expansion_methods`, `coverage_by_state`, `rest_of_state_expanded`, and `state_inferred`. Include representative logs for inference and complement counts.
+
+```yaml
+rule_id: STD-PARSER-CONTRACTS-IMPL-R001
+clause: locality_set_logic_playbook
+summary: "Implement Stage 1 continuation resilience, two-pass REST OF STATE complements, expanded set-logic parsing, per-county state matching, and observability metrics when building CMS locality parsers."
+```
+
 ---
 
 ## 3. Type Handling Patterns

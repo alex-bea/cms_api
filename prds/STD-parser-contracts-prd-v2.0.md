@@ -141,6 +141,19 @@ Parsers return `ParseResult(data, rejects, metrics)`; the ingestor writes Arrow/
 
 **Metadata Requirements:** All parsers inject `release_id`, `vintage_date`, `product_year`, `quarter_vintage`, `source_uri`, `file_sha256`, `parsed_at`, `row_content_hash`
 
+**CMS Set-Logic & Continuation Requirements (v2.0.1 addendum):**
+- **REST OF STATE complement:** Stage 1 must emit continuation rows even when the state span bleeds fee-area text; Stage 2 parsers SHALL collect all explicitly assigned counties per state before expanding REST OF/“ALL OTHER” rows, emitting the complementary county set and logging `rest_of_state_expanded` metrics.
+- **Continuation resilience:** When the state column is blank or contains non-state bleed, parsers MUST trust the fixed-width MAC/locality spans and forward-fill the last valid state (or leave blank for Stage 2 inference) instead of rejecting the row.
+- **Expanded set-logic patterns:** Parsers MUST recognise `ALL COUNTY EQUIVALENTS`, `ALL COUNTIES, EXCEPT ...`, `ALL OTHER COUNTIES EXCEPT ...`, and semicolon-delimited county lists in addition to the canonical `ALL COUNTIES` / `ALL EXCEPT` forms.
+- **Territory coverage:** REST OF STATE logic SHALL treat territories (e.g., Puerto Rico, U.S. Virgin Islands, Guam) the same as states when computing complements.
+- **Ambiguous county policy:** When county names occur in multiple states, Stage 2 MUST attempt state-conditioned matching (exact → alias → fuzzy) for each candidate state; parsers MAY use MAC or locality hints to break ties, and MUST quarantine only when ambiguity remains after these heuristics.
+
+```yaml
+rule_id: STD-PARSER-CONTRACTS-R001
+clause: rest_of_state_two_pass
+summary: "Stage 1 must tolerate state bleed; Stage 2 performs two-pass REST OF STATE expansion, supports expanded set-logic variants, handles territories, and applies state-conditioned matching before quarantining."
+```
+
 ---
 
 ## 6. Contracts
