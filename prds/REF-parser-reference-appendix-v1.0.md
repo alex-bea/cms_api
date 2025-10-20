@@ -58,7 +58,54 @@ This appendix provides static reference information for parser development:
 
 **Encoding:** Typically UTF-8, occasionally CP1252
 
-### A.2 CSV Files
+### A.2 Quarter Release Notation
+
+CMS Medicare fee schedule files use **letter notation** (A, B, C, D) to indicate quarterly releases:
+
+**Format:** `<Dataset><Year><Quarter>.<ext>`
+
+**Examples:**
+- `RVU25A.zip` - January 2025 release (Q1)
+- `RVU25B.zip` - April 2025 release (Q2)
+- `RVU25C.zip` - July 2025 release (Q3)
+- `RVU25D.zip` - October 2025 release (Q4)
+
+**Quarter Letter Mapping:**
+
+| Letter | Quarter | Month | Typical Release Date |
+|--------|---------|-------|----------------------|
+| **A** | Q1 | January | First week of January |
+| **B** | Q2 | April | First week of April |
+| **C** | Q3 | July | First week of July |
+| **D** | Q4 | October | First week of October |
+
+**Internal Representation:**
+
+The CMS Pricing API uses this letter notation throughout the system:
+- Layout registry keys: `('pprrvu', '2025', 'D')`
+- Metadata fields: `quarter_vintage: 'D'`
+- Release IDs: `OPPSCAP_2025D`
+
+**Alternative Notations:**
+
+Q-notation (`Q1`, `Q2`, `Q3`, `Q4`) is supported for backward compatibility but CMS letter format is preferred.
+
+**File Naming Patterns:**
+```
+# CMS official naming (letter notation)
+RVU25D.zip          # October 2025 RVU release
+GPCI25C.txt         # July 2025 GPCI release
+OPPSCAP_Oct.txt     # October release (month name)
+LOCCO25D.txt        # October 2025 Locality release
+
+# Internal releases (letter notation)
+OPPSCAP_2025D       # Release ID format
+mpfs_2025_d_20251015  # Lower-case variant
+```
+
+**See Also:** `planning/standards/QUARTER_NOTATION_STANDARD.md`, `REF-parser-routing-detection-v1.0.md` §3.4
+
+### A.3 CSV Files
 
 **Datasets:** All datasets have CSV variants
 
@@ -77,7 +124,7 @@ This appendix provides static reference information for parser development:
 
 **Encoding:** UTF-8 (with or without BOM), CP1252, Latin-1
 
-### A.3 Excel Workbooks
+### A.4 Excel Workbooks
 
 **Datasets:** Conversion factors, some quarterly files
 
@@ -97,7 +144,7 @@ This appendix provides static reference information for parser development:
 
 **Encoding:** Binary (Excel format), not text
 
-### A.4 ZIP Archives
+### A.5 ZIP Archives
 
 **Datasets:** All CMS releases distributed as ZIP
 

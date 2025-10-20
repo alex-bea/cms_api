@@ -55,7 +55,14 @@ This guide provides code-level implementation details for parsers complying with
 - `release_id`: str - Release identifier (e.g., "mpfs_2025_q4_20251015")
 - `vintage_date`: datetime - When data was published (timestamp)
 - `product_year`: str - Valuation year (e.g., "2025")
-- `quarter_vintage`: str - Quarter identifier (e.g., "2025Q4", "2025_annual")
+- `quarter_vintage`: str - Quarter release identifier in CMS letter format
+  - **Preferred:** CMS letters (`"A"`, `"B"`, `"C"`, `"D"`)
+  - **Supported:** Q-notation (`"Q1"`, `"Q2"`, `"Q3"`, `"Q4"`), composite (`"2025Q4"`)
+  - **Mapping:** A=Q1 (Jan), B=Q2 (Apr), C=Q3 (Jul), D=Q4 (Oct)
+  - **Rationale:** Aligns with CMS file naming (e.g., `RVU25D.zip`)
+  - **Example (preferred):** `quarter_vintage="D"` for October/Q4 release
+  - **Example (supported):** `quarter_vintage="Q4"` (auto-converted to `"D"`)
+  - **See:** `REF-parser-routing-detection-v1.0.md` §3.4, `planning/standards/QUARTER_NOTATION_STANDARD.md`
 - `source_uri`: str - Source URL
 - `file_sha256`: str - File checksum
 - `parser_version`: str - Parser SemVer version

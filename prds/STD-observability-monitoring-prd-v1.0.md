@@ -163,6 +163,112 @@ Modern observability focuses on **system health** across all domains. We mandate
 
 *Reference: QTS PRD Section 7 for quality gates and Section 2.5 for test accuracy metrics*
 
+### 3.4 Quarter Vintage in Structured Logging (Added 2025-10-20)
+
+When logging release or parsing events, include `quarter_vintage` in **CMS letter format** (A/B/C/D) for consistency with internal encoding and file naming:
+
+**Structured Log Events:**
+
+✅ **Correct:**
+```python
+logger.info(
+    "parse_start",
+    dataset="oppscap",
+    product_year=2025,
+    quarter_vintage="D",  # CMS letter
+    filename="OPPSCAP_Oct.txt",
+    release_id="OPPSCAP_2025D"
+)
+
+logger.info(
+    "land_complete",
+    release_id="RVU25D",
+    dataset="rvu",
+    quarter="D",  # CMS letter
+    files_downloaded=12,
+    total_bytes=52428800
+)
+```
+
+❌ **Incorrect:**
+```python
+# Don't use Q-notation in logs
+logger.info(
+    "parse_start",
+    quarter="Q4",  # Avoid Q-notation
+    ...
+)
+```
+
+**Rationale:**
+- Consistent with CMS file naming and internal encoding
+- Easier to correlate logs with source files (e.g., `RVU25D.zip`)
+- Simpler (1 char vs 2)
+- Aligns with database storage (`CHAR(1)`)
+
+**Metrics Tags:**
+
+Use CMS letters in metric tags:
+
+```python
+# ✅ Correct
+metrics.increment(
+    "parser.rows_parsed",
+    tags={
+        "dataset": "oppscap",
+        "quarter": "D",  # CMS letter
+        "year": "2025",
+        "format": "txt"
+    }
+)
+
+# ✅ Correct - with additional context
+metrics.timing(
+    "ingestion.land_duration",
+    duration_ms=1234,
+    tags={
+        "release_quarter": "D",  # CMS letter
+        "product_year": "2025",
+        "dataset": "gpci"
+    }
+)
+```
+
+**Alert Queries:**
+
+Filter by CMS letter in alert queries:
+
+```python
+# Prometheus alert
+alert: IngestionDelayed
+expr: |
+  time() - ingestion_last_success_timestamp{quarter="D", year="2025"} > 86400
+
+# Structured log query
+SELECT *
+FROM logs
+WHERE
+    event = 'ingestion_failed'
+    AND quarter_vintage = 'D'
+    AND product_year = 2025
+    AND timestamp > NOW() - INTERVAL '1 day'
+```
+
+**Dashboards:**
+
+Use human-readable labels in dashboards while storing CMS letters:
+
+```python
+# Backend query (uses CMS letters)
+quarter_filter = "D"
+
+# Frontend display (shows user-friendly label)
+quarter_label = f"Q{quarter_to_num(quarter_filter)} ({quarter_to_month(quarter_filter)})"
+# "Q4 (October)"
+```
+
+**See Also:** `STD-data-architecture-impl-v1.0.md` §1.2.3, `planning/standards/QUARTER_NOTATION_STANDARD.md`
+
 ## 4. Metrics & Monitoring
 
 ### 4.1 Data Pipeline Metrics (from DIS)

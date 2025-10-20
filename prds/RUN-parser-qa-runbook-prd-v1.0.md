@@ -93,6 +93,56 @@ This runbook provides operational procedures for parser development, QA, and pro
 - Document source location/URL and download date for each sample.
 - Verify samples match the target `product_year` / `quarter_vintage`.
 
+### Step 1b: Extract Metadata from Filenames (5 min)
+
+When inventorying CMS files, extract metadata from filenames:
+- Dataset name (e.g., `RVU`, `GPCI`, `OPPSCAP`)
+- Product year (e.g., `2025`)
+- **Quarter release** (e.g., `D` for October/Q4)
+- File format (e.g., `.txt`, `.csv`, `.zip`)
+
+**Quarter Extraction:**
+
+CMS uses **letter notation** (A, B, C, D):
+
+```python
+import re
+
+filename = "RVU25D.zip"
+match = re.match(r'^([A-Z]+)(\d{2})([A-D])\.(zip|txt|csv|xlsx)$', filename)
+if match:
+    dataset = match.group(1)    # "RVU"
+    year = f"20{match.group(2)}"  # "2025"
+    quarter = match.group(3)    # "D"  ← CMS letter format
+    format = match.group(4)     # "zip"
+```
+
+**Mapping to Layout Registry:**
+
+```python
+# Layout lookup uses CMS letters directly
+layout = get_layout(
+    product_year=year,        # "2025"
+    quarter_vintage=quarter,  # "D" (not "Q4")
+    dataset=dataset.lower()   # "rvu"
+)
+```
+
+**Common Mistake:** ❌ Don't convert `D` → `Q4` before calling `get_layout()`. The function handles conversion internally.
+
+✅ **Correct:**
+```python
+quarter_vintage = 'D'  # Extract from filename directly
+```
+
+❌ **Incorrect:**
+```python
+quarter_map = {'A': 'Q1', 'B': 'Q2', 'C': 'Q3', 'D': 'Q4'}
+quarter_vintage = quarter_map[quarter]  # Unnecessary conversion
+```
+
+**See Also:** `REF-parser-reference-appendix-v1.0.md` §A.2, `planning/standards/QUARTER_NOTATION_STANDARD.md`
+
 ### Step 2a: Inspect Headers & Structure (30 min)
 
 **For each format:**

@@ -85,6 +85,89 @@ All ingestors MUST extend `BaseDISIngestor` and implement the required methods a
 | **Enrich** | `enrich_stage(adapted_batch) -> StageFrame` | Adapted batch | Enriched stage frame | `ingestor_spec.py:260` |
 | **Publish** | `publish_stage(stage_frame) -> Dict[str, Any]` | Stage frame | Publish result metadata | `ingestor_spec.py:270` |
 
+### 1.2.3 Quarter Vintage Encoding (Added 2025-10-20)
+
+**Standard:** CMS Letter Format (A, B, C, D)
+
+Quarter releases are encoded using CMS letter notation to match official file naming:
+
+```python
+# Preferred encoding
+quarter_vintage = 'D'  # October/Q4 release
+
+# Mapping table
+QUARTER_MAPPING = {
+    'A': {'q_notation': 'Q1', 'month': 'January', 'fiscal_quarter': 1},
+    'B': {'q_notation': 'Q2', 'month': 'April', 'fiscal_quarter': 2},
+    'C': {'q_notation': 'Q3', 'month': 'July', 'fiscal_quarter': 3},
+    'D': {'q_notation': 'Q4', 'month': 'October', 'fiscal_quarter': 4},
+}
+```
+
+**Database Storage:**
+
+Store `quarter_vintage` as CMS letter (1 char) in all metadata tables:
+
+```sql
+CREATE TABLE cms_release (
+    release_id VARCHAR(50) PRIMARY KEY,
+    product_year INTEGER NOT NULL,
+    quarter_vintage CHAR(1) CHECK (quarter_vintage IN ('A', 'B', 'C', 'D')),
+    vintage_date DATE NOT NULL,
+    source_uri TEXT,
+    CONSTRAINT uk_release UNIQUE (product_year, quarter_vintage)
+);
+
+-- Index for common queries
+CREATE INDEX idx_release_quarter ON cms_release(product_year, quarter_vintage);
+```
+
+**API Responses:**
+
+Return CMS letter in API responses for consistency:
+
+```json
+{
+  "release_id": "OPPSCAP_2025D",
+  "product_year": 2025,
+  "quarter_vintage": "D",
+  "quarter_label": "Q4 (October)",
+  "vintage_date": "2025-10-01",
+  "source_uri": "https://www.cms.gov/medicare/...",
+  "metadata": {
+    "quarter_numeric": 4,
+    "quarter_month": "October",
+    "fiscal_year": 2025
+  }
+}
+```
+
+**Ingestor Metadata:**
+
+All ingestors MUST populate `quarter_vintage` with CMS letter format:
+
+```python
+class MyIngestor(BaseDISIngestor):
+    async def land_stage(self, release_id: str) -> Dict[str, Any]:
+        # Extract quarter from filename
+        match = re.match(r'^([A-Z]+)(\d{2})([A-D])\.zip$', filename)
+        quarter = match.group(3)  # 'D' (CMS letter)
+        
+        # Build metadata
+        metadata = {
+            'release_id': release_id,
+            'product_year': 2025,
+            'quarter_vintage': quarter,  # ✅ Use CMS letter directly
+            'vintage_date': '2025-10-01',
+            ...
+        }
+```
+
+**Rule:** `R-DATA-007` - All database schemas MUST store `quarter_vintage` as CMS letter (CHAR(1))  
+**Rule:** `R-DATA-008` - APIs SHOULD return both CMS letter and human-readable quarter label
+
+**See Also:** `REF-parser-routing-detection-v1.0.md` §3.4, `planning/standards/QUARTER_NOTATION_STANDARD.md`
+
 ---
 
 ### 1.3 Transformation Boundaries: Parser vs Normalize vs Enrich (Added 2025-10-17)

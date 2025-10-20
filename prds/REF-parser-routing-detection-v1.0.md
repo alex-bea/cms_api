@@ -280,7 +280,8 @@ Externalize fixed-width column specifications with SemVer by year/quarter.
 **Current Format (Python dicts):**
 ```python
 LAYOUT_REGISTRY = {
-    ('pprrvu', '2025', 'Q4'): {
+    # Quarter notation: CMS letters (A=Q1, B=Q2, C=Q3, D=Q4)
+    ('pprrvu', '2025', 'D'): {
         'version': 'v2025.4.1',  # SemVer
         'min_line_length': 165,
         'source_version': '2025D',
@@ -294,7 +295,7 @@ LAYOUT_REGISTRY = {
             # ...
         }
     },
-    ('gpci', '2025', 'Q4'): {
+    ('gpci', '2025', 'D'): {
         'version': 'v2025.4.2',
         'min_line_length': 160,
         'data_start_pattern': r'^\d{2}',  # 2-digit locality code
@@ -307,7 +308,7 @@ LAYOUT_REGISTRY = {
         }
     },
     # For locality (LOCCO) fixed-width
-    ('locality', '2025', 'Q4'): {
+    ('locality', '2025', 'D'): {
         'version': 'v2025.4.2',
         'min_line_length': 120,
         'data_start_pattern': r'^\s+\d{5}',  # MAC code (5 digits, may have leading spaces)
@@ -332,18 +333,23 @@ LAYOUT_REGISTRY = {
 ```python
 def get_layout(
     product_year: str,      # "2025"
-    quarter_vintage: str,   # "2025Q4" or "2025D"
+    quarter_vintage: str,   # CMS letter "D" (preferred) or Q-notation "Q4" (supported)
     dataset: str            # "pprrvu", "gpci", etc.
 ) -> Optional[Dict[str, Any]]:
     """
     Get layout specification for fixed-width parsing.
+    
+    Accepts multiple quarter formats (see §3.4 Quarter Notation Convention):
+    - CMS letters: "A", "B", "C", "D" (preferred)
+    - Q-notation: "Q1", "Q2", "Q3", "Q4" (auto-converted)
+    - Composite: "2025Q4" (parsed and converted)
     
     Returns layout dict or None if not found.
     """
 ```
 
 **Lookup Logic:**
-1. Extract quarter from `quarter_vintage`: `"2025Q4"` → `"Q4"`
+1. Normalize `quarter_vintage` to CMS letter (A/B/C/D) - see §3.4
 2. Try specific quarter: `(dataset, product_year, quarter)` tuple
 3. Fallback to annual: `(dataset, product_year, None)`
 4. Return `None` if not found
@@ -367,17 +373,62 @@ def get_layout(
 - `v2025.4.1`: Corrected column 15 width
 - `v2026.1.0`: 2026 Q1 (revision A) layout
 
-### 3.4 Common Layout Anti-Patterns
+### 3.4 Quarter Notation Convention
+
+**Standard:** CMS Letter Format (A, B, C, D)
+
+Quarter notation in `LAYOUT_REGISTRY` keys uses CMS letter format to match official file naming:
+
+| CMS Letter | Q-Notation | Fiscal Quarter | Typical Release Month | Example Filename |
+|------------|------------|----------------|-----------------------|------------------|
+| **A** | Q1 | January | January | `RVU25A.zip` |
+| **B** | Q2 | April | April | `RVU25B.zip` |
+| **C** | Q3 | July | July | `RVU25C.zip` |
+| **D** | Q4 | October | October | `RVU25D.zip` |
+
+**Registry Key Format:**
+```python
+LAYOUT_REGISTRY = {
+    # Format: (dataset, year, quarter) -> layout
+    # Quarter: CMS letter (A/B/C/D)
+    ('pprrvu', '2025', 'D'): PPRRVU_2025D_LAYOUT,
+    ('gpci', '2025', 'C'): GPCI_2025D_LAYOUT,
+    ('oppscap', '2025', 'D'): OPPSCAP_2025D_LAYOUT,
+    ...
+}
+```
+
+**Backward Compatibility:**
+
+`get_layout()` accepts multiple formats for backward compatibility:
+- **CMS letters** (preferred): `"A"`, `"B"`, `"C"`, `"D"`
+- **Q-notation** (supported): `"Q1"`, `"Q2"`, `"Q3"`, `"Q4"` (auto-converted)
+- **Composite** (supported): `"2025Q4"`, `"2025_Q4"` (parsed and converted)
+
+All formats are normalized to CMS letters internally for registry lookup.
+
+**Rationale:**
+- Matches CMS official file naming convention
+- Simpler (1 char vs 2 chars)
+- Less translation overhead
+- Already used by GPCI dataset
+
+**Rule:** `R-LAYOUT-001` - All `LAYOUT_REGISTRY` keys MUST use CMS letter notation (A/B/C/D)  
+**Rule:** `R-LAYOUT-002` - Layout lookup functions MUST support backward-compatible conversion from Q-notation
+
+**See Also:** `planning/standards/QUARTER_NOTATION_STANDARD.md`
+
+### 3.5 Common Layout Anti-Patterns
 
 **Anti-Pattern 1: Positional Arguments**
 ```python
 # ❌ WRONG: Positional (easy to swap dataset/quarter)
-layout = get_layout("2025", "pprrvu", "Q4")
+layout = get_layout("2025", "pprrvu", "D")
 
 # ✅ CORRECT: Keyword arguments
 layout = get_layout(
     product_year="2025",
-    quarter_vintage="2025Q4",
+    quarter_vintage="D",  # CMS letter format (preferred)
     dataset="pprrvu"
 )
 ```
