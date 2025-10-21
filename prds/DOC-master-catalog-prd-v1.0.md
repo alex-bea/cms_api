@@ -56,6 +56,7 @@
 | `PRD-geography-locality-mapping-prd-v1.0.md` | Draft v1.0 | Product Engineering | `STD-data-architecture`, `SRC-gazetteer` | `REF-geography-mapping-cursor-prd-v1.0.md` |
 | `PRD-rvu-gpci-prd-v0.1.md` | Draft v0.2 | Product Engineering | `STD-scraper`, `SRC-gpci`, `SRC-carrier-localities` | — |
 | `PRD-opps-scraper-prd-v1.0.md` | Draft v1.0 | Data Engineering | `STD-scraper`, `SRC-opps` | — |
+| `PRD-render-hosting-prd-v1.0.md` | Draft v1.0 | Platform Engineering, SRE | `STD-observability`, `RUN-global-operations` | `.cursor/RENDER_DEPLOYMENT_GUIDE.md` (companion) |
 
 ---
 
