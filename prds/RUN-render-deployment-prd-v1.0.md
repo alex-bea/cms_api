@@ -492,9 +492,11 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO ro;
 ### Optional: Automate Alembic Migrations
 
 To prevent drift, run `alembic upgrade head` automatically:
-- **Render Job (recommended):** Create a one-off Job that runs `alembic upgrade head` with the same `DATABASE_URL`. Trigger it before each deploy.
+- **Render Job (recommended):** Create a one-off Job that runs `alembic upgrade head` with the same `DATABASE_URL`. Trigger it before each deploy. See Part 8 for detailed setup.
 - **CI step:** From your CI, run migrations against the target `DATABASE_URL` prior to promoting the app.
-- **App start (fallback):** Gate the app’s startup on a migration check. This increases cold-start time and is less preferred.
+- **App start (fallback):** Gate the app's startup on a migration check. This increases cold-start time and is less preferred.
+
+**See Part 8 below for full CI/CD automation including One-Off Jobs.**
 
 ### Step 1: Create Web Service
 
@@ -535,7 +537,34 @@ curl "https://cms-pricing-api.onrender.com/api/v1/gpci?mac=01112&locality=54"
 
 ### Step 5: Enable Health Check
 
-In Render → **Health Checks**, point the path to `/health`. Ensure your `/health` endpoint returns `200` and (optionally) verifies DB connectivity so deploys only go live when dependencies are ready.
+In Render → **Health Checks**, point the path to `/health`. Ensure your `/health` endpoint returns `200` and verifies DB connectivity so deploys only go live when dependencies are ready.
+
+**Example health endpoint** (FastAPI with DB check):
+
+```python
+from fastapi import FastAPI
+from sqlalchemy import text
+from cms_pricing.database import engine
+
+app = FastAPI()
+
+@app.get("/health")
+def health():
+    """
+    Health check endpoint with database connectivity test.
+    
+    Returns HTTP 200 if healthy, 500 if DB unavailable.
+    Target: <50ms response time.
+    """
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        return {"status": "unhealthy", "database": "disconnected", "error": str(e)}, 500
+```
+
+**Performance target:** Keep health checks under 50ms to avoid deployment delays.
 
 ---
 
@@ -919,13 +948,43 @@ If you already have data in a Render-hosted Postgres instance:
 
 ### render.yaml starter (optional)
 
+**Option A: Image-based deployment (recommended - zero build minutes)**
+
 ```yaml
 services:
   - type: web
     name: cms-pricing-api
-    env: python
+    runtime: image
+    image:
+      url: ghcr.io/YOUR_ORG/cms-pricing-api:latest
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false  # Prompts for value at creation, never commits secrets
+      - key: LOG_LEVEL
+        value: INFO
+
+databases:
+  - name: cms-pricing-db
+    databaseName: cms_pricing
+    user: cms_user
+    plan: starter
+    region: oregon
+    postgresVersion: "16"
+```
+
+**Option B: Python runtime (fallback)**
+
+```yaml
+services:
+  - type: web
+    name: cms-pricing-api
+    runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn cms_pricing.main:app --host 0.0.0.0 --port $PORT
+    plan: starter
+    healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -940,6 +999,8 @@ databases:
     region: oregon
     postgresVersion: "16"
 ```
+
+**Note:** Image-based deployment (Option A) follows PRD policy §3.1 and eliminates on-platform build minutes. See Part 8 below for full CI/CD setup.
 
 ---
 
@@ -980,6 +1041,619 @@ databases:
 - Quick start: `.cursor/GPCI_V13_QUICK_START.md`
 - Troubleshooting: `.cursor/DATABASE_SETUP_GUIDE.md`
 - Lessons learned: `.cursor/LESSONS_DATABASE_SETUP.md`
+
+---
+
+## Part 8: Automate Deployments with CI/CD (Optional)
+
+**Purpose:** Automate image builds and deployments to achieve zero on-platform build minutes per PRD policy §4.1.
+
+**Audience:** Teams ready to implement CI/CD after successful manual deployment (Parts 1-7).
+
+**Prerequisites:**
+- Parts 1-6 completed (database deployed)
+- Optional: Part 7 completed (API deployed manually once)
+- GitHub repository access
+- Docker knowledge
+- Render account with payment method
+
+**Time:** 30-45 minutes one-time setup
+
+---
+
+### 8.1: GitHub Container Registry (GHCR) Setup
+
+**Step 1: Enable GHCR for your repository**
+
+1. Go to your GitHub repository
+2. Settings → Packages
+3. Enable "Improved container support"
+
+**Step 2: Create Personal Access Token (PAT)**
+
+1. GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+2. Generate new token (classic)
+3. Name: "Render Deployment"
+4. Scopes:
+   - ✅ `write:packages`
+   - ✅ `read:packages`
+   - ✅ `delete:packages`
+5. Copy token (you'll need it once)
+
+**Step 3: Test GHCR authentication locally**
+
+```bash
+echo $GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+```
+
+---
+
+### 8.2: Create Dockerfile (if not exists)
+
+**Create `Dockerfile` in repository root:**
+
+```dockerfile
+# Multi-stage build for smaller images
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+# Install dependencies first (cached layer)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Production stage
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy installed packages from builder
+COPY --from=builder /root/.local /root/.local
+
+# Copy application code
+COPY cms_pricing/ ./cms_pricing/
+COPY alembic/ ./alembic/
+COPY alembic.ini .
+
+# Add local packages to PATH
+ENV PATH=/root/.local/bin:$PATH
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD python -c "import requests; requests.get('http://localhost:8000/health')"
+
+# Run application
+CMD ["uvicorn", "cms_pricing.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+**Benefits:**
+- Multi-stage build (smaller final image)
+- Dependencies cached separately (faster rebuilds)
+- No unnecessary build tools in production image
+
+---
+
+### 8.3: GitHub Actions Workflow
+
+**Create `.github/workflows/deploy-api.yml`:**
+
+```yaml
+name: Deploy API to Render
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'cms_pricing/**'
+      - 'requirements.txt'
+      - 'Dockerfile'
+      - 'alembic/**'
+      - 'prds/RUN-render-deployment-prd-v1.0.md'
+    tags:
+      - 'v*'
+      - 'release/*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/cms-pricing-api
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trigger Render deploy
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          curl -X POST "$RENDER_DEPLOY_HOOK_URL&imgURL=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+```
+
+**Key features:**
+- ✅ Path filters (only rebuilds when relevant files change)
+- ✅ Multi-arch support ready
+- ✅ GitHub Actions cache (faster builds)
+- ✅ Automatic tagging (SHA, semver, latest)
+- ✅ Deploy hook with specific image tag
+
+---
+
+### 8.4: Render Deploy Hook Setup
+
+**Step 1: Get Deploy Hook URL**
+
+1. Render Dashboard → your Web Service
+2. Settings → Deploy Hook
+3. Click "Create Deploy Hook"
+4. Copy the URL (looks like: `https://api.render.com/deploy/srv-xxx?key=yyy`)
+
+**Step 2: Add to GitHub Secrets**
+
+1. GitHub repo → Settings → Secrets and variables → Actions
+2. New repository secret
+3. Name: `RENDER_DEPLOY_HOOK_URL`
+4. Value: `<paste deploy hook URL>`
+
+**Step 3: Test deploy hook manually**
+
+```bash
+# Test with latest tag
+curl -X POST "https://api.render.com/deploy/srv-xxx?key=yyy"
+
+# Test with specific image
+curl -X POST "https://api.render.com/deploy/srv-xxx?key=yyy&imgURL=ghcr.io/YOUR_ORG/cms-pricing-api:sha-abc123"
+```
+
+**Expected response:**
+```json
+{"deploy": {"id": "dep-xxx", "status": "pending"}}
+```
+
+---
+
+### 8.5: Configure Render for Image Deploys
+
+**Update your Render Web Service:**
+
+1. Dashboard → Web Service → Settings
+2. **Image URL:** `ghcr.io/YOUR_ORG/cms-pricing-api:latest`
+3. **Auto-deploy:** OFF (CI controls deploys)
+4. **Root Directory:** (leave empty for image-based)
+5. **Build Command:** (empty for image-based)
+6. **Start Command:** (inherited from Dockerfile CMD)
+
+**For monorepo setups:**
+1. **Root Directory:** `cms-api/` (only if using Python runtime fallback)
+2. **Build Filters:** `cms_pricing/**` (prevents unnecessary builds)
+
+---
+
+### 8.6: One-Off Jobs for Migrations
+
+**Create Alembic Migration Job:**
+
+1. Render Dashboard → your Web Service
+2. Jobs tab → "+ Add Job"
+3. Configure:
+   - **Name:** `run-migrations`
+   - **Command:** `alembic upgrade head`
+   - **Environment:** Inherits from Web Service (DATABASE_URL, etc.)
+
+**Trigger migration before each deploy:**
+
+**Option A: Manual (Render Dashboard)**
+1. Jobs tab → run-migrations
+2. Click "Run Job"
+3. Wait for completion (usually < 1 minute)
+4. Then deploy API
+
+**Option B: Via API (automation)**
+
+```bash
+# Get service ID
+RENDER_API_KEY="your_api_key"
+SERVICE_ID="srv-xxx"
+
+# Trigger job
+curl -X POST \
+  "https://api.render.com/v1/services/${SERVICE_ID}/jobs/run-migrations/runs" \
+  -H "Authorization: Bearer ${RENDER_API_KEY}" \
+  -H "Content-Type: application/json"
+```
+
+**Option C: GitHub Actions step (before deploy)**
+
+Add to workflow before "Trigger Render deploy":
+
+```yaml
+      - name: Run database migrations
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          # Trigger migration job
+          curl -X POST \
+            "https://api.render.com/v1/services/${SERVICE_ID}/jobs/run-migrations/runs" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json"
+          
+          # Wait for job completion (poll status)
+          # Add polling logic here if needed
+```
+
+**Benefits of One-Off Jobs:**
+- ✅ No race conditions (single execution)
+- ✅ Dedicated logs for troubleshooting
+- ✅ Explicit control over migration timing
+- ✅ Reuses service environment variables
+- ✅ No build artifact needed (uses latest image)
+
+---
+
+### 8.7: Enhanced render.yaml with CI/CD
+
+**Complete Blueprint with image-based deployment:**
+
+```yaml
+# render.yaml - Infrastructure as Code
+# Deploy via: Render Dashboard → New → Blueprint
+
+services:
+  # API Service (image-based for zero build minutes)
+  - type: web
+    name: cms-pricing-api
+    runtime: image
+    image:
+      url: ghcr.io/YOUR_ORG/cms-pricing-api:latest
+      # For CI: url is updated via deploy hook with specific SHA tag
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: false  # CI controls deploys via deploy hook
+    
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cms-pricing-db
+          property: connectionString
+      - key: LOG_LEVEL
+        value: INFO
+      - key: ENVIRONMENT
+        value: production
+    
+    # Scaling (optional)
+    scaling:
+      minInstances: 1
+      maxInstances: 3
+      targetMemoryPercent: 80
+      targetCPUPercent: 80
+
+  # Migration Job (runs alembic)
+  - type: job
+    name: run-migrations
+    runtime: image
+    image:
+      url: ghcr.io/YOUR_ORG/cms-pricing-api:latest
+    plan: starter
+    command: alembic upgrade head
+    
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cms-pricing-db
+          property: connectionString
+
+databases:
+  - name: cms-pricing-db
+    databaseName: cms_pricing
+    user: cms_user
+    plan: starter
+    region: oregon
+    postgresVersion: "16"
+    ipAllowList: []  # Defaults to allow all; restrict in production
+```
+
+**Deploy this blueprint:**
+1. Commit `render.yaml` to repository
+2. Render Dashboard → New → Blueprint
+3. Connect repository
+4. Select `render.yaml`
+5. Review and create
+
+---
+
+### 8.8: Monorepo Best Practices
+
+**If you're in a monorepo:**
+
+**1. Root Directory Configuration**
+- Service Settings → Root Directory: `cms-api/`
+- Dockerfile location: `cms-api/Dockerfile`
+- Only matters for Python runtime (not image-based)
+
+**2. Build Filters**
+- Service Settings → Build Filters
+- Include: `cms-api/**`
+- This prevents rebuilds when other parts of monorepo change
+- **Saves significant pipeline minutes in large repos**
+
+**3. Dockerfile Context**
+
+For monorepo, adjust Dockerfile COPY paths:
+
+```dockerfile
+# If Dockerfile is in cms-api/ subdirectory
+COPY requirements.txt .
+COPY cms_pricing/ ./cms_pricing/
+COPY alembic/ ./alembic/
+```
+
+Or use build context in GitHub Actions:
+
+```yaml
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./cms-api  # Build from subdirectory
+          file: ./cms-api/Dockerfile
+          push: true
+```
+
+**4. Path Filters in GitHub Actions**
+
+```yaml
+on:
+  push:
+    paths:
+      - 'cms-api/**'           # Only trigger on cms-api changes
+      - '!cms-api/docs/**'     # Ignore docs changes
+      - '!cms-api/tests/**'    # Optionally ignore test changes
+```
+
+---
+
+### 8.9: Testing the Full Pipeline
+
+**End-to-end test:**
+
+1. **Make a code change**
+   ```bash
+   # Edit cms_pricing/main.py
+   echo "# CI/CD test" >> cms_pricing/main.py
+   git add cms_pricing/main.py
+   git commit -m "test: CI/CD pipeline"
+   git push origin main
+   ```
+
+2. **Watch GitHub Actions**
+   - Go to Actions tab
+   - Watch "Deploy API to Render" workflow
+   - Should complete in 3-5 minutes
+
+3. **Verify image built**
+   ```bash
+   # Check GHCR for new image
+   curl -H "Authorization: Bearer $GITHUB_TOKEN" \
+     https://api.github.com/users/YOUR_ORG/packages/container/cms-pricing-api/versions
+   ```
+
+4. **Watch Render deployment**
+   - Dashboard → Web Service → Events
+   - Should show "Deploy triggered by Deploy Hook"
+   - Wait for "Live" status (2-3 minutes)
+
+5. **Test deployed API**
+   ```bash
+   curl https://cms-pricing-api.onrender.com/health
+   ```
+
+**Expected:** `{"status": "healthy", "database": "connected"}`
+
+---
+
+### 8.10: Troubleshooting CI/CD
+
+**Issue: GitHub Actions failing to push image**
+
+```
+Error: denied: permission_denied: write_package
+```
+
+**Solution:**
+- Check workflow has `packages: write` permission
+- Verify GITHUB_TOKEN has access
+- Ensure GHCR is enabled for organization
+
+**Issue: Render deploy hook returns 404**
+
+```
+{"error": "Service not found"}
+```
+
+**Solution:**
+- Verify deploy hook URL is correct
+- Check service ID in URL matches your service
+- Regenerate deploy hook if needed
+
+**Issue: Render pulling wrong image tag**
+
+**Solution:**
+- Check deploy hook includes `imgURL` parameter:
+  ```bash
+  curl -X POST "$HOOK_URL&imgURL=ghcr.io/org/app:sha-abc123"
+  ```
+- Verify image exists in GHCR
+- Check Render service Image URL setting
+
+**Issue: Migration job fails**
+
+```
+alembic.util.exc.CommandError: Can't locate revision identified by 'xxx'
+```
+
+**Solution:**
+- Ensure alembic/ directory is in Docker image
+- Verify DATABASE_URL is set correctly
+- Check alembic.ini paths are correct
+- Run `alembic current` to see current state
+
+---
+
+### 8.11: Cost Impact Analysis
+
+**Before CI/CD (manual deploys):**
+- Render build minutes: ~5-10 min per deploy
+- Monthly: ~50-100 build minutes
+- Cost: Included in free tier or minimal
+
+**After CI/CD (image-based):**
+- Render build minutes: ~0 min (just pulls image)
+- GitHub Actions minutes: ~3-5 min per deploy
+- Monthly: ~30-50 GitHub Actions minutes
+- Cost: Free tier usually sufficient
+
+**Savings:**
+- ✅ Zero Render build minutes
+- ✅ Faster deploys (pulls vs builds)
+- ✅ Consistent across environments
+- ✅ Better caching (GitHub Actions)
+
+**GitHub Actions free tier:**
+- 2,000 minutes/month for public repos
+- 500 minutes/month for private repos (macOS)
+- Usually plenty for API deploys
+
+---
+
+### 8.12: Security Best Practices
+
+**1. Never commit secrets**
+```bash
+# .gitignore
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+```
+
+**2. Use GitHub Secrets for:**
+- RENDER_DEPLOY_HOOK_URL
+- RENDER_API_KEY (if using API)
+- Any third-party API keys
+
+**3. Rotate credentials regularly**
+- Render database passwords: Every 90 days
+- Deploy hooks: After team changes
+- API keys: Following service guidelines
+
+**4. Restrict deploy hook access**
+- Store only in GitHub Secrets
+- Never log deploy hook URLs
+- Regenerate if compromised
+
+**5. Image scanning**
+
+Add to GitHub Actions workflow:
+
+```yaml
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+```
+
+---
+
+### 8.13: Next Steps After CI/CD Setup
+
+**Once automated:**
+
+1. **Monitor first few deploys**
+   - Watch GitHub Actions logs
+   - Check Render deployment logs
+   - Verify health checks pass
+
+2. **Document for team**
+   - Update README with CI/CD flow
+   - Share deploy hook access (via 1Password)
+   - Document rollback procedures
+
+3. **Set up notifications**
+   - Slack webhook for deploy events
+   - Email alerts for failures
+   - PagerDuty for production issues
+
+4. **Implement staging environment**
+   - Create staging Render service
+   - Deploy on merge to `develop` branch
+   - Promote to prod on tags
+
+5. **Add deployment gates**
+   - Require tests to pass
+   - Code review approval
+   - Security scanning
+
+---
+
+**Congratulations!** 🎉
+
+You now have:
+- ✅ Production PostgreSQL database
+- ✅ Automated Docker builds (GitHub Actions)
+- ✅ Zero-build-minute deploys (image-based)
+- ✅ CI/CD pipeline (PR → merge → deploy)
+- ✅ Migration automation (One-Off Jobs)
+- ✅ Monorepo optimization (path filters)
+- ✅ Infrastructure as Code (render.yaml)
+
+**Total pipeline minutes:** ~0 on Render, ~3-5 on GitHub Actions per deploy
 
 ---
 
