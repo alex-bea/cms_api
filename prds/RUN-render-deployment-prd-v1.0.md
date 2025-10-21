@@ -9,7 +9,10 @@
 - `prds/PRD-render-hosting-prd-v1.0.md` (policy decisions)
 - `prds/DOC-master-catalog-prd-v1.0.md` (system map)
 - `prds/STD-observability-monitoring-prd-v1.0.md` (monitoring standards)
-- `.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md` (migration checklist)
+- `prds/RUN-database-migrations-prd-v1.0.md` (migrations workflow)
+- `prds/RUN-database-backup-dr-prd-v1.0.md` (rollback/PITR)
+- `prds/RUN-database-sanitization-prd-v1.0.md` (tokenized refresh)
+- `.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md` (historical example)
 
 **Purpose:** Deploy CMS Pricing API with PostgreSQL on Render  
 **Audience:** First-time deployers  
@@ -75,11 +78,19 @@
    | **Database** | `cms_pricing` | Actual database name |
    | **User** | `cms_user` | Database username |
    | **Region** | Oregon (US West) | Choose closest to you |
-   | **PostgreSQL Version** | 16 | Latest stable |
+   | **PostgreSQL Version** | 16 | Latest stable (Render may provision 17.x - this is fine!) |
    | **Instance Type** | **Starter ($7/month)** | Recommended for production |
 
 4. **Click:** "Create Database"
 5. **Wait:** 2-3 minutes for provisioning
+
+**📝 PostgreSQL Version Note (Gap 6):**
+- You may request PG 16 but receive 17.6 (or newer minor version)
+- **This is expected:** Render provisions the latest stable minor/major version
+- **Why it's OK:** PostgreSQL maintains backward compatibility within and across major versions for standard operations
+- **No action needed:** Your migrations and queries will work identically
+- **To verify version:** `psql $DATABASE_URL -c "SELECT version();"`
+- **To pin major version:** Contact Render support if you need a specific major version (rare)
 
 **Instance Type Guide:**
 ```
@@ -127,22 +138,82 @@ psql $DATABASE_URL -c "SELECT current_database(), current_user, version();"
 ```
 
 **Troubleshooting:**
-- `psql: command not found` → Install: `brew install libpq` and add `/opt/homebrew/opt/libpq/bin` to `PATH`
+
+**Issue: `psql: command not found` (Gap 4 - Common on macOS)**
+
+Homebrew installs `libpq` but doesn't add it to PATH by default.
+
+**Fix (macOS - temporary for current session):**
+```bash
+# Add to PATH for this session
+export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
+
+# Test it works
+psql --version
+# Should show: psql (PostgreSQL) 16.x or similar
+```
+
+**Fix (macOS - permanent):**
+```bash
+# Add to your shell profile
+echo 'export PATH="/opt/homebrew/opt/libpq/bin:$PATH"' >> ~/.zshrc
+
+# Reload shell
+source ~/.zshrc
+
+# Verify
+which psql
+# Should show: /opt/homebrew/opt/libpq/bin/psql
+```
+
+**Fix (Linux):**
+```bash
+# Usually installed system-wide
+sudo apt-get install postgresql-client   # Debian/Ubuntu
+sudo yum install postgresql              # CentOS/RHEL
+```
+
+**Other common issues:**
 - `Connection refused` → Ensure you copied the **External** URL, not Internal
 - `Password authentication failed` → Regenerate password from Render dashboard
-- Working in shared environments? Avoid exporting credentials in shell history; use `env` files or secret managers.
+- `could not translate host name` → Check your internet connection and DNS
 
 ### Step 4: Manage `DATABASE_URL` Securely
 
-**Local development (recommended):**
-1. Create a `.env` file in the repo root (**do not commit** this file):
+**⚠️ SECURITY WARNING (Gap 7):**
+- **NEVER commit `.env` to git** - it contains production database credentials
+- **NEVER log `DATABASE_URL`** in application code or CI output
+- **ALWAYS verify** `.gitignore` includes `.env` before creating the file
+- **ALWAYS backup** credentials to 1Password/Vault immediately after creation
 
-   `.env` (local only)
+**Security checklist:**
+```bash
+# 1. Verify .gitignore coverage BEFORE creating .env
+grep -q "^\.env$" .gitignore && echo "✅ .env is ignored" || echo "❌ WARNING: .env NOT in .gitignore!"
+
+# 2. If missing, add it now
+echo ".env" >> .gitignore
+
+# 3. Verify no .env files are staged
+git status | grep -q ".env" && echo "❌ DANGER: .env is staged!" || echo "✅ Safe to proceed"
+```
+
+**Local development (recommended):**
+1. **Verify `.gitignore`** (see checklist above)
+
+2. Create a `.env` file in the repo root:
+
+   `.env` (local only, **NEVER COMMIT**)
    ```
    DATABASE_URL=postgresql://cms_user:YOUR_PASSWORD@oregon-postgres.render.com:5432/cms_pricing
    ```
 
-2. Load it automatically with [`direnv`](https://direnv.net/):
+3. **Immediately backup to 1Password/Vault:**
+   - Create secure note: "Render CMS Pricing DB"
+   - Store full `DATABASE_URL`
+   - Tag with project name and environment
+
+4. Load it automatically with [`direnv`](https://direnv.net/):
    ```bash
    # macOS
    brew install direnv
@@ -150,75 +221,41 @@ psql $DATABASE_URL -c "SELECT current_database(), current_user, version();"
    direnv allow
    ```
 
-3. Store the value in 1Password or Vault and rotate it after initial setup.
-
 **On Render (staging/production):**
-- Set `DATABASE_URL` in your Web Service Environment panel.
-- Do not store credentials in shell profiles or source code.
+- Set `DATABASE_URL` in your Web Service Environment panel
+- Use Render's built-in secrets management (encrypted at rest)
+- Do **NOT** store credentials in:
+  - Shell profiles (`~/.zshrc`, `~/.bashrc`)
+  - Source code or config files
+  - CI logs or debug output
+  - Slack/chat messages
+
+**Credential rotation (every 90 days for prod, 180 days for non-prod):**
+```bash
+# 1. Generate new password in Render dashboard
+# 2. Update .env and 1Password/Vault
+# 3. Update Render Web Service environment
+# 4. Test connection with new credentials
+# 5. Revoke old password
+```
 
 ---
 
 ## Part 3: Run Database Migrations (10 minutes)
 
-### Step 1: Initialize Schema with Alembic
+Detailed guidance for planning, validating, and executing migrations now lives in `prds/RUN-database-migrations-prd-v1.0.md`. Use this section as a high-level reminder while the heavy lifting happens via that runbook.
 
-```bash
-cd cms-api
+### Step 1: Follow the migrations runbook
+- Complete the **Authoring Workflow**, **Dry-Run**, and **Bootstrap/Stamp** steps in the migrations runbook before touching Render.
+- Ensure any sanitized snapshot used for dry-run was produced via `prds/RUN-database-sanitization-prd-v1.0.md`.
 
-# Check current state (should be empty)
-alembic current
+### Step 2: Execute the migration job
+- From the CI/Render job defined in the migrations runbook, run `alembic upgrade head` using the `migrate` role. Do **not** call `Base.metadata.create_all()` in this pipeline.
+- If the job reports schema drift or missing tables, fall back to the “Fresh Database Bootstrap & Stamp Approval” section in the migrations runbook instead of ad-hoc fixes.
 
-# Run all migrations
-alembic upgrade head
-
-# Expected output:
-# INFO  [alembic.runtime.migration] Running upgrade -> 001_add_nearest_zip_tables
-# INFO  [alembic.runtime.migration] Running upgrade 001 -> 002_add_nber_centroids
-# INFO  [alembic.runtime.migration] Running upgrade 002 -> 003_gpci_v13_add_mac_to_nk
-# ✅ GPCI v1.3 migration complete
-# INFO  [alembic.runtime.migration] Running upgrade 003 -> 004_gpci_v12_compat_view
-# ✅ Created GPCI v1.2 compatibility view
-# INFO  [alembic.runtime.migration] Running upgrade 004 -> 6d0f0408be80
-```
-
-**If migration 003 fails** (table doesn't exist):
-
-```bash
-# Create base tables first (on fresh DB)
-python -c "from cms_pricing.database import Base, engine; from cms_pricing.models import *; Base.metadata.create_all(bind=engine)"
-
-# Stamp to the matching revision (avoid stamping 'head' on an unknown DB)
-# Replace with the exact revision that matches the created schema, e.g.:
-#   alembic stamp 002_add_nber_centroids
-alembic stamp <matching_revision_id>
-
-# Now run forward migrations
-alembic upgrade head
-```
-
-Caution — use `alembic stamp` sparingly. Only stamp a revision that exactly matches
-the current schema. Use `alembic history` and `alembic current` to pick the correct
-revision, then run `alembic upgrade head`.
-
-### Step 2: Verify Schema
-
-```bash
-# Check tables were created
-psql $DATABASE_URL -c "\dt"
-
-# Check gpci_indices table specifically
-psql $DATABASE_URL -c "\d gpci_indices"
-
-# Verify v1.3 unique index exists
-psql $DATABASE_URL -c "
-  SELECT indexname, indexdef 
-  FROM pg_indexes 
-  WHERE tablename = 'gpci_indices' 
-    AND indexname = 'uq_gpci_mac_locality_effective';
-"
-
-# You should see 1 row with the index definition
-```
+### Step 3: Post-checks
+- Run the verification checklist (`alembic_version`, table/index presence, smoke queries) in the migrations runbook.
+- If rollback is required, immediately pivot to `prds/RUN-database-backup-dr-prd-v1.0.md` for PITR/restore procedures.
 
 ### Step 3: Verify Migration State
 
@@ -304,6 +341,139 @@ psql $DATABASE_URL -c "
 "
 # Expected: Multiple rows (AL, AZ, AR, CA, CO, etc.)
 ```
+
+### Troubleshooting: Python Environment Issues (Gap 5)
+
+**Issue: Segmentation Fault (exit 139) when running backfill script**
+
+**Symptom:**
+```bash
+python scripts/backfill_gpci_v13.py
+[1]    12345 segmentation fault  python scripts/backfill_gpci_v13.py
+```
+
+**Root cause:** Conda environment conflicts with pandas/numpy on macOS (common issue with Apple Silicon and Intel Macs).
+
+**Diagnosis:**
+```bash
+# 1. Check Python environment
+which python
+python --version
+
+# 2. Try importing pandas
+python -c "import pandas; print('Pandas version:', pandas.__version__)"
+# If this segfaults, environment is broken
+
+# 3. Check if using conda
+conda info --envs
+```
+
+**Fix Option A: Create Clean venv (Recommended)**
+
+This avoids conda entirely and uses system Python:
+
+```bash
+# 1. Use system Python (not conda)
+/usr/bin/python3 -m venv .venv-deploy
+
+# 2. Activate venv
+source .venv-deploy/bin/activate
+
+# 3. Upgrade pip
+pip install --upgrade pip
+
+# 4. Install dependencies
+pip install pandas sqlalchemy psycopg2-binary python-dotenv structlog
+
+# 5. Test pandas works
+python -c "import pandas; print('✅ Pandas works!', pandas.__version__)"
+
+# 6. Run backfill script
+python scripts/backfill_gpci_v13.py --commit
+```
+
+**Fix Option B: Fix Conda Environment**
+
+If you prefer to stay with conda:
+
+```bash
+# Option B1: Update packages
+conda update pandas numpy
+
+# Option B2: Create fresh conda environment
+conda create -n cms-pricing-clean python=3.11
+conda activate cms-pricing-clean
+pip install -r requirements.txt
+
+# Test
+python -c "import pandas; print('✅ Works!')"
+```
+
+**Fix Option C: Load Data via SQL (Workaround)**
+
+If Python environment issues persist, load data directly:
+
+```bash
+# 1. Export GPCI data to CSV
+python scripts/export_gpci_to_csv.py > gpci_data.csv
+
+# 2. Load via psql COPY
+psql $DATABASE_URL << 'SQL'
+\COPY gpci_indices (mac, locality_code, locality_name, work_gpci, pe_gpci, mp_gpci, effective_from, effective_to, release_id)
+FROM 'gpci_data.csv' 
+CSV HEADER;
+SQL
+
+# 3. Verify
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM gpci_indices;"
+```
+
+**Prevention:**
+- Use system Python + venv for production scripts
+- Document Python version in README
+- Add `.python-version` file to repo
+- Test scripts in clean environment before deployment
+
+**Database-Only Deployment Pattern (Gap 8):**
+
+**What it means:** Deploy and verify database schema **without** loading all data or deploying the API.
+
+**Why it's valid:**
+- ✅ Allows schema verification first
+- ✅ Data load can be deferred (or done separately)
+- ✅ Reduces deployment risk (schema failures caught early)
+- ✅ Database is "production-ready" even without data
+
+**When to defer data load:**
+1. Python environment issues (like today)
+2. Large datasets (load during maintenance window)
+3. Schema verification needed first
+4. Incremental deployment strategy
+
+**Database states:**
+- **Schema-ready:** Tables exist, migrations applied, no data → **VALID for production**
+- **Data-ready:** Schema + data loaded → Ready for API deployment
+- **API-ready:** Schema + data + API deployed → Fully operational
+
+**To verify schema-ready database:**
+```bash
+# 1. Verify all tables exist
+psql $DATABASE_URL -c "\dt" | wc -l
+# Expected: 40+ tables
+
+# 2. Verify critical indexes
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = 'public';"
+# Expected: 50+ indexes
+
+# 3. Verify Alembic at head
+alembic current
+# Expected: 6d0f0408be80 (head)
+
+# 4. Run smoke tests (no data needed)
+pytest tests/test_database_schema.py
+```
+
+**Your database is production-ready even if data load is deferred!**
 
 ---
 
@@ -1658,5 +1828,16 @@ You now have:
 ---
 
 **Ready to deploy to Render? You have everything you need!** 🚀
+
+---
+
+## Change Log
+
+|| Version | Date | Summary |
+||---------|------|---------|
+|| **v1.1** | 2025-10-21 | **Added 5 deployment learnings (Gaps 4-8).** Enhanced Part 2 Step 1 with PostgreSQL version note (Gap 6: Render may provision 17.x when 16 requested). Enhanced Part 2 Step 3 with detailed psql PATH setup for macOS/Linux (Gap 4: common "command not found" fix). Enhanced Part 2 Step 4 with strong .env security warnings and checklist (Gap 7: never commit credentials). Added Part 4 troubleshooting for Python segfaults (Gap 5: conda conflicts, venv solution). Added database-only deployment pattern (Gap 8: schema-ready vs data-ready states). Based on 2025-10-21 Render deployment experience. |
+|| **v1.0** | 2025-10-21 | Initial production runbook with comprehensive CI/CD automation (Part 8), health checks, monitoring, and 8-part deployment process. |
+
+---
 
 **End of Render Deployment Guide**
