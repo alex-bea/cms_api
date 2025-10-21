@@ -40,9 +40,10 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 # Switch to non-root user
 USER appuser
 
-# Health check
+# Health check (use PORT env var, default 8000)
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/healthz || exit 1
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
 # Run migrations and start server
-CMD ["sh", "-c", "if [ \"$RUN_MIGRATIONS\" = \"true\" ]; then alembic upgrade head; fi && uvicorn cms_pricing.main:app --host 0.0.0.0 --port 8000 --workers 4"]
+# Use $PORT for Render compatibility (Render sets PORT=10000)
+CMD ["sh", "-c", "if [ \"$RUN_MIGRATIONS\" = \"true\" ]; then alembic upgrade head; fi && uvicorn cms_pricing.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 4"]
