@@ -48,7 +48,7 @@ Payment = [(Work RVU × Work GPCI) + (PE RVU × PE GPCI) + (MP RVU × MP GPCI)] 
 | Format | Extension | Availability | Parser Support | Notes |
 |--------|-----------|--------------|----------------|-------|
 | **TXT** | `.txt` | ✅ Always | ✅ Implemented | Fixed-width, CMS official format |
-| **CSV** | `.csv** | ✅ Always | ✅ Implemented | Alternative distribution |
+| **CSV** | `.csv` | ✅ Always | ✅ Implemented | Alternative distribution |
 | **XLSX** | `.xlsx` | ✅ Always | ✅ Implemented | Excel workbook, may include historical quarters |
 | **ZIP** | `.zip` | ✅ Common | ✅ Implemented | Archives one of the above formats |
 
@@ -90,26 +90,36 @@ Payment = [(Work RVU × Work GPCI) + (PE RVU × PE GPCI) + (MP RVU × MP GPCI)] 
 ### 3.1 Natural Keys
 
 ```python
-NATURAL_KEYS = ['locality_code']  # No time dimension in GPCI
+NATURAL_KEYS = ['mac', 'locality_code', 'effective_from']
 ```
 
-**Uniqueness:** 
-- **Expected:** 100-120 unique locality codes per release
-- **Production:** Generally unique, but see §5.1 for known duplicate quirk
-- **Test Fixtures:** Must be unique (clean golden data)
+**Why MAC + locality + effective_from?**
+- MAC disambiguates locality code reuse (e.g., locality `00` exists in AL, AZ, AR, etc.).
+- `effective_from` differentiates quarterly vintages when CMS bundles multiple quarters in XLSX.
+- This NK matches `cms_gpci_v1.3.json` and the live parser; older `['locality_code']` guidance (v1.2) is deprecated.
+
+**Uniqueness expectations:** 
+- **Production releases:** 100-120 unique (`mac`, `locality_code`, `effective_from`) tuples.
+- **Historical XLSX:** May include multiple quarters; uniqueness enforced per quarter.
+- **Golden fixtures:** Smaller row counts acceptable, but NK must remain unique.
 
 ### 3.2 Schema Contract
 
-**Location:** `cms_pricing/ingestion/contracts/cms_gpci_v1.0.json`
+**Location:** `cms_pricing/ingestion/contracts/cms_gpci_v1.3.json`
 
-**Core Columns:**
+**Core Columns (hash order):**
 | Column | Type | Nullable | Validation | Notes |
 |--------|------|----------|------------|-------|
-| `locality_code` | String(2) | N | `^\d{2}$` | Natural key, "00"-"99" |
-| `locality_name` | String(100) | N | Not empty | State or geographic area |
-| `gpci_work` | Decimal(5,3) | N | 0.500-2.000 | Work GPCI with 1.0 floor |
-| `gpci_pe` | Decimal(5,3) | N | 0.500-2.000 | Practice expense GPCI |
-| `gpci_mp` | Decimal(5,3) | N | 0.500-2.000 | Malpractice GPCI |
+| `mac` | String(5) | N | `^\d{5}$` | Medicare Administrative Contractor (zero-padded) |
+| `locality_code` | String(2) | N | `^\d{2}$` | 2-digit locality identifier |
+| `gpci_work` | Decimal(5,3) | N | Warn: [0.30, 2.00], Fail: [0.20, 2.50] | Work index (statutory 1.0 floor applied by CMS) |
+| `gpci_pe` | Decimal(5,3) | N | Warn: [0.30, 2.00], Fail: [0.20, 2.50] | Practice expense index |
+| `gpci_mp` | Decimal(5,3) | N | Warn: [0.30, 2.00], Fail: [0.20, 2.50] | Malpractice index |
+| `effective_from` | Date | N | yyyy-mm-dd | Derived from quarter vintage (A/B/C/D → Jan/Apr/Jul/Oct 1) |
+
+**Additional columns:** 
+- **Required metadata:** `source_release`, `source_inner_file`, `row_content_hash`, provenance fields.  
+- **Optional enrichment:** `effective_to`, `locality_name`, `state` (populated when present in source or via locality crosswalk).
 
 ### 3.3 Column Header Aliases
 
@@ -153,16 +163,16 @@ ALIAS_MAP = {
 
 ### 4.1 Value Ranges
 
-| Column | Min | Max | Typical | Notes |
-|--------|-----|-----|---------|-------|
-| `gpci_work` | 0.500 | 2.000 | 0.850-1.100 | Statutory floor at 1.0 |
-| `gpci_pe` | 0.500 | 1.800 | 0.800-1.200 | No floor applied |
-| `gpci_mp` | 0.500 | 1.800 | 0.700-1.300 | Varies by state |
+| Column | Warn Low | Warn High | Fail Low | Fail High | Typical | Notes |
+|--------|----------|-----------|----------|-----------|---------|-------|
+| `gpci_work` | 0.30 | 2.00 | 0.20 | 2.50 | 0.85-1.10 | Alaska often triggers WARN (>1.5) |
+| `gpci_pe` | 0.30 | 2.00 | 0.20 | 2.50 | 0.80-1.20 | Urban centers trend higher |
+| `gpci_mp` | 0.30 | 2.00 | 0.20 | 2.50 | 0.70-1.30 | Volatile quarter to quarter |
 
-**Validation Tiers (STD-parser-contracts-impl-v2.0 §2.3):**
-- **ERROR:** Value < 0 or > 10 (impossible)
-- **WARN:** Value > 2.0 (rare but valid, e.g., Alaska)
-- **OK:** 0.5 ≤ value ≤ 2.0 (normal range)
+**Validation tiers (STD-parser-contracts-impl-v2.0 §2.3):**
+- **BLOCK:** < 0.20 or > 2.50 (hard fail, quarantined)
+- **WARN:** Outside [0.30, 2.00] but within BLOCK bounds (logged, not rejected)
+- **OK:** Within [0.30, 2.00]
 
 ### 4.2 Derived Fields
 
@@ -181,7 +191,7 @@ df['quarter_vintage'] = metadata['quarter_vintage']
 - **Rule:** Work GPCI has statutory floor of 1.0 (Social Security Act §1848(e)(1)(E))
 - **Application:** Floor is already applied in CMS source data
 - **Column Naming:** `gpci_work` reflects "with 1.0 floor" as indicated in header
-- **Validation:** Values below 0.5 or above 2.0 are anomalous (WARN level)
+- **Validation:** Parser logs WARN for values outside [0.30, 2.00] and blocks < 0.20 or > 2.50 per quality thresholds
 
 **Geographic Exceptions:**
 - **Alaska (locality 01):** Has highest work GPCI (~1.500+, well above floor)
@@ -191,21 +201,17 @@ df['quarter_vintage'] = metadata['quarter_vintage']
 
 ## 5. Known Data Quality Issues
 
-### 5.1 Duplicate Locality Code 00
+### 5.1 Duplicate Locality Code 00 (resolved in schema v1.3)
 
-**Issue:** Alabama and Arizona both assigned locality code "00" in some CMS releases  
-**Frequency:** Present in 2025D release, may vary by quarter  
-**Affected Releases:** Confirmed in RVU25D  
-**Root Cause:** CMS data entry or legacy MAC assignment  
-**Parser Handling:** 
-- **Severity:** WARN → Quarantine duplicate
-- **Logic:** Keep first occurrence (alphabetical: Alaska), quarantine subsequent
-- **Natural Key Check:** Raises `DuplicateKeyError` with details
+**Historical issue:** Alabama and Arizona both shipped locality code `00`, which collided under the legacy NK (`['locality_code']`).  
+**Current status:** Schema v1.3 requires `mac`, so rows like `01112-00` (AL) and `02102-00` (AZ) load as distinct records.  
+**Parser handling:** 
+- **v1.2 and earlier:** WARN-level quarantine of the second+ duplicate; legacy fixtures retained for regression coverage.  
+- **v1.3+:** NK uniqueness enforced on (`mac`, `locality_code`, `effective_from`). Only true duplicates on that trio are quarantined; otherwise all locality `00` rows are accepted.
 
-**Test Coverage:** 
-- `test_gpci_real_cms_duplicate_locality_00()` in `test_gpci_parser_golden.py`
-- Fixture: `tests/fixtures/gpci/edge_cases/GPCI2025_duplicate_locality_00.txt`
-- Expected: 3 input rows → 1 valid (Alaska), 2 rejects (Alabama, Arizona)
+**Test coverage:** 
+- Legacy fixture `tests/fixtures/gpci/edge_cases/GPCI2025_duplicate_locality_00.txt` ensures the fix remains in place.  
+- Golden tests verify `mac` is required across TXT/CSV/XLSX/ZIP inputs.
 
 ### 5.2 Missing Values
 

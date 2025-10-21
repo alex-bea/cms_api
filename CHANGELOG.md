@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING CHANGE
+
+- **GPCI v1.2 → v1.3 Migration Complete** - Database schema and backfill ready
+  - **Alembic Migrations:**
+    - `003_gpci_v13_add_mac_to_nk.py`: Adds unique index on (mac, locality_id, effective_start)
+    - `004_gpci_v12_compat_view.py`: Optional backwards compatibility view (DEPRECATED)
+  - **Backfill Script:** `scripts/backfill_gpci_v13.py` (re-parses with correct hashes)
+  - **Operator Runbook:** `.cursor/plans/GPCI_V13_MIGRATION_GUIDE.md` (20-30 min process)
+  - **Database Model:** Updated `cms_pricing/models/rvu.py` with unique constraint
+  - **Integration Tests:** Already correct (filter by MAC + locality)
+  - **Impact:** Surrogate UUID PK unchanged (zero breaking changes for foreign keys)
+  - **Action Required:** Run `alembic upgrade head` + backfill script
+  - **Rollback Available:** `alembic downgrade -1` (see migration guide)
+
 ### Added
 
 - **ANES Parser v1.0 - Anesthesia Conversion Factor Parser** - Complete parser module (6/6)

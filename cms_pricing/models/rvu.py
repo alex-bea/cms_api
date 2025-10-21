@@ -107,6 +107,17 @@ class GPCIIndex(Base):
         Index("idx_gpci_state", "state"),
         Index("idx_gpci_effective", "effective_start", "effective_end"),
         Index("idx_gpci_release_mac", "release_id", "mac"),
+        # GPCI v1.3 natural key constraint (mac, locality_id, effective_start)
+        # Prevents false duplicates (locality_code='00' in multiple states)
+        # Matches schema cms_gpci_v1.3 natural_keys (with DB column naming)
+        # Migration: alembic/versions/003_gpci_v13_add_mac_to_nk.py
+        Index(
+            "uq_gpci_mac_locality_effective",
+            "mac",
+            "locality_id",
+            "effective_start",
+            unique=True
+        ),
     )
 
 

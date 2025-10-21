@@ -1591,7 +1591,7 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
   - ✅ `conversion_factor_parser.py` - CF parsing contract (755 lines, golden + 11 negatives)
   - ✅ `_parser_kit.py` - Shared utilities (17+ functions)
   - ✅ `layout_registry.py` - Fixed-width layouts (v2025.4.1)
-  - ✅ `gpci_parser.py` - GPCI parsing contract (v1.3 COMPLETE - 109 localities, 20/20 tests, 0.03s, corrected NK)
+  - ✅ `gpci_parser.py` - GPCI parsing contract (v1.3 COMPLETE - 109 localities, 20/20 tests, 0.03s, corrected NK + DB migration ready)
   - ✅ `locality_parser.py` - Locality parsing contract (Stage 1+2 COMPLETE)
   - ✅ `anes_parser.py` - ANES parsing contract (v1.0 COMPLETE - 109 localities, 19/19 tests, schema v1.1, 0.03s)
   - ✅ `oppscap_parser.py` - OPPS cap parsing contract (v1.0.0 COMPLETE - 16K rows, 0.45s, 100% parity)
@@ -1608,6 +1608,12 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 - ✅ No breaking changes to existing code
 
 **Progress:** 10/14 tasks complete (71%)
+
+**GPCI v1.3 Migration Ready:**
+- Alembic migrations: `003` (NK unique index), `004` (compat view)
+- Backfill script: `scripts/backfill_gpci_v13.py`
+- Operator runbook: `.cursor/plans/GPCI_V13_MIGRATION_GUIDE.md`
+- Est. time: 20-30 min, rollback available
 
 ---
 
