@@ -37,6 +37,10 @@ FROM base AS production
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
+# Create data directories with proper permissions BEFORE switching to non-root
+RUN mkdir -p data/observability data/metrics data/quarantine data/cache && \
+    chown -R appuser:appuser data
+
 # Switch to non-root user
 USER appuser
 
