@@ -66,6 +66,10 @@
 | Document | Status | Owner | Scope |
 |---|---|---|---|
 | `RUN-global-operations-prd-v1.0.md` | Draft v1.0 | Ops + Data Engineering | Go-live validation, paging, rollback |
+| `RUN-render-deployment-prd-v1.0.md` | Draft v1.0 | Platform Engineering, SRE | Render provisioning, migrations execution, post-deploy hardening |
+| `RUN-database-migrations-prd-v1.0.md` | Stub v0.1 | Platform Engineering (DBA), Service Teams | Alembic authoring workflow, dry-runs, bootstrap/stamp policy, emergency procedure |
+| `RUN-database-backup-dr-prd-v1.0.md` | Stub v0.1 | Platform Engineering (DBA), SRE | Automated backup validation, manual dumps, restore/PITR drills, incident response |
+| `RUN-database-sanitization-prd-v1.0.md` | Stub v0.1 | Security, Data Engineering | PHI registry, tokenization pipeline, non-prod refresh process, staging soak checklist |
 
 ---
 

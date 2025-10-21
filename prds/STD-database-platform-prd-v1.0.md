@@ -392,7 +392,9 @@ class FeeOPPS:
 
 **Implementation Guides:**
 - `prds/RUN-render-deployment-prd-v1.0.md` (Render deployment, Parts 1-8 including CI/CD)
-- `prds/RUN-database-operations-prd-v1.0.md` (TBD v1.1 - migration procedures, restore playbooks, pg_dump workflows)
+- `prds/RUN-database-migrations-prd-v1.0.md` (migrations workflow, dry-run, bootstrap/stamp policy)
+- `prds/RUN-database-backup-dr-prd-v1.0.md` (backups, PITR, restore drills)
+- `prds/RUN-database-sanitization-prd-v1.0.md` (tokenization pipeline, non-prod refresh, staging soak)
 
 **Related Standards:**
 - `prds/PRD-render-hosting-prd-v1.0.md` (compute/hosting policy, service packaging, deploy triggers)
