@@ -41,6 +41,7 @@ v1.3: ['mac', 'locality_code', 'effective_from']  ✅ CORRECT
 
 **Before Starting:**
 - [ ] Database backup completed (PostgreSQL dump)
+- [ ] **CRITICAL:** `gpci_indices` table must exist before running migration 003
 - [ ] Application downtime scheduled (optional: 5 min maintenance window)
 - [ ] Review this runbook with DBA
 - [ ] Have rollback plan ready (Alembic downgrade command)
@@ -57,6 +58,18 @@ psql $DATABASE_URL -c "SELECT COUNT(*) FROM gpci_indices;"
 # Verify GPCI source file exists
 ls -lh sample_data/rvu25d_0/GPCI2025.txt
 ```
+
+**Fresh Database Setup:**
+
+If `gpci_indices` table doesn't exist:
+```bash
+# Option A: Create from SQLAlchemy models (includes v1.3 index)
+python -c "from cms_pricing.database import Base, engine; from cms_pricing.models import *; Base.metadata.create_all(bind=engine)"
+
+# Option B: See RENDER_DEPLOYMENT_GUIDE.md for managed setup
+```
+
+**Note:** SQLAlchemy model `cms_pricing/models/rvu.py` already includes the v1.3 unique index in `__table_args__`. Creating tables from models will include the index automatically.
 
 ---
 

@@ -12,7 +12,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '6d0f0408be80'
-down_revision = '002_add_nber_centroids'
+down_revision = '004_gpci_v12_compat_view'  # Fixed: Connect to GPCI v1.3 chain
 branch_labels = None
 depends_on = None
 
