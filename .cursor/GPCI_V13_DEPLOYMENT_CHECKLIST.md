@@ -13,9 +13,24 @@
 
 | Item | Status | Notes | Action Required |
 |------|--------|-------|-----------------|
-| **Confirm latest backups exist and can be restored** | ⚠️ TODO | Need to verify backup system | ✅ Run: `pg_dump $DATABASE_URL > backup_$(date +%Y%m%d).sql` |
-| **Verify target DB has space and indexes** | ⚠️ TODO | Check disk usage, pg_stat_activity | ✅ Run: `psql $DATABASE_URL -c "SELECT pg_size_pretty(pg_database_size(current_database()));"` |
+| **Confirm latest backups exist and can be restored** | ⚠️ TODO | Need to verify backup system | ✅ Run: `pg_dump -Fc --table=gpci_indices $DATABASE_URL -f backup_$(date +%Y%m%d).dump` with `application_name=cms-gpci-migration` env var |
+| **Verify target DB has space and indexes** | ⚠️ TODO | Check disk usage, pg_stat_activity | ✅ Run: `psql $DATABASE_URL -c "SELECT pg_size_pretty(pg_database_size(current_database()));"` and `psql $DATABASE_URL -c "SELECT * FROM pg_stat_activity WHERE datname = current_database() AND state = 'active';"` |
 | **Collect current schema checksum** | ⚠️ TODO | Document pre-migration state | ✅ Run: `alembic current` + `psql $DATABASE_URL -c "\d gpci_indices"` |
+
+**Additional Pre-Migration Health Checks:**
+
+```sql
+-- Check for blocking locks
+SELECT pid, usename, locktype, relation::regclass, mode, granted, query, state, wait_event_type, wait_event
+FROM pg_locks l
+JOIN pg_stat_activity a ON l.pid = a.pid
+WHERE NOT granted;
+
+-- Disk usage per table
+SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) AS total_size
+FROM pg_catalog.pg_statio_user_tables
+ORDER BY pg_total_relation_size(relid) DESC;
+```
 
 **Quick Commands:**
 ```bash
@@ -42,6 +57,23 @@ psql $DATABASE_URL -c "SELECT count(*) FROM gpci_indices;"
 - ✅ Runbook: `.cursor/plans/GPCI_V13_MIGRATION_GUIDE.md`
 - ✅ Quick start: `.cursor/plans/GPCI_V13_QUICK_START.md`
 - ✅ Audit: `.cursor/PRE_MIGRATION_AUDIT_REPORT.md`
+
+**Python Snippet for Typed UUID + Chunksize `to_sql` Upload:**
+
+```python
+import pandas as pd
+from sqlalchemy.dialects.postgresql import UUID
+
+# Assume df is your DataFrame with UUID column 'id'
+df.to_sql(
+    'gpci_indices',
+    engine,
+    if_exists='append',
+    index=False,
+    chunksize=1000,
+    dtype={'id': UUID(as_uuid=True)}
+)
+```
 
 ---
 
@@ -80,7 +112,7 @@ python scripts/backfill_gpci_v13.py --release-id RVU25D --dry-run
 |------|--------|-------|-----------------|
 | **Snapshot duplicate counts** | ⚠️ TODO | Need to query current DB state | ✅ Run queries below |
 | **Verify row counts by release** | ⚠️ TODO | Confirm ~109 rows expected | ✅ Run queries below |
-| **Inspect ambiguous MAC/locality pairs** | ⚠️ TODO | Check locality_code='00' | ✅ Run queries below |
+| **Inspect ambiguous MAC/locality_id pairs** | ⚠️ TODO | Check locality_id='00' | ✅ Run queries below |
 
 **Data Quality Queries:**
 ```sql
@@ -111,7 +143,7 @@ GROUP BY r.release_name
 ORDER BY r.release_name DESC;
 -- Expected: ~109 rows for RVU25D
 
--- Inspect ambiguous locality_code='00' (multiple states)
+-- Inspect ambiguous locality_id='00' (multiple states)
 SELECT mac, locality_id, locality_name, work_gpci
 FROM gpci_indices
 WHERE locality_id = '00'
@@ -140,7 +172,7 @@ ORDER BY indexname;
 
 **Communication Template:**
 
-**Subject:** GPCI v1.3 Migration - Scheduled Maintenance [DATE/TIME]
+**Subject:** GPCI v1.3 Migration - Scheduled Maintenance [DATE/TIME] [TIMEZONE]
 
 **To:** API Consumers, Engineering Team, QA
 
@@ -150,17 +182,18 @@ GPCI v1.3 Migration Scheduled
 
 What: Database schema update for GPCI (Geographic Practice Cost Indices)
 When: [DATE] at [TIME] ([TIMEZONE])
-Duration: 20-30 minutes
+Duration: 20-30 minutes (No downtime; brief read-only mode during index creation)
 Impact: Brief read-only mode during index creation
 
 Changes:
-- Natural key updated to include MAC (Medicare Administrative Contractor)
+- Natural key updated to include (mac, locality_id, effective_start)
 - Fixes false duplicate issue (63 of 112 rows affected)
 - No API contract changes (MAC already required in queries)
+- Deprecation Notice: Legacy queries without MAC will be unsupported after 2026-01-01
 - Rollback plan in place
 
 Actions Required:
-- None (queries already filter by MAC + locality)
+- None (queries already filter by MAC + locality_id)
 - Optional: Review backwards compatibility view if legacy queries exist
 
 Rollback Plan: Available (< 5 minutes)
@@ -171,8 +204,9 @@ Status Updates: [STATUS PAGE URL]
 **Monitoring Alerts to Review:**
 - `gpci_requests_without_mac_total` - Should remain 0 (MAC already required)
 - `gpci_duplicate_key_violations` - Should remain 0 post-migration
-- `api_409_conflict_errors` - Monitor for any spikes
+- `api_409_conflict_errors` - Informational only; monitor for unexpected spikes
 - `gpci_query_latency_p99` - Watch for performance regressions
+- `gpci_view_compat_hits_total` - Track usage of compatibility view
 
 ---
 
@@ -188,6 +222,8 @@ Status Updates: [STATUS PAGE URL]
 
 **Option A: Alembic Downgrade (< 2 minutes)**
 ```bash
+PGOPTIONS='-c statement_timeout=60000 -c lock_timeout=10000' \
+application_name=cms-gpci-migration \
 alembic downgrade -1
 # Removes v1.3 unique index
 # WARNING: Data may have duplicates, backfill reversal recommended
@@ -196,7 +232,7 @@ alembic downgrade -1
 **Option B: Restore Full Backup (< 5 minutes)**
 ```bash
 systemctl stop cms-api
-psql $DATABASE_URL < backup_gpci_v13_YYYYMMDD.sql
+pg_restore -d $DATABASE_URL -t gpci_indices backup_gpci_v13_YYYYMMDD.dump
 systemctl start cms-api
 psql $DATABASE_URL -c "SELECT COUNT(*) FROM gpci_indices;"
 ```
@@ -230,8 +266,8 @@ psql $DATABASE_URL -c "SELECT indexname, indexdef FROM pg_indexes WHERE tablenam
 | Item | Status | Notes | Action Required |
 |------|--------|-------|-----------------|
 | **Check index validity** | ⚠️ TODO | Verify new unique index is valid | ✅ Run verification queries |
-| **Schedule API smoke tests** | ⚠️ TODO | Test GPCI endpoints | ✅ Run smoke test script |
-| **Monitor logs/metrics (24h)** | ⚠️ TODO | Watch for duplicate violations, 409s | 📊 Set up alerts |
+| **Schedule API smoke tests** | ⚠️ TODO | Test GPCI endpoints including explicit 409 test | ✅ Run smoke test script |
+| **Monitor logs/metrics (24h)** | ⚠️ TODO | Watch for duplicate violations, 409s (informational) | 📊 Set up alerts |
 
 **Post-Migration Verification Queries:**
 
@@ -247,7 +283,12 @@ WHERE tablename = 'gpci_indices'
   AND indexname = 'uq_gpci_mac_locality_effective';
 -- Expected: 1 row with index definition
 
--- 2. Check index validity
+-- 2. Check index validity and readiness with EXPLAIN ANALYZE
+EXPLAIN ANALYZE
+SELECT * FROM gpci_indices
+WHERE mac = '01112' AND locality_id = '00' AND effective_start = '2025-01-01';
+-- Expected: Index scan using uq_gpci_mac_locality_effective, fast execution
+
 SELECT 
     i.relname as index_name,
     idx.indisvalid as is_valid,
@@ -269,14 +310,14 @@ WHERE r.release_name = 'RVU25D'
 GROUP BY r.release_name;
 -- Expected: ~109 rows
 
--- 4. Verify NO duplicates on new 3-field NK
+-- 4. Verify NO duplicates on new 3-field NK (mac, locality_id, effective_start)
 SELECT mac, locality_id, effective_start, COUNT(*) as count
 FROM gpci_indices
 GROUP BY mac, locality_id, effective_start
 HAVING COUNT(*) > 1;
 -- Expected: 0 rows (no duplicates)
 
--- 5. Verify ambiguous locality_code='00' now unique by MAC
+-- 5. Verify ambiguous locality_id='00' now unique by MAC
 SELECT 
     mac,
     locality_id,
@@ -292,7 +333,31 @@ ORDER BY mac;
 -- 6. Run ANALYZE to update statistics
 ANALYZE gpci_indices;
 -- No output expected, improves query planner performance
+
+-- 7. As-of join verification: Confirm latest effective_start per (mac, locality_id)
+SELECT g1.*
+FROM gpci_indices g1
+LEFT JOIN gpci_indices g2
+  ON g1.mac = g2.mac
+  AND g1.locality_id = g2.locality_id
+  AND g2.effective_start > g1.effective_start
+WHERE g2.mac IS NULL
+  AND g1.release_id = (SELECT id FROM releases WHERE release_name = 'RVU25D');
+-- Expected: Only the latest rows per (mac, locality_id)
 ```
+
+**Filtered View Example to Enforce Single-Row Return:**
+
+```sql
+CREATE OR REPLACE VIEW vw_gpci_current AS
+SELECT DISTINCT ON (mac, locality_id) *
+FROM gpci_indices
+WHERE release_id = (SELECT id FROM releases WHERE release_name = 'RVU25D')
+ORDER BY mac, locality_id, effective_start DESC;
+-- Ensures one row per (mac, locality_id) with latest effective_start
+```
+
+---
 
 **API Smoke Test Script:**
 ```bash
@@ -318,23 +383,25 @@ echo "Test 3: Locality 00 multiple MACs..."
 curl -s "$BASE_URL/gpci?locality=00" | jq '.data | unique_by(.mac) | length'
 # Expected: ~15 unique MACs
 
-# Test 4: Verify no 409 conflicts
-echo "Test 4: Check for duplicate conflicts..."
-curl -s -w "\nHTTP Status: %{http_code}\n" "$BASE_URL/gpci?mac=01112&locality=00"
-# Expected: HTTP Status 200 (not 409)
+# Test 4: Verify no unexpected 409 conflicts (should return 200)
+echo "Test 4: Check for unexpected 409 conflicts..."
+status_code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/gpci?mac=01112&locality=00")
+if [ "$status_code" -eq 200 ]; then
+  echo "HTTP Status: 200 OK (no unexpected 409)"
+else
+  echo "Unexpected HTTP Status: $status_code"
+fi
 
 echo "=== Smoke Tests Complete ==="
 ```
 
-**24-Hour Monitoring Plan:**
+**Optional Progress Monitor Query for Concurrent Index Creation:**
 
-| Metric | Expected | Alert If |
-|--------|----------|----------|
-| `gpci_duplicate_key_violations` | 0 | > 0 |
-| `api_409_conflict_errors` | 0 | > baseline |
-| `gpci_query_latency_p99` | < 100ms | > 150ms |
-| `db_unique_constraint_violations` | 0 | > 0 |
-| `gpci_backfill_errors` | 0 | > 0 |
+```sql
+SELECT pid, phase, lockers, current_locker_pid, wait_event_type, wait_event
+FROM pg_stat_progress_create_index;
+-- Run during migration to monitor index build progress
+```
 
 ---
 
@@ -342,16 +409,18 @@ echo "=== Smoke Tests Complete ==="
 
 ### Phase 1: Pre-Migration (10 minutes)
 
-- [ ] Run preflight check: `./scripts/gpci_v13_preflight_check.sh`
+- [ ] Run preflight check: `application_name=cms-gpci-migration ./scripts/gpci_v13_preflight_check.sh`
 - [ ] Capture pre-migration snapshots (schema, counts, indexes)
-- [ ] Create database backup: `pg_dump $DATABASE_URL > backup_$(date +%Y%m%d).sql`
-- [ ] Verify backup can be restored: `psql -d test_db < backup_*.sql`
+- [ ] Create database backup (custom format, table-scope):  
+  `application_name=cms-gpci-migration pg_dump -Fc --table=gpci_indices $DATABASE_URL -f backup_$(date +%Y%m%d).dump`
+- [ ] Verify backup can be restored: `pg_restore -d test_db -t gpci_indices backup_*.dump`
 - [ ] Set maintenance mode (if applicable)
 - [ ] Send "Migration Starting" notification
 
 ### Phase 2: Migration (5 minutes)
 
-- [ ] Apply Alembic migration: `alembic upgrade head`
+- [ ] Apply Alembic migration with timeout settings:  
+  `PGOPTIONS='-c statement_timeout=60000 -c lock_timeout=10000' application_name=cms-gpci-migration alembic upgrade head`
 - [ ] Verify unique index created (see verification query #1)
 - [ ] Check index validity (see verification query #2)
 - [ ] Review migration logs for errors
@@ -362,13 +431,13 @@ echo "=== Smoke Tests Complete ==="
 - [ ] Review dry-run output (should show 0 duplicates)
 - [ ] Commit backfill: `python scripts/backfill_gpci_v13.py --commit`
 - [ ] Verify row count matches expected (see verification query #3)
-- [ ] Verify no duplicates on new NK (see verification query #4)
+- [ ] Verify no duplicates on new NK (mac, locality_id, effective_start) (see verification query #4)
+- [ ] Run `ANALYZE gpci_indices` to update statistics
 
 ### Phase 4: Verification (5 minutes)
 
 - [ ] Run all post-migration verification queries
-- [ ] Run `ANALYZE gpci_indices`
-- [ ] Execute API smoke tests
+- [ ] Execute API smoke tests including explicit 409 check
 - [ ] Check application logs for errors
 - [ ] Verify monitoring dashboards (no spikes)
 
@@ -388,17 +457,18 @@ echo "=== Smoke Tests Complete ==="
 
 - ✅ Unique index `uq_gpci_mac_locality_effective` created and valid
 - ✅ Row count matches pre-migration for same release (~109)
-- ✅ Zero duplicates on new 3-field NK
-- ✅ Locality_code='00' returns multiple MACs (~15)
-- ✅ API smoke tests pass (200 responses, no 409s)
+- ✅ Zero duplicates on new 3-field NK (mac, locality_id, effective_start)
+- ✅ Locality_id='00' returns multiple MACs (~15)
+- ✅ API smoke tests pass (200 responses, no unexpected 409s)
 - ✅ No constraint violation errors in logs
 
 ### Should Pass (Monitor)
 
 - 📊 Query latency p99 < 150ms (watch for regressions)
-- 📊 Zero 409 conflict errors (baseline maintained)
+- 📊 Zero unexpected 409 conflict errors (baseline maintained; 409s treated as informational)
 - 📊 Application error rate unchanged
 - 📊 Database connection pool healthy
+- 📊 `gpci_view_compat_hits_total` metric monitored for legacy view usage
 
 ### Nice to Have
 
@@ -461,4 +531,3 @@ echo "=== Smoke Tests Complete ==="
 ---
 
 **End of GPCI v1.3 Deployment Checklist**
-

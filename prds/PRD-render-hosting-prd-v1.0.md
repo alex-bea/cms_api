@@ -10,7 +10,7 @@
 - **DOC-master-catalog-prd-v1.0.md:** Master system catalog
 - **RUN-global-operations-prd-v1.0.md:** Operational runbooks
 - **STD-observability-monitoring-prd-v1.0.md:** Monitoring standards
-- **Companion Guide:** `.cursor/RENDER_DEPLOYMENT_GUIDE.md` (step-by-step implementation)
+- **Companion Guide:** `prds/RUN-render-deployment-prd-v1.0.md` (step-by-step implementation)
 
 **Last Updated:** 2025-10-21  
 **Verified Against:** Render platform capabilities as of 2025-10
@@ -25,7 +25,7 @@
 - Meet availability, security, and operability baselines for CMS Pricing services
 
 **Non-Goals.**
-- Step-by-step deployment instructions (see companion guide: `.cursor/RENDER_DEPLOYMENT_GUIDE.md`)
+- Step-by-step deployment instructions (see companion guide: `prds/RUN-render-deployment-prd-v1.0.md`)
 - Deep Terraform/IaC specification (future work once infra team standardizes Render automation)
 
 ---
@@ -54,10 +54,7 @@
 - Pushes to GitHub Container Registry (`ghcr.io/<org>/cms-pricing:<sha>`)
 - Render pulls the image (zero on-platform build minutes)
 
-**Fallback:** Render-native build with cache-aware Dockerfile
-- Base layer: Dependencies (stable, cached)
-- App layer: Application code (changes frequently)
-- Pinned hashes in requirements.txt
+**Fallback:** Render-native build permitted when image deploys are unavailable. Dockerfile must maintain cache-friendly layering with pinned dependencies; refer to the run guide for the canonical template.
 
 ### 3.2 Deploy Triggers
 
@@ -68,24 +65,11 @@
 **Monorepo change filters:** CI deploy jobs only fire when:
 - `cms_pricing/**` changes
 - `infra/**` changes  
-- `.cursor/RENDER_DEPLOYMENT_GUIDE.md` changes
+- `prds/RUN-render-deployment-prd-v1.0.md` changes
 
 ### 3.3 Health Checks
 
-**Required:** `/health` endpoint
-- Must return HTTP 200 within 1s
-- Must validate DB connectivity
-- Render HTTP health check enabled (mandatory gate)
-
-**Implementation:**
-```python
-@app.get("/health")
-async def health():
-    # Test DB connection
-    with engine.connect() as conn:
-        conn.execute("SELECT 1")
-    return {"status": "healthy"}
-```
+**Required:** `/health` endpoint must return HTTP 200 within 1 s, exercise the primary database, and remain wired into the Render HTTP health check (gated rollout). Implementation specifics are documented in the run guide.
 
 ### 3.4 Secrets Policy
 
@@ -125,31 +109,7 @@ async def health():
 
 ### 4.2 Fallback: Render Native Build
 
-**If image deploy not available:**
-
-**Dockerfile optimization:**
-```dockerfile
-# Base layer (stable, cached)
-FROM python:3.11-slim
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev gcc
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# App layer (changes frequently)
-COPY cms_pricing/ /app/cms_pricing/
-WORKDIR /app
-CMD ["uvicorn", "cms_pricing.main:app", "--host", "0.0.0.0", "--port", "$PORT"]
-```
-
-**Optional wheelhouse:**
-```bash
-# CI publishes wheels
-pip wheel -r requirements.txt -w wheelhouse/
-
-# Render build uses
-pip install --no-index --find-links ./wheelhouse -r requirements.txt
-```
+When the image pipeline is unavailable, Render-native builds are allowed provided we reuse the cache-friendly Dockerfile from the run guide (deps layer first, pinned requirements). Optional wheelhouse flow is documented there as well.
 
 ### 4.3 Pre-Deploy Hook
 
@@ -214,41 +174,12 @@ pip install --no-index --find-links ./wheelhouse -r requirements.txt
 
 ### 5.4 Database Roles & Least Privilege
 
-**Roles:**
-```sql
--- DDL for migrations
-CREATE ROLE migrate NOINHERIT;
-
--- CRUD for application
-CREATE ROLE app_rw NOINHERIT;
-
--- Read-only for analytics
-CREATE ROLE ro NOINHERIT;
-```
-
-**Users:**
-- `cms_migrate` - Used by migration Job
-- `cms_app_rw` - Used by application
-- `cms_ro` - Used for reporting/analytics
-
-**Privileges:**
-- `migrate`: CREATE, ALTER, DROP, REFERENCES, TRIGGER
-- `app_rw`: INSERT, UPDATE, DELETE
-- `ro`: SELECT only
-
-**Default privileges configured** so new tables inherit grants.
+Each environment provisions roles `migrate` (DDL), `app_rw` (CRUD), and `ro` (read-only) with corresponding users (`cms_migrate`, `cms_app_rw`, `cms_ro`). Default privileges must ensure new tables inherit the same grants. Full SQL snippets live in the run guide to avoid duplication.
 
 ### 5.5 Backups
 
-**Primary:** Render automated backups
-- Starter tier: Daily, 7-day retention
-- Standard tier: Daily, 14-day backups
-- Pro tier: Daily, 30-day backups
-
-**Secondary:** Manual `pg_dump` before risky changes
-```bash
-pg_dump $DATABASE_URL > backup_pre_migration_$(date +%Y%m%d).sql
-```
+**Primary:** Render automated backups (Starter: daily/7 days; Standard: daily/14 days; Pro: daily/30 days).  
+**Secondary:** Manual `pg_dump` before risky schema/data changes (command referenced in the run guide).
 
 ---
 
@@ -303,28 +234,11 @@ pg_dump $DATABASE_URL > backup_pre_migration_$(date +%Y%m%d).sql
 
 ### 7.1 Application Rollback
 
-**Process:**
-1. Render dashboard → Deploys tab
-2. Select previous successful image
-3. Click "Redeploy"
-4. Verify `/health` endpoint
-
-**ETA:** < 5 minutes
+Redeploy the last known good image from Render’s Deploys tab and verify `/health` passes. Full step-by-step lives in the run guide.
 
 ### 7.2 Database Recovery
 
-**Primary:** Restore Render snapshot
-1. Render dashboard → Database → Backups
-2. Select backup date
-3. Click "Restore"
-4. ETA: 10-15 minutes
-
-**Secondary:** Alembic downgrade (only if reversible)
-```bash
-alembic downgrade -1
-```
-
-**Always:** Manual `pg_dump` before schema changes
+Primary strategy is restoring the latest Render snapshot (Backups tab). Secondary option is an Alembic downgrade when reversible. Manual `pg_dump` precedes riskier schema changes. Execution details remain in the run guide.
 
 ### 7.3 Disaster Recovery
 
@@ -351,39 +265,34 @@ alembic downgrade -1
 
 ## 9. Acceptance Criteria (Ship Checklist)
 
-**Before production deployment:**
+**Deployment**
+- [ ] Render services exist for dev/staging/prod with `/health` checks enabled
+- [ ] Auto-deploy disabled; CI workflow deploys on tags with path filters enforced
+- [ ] Container image registry path documented; Render configured for image deploy (or approved native build)
+- [ ] Pre-deploy hook empty; Alembic migration Job defined, documented, and rehearsed (see run guide)
 
-- [ ] Render services created for dev/staging/prod with `/health` checks enabled
-- [ ] Auto-deploy disabled; CI workflow deploys on tag + path filters
-- [ ] Container image registry path documented
-- [ ] Render configured to use image deploy (or cache-friendly native build)
-- [ ] Pre-deploy hook empty
-- [ ] Alembic migration Job defined, documented, and rehearsed
-- [ ] Render spend limit + 50%/80% alerts enabled
-- [ ] Secrets policy documented; local `.env` + `direnv` template shared
-- [ ] No credentials in shell profiles
-- [ ] PostgreSQL roles (`migrate`, `app_rw`, `ro`) created per environment
-- [ ] Roles tied to services/jobs appropriately
-- [ ] Rollback rehearsed in staging (redeploy prior image + DB snapshot restore)
-- [ ] Rollback procedure documented
-- [ ] Observability requirements met:
-  - Metrics emitted (application-level)
-  - Structured logs flowing
-  - `/health` integrated with Render check
-- [ ] Cross-references included to RUN guide and migration checklist
+**Cost & Security**
+- [ ] Render spend limit + 50%/80% alerts configured
+- [ ] Secrets policy published; local `.env` + `direnv` template shared; shell profiles free of credentials
+- [ ] PostgreSQL roles (`migrate`, `app_rw`, `ro`) created per environment and mapped to services/jobs
+
+**Reliability**
+- [ ] Rollback procedure successfully exercised in staging (redeploy prior image + DB snapshot restore)
+- [ ] Observability requirements met: required metrics emitted, structured logs flowing, `/health` integrated with Render check
+- [ ] Onboarding docs link to this PRD, RUN guide, and migration checklist
 
 ---
 
 ## 10. References
 
 **Implementation Guides:**
-- **RUN:** `.cursor/RENDER_DEPLOYMENT_GUIDE.md` (step-by-step deployment, 978 lines)
+- **RUN:** `prds/RUN-render-deployment-prd-v1.0.md` (step-by-step deployment)
 - **Migration Checklist:** `.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md` (production ops)
-- **Secrets & Roles:** `.cursor/RENDER_DEPLOYMENT_GUIDE.md` Part 6 (least-privilege setup)
+- **Secrets & Roles:** `prds/RUN-render-deployment-prd-v1.0.md` Part 6 (least-privilege setup)
 
 **CI/CD:**
 - **CI Workflows:** `.github/workflows/deploy.yml` (to be created per this PRD)
-- **render.yaml:** Infrastructure as code template (see RENDER_DEPLOYMENT_GUIDE.md)
+- **render.yaml:** Infrastructure as code template (see `prds/RUN-render-deployment-prd-v1.0.md`)
 
 **Related Standards:**
 - **STD-observability-monitoring-prd-v1.0.md:** Monitoring requirements
@@ -399,9 +308,8 @@ alembic downgrade -1
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **1.0** | 2025-10-21 | Initial Render hosting policy. Defines service packaging (prebuilt images preferred), deploy triggers (CI-driven, auto-deploy disabled), database migration strategy (explicit Jobs, no inline), secrets management (.env + direnv locally, Render env vars for prod), least-privilege roles (migrate, app_rw, ro), observability requirements (99.9% SLO, metrics, logs), rollback procedures, cost management (spend limits, alerts). Based on learnings from GPCI v1.3 deployment preparation and Docker conflict resolution. Companion guide: RENDER_DEPLOYMENT_GUIDE.md. |
+| **1.0** | 2025-10-21 | Initial Render hosting policy. Defines service packaging (prebuilt images preferred), deploy triggers (CI-driven, auto-deploy disabled), database migration strategy (explicit Jobs, no inline), secrets management (.env + direnv locally, Render env vars for prod), least-privilege roles (migrate, app_rw, ro), observability requirements (99.9% SLO, metrics, logs), rollback procedures, cost management (spend limits, alerts). Based on learnings from GPCI v1.3 deployment preparation and Docker conflict resolution. Companion guide: `prds/RUN-render-deployment-prd-v1.0.md`. |
 
 ---
 
 **End of PRD-render-hosting-prd-v1.0.md**
-

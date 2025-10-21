@@ -1614,7 +1614,7 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 - Alembic migrations: `003` (NK unique index), `004` (compat view)
 - Backfill script: `scripts/backfill_gpci_v13.py`
 - Operator runbook: `.cursor/plans/GPCI_V13_MIGRATION_GUIDE.md`
-- **Production Deployment Guide:** [📖 RENDER_DEPLOYMENT_GUIDE.md](.cursor/RENDER_DEPLOYMENT_GUIDE.md) ⭐
+- **Production Deployment Guide:** [📖 RUN-render-deployment-prd-v1.0.md](prds/RUN-render-deployment-prd-v1.0.md) ⭐
 - Est. time: 45 min (Render), rollback available
 
 **Test Results:**
@@ -1625,7 +1625,7 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 
 **Deployment Options:**
 1. **Render (Recommended):** Clean setup, $7/month, 45 min
-   - Guide: `.cursor/RENDER_DEPLOYMENT_GUIDE.md`
+   - Guide: `prds/RUN-render-deployment-prd-v1.0.md`
    - Lessons: `.cursor/LESSONS_DATABASE_SETUP.md`
 2. **Docker:** Local testing only (init script conflicts identified)
 3. **Railway/Supabase:** Alternatives to Render
@@ -1641,7 +1641,7 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 **Complexity:** Medium  
 **Cost:** $7/month (Starter tier)
 
-**📖 Primary Guide:** [RENDER_DEPLOYMENT_GUIDE.md](.cursor/RENDER_DEPLOYMENT_GUIDE.md)
+**📖 Primary Guide:** [RUN-render-deployment-prd-v1.0.md](prds/RUN-render-deployment-prd-v1.0.md)
 
 **Objective:**
 Deploy GPCI v1.3 schema and data to production-ready Render PostgreSQL database.
@@ -1726,7 +1726,7 @@ Deploy GPCI v1.3 schema and data to production-ready Render PostgreSQL database.
 - [ ] DATABASE_URL documented securely (1Password/vault)
 
 **Documentation:**
-- Deployment guide: `.cursor/RENDER_DEPLOYMENT_GUIDE.md` (650 lines, 7-part process)
+- Deployment guide: `prds/RUN-render-deployment-prd-v1.0.md` (650 lines, 7-part process)
 - Migration guide: `.cursor/plans/GPCI_V13_MIGRATION_GUIDE.md` (updated with fresh DB notes)
 - Deployment checklist: `.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md` (465 lines)
 - Lessons learned: `.cursor/LESSONS_DATABASE_SETUP.md` (Docker insights)
@@ -1767,7 +1767,7 @@ Deploy GPCI v1.3 schema and data to production-ready Render PostgreSQL database.
 **Status:** Ready to execute when deployment window is available
 
 **Links:**
-- [Render Deployment Guide](.cursor/RENDER_DEPLOYMENT_GUIDE.md) ⭐ START HERE
+- [Render Deployment Guide](prds/RUN-render-deployment-prd-v1.0.md) ⭐ START HERE
 - [Migration Checklist](.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md)
 - [Lessons Learned](.cursor/LESSONS_DATABASE_SETUP.md)
 - [Quick Start](.cursor/plans/GPCI_V13_QUICK_START.md)

@@ -1,4 +1,15 @@
-# Render Deployment Guide - Production Setup
+# Runbook: Render Deployment & Operations
+
+**Status:** Draft v1.0  
+**Owners:** Platform Engineering, SRE  
+**Consumers:** Release engineers, on-call responders, data platform contributors  
+**Change control:** PR review + infra sign-off
+
+**Cross-References:**
+- `prds/PRD-render-hosting-prd-v1.0.md` (policy decisions)
+- `prds/DOC-master-catalog-prd-v1.0.md` (system map)
+- `prds/STD-observability-monitoring-prd-v1.0.md` (monitoring standards)
+- `.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md` (migration checklist)
 
 **Purpose:** Deploy CMS Pricing API with PostgreSQL on Render  
 **Audience:** First-time deployers  
@@ -935,7 +946,7 @@ databases:
 ## Render Deployment Checklist
 
 **Before Starting:**
-- [ ] Save this guide: `.cursor/RENDER_DEPLOYMENT_GUIDE.md`
+- [ ] Save this guide: `prds/RUN-render-deployment-prd-v1.0.md`
 - [ ] Review Part 1-7 above
 - [ ] Have 45 minutes of focused time
 - [ ] Credit card ready (free trial, then $7/month)
