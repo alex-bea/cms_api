@@ -27,15 +27,6 @@
 - [ ] Alembic migration `003_gpci_v13_add_mac_to_nk.py` and GPCI backfill script in the repo
 - [ ] GPCI migration checklist (`.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md`) reviewed alongside this guide
 
-**Currently outstanding (resolve before migration):**
-
-- Python environment segfault blocks test/backfill commands.  
-  _Action:_ Reinstall dependencies once network or offline wheels are available.
-- Render DB instructions assume a fresh database.  
-  _Action:_ See “Existing Deployments” section if you already have data in Render.
-
----
-
 ## Part 1: Render Account Setup (5 minutes)
 
 ### Step 1: Sign Up
@@ -107,6 +98,8 @@ External Database URL:  postgresql://cms_user:xxx@oregon-postgres.render.com:543
 
 **Save this URL** - you'll need it for all database operations.
 
+PostgreSQL extensions: none required for this project.
+
 ### Step 3: Test Connection Locally
 
 ```bash
@@ -128,18 +121,29 @@ psql $DATABASE_URL -c "SELECT current_database(), current_user, version();"
 - `Password authentication failed` → Regenerate password from Render dashboard
 - Working in shared environments? Avoid exporting credentials in shell history; use `env` files or secret managers.
 
-### Step 4: Make DATABASE_URL Permanent
+### Step 4: Manage `DATABASE_URL` Securely
 
-```bash
-# Add to ~/.zshrc
-echo 'export DATABASE_URL="postgresql://cms_user:YOUR_PASSWORD@oregon-postgres.render.com:5432/cms_pricing"' >> ~/.zshrc
+**Local development (recommended):**
+1. Create a `.env` file in the repo root (**do not commit** this file):
 
-# Reload
-source ~/.zshrc
+   `.env` (local only)
+   ```
+   DATABASE_URL=postgresql://cms_user:YOUR_PASSWORD@oregon-postgres.render.com:5432/cms_pricing
+   ```
 
-# Verify
-echo $DATABASE_URL
-```
+2. Load it automatically with [`direnv`](https://direnv.net/):
+   ```bash
+   # macOS
+   brew install direnv
+   echo 'dotenv' > .envrc
+   direnv allow
+   ```
+
+3. Store the value in 1Password or Vault and rotate it after initial setup.
+
+**On Render (staging/production):**
+- Set `DATABASE_URL` in your Web Service Environment panel.
+- Do not store credentials in shell profiles or source code.
 
 ---
 
@@ -148,7 +152,7 @@ echo $DATABASE_URL
 ### Step 1: Initialize Schema with Alembic
 
 ```bash
-cd /Users/alexanderbea/Cursor/cms-api
+cd cms-api
 
 # Check current state (should be empty)
 alembic current
@@ -169,12 +173,21 @@ alembic upgrade head
 **If migration 003 fails** (table doesn't exist):
 
 ```bash
-# Create base tables first
+# Create base tables first (on fresh DB)
 python -c "from cms_pricing.database import Base, engine; from cms_pricing.models import *; Base.metadata.create_all(bind=engine)"
 
-# Then stamp as if migrations ran
-alembic stamp head
+# Stamp to the matching revision (avoid stamping 'head' on an unknown DB)
+# Replace with the exact revision that matches the created schema, e.g.:
+#   alembic stamp 002_add_nber_centroids
+alembic stamp <matching_revision_id>
+
+# Now run forward migrations
+alembic upgrade head
 ```
+
+Caution — use `alembic stamp` sparingly. Only stamp a revision that exactly matches
+the current schema. Use `alembic history` and `alembic current` to pick the correct
+revision, then run `alembic upgrade head`.
 
 ### Step 2: Verify Schema
 
@@ -334,7 +347,7 @@ SELECT * FROM gpci_indices WHERE locality_id = '00' LIMIT 5;
 **Backup Schedule (Starter tier):**
 - Daily backups
 - 7-day retention
-- Point-in-time recovery available
+- Point-in-time recovery may vary by plan — verify in your dashboard.
 
 **To verify:**
 1. Database dashboard → "Backups" tab
@@ -347,6 +360,11 @@ pg_dump $DATABASE_URL > backup_render_$(date +%Y%m%d).sql
 
 # Or use Render's download feature (web dashboard)
 ```
+
+**Application Rollback**
+1. Re-deploy the previous commit from Render (Deploys → select prior build).
+2. Run smoke tests (`/health`, a simple query) to confirm.
+3. If the schema has changed, restore the DB snapshot from the Backups tab or run the appropriate Alembic downgrade before re-deploying.
 
 ### Step 2: Configure Connection Pooling
 
@@ -379,7 +397,28 @@ Render includes connection pooling, but you can optimize:
 | `gpci_duplicate_nk_violations` | > 0 | Indicates natural-key regression |
 | API 500 error rate | Above historical baseline | Add Render Health Check or external alert |
 
-### Step 4: Enable Query Performance Insights (Pro tier only)
+Note: `gpci_requests_without_mac_total` and `gpci_duplicate_nk_violations` are application-level counters (e.g., Prometheus). Ensure your API emits these metrics; they are not Render built-ins. Expose them via your logging/metrics stack (Prometheus + Grafana, Datadog, etc.).
+
+### Step 4: Database Connection Guardrails (App)
+
+Configure SQLAlchemy to avoid connection exhaustion and stale sockets:
+
+```python
+from sqlalchemy import create_engine
+import os
+
+engine = create_engine(
+    os.environ["DATABASE_URL"],
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+    pool_recycle=1800,  # seconds
+)
+```
+
+Tune `pool_size`/`max_overflow` based on your workload and Render plan limits.
+
+### Step 5: Enable Query Performance Insights (Pro tier only)
 
 **If on Pro tier:**
 1. Go to "Performance" tab
@@ -403,11 +442,48 @@ Render includes connection pooling, but you can optimize:
 - Rotate the database password after initial setup and update stored secrets accordingly.  
 - Limit access to Render dashboard to required team members; review team permissions monthly.
 
+### Database Roles (Least Privilege)
+
+```sql
+-- Roles
+CREATE ROLE migrate NOINHERIT;
+CREATE ROLE app_rw NOINHERIT;
+CREATE ROLE ro NOINHERIT;
+
+-- Users
+CREATE USER cms_migrate WITH PASSWORD 'strong_password';
+CREATE USER cms_app_rw WITH PASSWORD 'strong_password';
+CREATE USER cms_ro WITH PASSWORD 'strong_password';
+
+-- Grants
+GRANT migrate TO cms_migrate;
+GRANT app_rw TO cms_app_rw;
+GRANT ro TO cms_ro;
+
+-- Privileges
+GRANT CONNECT ON DATABASE cms_pricing TO migrate, app_rw, ro;
+GRANT USAGE ON SCHEMA public TO migrate, app_rw, ro;
+
+-- DDL for migrate; DML for app_rw; SELECT for ro
+GRANT CREATE, ALTER, DROP, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public TO migrate;
+GRANT INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_rw;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO ro;
+
+-- Ensure future tables inherit privileges
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT INSERT, UPDATE, DELETE ON TABLES TO app_rw;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO ro;
+```
+
 ---
 
 **If you want to deploy the FastAPI application too:**
 
-**If you want to deploy the FastAPI application too:**
+### Optional: Automate Alembic Migrations
+
+To prevent drift, run `alembic upgrade head` automatically:
+- **Render Job (recommended):** Create a one-off Job that runs `alembic upgrade head` with the same `DATABASE_URL`. Trigger it before each deploy.
+- **CI step:** From your CI, run migrations against the target `DATABASE_URL` prior to promoting the app.
+- **App start (fallback):** Gate the app’s startup on a migration check. This increases cold-start time and is less preferred.
 
 ### Step 1: Create Web Service
 
@@ -446,6 +522,10 @@ curl https://cms-pricing-api.onrender.com/health
 curl "https://cms-pricing-api.onrender.com/api/v1/gpci?mac=01112&locality=54"
 ```
 
+### Step 5: Enable Health Check
+
+In Render → **Health Checks**, point the path to `/health`. Ensure your `/health` endpoint returns `200` and (optionally) verifies DB connectivity so deploys only go live when dependencies are ready.
+
 ---
 
 ## Troubleshooting
@@ -459,6 +539,13 @@ export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
 echo 'export PATH="/opt/homebrew/opt/libpq/bin:$PATH"' >> ~/.zshrc
 ```
 
+```bash
+# Debian/Ubuntu
+sudo apt update && sudo apt install -y postgresql-client
+```
+
+- **Windows:** Install “PostgreSQL Client Tools” from the official PostgreSQL site and add the `psql.exe` directory to your `PATH`.
+
 ### Issue: "alembic upgrade head" fails on Render
 
 **Solution:**
@@ -466,11 +553,14 @@ echo 'export PATH="/opt/homebrew/opt/libpq/bin:$PATH"' >> ~/.zshrc
 # Create base tables first (on fresh DB)
 python -c "from cms_pricing.database import Base, engine; from cms_pricing.models import *; Base.metadata.create_all(bind=engine)"
 
-# Then stamp Alembic
-alembic stamp head
+# Stamp to the matching revision (avoid 'head' on unknown DB)
+alembic stamp <matching_revision_id>
 
 # Future migrations will work normally
+alembic upgrade head
 ```
+
+`alembic stamp` should point to the exact revision that matches the current schema. Use `alembic history` and `alembic current` to confirm before upgrading.
 
 ### Issue: "Connection refused" to Render database
 
@@ -532,7 +622,7 @@ python scripts/backfill_gpci_v13.py --dry-run --verbose
 - 97 max connections
 - Standard support
 
-**Sufficient for:**
+**Sufficient for (small production workloads):**
 - ~1M GPCI rows
 - 100-500 API requests/day
 - Development and small production
@@ -680,23 +770,14 @@ psql cms_pricing_restore < backup_render_20251021.sql
 
 **Add to your application:**
 ```python
-# Track database health
-import structlog
+import time, structlog
+from cms_pricing.database import engine
 
-logger = structlog.get_logger()
-
-# Log connection pool stats
-logger.info("db_pool_status", 
-    active=engine.pool.size(),
-    overflow=engine.pool.overflow()
-)
-
-# Track query performance
+log = structlog.get_logger()
 with engine.connect() as conn:
-    start = time.time()
-    result = conn.execute("SELECT COUNT(*) FROM gpci_indices")
-    duration = time.time() - start
-    logger.info("gpci_count_query", duration_sec=duration)
+    t0 = time.time()
+    conn.execute("SELECT 1")
+    log.info("db_healthcheck", duration_ms=int((time.time() - t0) * 1000))
 ```
 
 **Set up alerts for:**
@@ -824,6 +905,30 @@ If you already have data in a Render-hosted Postgres instance:
 - `render.yaml` (infrastructure as code)
 - `Procfile` (start commands)
 - `.env.example` (environment variable template)
+
+### render.yaml starter (optional)
+
+```yaml
+services:
+  - type: web
+    name: cms-pricing-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn cms_pricing.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cms-pricing-db
+          property: connectionString
+
+databases:
+  - name: cms-pricing-db
+    databaseName: cms_pricing
+    user: cms_user
+    plan: starter
+    region: oregon
+    postgresVersion: "16"
+```
 
 ---
 
