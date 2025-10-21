@@ -1,0 +1,174 @@
+{
+  "dataset_name": "cms_anescf",
+  "version": "1.1",
+  "generated_at": "2025-10-20T23:00:00Z",
+  "hash_spec_version": "1",
+  "natural_keys": [
+    "mac",
+    "locality_code",
+    "effective_from"
+  ],
+  "column_order": [
+    "mac",
+    "locality_code",
+    "anesthesia_cf_usd",
+    "effective_from"
+  ],
+  "hash_metadata_exclusions": [
+    "release_id",
+    "vintage_date",
+    "product_year",
+    "quarter_vintage",
+    "source_filename",
+    "source_file_sha256",
+    "source_uri",
+    "source_release",
+    "source_inner_file",
+    "parsed_at",
+    "row_content_hash",
+    "effective_to"
+  ],
+  "columns": {
+    "mac": {
+      "name": "mac",
+      "type": "str",
+      "nullable": false,
+      "description": "5-digit Medicare Administrative Contractor code (zero-padded)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^\\d{5}$",
+      "sample_values": ["01112", "02102", "03102", "07102", "01182"]
+    },
+    "locality_code": {
+      "name": "locality_code",
+      "type": "str",
+      "nullable": false,
+      "description": "2-digit locality code (zero-padded)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^\\d{2}$",
+      "sample_values": ["00", "01", "18", "26", "99"]
+    },
+    "anesthesia_cf_usd": {
+      "name": "anesthesia_cf_usd",
+      "type": "float64",
+      "precision": 2,
+      "scale": 2,
+      "rounding_mode": "HALF_UP",
+      "multipleOf": 0.01,
+      "nullable": false,
+      "description": "Anesthesia conversion factor in USD (scaled from integer cents). Raw CMS file values are integer cents (e.g., 1931 → $19.31). Parser scales by dividing by 100.0 and rounding to 2 decimal places.",
+      "unit": "USD",
+      "domain": null,
+      "min_value": 0.01,
+      "max_value": 100.0,
+      "pattern": null,
+      "sample_values": [19.31, 27.86, 20.04, 19.21, 20.45],
+      "notes": "CMS publishes as integer cents for precision. Parser must scale to USD. Zero is not valid (CF must be positive). Typical range: $15-35 USD."
+    },
+    "effective_from": {
+      "name": "effective_from",
+      "type": "datetime64[ns]",
+      "nullable": false,
+      "description": "Effective start date (Jan 1 of year, derived from filename or metadata)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": ["2025-01-01", "2024-01-01", "2026-01-01"],
+      "notes": "Parser derives from filename (e.g., ANES2025 → 2025-01-01) or metadata vintage_date"
+    },
+    "effective_to": {
+      "name": "effective_to",
+      "type": "datetime64[ns]",
+      "nullable": true,
+      "description": "Effective end date (Dec 31 of year, or null for current/future years)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": ["2025-12-31", "2024-12-31", null],
+      "notes": "Set to Dec 31 only for past years; null for current/future"
+    },
+    "row_content_hash": {
+      "name": "row_content_hash",
+      "type": "str",
+      "nullable": false,
+      "description": "64-character SHA-256 hex digest of row content per STD-parser-contracts v2.0 §5.2. Computed from columns in declared order excluding metadata fields. Uses schema-defined precision for numeric normalization.",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": "^[a-f0-9]{64}$",
+      "sample_values": [
+        "a1b2c3d4e5f6789012345678901234567890123456789012345678901234"
+      ]
+    }
+  },
+  "primary_keys": [
+    "mac",
+    "locality_code",
+    "effective_from"
+  ],
+  "partition_columns": [
+    "effective_from"
+  ],
+  "business_rules": [
+    "MAC must be 5 digits (zero-padded)",
+    "Locality code must be 2 digits (zero-padded)",
+    "Conversion factor must be positive (> 0)",
+    "Conversion factor typical range: $15-35 USD (WARN outside this range)",
+    "Expected 100-120 localities per release (matches GPCI universe)",
+    "Raw CMS values are integer cents; parser scales to USD"
+  ],
+  "quality_thresholds": {
+    "null_rate_threshold": 0.0,
+    "duplicate_rate_threshold": 0.0,
+    "row_count_min": 50,
+    "row_count_warn_min": 50,
+    "row_count_warn_max": 99,
+    "row_count_expected_min": 100,
+    "row_count_expected_max": 120,
+    "cf_warn_min": 15.0,
+    "cf_warn_max": 35.0,
+    "cf_fail_min": 0.01,
+    "cf_fail_max": 100.0
+  },
+  "storage_note": "Stored as float64 in Parquet for efficiency. Canonicalized to Decimal with schema-defined precision (2dp) before hashing to ensure determinism.",
+  "changelog": [
+    {
+      "version": "1.1",
+      "date": "2025-10-20",
+      "changes": [
+        "BREAKING: Corrected natural key from ['locality_code', 'effective_from'] to ['mac', 'locality_code', 'effective_from']",
+        "Rationale: locality_code='00' appears in multiple states (AL, AZ, AR, etc.); MAC disambiguates",
+        "Prevents false duplicates (same issue found in GPCI v1.2 → v1.3)",
+        "Added mac column definition with validation pattern (5 digits)",
+        "Updated primary_keys to match natural key",
+        "Removed state_fips from schema (not present in ANES layout)",
+        "Changed precision from 4dp to 2dp (matches CMS cents precision: 1931 → $19.31)",
+        "Added units & scaling: raw integer cents → USD with precision (2dp), rounding (HALF_UP)",
+        "Set min_value to 0.01 (CF must be positive, not zero)",
+        "Added effective_from/to derivation notes (from filename or metadata)",
+        "Updated quality thresholds: row_count <50=FAIL, 50-99=WARN, 100-120=normal",
+        "Added CF validation ranges: WARN [15.0, 35.0], FAIL [0.01, 100.0]",
+        "Fixed version from internal 1.1 to explicit 1.1 (clean version history)"
+      ]
+    },
+    {
+      "version": "1.0",
+      "date": "2025-09-30",
+      "changes": [
+        "Initial anesthesia CF schema contract",
+        "NOTE: v1.0 had incorrect NK (missing MAC) and included non-existent state_fips column"
+      ]
+    }
+  ]
+}
+
