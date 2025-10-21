@@ -2,6 +2,7 @@
   "schema_id": "cms_opps_v1.0",
   "dataset_name": "cms_opps",
   "version": "1.1",
+  "generated_at": "2025-10-21T00:00:00Z",
   "description": "CMS OPPS (Hospital Outpatient Prospective Payment System) quarterly releases including APC payment rates and HCPCS crosswalks",
   "dis_compliance": "v1.0",
   "qts_compliance": "v1.0",

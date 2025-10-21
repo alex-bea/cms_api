@@ -2,6 +2,7 @@
   "dataset_name": "cms_zip9_overrides",
   "name": "cms_zip9_overrides",
   "version": "1.1",
+  "generated_at": "2025-09-29T12:00:00Z",
   "description": "CMS ZIP9 overrides for precise locality mapping",
   "source": "CMS.gov - Zip Codes Requiring 4 Extension files",
   "classification": "public",
