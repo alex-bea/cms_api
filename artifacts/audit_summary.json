@@ -55,7 +55,7 @@
       "name": "Layout/Schema Alignment",
       "category": "audit",
       "status": "failed",
-      "exit_code": -11
+      "exit_code": 1
     },
     {
       "name": "Makefile .PHONY",
