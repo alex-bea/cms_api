@@ -14,21 +14,25 @@
 
 ---
 
-## Pre-Deployment Checklist ✅
+## Pre-Deployment Checklist
 
-**Before starting, ensure you have:**
+**Before starting, confirm you have:**
 
-- [x] Code tested and ready (68/68 tests passing) ✅
-- [x] Python environment fixed ✅
-- [x] Migration artifacts complete (Alembic 003, 004, backfill script) ✅
-- [x] Documentation comprehensive ✅
-- [ ] GitHub account (for Render sign-in)
-- [ ] Payment method (credit card - $7/month after trial)
-- [ ] 30-45 minutes of focused time
+- [ ] GitHub account (Render uses GitHub OAuth)
+- [ ] Payment method (Starter DB is $7/month after trial)
+- [ ] 30-45 uninterrupted minutes
+- [ ] `psql` CLI available (`brew install libpq` and add to `PATH`)
+- [ ] Internet access for `pip` **or** pre-downloaded wheels for `pandas`, `sqlalchemy`, `structlog`
+- [ ] Secure location (1Password/Vault) to store the Render `DATABASE_URL`
+- [ ] Alembic migration `003_gpci_v13_add_mac_to_nk.py` and GPCI backfill script in the repo
+- [ ] GPCI migration checklist (`.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md`) reviewed alongside this guide
 
-**Optional:**
-- [ ] Domain name (if you want custom domain)
-- [ ] Team members to invite
+**Currently outstanding (resolve before migration):**
+
+- Python environment segfault blocks test/backfill commands.  
+  _Action:_ Reinstall dependencies once network or offline wheels are available.
+- Render DB instructions assume a fresh database.  
+  _Action:_ See “Existing Deployments” section if you already have data in Render.
 
 ---
 
@@ -119,9 +123,10 @@ psql $DATABASE_URL -c "SELECT current_database(), current_user, version();"
 ```
 
 **Troubleshooting:**
-- `psql: command not found` → Install: `brew install libpq && export PATH="/opt/homebrew/opt/libpq/bin:$PATH"`
-- `Connection refused` → Check if you used External URL (not Internal)
-- `Password authentication failed` → Double-check password from Render dashboard
+- `psql: command not found` → Install: `brew install libpq` and add `/opt/homebrew/opt/libpq/bin` to `PATH`
+- `Connection refused` → Ensure you copied the **External** URL, not Internal
+- `Password authentication failed` → Regenerate password from Render dashboard
+- Working in shared environments? Avoid exporting credentials in shell history; use `env` files or secret managers.
 
 ### Step 4: Make DATABASE_URL Permanent
 
@@ -282,6 +287,8 @@ psql $DATABASE_URL -c "
 
 ### Step 1: Run Parser Tests Against Render DB
 
+> **Prerequisite:** Ensure the Python environment is healthy. If `pip` cannot reach the Internet in your workspace, install dependencies from a wheel cache before running these commands.
+
 ```bash
 # Parser tests (don't need DB, but good to verify environment)
 pytest tests/ingestion/test_gpci_parser_golden.py -v
@@ -364,6 +371,14 @@ Render includes connection pooling, but you can optimize:
 
 3. **Configure** Slack/Discord webhooks (optional)
 
+**Recommended Metrics to Watch:**
+
+| Metric | Alert Condition | Notes |
+|--------|-----------------|-------|
+| `gpci_requests_without_mac_total` | > 0 sustained for 24h | Expect to trend toward zero post-migration |
+| `gpci_duplicate_nk_violations` | > 0 | Indicates natural-key regression |
+| API 500 error rate | Above historical baseline | Add Render Health Check or external alert |
+
 ### Step 4: Enable Query Performance Insights (Pro tier only)
 
 **If on Pro tier:**
@@ -378,6 +393,19 @@ Render includes connection pooling, but you can optimize:
 ---
 
 ## Part 7: Deploy API to Render (Optional, 20 minutes)
+
+---
+
+### Secrets & Access Management
+
+- Store the Render `DATABASE_URL`, API keys, and any service tokens in a centralized secret manager (1Password, Vault, AWS Secrets Manager).  
+- Avoid committing `.env` files with production credentials—use Render's environment variable panel for deployment.  
+- Rotate the database password after initial setup and update stored secrets accordingly.  
+- Limit access to Render dashboard to required team members; review team permissions monthly.
+
+---
+
+**If you want to deploy the FastAPI application too:**
 
 **If you want to deploy the FastAPI application too:**
 
@@ -724,6 +752,22 @@ Total Cost: $7/month
 
 ---
 
+## Existing Deployments (Upgrading an Existing Render DB)
+
+If you already have data in a Render-hosted Postgres instance:
+
+1. **Back Up First**
+   ```bash
+   pg_dump $DATABASE_URL > backup_render_pre_migration_$(date +%Y%m%d).sql
+   ```
+2. **Capture Current Metrics** – Run the duplicate/row-count/index queries from `.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md` so you can compare after the upgrade.
+3. **Review Alembic History** – Ensure the database is stamped to the expected revision (`alembic current`). If drifted, resolve before applying new migrations.
+4. **Apply Migration & Backfill** – Use `--dry-run` for the GPCI backfill to inspect upserts before committing.
+5. **Post-Upgrade Validation** – Re-run API smoke tests, monitor for 409 conflicts, and review Render metrics for the first 24 hours.
+6. **Rollback Plan** – Keep the backup and downgrade instructions from the checklist handy if you need to revert.
+
+---
+
 ## Next Steps After Deployment
 
 ### **Immediate (Same Day):**
@@ -816,6 +860,7 @@ Total Cost: $7/month
 - GitHub Issues: Report bugs
 
 **This Project:**
+- Migration checklist: `.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md`
 - Quick start: `.cursor/GPCI_V13_QUICK_START.md`
 - Troubleshooting: `.cursor/DATABASE_SETUP_GUIDE.md`
 - Lessons learned: `.cursor/LESSONS_DATABASE_SETUP.md`
@@ -825,4 +870,3 @@ Total Cost: $7/month
 **Ready to deploy to Render? You have everything you need!** 🚀
 
 **End of Render Deployment Guide**
-

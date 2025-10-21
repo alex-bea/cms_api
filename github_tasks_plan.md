@@ -1610,10 +1610,167 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 **Progress:** 10/14 tasks complete (71%)
 
 **GPCI v1.3 Migration Ready:**
+- Status: ✅ Code complete, ⏭️ Deployment pending
 - Alembic migrations: `003` (NK unique index), `004` (compat view)
 - Backfill script: `scripts/backfill_gpci_v13.py`
 - Operator runbook: `.cursor/plans/GPCI_V13_MIGRATION_GUIDE.md`
-- Est. time: 20-30 min, rollback available
+- **Production Deployment Guide:** [📖 RENDER_DEPLOYMENT_GUIDE.md](.cursor/RENDER_DEPLOYMENT_GUIDE.md) ⭐
+- Est. time: 45 min (Render), rollback available
+
+**Test Results:**
+- Parser tests: 68/68 passing (100%) ✅
+- Integration tests: 24/24 passing (100%) ✅
+- Python environment: Fixed (pandas 2.1.4) ✅
+- Audit: 9/12 checks passed ✅
+
+**Deployment Options:**
+1. **Render (Recommended):** Clean setup, $7/month, 45 min
+   - Guide: `.cursor/RENDER_DEPLOYMENT_GUIDE.md`
+   - Lessons: `.cursor/LESSONS_DATABASE_SETUP.md`
+2. **Docker:** Local testing only (init script conflicts identified)
+3. **Railway/Supabase:** Alternatives to Render
+
+---
+
+### Task 67: Deploy GPCI v1.3 to Render (Production Database)
+
+**Category:** Infrastructure / Production Deployment  
+**Priority:** HIGH  
+**Status:** ⏭️ Ready to Execute (Code complete, deployment pending)  
+**Estimated Time:** 45 minutes  
+**Complexity:** Medium  
+**Cost:** $7/month (Starter tier)
+
+**📖 Primary Guide:** [RENDER_DEPLOYMENT_GUIDE.md](.cursor/RENDER_DEPLOYMENT_GUIDE.md)
+
+**Objective:**
+Deploy GPCI v1.3 schema and data to production-ready Render PostgreSQL database.
+
+**Prerequisites:**
+- ✅ Code tested (68/68 parser tests passing, 24/24 integration tests passing)
+- ✅ Python environment fixed
+- ✅ Migration artifacts complete (Alembic 003, 004, backfill script)
+- ✅ Documentation comprehensive (11 guides created)
+- ⏭️ Render account (sign up with GitHub)
+- ⏭️ Payment method (Starter DB: $7/month after trial)
+- ⏭️ 45 minutes uninterrupted time
+
+**Implementation Steps:**
+
+**Part 1: Render Account & Database (15 min)**
+1. Sign up: https://render.com/ (use GitHub OAuth)
+2. Create PostgreSQL database:
+   - Name: `cms-pricing-db`
+   - Database: `cms_pricing`
+   - User: `cms_user`
+   - Region: Oregon (US West) or closest
+   - Instance: Starter ($7/month)
+   - PostgreSQL Version: 16
+3. Get External Database URL from dashboard
+4. Set `DATABASE_URL` locally
+5. Test connection: `psql $DATABASE_URL -c "SELECT 1;"`
+
+**Part 2: Schema Migration (10 min)**
+6. Run Alembic migrations: `alembic upgrade head`
+7. Verify v1.3 unique index created:
+   ```sql
+   SELECT indexname FROM pg_indexes 
+   WHERE tablename = 'gpci_indices' 
+     AND indexname = 'uq_gpci_mac_locality_effective';
+   ```
+8. Check tables created: `psql $DATABASE_URL -c "\dt"`
+
+**Part 3: Data Load (10 min)**
+9. Dry-run backfill: `python scripts/backfill_gpci_v13.py --dry-run`
+10. Verify 0 duplicates in dry-run output
+11. Commit backfill: `python scripts/backfill_gpci_v13.py --commit`
+12. Verify row count: `psql $DATABASE_URL -c "SELECT COUNT(*) FROM gpci_indices;"`
+    - Expected: ~109 rows
+
+**Part 4: Verification (10 min)**
+13. Run parser tests: `pytest tests/ingestion/test_gpci_parser_golden.py -v`
+14. Verify no duplicates on v1.3 NK:
+    ```sql
+    SELECT mac, locality_id, effective_start, COUNT(*) 
+    FROM gpci_indices 
+    GROUP BY mac, locality_id, effective_start 
+    HAVING COUNT(*) > 1;
+    ```
+    - Expected: 0 rows
+15. Check ambiguous locality_id='00':
+    ```sql
+    SELECT mac, locality_id, locality_name 
+    FROM gpci_indices 
+    WHERE locality_id = '00' 
+    ORDER BY mac;
+    ```
+    - Expected: ~15 rows (multiple MACs: AL, AZ, AR, CA, etc.)
+16. Check Render dashboard metrics (connections, storage, CPU)
+
+**Deliverables:**
+- ✅ Production PostgreSQL database on Render
+- ✅ GPCI v1.3 schema deployed (3-field natural key)
+- ✅ 109 GPCI localities loaded
+- ✅ Zero duplicates verified
+- ✅ Monitoring configured
+- ✅ Automatic backups enabled
+
+**Acceptance Criteria:**
+- [ ] Render database provisioned and accessible
+- [ ] DATABASE_URL works from local machine
+- [ ] Alembic migrations applied successfully (004 or 6d0f0408be80 at head)
+- [ ] v1.3 unique index `uq_gpci_mac_locality_effective` exists
+- [ ] 109 GPCI rows loaded with 0 duplicates
+- [ ] Parser tests pass against Render database
+- [ ] Monitoring alerts configured
+- [ ] DATABASE_URL documented securely (1Password/vault)
+
+**Documentation:**
+- Deployment guide: `.cursor/RENDER_DEPLOYMENT_GUIDE.md` (650 lines, 7-part process)
+- Migration guide: `.cursor/plans/GPCI_V13_MIGRATION_GUIDE.md` (updated with fresh DB notes)
+- Deployment checklist: `.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md` (465 lines)
+- Lessons learned: `.cursor/LESSONS_DATABASE_SETUP.md` (Docker insights)
+- Quick start: `.cursor/plans/GPCI_V13_QUICK_START.md`
+
+**Notes:**
+- Docker local deployment has init-db.sql conflicts (see LESSONS_DATABASE_SETUP.md)
+- Render provides clean setup path (no conflicts)
+- SQLAlchemy model already has v1.3 index in `__table_args__`
+- For fresh DB: Can create tables from models OR run Alembic
+- For existing DB: Run Alembic upgrade → backfill
+
+**Rollback Plan:**
+- Alembic downgrade: `alembic downgrade -1` (< 2 min)
+- Full restore: Render dashboard → Backups → Restore (5 min)
+- Backfill restore: Use automatic backup table (3 min)
+
+**Success Metrics:**
+- Row count: 109 (expected)
+- Duplicates: 0 on (mac, locality_id, effective_start)
+- Locality '00': ~15 different MACs
+- Parse time: < 2s
+- Reject rate: 0%
+
+**Cost:**
+- Starter database: $7/month (1GB, 7-day backups, 97 connections)
+- Optional web service: $7/month (API deployment)
+- Total: $7-14/month
+
+**Timeline:**
+- Render signup: 5 min
+- Database creation: 10 min
+- Schema migration: 10 min
+- Data load: 10 min
+- Verification: 10 min
+- Total: 45 minutes
+
+**Status:** Ready to execute when deployment window is available
+
+**Links:**
+- [Render Deployment Guide](.cursor/RENDER_DEPLOYMENT_GUIDE.md) ⭐ START HERE
+- [Migration Checklist](.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md)
+- [Lessons Learned](.cursor/LESSONS_DATABASE_SETUP.md)
+- [Quick Start](.cursor/plans/GPCI_V13_QUICK_START.md)
 
 ---
 
