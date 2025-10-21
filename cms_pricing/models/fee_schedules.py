@@ -84,7 +84,7 @@ class FeeOPPS(Base):
     # Indexes
     __table_args__ = (
         Index("idx_opps_year_quarter_hcpcs", "year", "quarter", "hcpcs"),
-        Index("idx_opps_effective", "effective_from", "effective_to"),
+        Index("idx_fee_opps_effective", "effective_from", "effective_to"),  # Renamed to avoid conflict with OPPSCap
     )
 
 

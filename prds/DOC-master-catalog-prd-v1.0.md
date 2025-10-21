@@ -30,6 +30,7 @@
 | `STD-observability-monitoring-prd-v1.0.md` | Adopted v1.0 | SRE | 2025-09-30 | |
 | `STD-qa-testing-prd-v1.0.md` | Draft v1.0 (proposed) | QA Guild | 2025-09-30 | |
 | `STD-scraper-prd-v1.0.md` | Draft v1.1 | Data Engineering | 2025-10-15 | Updated with implementation patterns |
+| `STD-database-platform-prd-v1.0.md` | Draft v1.1 | Platform Engineering, SRE | 2025-10-21 | Migrations-first PostgreSQL standard; fresh DB initialization; schema naming; HIPAA controls |
 
 ---
 
