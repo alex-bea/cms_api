@@ -94,8 +94,8 @@ BUSINESS_KEYS = ['zip5', 'effective_from']  # per contract; enforced uniqueness 
 |--------|------|----------|------------|-------|
 | `zip5` | String(5) | N | `^\d{5}$` | Leading zeros preserved (New England). |
 | `state` | String(2) | N | Valid USPS state/territory codes | Includes territories (PR, GU, VI, AS, MP). |
-| `locality` | String(2-3) | N | `^\d{2,3}$` | CMS locality identifiers (e.g., `01`, `99`). |
-| `carrier_mac` | String(5) | N | `^\d{5}$` | Medicare Administrative Contractor ID; same format as GPCI MAC. |
+| `locality` | String(2-10) | N | `^\d{2,10}$` | CMS locality identifiers (typically 2 digits today). |
+| `carrier_mac` | String(2-10) | Y | `^\d{2,10}$` | Medicare Administrative Contractor identifier (zero-padded when present). |
 | `rural_flag` | Boolean | Y | Derived from CMS indicator | True for “rural”/”rest of state” special rules. |
 | `effective_from` | Date | N | `YYYY-MM-DD` | Typically January 1 of the release year. |
 | `effective_to` | Date | Y | Null unless CMS issues correction; enforced `effective_to >= effective_from`. |
@@ -129,7 +129,7 @@ From schema contract:
 
 ### 4.3 Derived/Enriched Fields
 
-- `rural_flag`: Normalized to boolean based on CMS indicator (`R`, `Y`, `Yes`, `1`).  
+- `rural_flag`: Normalized to boolean based on CMS indicator values (`R`, `Y`, `Yes`, `1`, etc.).  
 - `carrier_mac`: Direct rename of CMS “CARRIER” column; zero-padded string.  
 - `vintage`: Derived from release naming (e.g., 2025) and stored for partitioning.  
 - `effective_to`: Set when successive release ingested (post-processing step).
