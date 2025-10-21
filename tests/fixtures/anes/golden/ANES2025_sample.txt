@@ -1,0 +1,20 @@
+10112       00    ALABAMA                                                1931
+02102       01    ALASKA                                                 2786
+03102       00    ARIZONA                                                2004
+07102       13    ARKANSAS                                               1921
+01112       54    BAKERSFIELD                                            2045
+01112       55    CHICO                                                  2027
+01182       71    EL CENTRO                                              2028
+01112       56    FRESNO                                                 2027
+01112       57    HANFORD-CORCORAN                                       2027
+01182       18    LOS ANGELES-LONG BEACH-ANAHEIM (LOS ANGE               2122
+01112       58    MADERA                                                 2027
+01112       59    MERCED                                                 2027
+01112       60    MODESTO                                                2027
+01112       51    NAPA                                                   2164
+01182       17    OXNARD-THOUSAND OAKS-VENTURA                           2088
+01112       61    REDDING                                                2027
+01112       62    RIVERSIDE-SAN BERNARDINO-ONTARIO                       2071
+01112       63    SACRAMENTO-ROSEVILLE-FOLSOM                            2079
+01112       64    SALINAS                                                2084
+01182       72    SAN DIEGO-CHULA VISTA-CARLSBAD                         2083
