@@ -31,12 +31,12 @@ from cms_pricing.ingestion.parsers.gpci_parser import parse_gpci
 # Bundle: RVU25D (2025 Q4)
 
 SPOTCHECK_FIXTURES = {
-    ('10112', '00'): {  # Alabama MAC/locality
-        'locality_name': 'ALABAMA',
-        'gpci_work_expected': 1.000,
-        'gpci_pe_expected': 0.869,
-        'gpci_mp_expected': 0.575,
-        'note': 'Baseline locality (work GPCI = 1.000)'
+    ('01112', '54'): {  # California Bakersfield MAC/locality
+        'locality_name': 'BAKERSFIELD',
+        'gpci_work_expected': 1.017,
+        'gpci_pe_expected': 1.093,
+        'gpci_mp_expected': 0.662,
+        'note': 'California locality (MAC 01112 in test fixture)'
     },
     ('02102', '01'): {  # Alaska MAC/locality
         'locality_name': 'ALASKA',
@@ -83,40 +83,41 @@ def parsed_gpci():
 
 @pytest.mark.integration
 @pytest.mark.gpci
-def test_gpci_spotcheck_alabama(parsed_gpci):
+def test_gpci_spotcheck_california_bakersfield(parsed_gpci):
     """
-    Spot-check: Alabama (locality 00) GPCI values match CMS data.
+    Spot-check: California Bakersfield (MAC 01112, locality 54) GPCI values match CMS data.
     
     Expected values from CMS RVU25D bundle:
-    - Work GPCI: 1.000 (baseline)
-    - PE GPCI: 0.869
-    - MP GPCI: 0.575
+    - Work GPCI: 1.017
+    - PE GPCI: 1.093
+    - MP GPCI: 0.662
     
+    Note: Using California data because test fixture contains CA localities.
     Tolerance: ±0.001 (3 decimal precision)
     """
-    key = ('10112', '00')
+    key = ('01112', '54')
     expected = SPOTCHECK_FIXTURES[key]
     
-    # Find Alabama in parsed data
+    # Find Bakersfield in parsed data
     mac, locality = key
-    alabama = parsed_gpci[(parsed_gpci['mac'] == mac) & (parsed_gpci['locality_code'] == locality)]
-    assert len(alabama) > 0, "Alabama (locality 00) should be in parsed data"
+    bakersfield = parsed_gpci[(parsed_gpci['mac'] == mac) & (parsed_gpci['locality_code'] == locality)]
+    assert len(bakersfield) > 0, "California Bakersfield (MAC 01112, locality 54) should be in parsed data"
     
-    alabama = alabama.iloc[0]
+    bakersfield = bakersfield.iloc[0]
     
     # Verify GPCI values (as floats)
-    work = float(alabama['gpci_work'])
-    pe = float(alabama['gpci_pe'])
-    mp = float(alabama['gpci_mp'])
+    work = float(bakersfield['gpci_work'])
+    pe = float(bakersfield['gpci_pe'])
+    mp = float(bakersfield['gpci_mp'])
     
     assert math.isclose(work, expected['gpci_work_expected'], abs_tol=0.001), \
-        f"Alabama work GPCI: expected {expected['gpci_work_expected']}, got {work}"
+        f"Bakersfield work GPCI: expected {expected['gpci_work_expected']}, got {work}"
     
     assert math.isclose(pe, expected['gpci_pe_expected'], abs_tol=0.001), \
-        f"Alabama PE GPCI: expected {expected['gpci_pe_expected']}, got {pe}"
+        f"Bakersfield PE GPCI: expected {expected['gpci_pe_expected']}, got {pe}"
     
     assert math.isclose(mp, expected['gpci_mp_expected'], abs_tol=0.001), \
-        f"Alabama MP GPCI: expected {expected['gpci_mp_expected']}, got {mp}"
+        f"Bakersfield MP GPCI: expected {expected['gpci_mp_expected']}, got {mp}"
 
 
 @pytest.mark.integration
@@ -238,8 +239,10 @@ def test_gpci_payment_calculation_cpt_99213():
 
 @pytest.mark.negative
 @pytest.mark.gpci
-def test_negative_fixtures_exist(fixtures_dir):
+def test_negative_fixtures_exist():
     """Verify all negative test fixtures exist."""
+    fixtures_dir = Path(__file__).parent.parent / 'fixtures' / 'gpci' / 'negatives'
+    
     required_fixtures = [
         'out_of_range.csv',
         'negative_values.csv',
