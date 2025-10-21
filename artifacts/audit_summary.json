@@ -1,6 +1,6 @@
 {
-  "passed": 11,
-  "total": 14,
+  "passed": 9,
+  "total": 12,
   "failed": 3,
   "results": [
     {
@@ -23,18 +23,6 @@
     },
     {
       "name": "Documentation Metadata",
-      "category": "audit",
-      "status": "passed",
-      "exit_code": 0
-    },
-    {
-      "name": "Documentation Size Budgets",
-      "category": "audit",
-      "status": "passed",
-      "exit_code": 0
-    },
-    {
-      "name": "Normative Language Guardrail",
       "category": "audit",
       "status": "passed",
       "exit_code": 0
