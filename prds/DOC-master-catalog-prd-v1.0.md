@@ -1,10 +1,10 @@
 # Master System Catalog & Architectural Map
 
-**Status:** Adopted v1.0.5  
+**Status:** Adopted v1.0.6  
 **Owners:** Platform Architecture  
 **Consumers:** Engineering, Product, Data, QA, Ops, Compliance  
 **Change control:** ADR + Architecture Owner approval  
-**Review cadence:** Monthly (first business Monday) — **Last reviewed:** 2025-10-15  
+**Review cadence:** Monthly (first business Monday) — **Last reviewed:** 2025-10-21  
 
 > Core governance (`STD-doc-governance-prd-v1.0.md`) defines naming and metadata rules. This catalog is a navigational index and dependency map only.
 
@@ -73,20 +73,25 @@
 |---|---|---|---|
 | `DOC-master-catalog-prd-v1.0.md` | Adopted v1.0 | Architecture | Master index (this document) |
 | `DOC-test-patterns-prd-v1.0.md` | Draft v1.0 (proposed) | QA Guild | Test patterns and best practices guide |
+| `DOC-parser-build-playbook-v1.0.md` | Draft v1.0 | Data Platform Engineering | Parser build playbook: layout verification, NK selection, testing workflow |
 | `CHANGELOG.md` | Active | Platform Engineering | Project release notes (Keep a Changelog format) |
 
 ---
 
-## 6. Source Descriptors (`SRC-*`) — pending authorship
+## 6. Source Descriptors (`SRC-*`)
 
-| Document | Source / Type | Owner | Status |
-|---|---|---|---|
-| `SRC-gazetteer.md` | Census Gazetteer ZIP | Data Engineering | Placeholder v0.1 |
-| `SRC-cms-rvu.md` | CMS MPFS RVU exports | Data Engineering | Placeholder v0.1 |
-| `SRC-opps.md` | CMS OPPS addenda | Data Engineering | Placeholder v0.1 |
-| `SRC-ncci.md` | NCCI / MUE update files | Data Engineering | Placeholder v0.1 |
-| `SRC-gpci.md` | GPCI indices & locality tables | Data Engineering | Placeholder v0.1 |
-| `SRC-carrier-localities.md` | Carrier ↔ locality crosswalk | Data Engineering | Placeholder v0.1 |
+| Document | Source / Type | Owner | Status | Parser | Notes |
+|---|---|---|---|---|---|
+| `SRC-gazetteer.md` | Census Gazetteer ZIP | Data Engineering | Draft v1.0 | N/A | Geographic reference data |
+| `SRC-cms-rvu.md` | CMS MPFS RVU exports (PPRRVU) | Data Engineering | Draft v1.0 | ✅ `pprrvu_parser.py` | Work/PE/MP RVU components |
+| `SRC-conversion-factor.md` | CMS National Conversion Factors | Data Engineering | Draft v1.0 | ✅ `conversion_factor_parser.py` | Physician & Anesthesia base CFs, Federal Register validation |
+| `SRC-locality.md` | CMS Locality normalization (Stage 1+2) | Data Engineering | Draft v1.0 | ✅ `locality_parser.py` | County FIPS normalization, set-logic expansion |
+| `SRC-carrier-localities.md` | ZIP5 → Carrier locality crosswalk | Data Engineering | Draft v1.0 | N/A | Geographic lookup table |
+| `SRC-gpci.md` | GPCI indices by MAC/locality | Data Engineering | Draft v1.0 | ✅ `gpci_parser.py` v1.3 | Geographic cost indices, NK: (mac, locality, effective_from) |
+| `SRC-anes.md` | Anesthesia Conversion Factors | Data Engineering | Draft v1.0 | ✅ `anes_parser.py` | Locality-specific anesthesia CFs, smart unit scaling (cents↔USD) |
+| `SRC-oppscap.md` | OPPS-based MPFS imaging caps | Data Engineering | Draft v1.0 | ✅ `oppscap_parser.py` | Payment caps, 4-field NK, CMS typo handling |
+| `SRC-opps.md` | CMS OPPS quarterly addenda | Data Engineering | Draft v1.0 | Scraper only | APC rates (Addendum A), HCPCS crosswalk (Addendum B) |
+| `SRC-ncci.md` | NCCI / MUE edit files | Data Engineering | Draft v1.0 | Future | Code edit pairs, MUE limits |
 
 
 ---
