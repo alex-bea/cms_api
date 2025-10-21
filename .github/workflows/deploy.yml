@@ -1,12 +1,9 @@
 name: Build and Deploy to Render
 
 on:
-  # Build on every push to main (CI)
+  # Build on every push to main (CI) and deploy on tags (CD)
   push:
     branches: [main]
-  
-  # Deploy on tags (CD)
-  push:
     tags:
       - 'v*.*.*'  # Matches v1.0.0, v1.2.3, etc.
   
