@@ -116,16 +116,30 @@ class SchemaRegistry:
         self._load_existing_schemas()
     
     def _load_existing_schemas(self):
-        """Load existing schema contracts from disk"""
-        for schema_file in self.contracts_dir.glob("*.json"):
+        """Load existing schema contracts from disk (lazy-loaded on first access)"""
+        # Skip eager loading to reduce startup memory footprint
+        # Schemas will be loaded on-demand via get_schema()
+        pass
+    
+    def _lazy_load_schema(self, dataset_name: str) -> Optional[SchemaContract]:
+        """Lazy-load a schema by dataset name"""
+        # Check if already loaded
+        if dataset_name in self._schemas:
+            return self._schemas[dataset_name]
+        
+        # Try to find and load the schema file
+        for schema_file in self.contracts_dir.glob(f"{dataset_name}*.json"):
             try:
                 with open(schema_file, 'r') as f:
                     data = json.load(f)
                 schema = SchemaContract.from_dict(data)
                 self._schemas[schema.dataset_name] = schema
-                logger.info(f"Loaded schema contract: {schema.dataset_name}")
+                logger.info(f"Lazy-loaded schema contract: {schema.dataset_name}")
+                return schema
             except Exception as e:
                 logger.error(f"Failed to load schema {schema_file}: {e}")
+        
+        return None
     
     def register_schema(self, schema: SchemaContract) -> None:
         """Register a new schema contract"""
@@ -139,8 +153,8 @@ class SchemaRegistry:
         logger.info(f"Registered schema contract: {schema.dataset_name} v{schema.version}")
     
     def get_schema(self, dataset_name: str) -> Optional[SchemaContract]:
-        """Get schema contract for dataset"""
-        return self._schemas.get(dataset_name)
+        """Get schema contract for dataset (lazy-loads if not cached)"""
+        return self._lazy_load_schema(dataset_name)
     
     def list_schemas(self) -> List[str]:
         """List all registered dataset names"""

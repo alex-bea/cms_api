@@ -50,4 +50,5 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
 
 # Run migrations and start server
 # Use $PORT for Render compatibility (Render sets PORT=10000)
-CMD ["sh", "-c", "if [ \"$RUN_MIGRATIONS\" = \"true\" ]; then alembic upgrade head; fi && uvicorn cms_pricing.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 4"]
+# Single worker to reduce memory footprint (512MB target for Starter tier)
+CMD ["sh", "-c", "if [ \"$RUN_MIGRATIONS\" = \"true\" ]; then alembic upgrade head; fi && uvicorn cms_pricing.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
