@@ -165,6 +165,105 @@ mpfs_2025_d_20251015  # Lower-case variant
 - Skip non-data files (PDFs, docs)
 - Recursive format detection for inner files
 
+### A.6 Format-Aware Unit Scaling (Added 2025-10-21)
+
+**Problem:** CMS publishes the same dataset in multiple formats with different units.
+
+**Example - ANES Conversion Factors:**
+
+| Format | Units | Example Value | Actual Meaning |
+|--------|-------|---------------|----------------|
+| **TXT** | Integer cents | 1931 | $19.31 USD |
+| **CSV** | USD decimals | 19.31 | $19.31 USD |
+
+**Impact:** Parser must auto-detect format and scale appropriately, or risk 100x errors ($0.19 vs $19.00).
+
+**Smart Detection Pattern:**
+
+```python
+def _scale_to_usd(df: pd.DataFrame, column: str, threshold: float = 200) -> pd.DataFrame:
+    """
+    Auto-detect if values are in cents or USD.
+    
+    Args:
+        df: DataFrame with raw column
+        column: Column name containing values to scale
+        threshold: Values > threshold assumed to be cents (default 200)
+                   
+    Returns:
+        DataFrame with {column}_usd containing scaled values
+        
+    Threshold Selection:
+        - Set between expected USD max and expected cents min
+        - ANES: Threshold 200 (USD max ~$100, cents min ~1900)
+        - Allows edge cases without misclassification
+    """
+    raw_numeric = pd.to_numeric(df[column], errors='coerce')
+    median_val = raw_numeric.median()
+    
+    if median_val > threshold:
+        # TXT format: Cents → USD
+        df[f'{column}_usd'] = (raw_numeric / 100.0).round(2)
+        logger.debug(
+            "Scaled from cents to USD (TXT format)",
+            median_raw=median_val,
+            sample_raw=raw_numeric.iloc[0],
+            sample_usd=df[f'{column}_usd'].iloc[0]
+        )
+    else:
+        # CSV format: Already USD
+        df[f'{column}_usd'] = raw_numeric.round(2)
+        logger.debug(
+            "Already in USD (CSV format, no scaling)",
+            median=median_val,
+            sample=df[f'{column}_usd'].iloc[0]
+        )
+    
+    return df
+```
+
+**Threshold Rationale:**
+
+| Dataset | USD Range | Cents Range | Threshold | Rationale |
+|---------|-----------|-------------|-----------|-----------|
+| **ANES** | $15-35 | 1500-3500 | 200 | Between USD max (~$100) and cents min (1900) |
+| **CF** | $30-40 | 3000-4000 | 500 | Conservative, allows up to $200 USD edge cases |
+
+**Testing Pattern:**
+
+```python
+@pytest.mark.golden
+def test_units_scaling_from_txt():
+    """Verify raw cents (1931) → USD ($19.31)."""
+    result = parse_anes(txt_file, metadata)
+    
+    # Values should be in USD range (not cents)
+    cf_values = pd.to_numeric(result.data['cf_usd'], errors='coerce')
+    assert cf_values.min() >= 10.0, "Should be USD (≥$10), not cents"
+    assert cf_values.max() <= 50.0, "Should be USD (≤$50), not thousands"
+    
+    # Verify precision: 2 decimal places
+    for cf in cf_values.head(5):
+        cf_str = f"{cf:.10f}".rstrip('0').rstrip('.')
+        decimal_part = cf_str.split('.')[-1] if '.' in cf_str else ''
+        assert len(decimal_part) <= 2, f"CF should have ≤2 decimal places"
+```
+
+**Applies To:**
+- ANES (cents vs USD)
+- Any CMS dataset with multi-format unit variance
+- Conversion factors, indices, rates
+
+**Benefits:**
+- ✅ Prevents 100x scaling errors
+- ✅ No manual format flags needed
+- ✅ Works across TXT/CSV transparently
+- ✅ Self-documenting via logging
+
+**Source:** ANES Parser v1.0 (2025-10-21)
+
+**Cross-Reference:** SRC-anes.md §2.2 "Critical Format Difference: Units Variance"
+
 ---
 
 ## Appendix B: Column Normalization Examples

@@ -85,8 +85,54 @@ We ingest these artifacts each cycle (A/B/C/D + potential AR corrections). This 
 - Content: `HCPCS`, `MOD`, `PROCSTAT`, `MAC`, `Locality`, `Facility Price`, `Non-Facility Price` (capped amounts to compare against PFS imaging components).
 
 ### 1.4 ANES — Anesthesia Conversion Factors (2025)
-- Files: `ANES2025.txt`, `ANES2025.csv`
-- Content: `Contractor (MAC)`, `Locality #`, `Locality Name`, `Anesthesia CF` (local factor distinct from PFS CF).
+
+**Disambiguation:** ANES = Anesthesia Conversion Factor (not American National Election Studies)
+
+**Files:**
+- `ANES2025.txt` (fixed-width, integer cents)
+- `ANES2025.csv` (CSV, USD decimals)
+- `ANES2025.zip` (archive, typically contains TXT)
+
+**Content:** 
+- `Contractor (MAC)` - 5-digit Medicare Administrative Contractor code
+- `Locality #` - 2-digit locality code
+- `Locality Name` - Descriptive name (40 chars)
+- `Anesthesia CF` - **Format-dependent units** (see critical note below)
+
+**Critical Format Difference - Units Variance:** ⚠️
+
+| Format | Units | Example | Actual Value |
+|--------|-------|---------|--------------|
+| **TXT** | Integer cents | 1931 | $19.31 USD |
+| **CSV** | USD decimals | 19.31 | $19.31 USD |
+
+**Parser Requirement:** Must auto-detect format and scale appropriately (see §A.6 Format-Aware Unit Scaling in REF-parser-reference-appendix-v1.0.md).
+
+**Schema Evolution:**
+- **v1.0 (DEPRECATED):** Natural Key `['locality_code', 'effective_from']` (missing MAC, had false duplicates)
+- **v1.1 (CURRENT):** Natural Key `['mac', 'locality_code', 'effective_from']` (corrected before production)
+
+**Natural Key Rationale:** 
+- Locality code `'00'` appears in 10+ states (AL, AZ, AR, CO, CT, etc.)
+- Without MAC: 10+ false duplicates (~10% false positive rate)
+- Fixed in v1.1 before first release (prevents migration overhead)
+
+**Typical Characteristics:**
+- **Row Count:** 100-120 rows (matches GPCI locality universe)
+- **CF Range:** $19-28 USD (typical for 2025)
+- **Effective Dates:** Annual (calendar year)
+- **Release Cadence:** Annual with YYYY suffix
+
+**Integration Points:**
+- **Joins with GPCI:** Both use `(mac, locality_code, effective_from)` natural key
+- **Joins with Locality:** Links to county-level geography
+
+**Parser Status:** ✅ COMPLETE (v1.0, schema v1.1, 23/23 tests passing)
+
+**See also:** 
+- `prds/SRC-anes.md` - Detailed ANES source reference
+- `cms_pricing/ingestion/contracts/cms_anescf_v1.1.json` - Schema contract
+- `cms_pricing/ingestion/parsers/anes_parser.py` - Parser implementation
 
 ### 1.5 Locality → County Crosswalk (2025)
 - File: `25LOCCO.csv`
