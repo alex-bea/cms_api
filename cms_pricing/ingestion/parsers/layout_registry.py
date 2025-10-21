@@ -115,14 +115,14 @@ OPPSCAP_2025D_LAYOUT = {
 # ===================================================================
 
 ANES_2025D_LAYOUT = {
-    'version': 'v2025.4.0',
+    'version': 'v2025.4.1',  # Fixed CF column positions
     'min_line_length': 75,
     'source_version': '2025D',
     'columns': {
         'mac': {'start': 0, 'end': 5, 'type': 'string', 'nullable': False},
         'locality_id': {'start': 12, 'end': 14, 'type': 'string', 'nullable': False},
         'locality_name': {'start': 17, 'end': 57, 'type': 'string', 'nullable': True},
-        'anesthesia_cf': {'start': 70, 'end': 74, 'type': 'decimal', 'nullable': False},
+        'anesthesia_cf': {'start': 73, 'end': 77, 'type': 'decimal', 'nullable': False},  # FIXED: 1931 is at 73-77
     }
 }
 

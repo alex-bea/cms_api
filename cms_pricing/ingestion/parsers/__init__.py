@@ -35,6 +35,13 @@ except ImportError:
     CF_PARSER_AVAILABLE = False
     parse_conversion_factor = None
 
+try:
+    from cms_pricing.ingestion.parsers.anes_parser import parse_anes
+    ANES_PARSER_AVAILABLE = True
+except ImportError:
+    ANES_PARSER_AVAILABLE = False
+    parse_anes = None
+
 
 class RouteDecision(NamedTuple):
     """
@@ -91,8 +98,8 @@ PARSER_ROUTING = {
     # Anesthesia conversion factor files
     r"ANES.*\.(txt|csv|xlsx)$": (
         "anes",
-        "cms_anescf_v1.0",
-        "uses_rvu_ingestor"
+        "cms_anescf_v1.1",  # Updated to v1.1 (MAC+locality NK, 2dp precision)
+        parse_anes if ANES_PARSER_AVAILABLE else "uses_rvu_ingestor"
     ),
     
     # OPPS cap files

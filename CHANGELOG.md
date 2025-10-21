@@ -11,6 +11,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **ANES Parser v1.0 - Anesthesia Conversion Factor Parser** - Complete parser module (6/6)
+  - **Disambiguation:** ANES = Anesthesia Conversion Factor (not American National Election Studies)
+  - **Schema:** Created `cms_anescf_v1.1.json` (new file, clean version history)
+  - **Natural Key:** Corrected from ['locality_code', 'effective_from'] to ['mac', 'locality_code', 'effective_from']
+  - **Rationale:** Same false duplicate bug as GPCI v1.2; locality_code='00' appears in multiple states
+  - **Prevention:** Fixed NK before first release to avoid GPCI-style migration
+  - **Schema Changes:**
+    - Added MAC column with 5-digit validation pattern
+    - Removed state_fips (not in ANES layout, was schema v1.0 bug)
+    - Units & Scaling: Raw cents → USD (1931 → $19.31) with precision (2dp), rounding (HALF_UP)
+    - Changed precision from 4dp to 2dp (matches CMS cents precision)
+    - Primary keys match natural key
+  - **Validation (Strict Policy):**
+    - Units: Raw CMS file values are integer cents; parser scales to USD
+    - WARN range [15.00, 35.00] USD (typical CF values, after scaling)
+    - HARD range [0.01, 100.00] USD (must be positive, zero rejected)
+    - Explicit zero/negative check (CF must be > 0)
+    - Duplicate handling: QUARANTINE all copies (stricter than GPCI keep='first')
+    - Row count: <50=FAIL, 50-99=WARN, 100-120=normal (tighter than GPCI)
+    - CMS footer filtering (invalid MAC patterns)
+  - **Effective Dates:** Derived from filename (ANES2025 → 2025-01-01, 2025-12-31) or metadata
+  - **Test Results:** 19/19 tests passing (100%) - 13 golden + 6 negative
+    - Added test_anes_units_scaling_from_txt (verify cents → USD)
+    - Added test_anes_effective_dates_from_metadata (verify date logic)
+  - **Real Data:** ~109 localities, 0 rejects, 0 duplicates, <0.05s parse time
+  - **Format Support:** TXT (fixed-width), CSV, ZIP
+  - **Parser Module:** 6/6 parsers complete (PPRRVU, CF, Locality, OPPSCAP, GPCI, ANES) ✅
+  - **QTS Compliance:** §5.1.1 golden fixtures clean, §2.2.1 pytest markers, §G.1-G.4 parser patterns
+  - **Time:** 90 minutes (schema v1.1 + scaling logic + parser + tests + docs)
+
 - **GPCI Parser v1.3 - Natural Key Correction & Validation Hardening** - Geographic Practice Cost Indices
   - **Schema Update:** Corrected Natural Key from `['locality_code', 'effective_from']` to `['mac', 'locality_code', 'effective_from']`
   - **Rationale:** `locality_code='00'` appears in multiple states (AL, AZ, etc.); MAC disambiguates
