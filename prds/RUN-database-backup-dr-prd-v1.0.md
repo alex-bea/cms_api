@@ -4,8 +4,9 @@ doc_type: RUN
 normative: false
 requires:
   - prds/STD-database-platform-prd-v1.0.md#5-backup-restore--disaster-recovery
+  - prds/DOC-master-catalog-prd-v1.0.md
 
-**Status:** Stub v0.1 (in progress)  
+**Status:** Draft v0.1  
 **Owners:** Platform Engineering (DBA), SRE  
 **Consumers:** On-call responders, Release Mgmt., Security  
 **Change control:** PR review + DBA approval  
@@ -80,7 +81,7 @@ WHERE datname = current_database();
 **For HIPAA-compliant storage:**
 
 ```bash
-# 1. Export backup manifest to S3 with WORM object-lock
+# 1. Export backup manifest to Render object storage with WORM lock
 DATE=$(date +%Y-%m-%d)
 MANIFEST_FILE="backup-manifest-${DATE}.json"
 
@@ -98,10 +99,10 @@ cat > ${MANIFEST_FILE} << EOF
 }
 EOF
 
-# 3. Upload to S3 with object-lock
-aws s3 cp ${MANIFEST_FILE} s3://cms-pricing-backups/manifests/${DATE}/ \
-  --storage-class GLACIER \
-  --metadata retention=2555  # 7 years in days
+# 3. Upload to Render storage with retention controls
+render backups upload ${MANIFEST_FILE} \
+  --destination render://backups/prod/manifests/${DATE}/ \
+  --retention-days 2555
 ```
 
 **Retention policy (HIPAA):**
@@ -257,8 +258,8 @@ dropdb test_restore_${DATE}
 **Date:** 2025-10-21 14:30:00 UTC
 
 ### Backup Details
-- **Schema dump:** `s3://cms-pricing-backups/manual-dumps/TICKET-1234/schema_20251021_143022.sql`
-- **Full dump:** `s3://cms-pricing-backups/manual-dumps/TICKET-1234/full_20251021_143022.backup`
+- **Schema dump:** `render://backups/prod/manual-dumps/TICKET-1234/schema_20251021_143022.sql`
+- **Full dump:** `render://backups/prod/manual-dumps/TICKET-1234/full_20251021_143022.backup`
 - **Size:** 45 MB (compressed)
 - **Checksums:** Verified ✅
 - **Test restore:** Passed ✅
@@ -514,7 +515,7 @@ dropdb test_restore_${DATE}
 ## 9. References & Templates
 - Change ticket template for restore/migration.  
 - Incident response doc reference (`prds/STD-incident-response-prd-v1.0.md`).  
-- Sample S3 lifecycle policy for WORM storage.  
+- Sample Render object storage retention policy (WORM).  
 
 ---
 

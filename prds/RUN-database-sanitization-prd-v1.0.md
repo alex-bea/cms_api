@@ -1,6 +1,12 @@
 # Runbook: Database Sanitization & Non-Prod Refresh
 
-**Status:** Stub v0.1 (in progress)  
+doc_type: RUN
+normative: false
+requires:
+  - prds/STD-database-platform-prd-v1.0.md#24-data-parity--seeding
+  - prds/DOC-master-catalog-prd-v1.0.md
+
+**Status:** Draft v0.1  
 **Owners:** Security, Data Engineering, Platform Engineering  
 **Consumers:** Service teams, QA, Release Mgmt.  
 **Change control:** PR review + Security approval  
@@ -102,4 +108,3 @@ Checklist includes environment tagging, PHI scanner output, change ticket update
 | Version | Date | Summary |
 |---------|------|---------|
 | v0.1 (stub) | 2025-10-21 | Initial scaffold created. Sections flagged TODO for detailed scripts, validation steps, and compliance evidence templates. |
-

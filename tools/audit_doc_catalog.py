@@ -27,10 +27,13 @@ Exit code 0 = all good; otherwise prints issues and exits 1.
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from tools.shared.logging_utils import (
     AuditIssue,
@@ -42,6 +45,7 @@ from tools.shared.logging_utils import (
 from tools.shared.prd_helpers import (
     MASTER_DOC_NAME,
     PRDS_DIR,
+    classify_doc,
     get_prd_names,
     read_master_catalog,
     read_path_text,
@@ -51,12 +55,12 @@ from tools.shared.prd_helpers import (
 MASTER_LINK = MASTER_DOC_NAME
 EXEMPT_FROM_MASTER_LINK = {MASTER_DOC_NAME}
 
-DOC_PATTERN = re.compile(r"`([A-Z]{3,4}-[a-z0-9\-]+(?:-(?:prd|impl))?(?:-v[0-9]+\.[0-9]+)?\.md)`")
+DOC_PATTERN = re.compile(r"`([A-Z]{3,4}-[a-z0-9\-]+(?:-(?:prd|impl))?(?:-v[0-9]+\.[0-9]+(?:-[A-Z]+)?)?\.md)`")
 OLD_PRD_PATTERN = re.compile(r"_prd_v")
 CORRECT_PRD_PATTERN = re.compile(r"-prd-v")
-PRD_REFERENCE_PATTERN = re.compile(r"([A-Z]{3,4}-[a-z0-9\-]+(?:-prd-v[0-9]+\.[0-9]+)?\.md)")
+PRD_REFERENCE_PATTERN = re.compile(r"([A-Z]{3,4}-[a-z0-9\-]+(?:-prd-v[0-9]+\.[0-9]+(?:-[A-Z]+)?)?\.md)")
 IMPL_PATTERN = re.compile(r"([A-Z]{3,4}-[a-z0-9\-]+)-impl-v[0-9]+\.[0-9]+\.md")
-PRD_SLUG_PATTERN = re.compile(r"([A-Z]{3,4}-[a-z0-9\-]+)-prd-v[0-9]+\.[0-9]+\.md")
+PRD_SLUG_PATTERN = re.compile(r"([A-Z]{3,4}-[a-z0-9\-]+)-prd-v[0-9]+\.[0-9]+(?:-[A-Z]+)?\.md")
 
 REQUIRED_REFERENCES = {
     "PRD-mpfs-prd-v1.0.md": ["REF-cms-pricing-source-map-prd-v1.0.md"],
@@ -64,6 +68,102 @@ REQUIRED_REFERENCES = {
     "PRD-opps-prd-v1.0.md": ["REF-cms-pricing-source-map-prd-v1.0.md"],
     "PRD-geography-locality-mapping-prd-v1.0.md": ["REF-geography-source-map-prd-v1.0.md"],
 }
+
+
+@dataclass(frozen=True)
+class CatalogSection:
+    heading: str
+    stub_builder: Callable[[str], str]
+
+
+CATALOG_SECTIONS: Dict[str, CatalogSection] = {
+    "STD": CatalogSection(
+        heading="## 1. Architectural Standards (`STD-*`)",
+        stub_builder=lambda doc: (
+            f"| `{doc}` | Status TBD | Owner TBD | TBD | Auto-added placeholder (pending metadata) |"
+        ),
+    ),
+    "REF": CatalogSection(
+        heading="## 2. Reference Architectures (`REF-*`)",
+        stub_builder=lambda doc: (
+            f"| `{doc}` | Status TBD | Owner TBD | Auto-added placeholder (pending metadata) |"
+        ),
+    ),
+    "PRD": CatalogSection(
+        heading="## 3. Product & Dataset PRDs (`PRD-*`)",
+        stub_builder=lambda doc: (
+            f"| `{doc}` | Status TBD | Owner TBD | TBD | TBD |"
+        ),
+    ),
+    "RUN": CatalogSection(
+        heading="## 4. Operational Runbooks (`RUN-*`)",
+        stub_builder=lambda doc: (
+            f"| `{doc}` | Status TBD | Owner TBD | Scope TBD |"
+        ),
+    ),
+    "DOC": CatalogSection(
+        heading="## 5. Documentation & Meta (`DOC-*`)",
+        stub_builder=lambda doc: (
+            f"| `{doc}` | Status TBD | Owner TBD | Purpose TBD |"
+        ),
+    ),
+    "SRC": CatalogSection(
+        heading="## 6. Source Descriptors (`SRC-*`)",
+        stub_builder=lambda doc: (
+            f"| `{doc}` | Source TBD | Owner TBD | Status TBD | Parser TBD | Auto-added placeholder (pending metadata) |"
+        ),
+    ),
+}
+
+MASTER_BACKLINK_BULLET = "- `prds/DOC-master-catalog-prd-v1.0.md`"
+CROSS_REF_HEADER = "**Cross-References:**"
+CHANGE_LOG_HEADING = "## 9. Change Log"
+CHANGE_LOG_SUMMARY_PREFIX = "Auto-added catalog rows for"
+
+
+@dataclass
+class AuditState:
+    master_text: str
+    issues: List[AuditIssue]
+    missing_catalog: List[str]
+    missing_backlinks: List[str]
+    actual_docs: Set[str]
+    catalog_docs: Set[str]
+
+
+@dataclass
+class CatalogUpdateResult:
+    updated_text: Optional[str]
+    inserted_docs: List[str]
+    skipped_docs: List[str]
+    change_log_updated: bool
+
+
+@dataclass
+class FixReport:
+    catalog_updates: List[str]
+    backlink_updates: List[str]
+    change_log_updated: bool
+    skipped_catalog: List[str]
+    skipped_backlinks: List[str]
+
+    def has_changes(self) -> bool:
+        return bool(self.catalog_updates or self.backlink_updates or self.change_log_updated)
+
+    def summary_lines(self) -> List[str]:
+        lines: List[str] = []
+        fmt = lambda docs: ", ".join(f"`{doc}`" for doc in sorted(dict.fromkeys(docs)))
+        if self.catalog_updates:
+            lines.append(f"Inserted master catalog rows for: {fmt(self.catalog_updates)}")
+        if self.backlink_updates:
+            lines.append(f"Added master catalog backlink to: {fmt(self.backlink_updates)}")
+        if self.change_log_updated:
+            lines.append("Recorded auto-fix entry in change log.")
+        if self.skipped_catalog:
+            lines.append(f"Skipped catalog auto-insert for: {fmt(self.skipped_catalog)}")
+        if self.skipped_backlinks:
+            lines.append(f"Skipped backlink fix (write conflict or read error) for: {fmt(self.skipped_backlinks)}")
+        return lines
 
 
 def extract_master_entries(text: str) -> set[str]:
@@ -281,7 +381,7 @@ def validate_case_sensitive_path(doc_name: str, all_docs: Set[str]) -> Optional[
 
 def check_companion_links_markdown() -> List[Tuple[str, str]]:
     """Validate bidirectional companion doc links using markdown headers.
-    
+
     Enhancements (v2):
     - Anchored regex patterns (line start)
     - Handles multiple links (comma-separated)
@@ -361,26 +461,201 @@ def check_companion_links_markdown() -> List[Tuple[str, str]]:
     return issues
 
 
-def main() -> int:
-    logger = get_logger("audit.doc_catalog")
-    issues: List[AuditIssue] = []
+def extract_doc_from_row(line: str) -> str:
+    match = re.search(r"`([^`]+)`", line)
+    if match:
+        return match.group(1)
+    cell = line.strip().strip("|").split("|", 1)[0].strip()
+    return cell
+
+
+def find_table_data_range(lines: List[str], heading: str) -> Optional[Tuple[int, int]]:
+    try:
+        heading_idx = lines.index(heading)
+    except ValueError:
+        return None
+
+    header_idx: Optional[int] = None
+    for idx in range(heading_idx + 1, len(lines)):
+        if lines[idx].startswith("|"):
+            header_idx = idx
+            break
+
+    if header_idx is None:
+        return None
+
+    data_start = header_idx + 2  # skip header row + separator row
+    data_end = data_start
+    while data_end < len(lines) and lines[data_end].startswith("|"):
+        data_end += 1
+
+    return data_start, data_end
+
+
+def add_change_log_entry(lines: List[str], docs: List[str]) -> bool:
+    if not docs:
+        return False
 
     try:
-        master_text = read_master_catalog()
-    except FileNotFoundError as exc:
-        logger.error(str(exc))
-        return 1
+        heading_idx = lines.index(CHANGE_LOG_HEADING)
+    except ValueError:
+        return False
 
+    header_idx: Optional[int] = None
+    for idx in range(heading_idx + 1, len(lines)):
+        if lines[idx].startswith("|"):
+            header_idx = idx
+            break
+
+    if header_idx is None:
+        return False
+
+    data_start = header_idx + 2
+    data_end = data_start
+    while data_end < len(lines) and lines[data_end].startswith("|"):
+        data_end += 1
+
+    summary = f"{CHANGE_LOG_SUMMARY_PREFIX} {', '.join(f'`{doc}`' for doc in docs)} via audit_doc_catalog.py --fix"
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    new_row = f"| TBD | {timestamp} | {summary} | #TBD |"
+
+    for idx in range(data_start, data_end):
+        if summary in lines[idx]:
+            return False
+
+    lines.insert(data_start, new_row)
+    return True
+
+
+def update_master_catalog_text(
+    master_text: str, missing_docs: List[str], logger
+) -> CatalogUpdateResult:
+    if not missing_docs:
+        return CatalogUpdateResult(updated_text=None, inserted_docs=[], skipped_docs=[], change_log_updated=False)
+
+    lines = master_text.splitlines()
+    trailing_newline = master_text.endswith("\n")
+
+    inserted: List[str] = []
+    skipped: List[str] = []
+
+    for doc in missing_docs:
+        doc_type = classify_doc(doc)
+        section = CATALOG_SECTIONS.get(doc_type)
+        if not section:
+            skipped.append(doc)
+            logger.warning(
+                "No catalog section mapping for doc `%s` (type `%s`); skipping auto-insert.",
+                doc,
+                doc_type,
+            )
+            continue
+
+        range_result = find_table_data_range(lines, section.heading)
+        if range_result is None:
+            skipped.append(doc)
+            logger.warning(
+                "Unable to locate table for section `%s`; skipping auto-insert for `%s`.",
+                section.heading,
+                doc,
+            )
+            continue
+
+        data_start, data_end = range_result
+        data_lines = lines[data_start:data_end]
+
+        existing_docs = {extract_doc_from_row(row) for row in data_lines}
+        if doc in existing_docs:
+            continue
+
+        data_lines.append(section.stub_builder(doc))
+        data_lines.sort(key=lambda row: extract_doc_from_row(row).lower())
+        lines[data_start:data_end] = data_lines
+        data_end = data_start + len(data_lines)
+        inserted.append(doc)
+
+    if not inserted:
+        return CatalogUpdateResult(updated_text=None, inserted_docs=[], skipped_docs=skipped, change_log_updated=False)
+
+    change_log_updated = add_change_log_entry(lines, inserted)
+    new_text = "\n".join(lines)
+    if trailing_newline and not new_text.endswith("\n"):
+        new_text += "\n"
+
+    return CatalogUpdateResult(
+        updated_text=new_text,
+        inserted_docs=inserted,
+        skipped_docs=skipped,
+        change_log_updated=change_log_updated,
+    )
+
+
+def find_cross_ref_insert_index(lines: List[str]) -> int:
+    for idx, line in enumerate(lines):
+        if line.strip() == "---":
+            return idx
+    for idx, line in enumerate(lines):
+        if line.strip() == "":
+            return idx
+    return len(lines)
+
+
+def ensure_master_backlink(text: str) -> Optional[str]:
+    if MASTER_DOC_NAME in text:
+        return None
+
+    lines = text.splitlines()
+    trailing_newline = text.endswith("\n")
+
+    for idx, line in enumerate(lines):
+        if line.strip() == CROSS_REF_HEADER:
+            insert_idx = idx + 1
+            while insert_idx < len(lines) and lines[insert_idx].lstrip().startswith(("-", "*")):
+                insert_idx += 1
+            lines.insert(insert_idx, MASTER_BACKLINK_BULLET)
+            new_text = "\n".join(lines)
+            if trailing_newline and not new_text.endswith("\n"):
+                new_text += "\n"
+            return new_text
+
+    insert_idx = find_cross_ref_insert_index(lines)
+    block = [CROSS_REF_HEADER, MASTER_BACKLINK_BULLET, ""]
+    if insert_idx > 0 and lines[insert_idx - 1].strip():
+        block.insert(0, "")
+    lines[insert_idx:insert_idx] = block
+    new_text = "\n".join(lines)
+    if trailing_newline and not new_text.endswith("\n"):
+        new_text += "\n"
+    return new_text
+
+
+def write_with_backup(path: Path, original_text: str, new_text: str) -> Path:
+    backup_path = path.with_suffix(path.suffix + ".bak")
+    if backup_path.exists():
+        raise RuntimeError(f"Backup already exists: {backup_path}")
+
+    backup_path.write_text(original_text, encoding="utf-8")
+    path.write_text(new_text, encoding="utf-8")
+    return backup_path
+
+
+def perform_audit() -> AuditState:
+    master_text = read_master_catalog()
     actual_docs = get_prd_names()
     catalog_docs = extract_master_entries(master_text)
 
-    for name in sorted(actual_docs - catalog_docs):
+    missing_catalog = sorted(actual_docs - catalog_docs)
+    missing_backlinks = docs_missing_master_link(actual_docs)
+
+    issues: List[AuditIssue] = []
+
+    for name in missing_catalog:
         issues.append(AuditIssue("error", "Missing from master catalog", doc=name))
 
     for name in sorted(catalog_docs - actual_docs):
         issues.append(AuditIssue("error", "Catalog entry has no matching file", doc=name))
 
-    for name in docs_missing_master_link(actual_docs):
+    for name in missing_backlinks:
         issues.append(AuditIssue("error", "Missing backlink to master catalog", doc=name))
 
     for file_path, description in check_old_prd_references():
@@ -396,30 +671,141 @@ def main() -> int:
         issues.append(AuditIssue("error", description, doc=doc))
 
     for doc, description in check_companion_document_compliance():
-        # Warnings for main docs not referencing companions
         if "(warning)" in description:
             issues.append(AuditIssue("warning", description, doc=doc))
         else:
             issues.append(AuditIssue("error", description, doc=doc))
 
-    # Companion link validation (markdown-based, no YAML needed)
     for doc, description in check_companion_links_markdown():
         if "(warning)" in description:
             issues.append(AuditIssue("warning", description, doc=doc))
         else:
             issues.append(AuditIssue("error", description, doc=doc))
 
-    if not issues:
+    return AuditState(
+        master_text=master_text,
+        issues=issues,
+        missing_catalog=missing_catalog,
+        missing_backlinks=missing_backlinks,
+        actual_docs=actual_docs,
+        catalog_docs=catalog_docs,
+    )
+
+
+def apply_fixes(state: AuditState, logger) -> FixReport:
+    report = FixReport(
+        catalog_updates=[],
+        backlink_updates=[],
+        change_log_updated=False,
+        skipped_catalog=[],
+        skipped_backlinks=[],
+    )
+
+    master_result = update_master_catalog_text(state.master_text, state.missing_catalog, logger)
+    if master_result.skipped_docs:
+        report.skipped_catalog.extend(master_result.skipped_docs)
+
+    if master_result.updated_text is not None:
+        master_path = PRDS_DIR / MASTER_DOC_NAME
+        try:
+            write_with_backup(master_path, state.master_text, master_result.updated_text)
+        except RuntimeError as exc:
+            report.skipped_catalog.extend(master_result.inserted_docs)
+            logger.warning("Skipping catalog update for `%s`: %s", MASTER_DOC_NAME, exc)
+        else:
+            report.catalog_updates.extend(master_result.inserted_docs)
+            report.change_log_updated = master_result.change_log_updated
+
+    for doc in state.missing_backlinks:
+        doc_path = PRDS_DIR / doc
+        try:
+            original_text = read_prd_text(doc)
+        except FileNotFoundError:
+            report.skipped_backlinks.append(doc)
+            logger.warning("Unable to read `%s` for backlink fix (file missing).", doc)
+            continue
+
+        new_text = ensure_master_backlink(original_text)
+        if not new_text or new_text == original_text:
+            continue
+
+        try:
+            write_with_backup(doc_path, original_text, new_text)
+            report.backlink_updates.append(doc)
+        except RuntimeError as exc:
+            report.skipped_backlinks.append(doc)
+            logger.warning("Skipping backlink fix for `%s`: %s", doc, exc)
+
+    return report
+
+
+def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Audit documentation catalog consistency.")
+    parser.add_argument(
+        "--fix",
+        "--fix-missing",
+        dest="fix",
+        action="store_true",
+        help="Automatically insert missing catalog entries and master backlinks (with backups).",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = parse_args(argv)
+    logger = get_logger("audit.doc_catalog")
+
+    try:
+        state = perform_audit()
+    except FileNotFoundError as exc:
+        logger.error(str(exc))
+        return 1
+
+    if args.fix:
+        report = apply_fixes(state, logger)
+
+        summary_lines = report.summary_lines()
+        if report.has_changes():
+            logger.info("Applied auto-fixes:")
+            for line in summary_lines:
+                logger.info(" - %s", line)
+        else:
+            if summary_lines:
+                logger.info("Auto-fix review:")
+                for line in summary_lines:
+                    logger.info(" - %s", line)
+            else:
+                logger.info("No auto-fix changes required.")
+
+        try:
+            state = perform_audit()
+        except FileNotFoundError as exc:
+            logger.error(str(exc))
+            return 1
+
+        if state.issues:
+            emit_issues(logger, state.issues)
+            counts = count_by_severity(state.issues)
+            logger.error(
+                "Documentation catalog audit failed after attempted fixes (%s errors).",
+                counts.get("error", 0),
+            )
+            return exit_code_from_issues(state.issues)
+
+        logger.info("Documentation catalog audit passed after applying fixes.")
+        return 0
+
+    if not state.issues:
         logger.info("Documentation catalog audit passed.")
         return 0
 
-    emit_issues(logger, issues)
-    counts = count_by_severity(issues)
+    emit_issues(logger, state.issues)
+    counts = count_by_severity(state.issues)
     logger.error(
         "Documentation catalog audit failed (%s errors).",
         counts.get("error", 0),
     )
-    return exit_code_from_issues(issues)
+    return exit_code_from_issues(state.issues)
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ The resolver depends on multiple external datasets with varying stability. We pr
 
 | PRD Section | Issue/Risk | Guideline/Mitigation |
 |:--|:--|:--|
-| §5 Data Sources | **Brittle ingest URLs** (gated or revision‑varying links, e.g., SimpleMaps, CMS ZIP/ZIP9). | **Mandatory Ingest Layer**: all source files must be staged in a controlled internal bucket (data lake). `ingest_runs` tracks the **internal URI** (e.g., `s3://…/raw/…`) as the canonical path; public URLs are for provenance only. |
+| §5 Data Sources | **Brittle ingest URLs** (gated or revision‑varying links, e.g., SimpleMaps, CMS ZIP/ZIP9). | **Mandatory Ingest Layer**: all source files must be staged in a controlled internal bucket (Render object storage). `ingest_runs` tracks the **internal URI** (e.g., `render://…/raw/…`) as the canonical path; public URLs are for provenance only. |
 | §4/§8 | **Uncertain population for tiebreakers**: SimpleMaps `population` may be null when `zcta_bool=false`. | **Tie‑Breaker Coalescing**: use `COALESCE(population, 0)` so unknown/zero population ZIPs sort as “smaller”. |
 | §8 Step 2 | **Centroid fallback risk**: reliance on NBER centroid when Gazetteer row is missing. | **Fallback Monitoring**: add **Gazetteer Fallback Rate** KPI/alert; if >0.1% over 24h, open a **P1** to investigate Census file integrity. |
 | §8/§9 | **Empty candidate set** (e.g., state has only the starting ZIP or all others filtered as PO boxes). | **Defined Error**: return `NO_CANDIDATES_IN_STATE` (HTTP 422) with diagnostics; never index `R[0]` on empty list. |

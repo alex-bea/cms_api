@@ -1,9 +1,15 @@
 # Parser Contracts Standard (v1.11 - ARCHIVED)
 
+**Status:** Archived v1.11  
+**Owners:** Data Platform Engineering  
+**Consumers:** Data Engineering, Platform Architecture, QA Guild  
+**Change control:** Archived (read-only)  
+**Last reviewed:** 2025-10-17  
+
 > **⚠️ DEPRECATION NOTICE**  
 > **This document has been archived as of 2025-10-17.**  
 > **Please use the modularized v2.0 documents instead:**
->
+> 
 > - **STD-parser-contracts-prd-v2.0.md** - Core policy, contracts, versioning
 > - **STD-parser-contracts-impl-v2.0.md** - Implementation templates, code patterns
 > - **REF-parser-routing-detection-v1.0.md** - Router architecture, layout registry
@@ -4489,4 +4495,3 @@ def _parse_pprrvu_file(self, file_obj, filename):
 ---
 
 *End of Document*
-

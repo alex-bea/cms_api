@@ -7,6 +7,7 @@ review_cadence: "Per parser milestone or quarterly (whichever comes first)"
 requires:
   - STD-parser-contracts-prd-v2.0.md
   - RUN-parser-qa-runbook-prd-v1.0.md
+  - prds/DOC-master-catalog-prd-v1.0.md
 
 # Parser Build Playbook
 

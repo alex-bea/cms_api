@@ -18,6 +18,7 @@
 | `STD-data-architecture-prd-v1.0.md` | Adopted 1.0 | Data Engineering | 2025-10-15 | Main standard |
 | `STD-data-architecture-impl-v1.0.md` | Draft v1.0 | Data Engineering | 2025-10-15 | Implementation guide (companion) |
 | `STD-parser-contracts-prd-v2.0.md` | Draft v2.0 | Data Platform Engineering | 2025-10-17 | Core parser contracts: ParseResult, router API, metadata injection, versioning (modularized from v1.11) |
+| `STD-parser-contracts-prd-v1.11-ARCHIVED.md` | Archived v1.11 | Data Platform Engineering | 2025-09-30 | Legacy monolithic parser contracts (superseded by modular v2.0 suite) |
 | `STD-parser-contracts-impl-v2.0.md` | Draft v2.0 | Data Platform Engineering | 2025-10-17 | Parser implementation companion: 11-step template, alias maps, type handling, validation phases |
 | `REF-parser-routing-detection-v1.0.md` | Draft v1.0 | Data Platform Engineering | 2025-10-17 | Parser routing architecture: format detection, layout registry, layout-schema alignment |
 | `REF-parser-quality-guardrails-v1.0.md` | Draft v1.0 | Data Platform Engineering, QA Guild | 2025-10-17 | Parser quality patterns: validation tiers, error taxonomy, safe metrics calculation |
@@ -67,9 +68,9 @@
 |---|---|---|---|
 | `RUN-global-operations-prd-v1.0.md` | Draft v1.0 | Ops + Data Engineering | Go-live validation, paging, rollback |
 | `RUN-render-deployment-prd-v1.0.md` | Draft v1.0 | Platform Engineering, SRE | Render provisioning, migrations execution, post-deploy hardening |
-| `RUN-database-migrations-prd-v1.0.md` | Stub v0.1 | Platform Engineering (DBA), Service Teams | Alembic authoring workflow, dry-runs, bootstrap/stamp policy, emergency procedure |
-| `RUN-database-backup-dr-prd-v1.0.md` | Stub v0.1 | Platform Engineering (DBA), SRE | Automated backup validation, manual dumps, restore/PITR drills, incident response |
-| `RUN-database-sanitization-prd-v1.0.md` | Stub v0.1 | Security, Data Engineering | PHI registry, tokenization pipeline, non-prod refresh process, staging soak checklist |
+| `RUN-database-migrations-prd-v1.0.md` | Draft v0.1 | Platform Engineering (DBA), Service Teams | Alembic authoring workflow, dry-runs, bootstrap/stamp policy, emergency procedure |
+| `RUN-database-backup-dr-prd-v1.0.md` | Draft v0.1 | Platform Engineering (DBA), SRE | Automated backup validation, manual dumps, restore/PITR drills, incident response |
+| `RUN-database-sanitization-prd-v1.0.md` | Draft v0.1 | Security, Data Engineering | PHI registry, tokenization pipeline, non-prod refresh process, staging soak checklist |
 
 ---
 

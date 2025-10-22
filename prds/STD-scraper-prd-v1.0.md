@@ -73,7 +73,7 @@ jobs:
           AWS_REGION: us-west-2
           AWS_ROLE: ${{ secrets.AWS_ROLE_ARN }}
         run: |
-          python -m ingestors.rvu --mode discovery --out s3://ORG-pricing-data/bronze/cms_rvu/
+          python -m ingestors.rvu --mode discovery --out render://ORG-pricing-data/bronze/cms_rvu/
       - name: Request approval if changed
         run: python ops/request_approval.py --source cms_rvu --diff artifacts/diff.json
 
@@ -82,7 +82,7 @@ jobs:
 
 4) Storage, Retention & Layout (S3)
 
-Bucket: s3://<org>-pricing-data/
+Bucket: render://<org>-pricing-data/
 	•	Encryption: SSE‑S3 (OK) or SSE‑KMS (recommended for key rotation/audit).
 	•	Versioning: ON.
 	•	Lifecycle: Standard → Standard‑IA @ 90d → Glacier @ 365d; retain 6 years; delete thereafter.
@@ -312,7 +312,7 @@ B. Snapshot digest
 
 C. Minimal CLI contract
 
-python -m ingestors.rvu --mode latest-only --start_year 2023 --end_year 2025 --out s3://... --schema schemas/cms_rvu.yaml
+python -m ingestors.rvu --mode latest-only --start_year 2023 --end_year 2025 --out render://... --schema schemas/cms_rvu.yaml
 
 D. Alert payload (example)
 
@@ -321,7 +321,7 @@ D. Alert payload (example)
   "event": "freshness_slo_breach",
   "detected": "2025-09-04T10:12:00Z",
   "lag_hours": 90,
-  "last_manifest": "s3://.../bronze/cms_rvu/2025/20250901_160422/manifest.json",
+  "last_manifest": "render://.../bronze/cms_rvu/2025/20250901_160422/manifest.json",
   "run_log": "https://github.com/org/repo/actions/runs/123456789"
 }
 

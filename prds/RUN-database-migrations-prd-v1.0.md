@@ -4,8 +4,9 @@ doc_type: RUN
 normative: false
 requires:
   - prds/STD-database-platform-prd-v1.0.md#3-schema-lifecycle--migrations
+  - prds/DOC-master-catalog-prd-v1.0.md
 
-**Status:** Stub v0.1 (in progress)  
+**Status:** Draft v0.1  
 **Owners:** Platform Engineering (DBA), Service Teams  
 **Consumers:** Release Engineering, On-Call, Data Engineering  
 **Change control:** PR review + Platform approval  

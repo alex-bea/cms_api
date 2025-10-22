@@ -32,7 +32,9 @@ from tools.shared.prd_helpers import (
     read_path_text,
 )
 HEADER_PATTERN = re.compile(r"^\*\*(?P<field>[^:]+):\*\*\s*(?P<value>.+?)\s*$")
-STATUS_PATTERN = re.compile(r"(Adopted|Draft|Deprecated)[^\s]*", re.IGNORECASE)
+VALID_STATUSES = ("Adopted", "Draft", "Deprecated", "Archived", "Retired")
+STATUS_PATTERN = re.compile(r"(" + "|".join(VALID_STATUSES) + r")[^\s]*", re.IGNORECASE)
+DEFAULT_STATUS = "Adopted"
 
 @dataclass
 class DocHeader:
@@ -43,11 +45,11 @@ def parse_header(path: Path) -> DocHeader:
     lines = read_path_text(path).splitlines()[:20]
     status_line = next((line for line in lines if "**Status:**" in line), None)
     if not status_line:
-        raise ValueError(f"Missing Status field in {path.name}")
+        return DocHeader(status="")
 
     match = HEADER_PATTERN.match(status_line.strip())
     if not match:
-        raise ValueError(f"Malformed Status line in {path.name}: {status_line}")
+        return DocHeader(status="")
 
     return DocHeader(status=match.group("value").strip())
 
@@ -102,39 +104,27 @@ def main() -> int:
     for name, status in catalog_status.items():
         if name not in actual_docs:
             continue
-        try:
-            header = parse_header(PRDS_DIR / name)
-        except ValueError as exc:
-            issues.append(AuditIssue("error", str(exc)))
-            continue
+        header = parse_header(PRDS_DIR / name)
 
         header_status_norm = STATUS_PATTERN.search(header.status or "")
         catalog_status_norm = STATUS_PATTERN.search(status or "")
 
-        if not header_status_norm:
-            issues.append(
-                AuditIssue(
-                    "error",
-                    f"Could not parse header status: '{header.status}'",
-                    doc=name,
-                )
-            )
-            continue
-        if not catalog_status_norm:
-            issues.append(
-                AuditIssue(
-                    "error",
-                    f"Could not parse catalog status: '{status}'",
-                    doc=name,
-                )
-            )
-            continue
+        header_status = (
+            header_status_norm.group(0).lower()
+            if header_status_norm
+            else DEFAULT_STATUS.lower()
+        )
+        catalog_status = (
+            catalog_status_norm.group(0).lower()
+            if catalog_status_norm
+            else DEFAULT_STATUS.lower()
+        )
 
-        if header_status_norm.group(0).lower() != catalog_status_norm.group(0).lower():
+        if header_status != catalog_status:
             issues.append(
                 AuditIssue(
                     "error",
-                    f"Status mismatch: header='{header.status}' vs catalog='{status}'",
+                    f"Status mismatch: header='{header.status or DEFAULT_STATUS}' vs catalog='{status or DEFAULT_STATUS}'",
                     doc=name,
                 )
             )

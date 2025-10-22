@@ -12,6 +12,7 @@
 - **REF-scraper-ingestor-integration-v1.0.md:** Scraper + ingester integration playbook  
 - **STD-qa-testing-prd-v1.0.md:** QA standards and harness expectations  
 - **SRC-oppscap.md:** Related dataset (OPPS-based caps for MPFS imaging services)
+- `prds/DOC-master-catalog-prd-v1.0.md`
 
 **Last Updated:** 2025-10-23  
 **Verified Against CMS Release:** July 2025 OPPS Quarterly Addenda

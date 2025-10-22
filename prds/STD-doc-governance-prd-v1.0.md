@@ -123,7 +123,7 @@ Companion patterns share the same `{prefix}-{slug}` portion, differing only in t
 
 ## 3. Metadata Requirements
 Each document must include at minimum (in the header block):
-- Status (e.g., Draft, Adopted, Deprecated)
+- Status (see §3.1 Status Vocabulary)
 - Owners (role or team)
 - Consumers
 - Change control process
@@ -188,6 +188,15 @@ The repository MUST maintain a `CHANGELOG.md` file at the project root following
 - Git tags MUST match changelog versions
 - Unreleased section tracks work in progress
 - Automated via `tools/audit_changelog.py`
+
+### 3.1 Status Vocabulary
+- **Draft vX.Y** — Authoritative document under active development or awaiting adoption. Use this label for new or evolving docs; avoid the legacy `Stub` label.
+- **Adopted vX.Y** — Approved standard/runbook/reference in effect. Requires ADR or documented owner approval.
+- **Deprecated vX.Y** — Document slated for retirement; cite successor references and planned removal date.
+- **Archived vX.Y** — Historical copy retained for traceability. Archive status must include the effective archive date and pointer to replacement materials. Archived docs are read-only and exempt from future updates.
+- **Retired vX.Y** *(optional)* — Document removed from day-to-day use but kept briefly for transition. After the transition window, move content to `Archived`.
+
+Status transitions (Draft → Adopted → Deprecated/Retired/Archived) MUST appear in the document header and the Master Catalog change log within the same PR.
 
 ### 5.2 Document-Level Change Logs
 

@@ -16,6 +16,7 @@
 - **planning/parsers/locality/TWO_STAGE_ARCHITECTURE.md:** Detailed implementation guide
 - **planning/parsers/locality/AUTHORITY_MATRIX.md:** Format authority per vintage
 - **planning/parsers/locality/TIME_MEASUREMENT.md:** Time analysis & ROI
+- `prds/DOC-master-catalog-prd-v1.0.md`
 
 ---
 

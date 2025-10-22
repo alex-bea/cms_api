@@ -260,6 +260,16 @@ pytest tests/geography -m geography
 
 Combine markers as needed (e.g., `pytest -m "scraper or prd_docs"`) or run the full suite with `pytest`.
 
+#### Master catalog auto-fix
+
+Run the documentation catalog audit with `--fix` to automatically register new docs and add master backlinks:
+
+```bash
+python tools/audit_doc_catalog.py --fix
+```
+
+The script creates `.bak` backups for every file it touches and skips updates if a backup already exists, so you can inspect and clean up before rerunning.
+
 ### Code Quality
 
 ```bash
