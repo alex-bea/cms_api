@@ -1214,6 +1214,209 @@ databases:
 
 ---
 
+## Part 7 Troubleshooting: Common Deployment Issues
+
+Based on 2025-10-21 API deployment experience.
+
+### Issue 1: Service Stuck at "Starting service..." (401 Unauthorized)
+
+**Symptoms:**
+- Deployment hangs for 8+ minutes
+- Logs show: `INFO: "GET /health HTTP/1.1" 401 Unauthorized`
+- Service never reaches "Live" status
+
+**Root cause:** Health endpoint requires authentication, but Render health checker can't provide API key.
+
+**Fix:**
+```python
+# In your authentication middleware (e.g., cms_pricing/middleware.py)
+class SecurityMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Skip auth for health checks and docs
+        if request.url.path in ["/health", "/healthz", "/readyz", "/docs", "/redoc", "/openapi.json"]:
+            return await call_next(request)  # ← CRITICAL: Must bypass auth!
+        
+        # ... rest of auth logic
+```
+
+**Prevention:**
+- Always test health endpoints WITHOUT authentication
+- Add to deployment checklist: `curl http://localhost:8000/health` (should return 200, not 401)
+- Document all public endpoints in API security policy
+
+**Health Endpoint Requirements:**
+- ✅ MUST be unauthenticated (no API key required)
+- ✅ MUST respond in <1 second
+- ✅ MUST be lightweight (avoid heavy DB queries)
+- ✅ SHOULD check critical dependencies (database ping OK)
+
+---
+
+### Issue 2: Render Using Cached/Old Docker Image
+
+**Symptoms:**
+- Deployed with "Deploy latest commit"
+- Logs still show old errors you already fixed
+- Changes not appearing in deployment
+
+**Root cause:** Render caches `:latest` tag aggressively. Even when new image is pushed to GHCR, Render may pull cached version.
+
+**Fix (Option A - Use :main tag):**
+```
+In Render Settings → Image URL:
+Change from: ghcr.io/alex-bea/cms-api:latest
+To: ghcr.io/alex-bea/cms-api:main
+```
+
+**Fix (Option B - Clear cache):**
+```
+In Render Manual Deploy:
+Select: "Clear build cache & deploy"
+```
+
+**Fix (Option C - Use SHA tags):**
+```
+For specific commit: ghcr.io/alex-bea/cms-api:sha-abc123
+```
+
+**Prevention:**
+- Check logs for "Pulling image" timestamp
+- Verify image digest matches expected build
+- Use `:main` tag instead of `:latest` for active development
+- Switch to version tags (`:v1.0.0`) for production
+
+---
+
+### Issue 3: Out of Memory (512MB) - Starter Tier
+
+**Symptoms:**
+- Deployment fails with "Out of memory (used over 512MB)"
+- Service crashes during startup
+- Logs cut off mid-startup
+
+**Root cause:** Default configuration uses too much memory:
+- 4 uvicorn workers × 50MB = 200MB
+- Eager-loading all schemas at startup = 100MB
+- Python runtime + dependencies = 200MB
+- **Total: ~650MB** > 512MB limit
+
+**Fix (Stay on Starter tier):**
+
+Optimize memory in Dockerfile:
+```dockerfile
+# Reduce workers to 1
+CMD ["uvicorn", "app:app", "--workers", "1", "--port", "${PORT:-8000}"]
+```
+
+Lazy-load schemas:
+```python
+# In schema_registry.py
+def _load_existing_schemas(self):
+    """Skip eager loading - load on-demand"""
+    pass
+
+def get_schema(self, dataset_name: str):
+    """Lazy-load schema on first access"""
+    if dataset_name not in self._schemas:
+        self._lazy_load_schema(dataset_name)
+    return self._schemas.get(dataset_name)
+```
+
+**Result:** ~420MB (fits in 512MB Starter tier)
+
+**Alternative: Upgrade tier**
+```
+Free:     512 MB  - Too small for most APIs
+Starter:  512 MB  - OK with optimizations
+Standard: 2 GB    - Recommended for production ($25/mo)
+Pro:      4 GB    - High traffic ($50/mo)
+```
+
+**Memory Sizing Guide:**
+- Starter (512MB): 1 worker, lazy-load, < 1000 requests/day
+- Standard (2GB): 2-4 workers, can eager-load, < 100k requests/day
+- Pro (4GB): 4+ workers, full caching, production traffic
+
+---
+
+### Issue 4: Permission Denied Creating Directories
+
+**Symptoms:**
+- App crashes at startup
+- Error: `PermissionError: [Errno 13] Permission denied: 'data'`
+- Container runs but exits immediately
+
+**Root cause:** Dockerfile switches to non-root user (`appuser`), but directories don't exist or aren't owned by that user.
+
+**Fix:**
+```dockerfile
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Create directories with proper permissions BEFORE switching user
+RUN mkdir -p data/observability data/metrics data/quarantine data/cache && \
+    chown -R appuser:appuser data
+
+# NOW switch to non-root user
+USER appuser
+```
+
+**Prevention:**
+- All writable directories must be created before `USER` statement
+- Test Docker image locally: `docker run --rm <image>` to catch permission errors
+- Add to deployment checklist
+
+---
+
+### Issue 5: Schema Contract Validation Failures
+
+**Symptoms:**
+- App starts but logs show: `Failed to load schema X: 'generated_at'`
+- Multiple schema loading errors
+- May cause partial functionality loss
+
+**Root cause:** SchemaContract dataclass requires specific fields, but JSON schemas were missing them.
+
+**Required fields in ALL schema contracts:**
+```json
+{
+  "dataset_name": "cms_example",     ← REQUIRED
+  "version": "1.0",                  ← REQUIRED
+  "generated_at": "2025-10-21T00:00:00Z",  ← REQUIRED
+  "columns": { ... }
+}
+```
+
+**Fix:**
+Add missing fields to all schema JSON files in `cms_pricing/ingestion/contracts/`.
+
+**Prevention:**
+- Create schema contract template with all required fields
+- Add CI lint: validate all `*_v*.json` files have required fields
+- Use JSON schema validation for schema contracts (meta!)
+
+```bash
+# CI check to add
+python scripts/lint_schema_contracts.py
+# Validates: dataset_name, version, generated_at present in all schemas
+```
+
+---
+
+## Part 7 Best Practices Summary
+
+Based on today's deployment, always ensure:
+
+1. ✅ Health endpoints are PUBLIC (no authentication)
+2. ✅ Test Docker image locally before pushing
+3. ✅ Verify all schema contracts have required fields
+4. ✅ Create writable directories in Dockerfile (before USER)
+5. ✅ Size instance tier appropriately (test memory usage)
+6. ✅ Use `:main` or SHA tags (avoid `:latest` caching)
+7. ✅ Distinguish deployment workflows from test workflows
+
+---
+
 ## Part 8: Automate Deployments with CI/CD (Optional)
 
 **Purpose:** Automate image builds and deployments to achieve zero on-platform build minutes per PRD policy §4.1.
@@ -1835,6 +2038,7 @@ You now have:
 
 || Version | Date | Summary |
 ||---------|------|---------|
+|| **v1.2** | 2025-10-21 | **Added Part 7 API deployment troubleshooting** (5 critical issues from production deployment): 401 Unauthorized on health checks (authentication bypass required), Docker image caching on :latest tag (use :main or SHA tags), Out of Memory on Starter tier (memory optimization strategies), Permission denied for data directories (Dockerfile non-root user pattern), Schema contract validation failures (required fields). Added Part 7 Best Practices Summary with 7-point checklist. Based on cms-pricing-api deployment to Render. |
 || **v1.1** | 2025-10-21 | **Added 5 deployment learnings (Gaps 4-8).** Enhanced Part 2 Step 1 with PostgreSQL version note (Gap 6: Render may provision 17.x when 16 requested). Enhanced Part 2 Step 3 with detailed psql PATH setup for macOS/Linux (Gap 4: common "command not found" fix). Enhanced Part 2 Step 4 with strong .env security warnings and checklist (Gap 7: never commit credentials). Added Part 4 troubleshooting for Python segfaults (Gap 5: conda conflicts, venv solution). Added database-only deployment pattern (Gap 8: schema-ready vs data-ready states). Based on 2025-10-21 Render deployment experience. |
 || **v1.0** | 2025-10-21 | Initial production runbook with comprehensive CI/CD automation (Part 8), health checks, monitoring, and 8-part deployment process. |
 

@@ -190,6 +190,124 @@ This PRD defines the **Security & Authentication standard** for the CMS Pricing 
 
 ---
 
+## 8.3) Health & Monitoring Endpoint Exemptions
+
+**Policy:** Health, readiness, and observability endpoints MUST bypass authentication to enable platform health checks and monitoring.
+
+**Critical learning (2025-10-21):** During Render deployment, `/health` endpoint returned 401 Unauthorized because it required API key authentication. Render's health checker couldn't provide credentials, causing health checks to fail indefinitely. Service was stuck at "Starting..." for 8+ minutes until authentication bypass was added.
+
+**Required public endpoints (NO authentication):**
+
+| Endpoint | Purpose | Auth Required | Rate Limit | Response Time |
+|----------|---------|---------------|------------|---------------|
+| `/health` | Basic liveness check | ❌ NO | None | <100ms |
+| `/healthz` | Kubernetes-style health | ❌ NO | None | <100ms |
+| `/readyz` | Readiness check (may check dependencies) | ❌ NO | None | <1s |
+| `/metrics` | Prometheus metrics | ⚠️ OPTIONAL* | Low (10/min) | <500ms |
+| `/docs` | OpenAPI documentation | ❌ NO | Low (60/min) | <1s |
+| `/redoc` | ReDoc documentation | ❌ NO | Low (60/min) | <1s |
+| `/openapi.json` | OpenAPI spec | ❌ NO | Low (60/min) | <1s |
+
+**\*Metrics endpoint policy:** Public by default for ease of monitoring. MAY require authentication for sensitive internal metrics (decide per-service, document in runbook).
+
+**Middleware implementation pattern:**
+
+```python
+class SecurityMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # CRITICAL: Bypass auth for health/monitoring endpoints
+        PUBLIC_ENDPOINTS = [
+            "/health",
+            "/healthz", 
+            "/readyz",
+            "/metrics",  # Optional: can require auth if sensitive
+            "/docs",
+            "/redoc",
+            "/openapi.json"
+        ]
+        
+        if request.url.path in PUBLIC_ENDPOINTS:
+            return await call_next(request)  # Skip authentication
+        
+        # All other endpoints require authentication
+        api_key = request.headers.get("X-API-Key")
+        if not api_key:
+            return JSONResponse(
+                status_code=401,
+                content={"error": "API key required"}
+            )
+        
+        # ... verify API key logic
+```
+
+**Health endpoint design requirements:**
+
+1. **Unauthenticated access:** MUST return 200 OK without any credentials
+2. **Fast response:** MUST respond in <1 second (preferably <100ms)
+3. **Lightweight:** SHOULD avoid heavy operations (database queries OK if fast)
+4. **Standard format:** Return JSON with `{"status": "healthy"}` minimum
+5. **Dependency checks:** MAY check database ping, cache availability (keep fast!)
+
+**Example health endpoint:**
+
+```python
+@router.get("/health")
+async def health_check():
+    """Basic health check - MUST be public (no auth)"""
+    return {
+        "status": "healthy",
+        "service": "cms-pricing-api",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+@router.get("/readyz")  
+async def readiness_check(db: Session = Depends(get_db)):
+    """Readiness check with dependency validation - also public"""
+    try:
+        # Quick database ping
+        db.execute(text("SELECT 1"))
+        return {
+            "status": "ready",
+            "dependencies": {"database": "connected"}
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Service not ready: {str(e)}"
+        )
+```
+
+**Testing checklist (pre-deployment):**
+
+```bash
+# Test locally WITHOUT authentication
+curl http://localhost:8000/health
+# Expected: 200 OK, {"status": "healthy"}
+
+curl http://localhost:8000/healthz  
+# Expected: 200 OK
+
+curl http://localhost:8000/readyz
+# Expected: 200 OK or 503 if dependencies unavailable
+
+# Test that OTHER endpoints DO require auth
+curl http://localhost:8000/api/v1/pricing
+# Expected: 401 Unauthorized
+```
+
+**Platform health check configuration:**
+
+When deploying to Render, Kubernetes, or other platforms:
+- Health Check Path: `/health` or `/healthz`
+- Expected Status: 200
+- Timeout: 30 seconds
+- Interval: 30 seconds (Render default)
+- Unhealthy threshold: 3 consecutive failures
+
+**Compliance note:** Public health endpoints don't expose sensitive data. They return generic status only, no PHI, no tenant data, no PII.
+
+---
+
 ## 9) Admin/Key Management UI
 
 - **Auth:** Email/password + **MFA required**; **SSO (SAML/OIDC)** in Enterprise tier (v2).  
@@ -796,4 +914,13 @@ chore(prd): split Security & Auth into standalone PRD
 **Topology:** **Single write region + global CDN/WAF** (v1), edge caching for reference data; multi-region writes deferred to v2.
 
 **Why this matters:** Right-sizes caches, metric cardinality, and limiter defaults without premature complexity.
+
+
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| **v1.1** | 2025-10-21 | Added §8.3 Health & Monitoring Endpoint Exemptions. Documents critical requirement for public health endpoints based on Render deployment experience (401 Unauthorized blocked health checks for 8+ minutes). Includes middleware implementation pattern, health endpoint design requirements, testing checklist, and platform configuration guidance. |
+| v1.0 | 2025-10-21 | Initial API security and authentication standard. |
 
