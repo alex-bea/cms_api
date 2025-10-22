@@ -6,8 +6,8 @@
     {
       "name": "Documentation Catalog",
       "category": "audit",
-      "status": "failed",
-      "exit_code": 1
+      "status": "passed",
+      "exit_code": 0
     },
     {
       "name": "Documentation Links",
@@ -24,8 +24,8 @@
     {
       "name": "Documentation Metadata",
       "category": "audit",
-      "status": "passed",
-      "exit_code": 0
+      "status": "failed",
+      "exit_code": 1
     },
     {
       "name": "Documentation Dependencies",
@@ -55,7 +55,7 @@
       "name": "Layout/Schema Alignment",
       "category": "audit",
       "status": "failed",
-      "exit_code": 1
+      "exit_code": -11
     },
     {
       "name": "Makefile .PHONY",
