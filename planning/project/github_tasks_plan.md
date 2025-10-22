@@ -352,6 +352,15 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Source:** NEXT_TODOS.md
 
+- **Implementation Plan:** See `planning/project/doc_compliance_audit_plan.md` for the detailed roadmap to expand documentation compliance audits across all standards and runbooks.
+
+- **Timeline & Staging:** Five-phase rollout over ~8 weeks  
+  1. Weeks 1-2 — Catalogue requirements & schema design (database pilot).  
+  2. Weeks 2-3 — Parser/utility enhancements with unit tests.  
+  3. Weeks 3-5 — Build compliance audit module, wire into audit suite.  
+  4. Weeks 5-7 — Extend coverage to additional standards and add fixtures.  
+  5. Weeks 7-8 — Polish contributor experience, docs, and summary reporting.
+
 ---
 
 ### Task 16: Advanced Monitoring
@@ -2477,4 +2486,514 @@ def parse_pprrvu(file_obj, filename, metadata) -> ParseResult:
 4. Combines well with Parquet golden migration
 
 ---
+
+---
+
+## 🚀 NEW TASKS: Render Deployment Follow-up (Added 2025-10-21)
+
+### Task 65: Set up Render Deploy Hook for GitHub Actions
+
+**Category:** DevOps  
+**Priority:** High  
+**Estimated Time:** 30 minutes  
+**Labels:** devops, deployment, automation, high-priority  
+**Status:** Ready to implement  
+
+**Description:**
+Configure Render Deploy Hook to enable fully automated tag-based deployments from GitHub Actions. Currently GitHub Actions builds and pushes Docker images to GHCR, but Render deployment is manual. This task completes the CI/CD pipeline.
+
+**Implementation Steps:**
+1. **Get Deploy Hook URL** from Render dashboard:
+   - Go to Render → cms-pricing-api → Settings → Deploy Hook
+   - Copy the Deploy Hook URL (format: `https://api.render.com/deploy/srv-xxxxx?key=xxxxx`)
+
+2. **Add Deploy Hook to GitHub Secrets**:
+   - Go to GitHub → alex-bea/cms_api → Settings → Secrets and variables → Actions
+   - Add new secret: `RENDER_DEPLOY_HOOK` = Deploy Hook URL
+
+3. **Update GitHub Actions workflow** (`.github/workflows/deploy.yml`):
+   ```yaml
+   deploy-to-render:
+     runs-on: ubuntu-latest
+     if: startsWith(github.ref, 'refs/tags/')
+     steps:
+       - name: Deploy to Render
+         run: |
+           curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+   ```
+
+4. **Test automated deployment**:
+   - Create test tag: `git tag v1.0.1-test && git push origin v1.0.1-test`
+   - Verify GitHub Actions triggers Render deployment
+   - Confirm new version appears in Render logs
+
+**Acceptance Criteria:**
+- ✅ Deploy Hook URL added to GitHub Secrets
+- ✅ GitHub Actions workflow updated with curl command
+- ✅ Test tag triggers automatic Render deployment
+- ✅ Render logs show deployment from GitHub Actions
+- ✅ No manual intervention required for deployments
+
+**Related Documents:**
+- `prds/RUN-render-deployment-prd-v1.0.md` §8.4 - Deploy Hook setup
+- `.github/workflows/deploy.yml` - Current workflow (needs Deploy Hook step)
+- `prds/STD-api-security-and-auth-prd-v1.0.md` §8.3 - Health endpoint requirements
+
+**Business Value:**
+- **Zero-touch deployments**: Push tag → automatic deployment
+- **Audit trail**: GitHub Actions logs show who deployed what when
+- **Rollback capability**: Easy to revert to previous tag
+- **Production readiness**: Complete CI/CD pipeline operational
+
+---
+
+### Task 66: Load GPCI v1.3 Data to Production Database
+
+**Category:** Database  
+**Priority:** High  
+**Estimated Time:** 2-3 hours  
+**Labels:** database, data-loading, production, high-priority  
+**Status:** Ready to implement (after Python environment fix)  
+
+**Description:**
+Load GPCI (Geographic Practice Cost Index) v1.3 data to the production Render database. This was deferred during initial deployment due to Python environment segmentation fault. Database schema is ready (v1.3 with MAC in natural key), but data loading needs to be completed.
+
+**Prerequisites:**
+- ✅ Database schema deployed (43 tables, v1.3 unique index on `gpci_indices`)
+- ✅ Alembic migrations applied (`alembic stamp head` completed)
+- ❌ Python environment segfault issue (needs resolution)
+
+**Implementation Steps:**
+
+1. **Fix Python Environment** (1 hour):
+   ```bash
+   # Option A: Clean conda environment
+   conda deactivate
+   conda env remove -n base
+   conda create -n cms-api python=3.11
+   conda activate cms-api
+   pip install -r requirements.txt
+   
+   # Option B: Use venv instead of conda
+   python -m venv .venv-gpci
+   source .venv-gpci/bin/activate
+   pip install -r requirements.txt
+   ```
+
+2. **Test Environment** (15 min):
+   ```bash
+   # Verify no segfault
+   python scripts/backfill_gpci_v13.py --dry-run
+   
+   # Test database connection
+   psql $DATABASE_URL -c "SELECT COUNT(*) FROM gpci_indices;"
+   ```
+
+3. **Load GPCI Data** (45 min):
+   ```bash
+   # Run backfill script
+   python scripts/backfill_gpci_v13.py
+   
+   # Verify data loaded
+   psql $DATABASE_URL -c "
+   SELECT COUNT(*) as total_rows,
+          COUNT(DISTINCT mac) as unique_macs,
+          COUNT(DISTINCT locality_code) as unique_localities
+   FROM gpci_indices;
+   "
+   ```
+
+4. **Validate Data Quality** (30 min):
+   ```bash
+   # Check for expected data patterns
+   psql $DATABASE_URL -c "
+   SELECT mac, COUNT(*) as rows_per_mac
+   FROM gpci_indices 
+   GROUP BY mac 
+   ORDER BY rows_per_mac DESC;
+   "
+   
+   # Verify natural key uniqueness
+   psql $DATABASE_URL -c "
+   SELECT mac, locality_code, effective_from, COUNT(*)
+   FROM gpci_indices 
+   GROUP BY mac, locality_code, effective_from
+   HAVING COUNT(*) > 1;
+   "
+   ```
+
+**Expected Results:**
+- **Row count**: ~1,200-1,500 rows (varies by vintage)
+- **MAC codes**: 4-6 unique MACs (00, 01, 02, 03, 04, 05)
+- **Locality codes**: ~300-400 unique localities
+- **Natural key**: No duplicates (MAC + locality_code + effective_from)
+
+**Acceptance Criteria:**
+- ✅ Python environment runs without segfault
+- ✅ GPCI data loaded to `gpci_indices` table
+- ✅ Row count matches expected range (1,200-1,500)
+- ✅ Natural key uniqueness verified (no duplicates)
+- ✅ Data quality checks pass (MAC distribution, locality coverage)
+- ✅ API can query GPCI data via `/api/v1/gpci` endpoint
+
+**Troubleshooting:**
+- **Segfault persists**: Use direct SQL loading instead of Python script
+- **Connection timeout**: Check Render database connection limits
+- **Memory issues**: Load data in smaller batches
+- **Schema mismatch**: Verify Alembic migrations applied correctly
+
+**Related Documents:**
+- `scripts/backfill_gpci_v13.py` - Data loading script
+- `prds/RUN-database-migrations-prd-v1.0.md` §5 - Fresh database bootstrap
+- `prds/STD-database-platform-prd-v1.0.md` §3.6 - Database initialization patterns
+- `alembic/versions/003_gpci_v13_migration.py` - Schema migration
+
+**Business Value:**
+- **Complete dataset**: GPCI data available for pricing calculations
+- **API functionality**: `/api/v1/gpci` endpoint operational
+- **Production readiness**: All core datasets loaded
+- **Pricing accuracy**: Geographic adjustments available for physician fees
+
+---
+
+### Task 67: Scale Render Infrastructure for Production Traffic
+
+**Category:** Performance  
+**Priority:** Medium  
+**Estimated Time:** 1 hour  
+**Labels:** performance, scaling, production, medium-priority  
+**Status:** Ready to implement (when traffic increases)  
+
+**Description:**
+Upgrade Render infrastructure from Starter tier (512MB) to Standard tier (2GB) when production traffic exceeds current capacity. Currently optimized for 512MB with 1 worker and lazy-loaded schemas, but will need scaling for higher request volumes.
+
+**Current Infrastructure:**
+- **Tier**: Starter (512MB RAM, $7/month)
+- **Workers**: 1 (single-threaded, async)
+- **Memory**: ~420MB (optimized)
+- **Capacity**: <1,000 requests/day
+
+**Target Infrastructure:**
+- **Tier**: Standard (2GB RAM, $25/month)
+- **Workers**: 2-4 (multi-threaded, async)
+- **Memory**: ~1,200-1,600MB (with optimizations)
+- **Capacity**: <100,000 requests/day
+
+**Implementation Steps:**
+
+1. **Monitor Current Performance** (ongoing):
+   ```bash
+   # Check Render metrics
+   curl https://cms-pricing-api.onrender.com/metrics
+   
+   # Monitor memory usage
+   # Check response times
+   # Track error rates
+   ```
+
+2. **Upgrade Database Tier** (15 min):
+   - Go to Render → cms-pricing-db → Settings
+   - Change from Starter to Standard
+   - Confirm upgrade (may take 5-10 minutes)
+
+3. **Upgrade Web Service Tier** (15 min):
+   - Go to Render → cms-pricing-api → Settings  
+   - Change from Starter to Standard
+   - Update environment variables:
+     ```
+     WORKERS=2
+     LOG_LEVEL=INFO
+     ```
+
+4. **Update Dockerfile** (15 min):
+   ```dockerfile
+   # Increase workers for Standard tier
+   CMD ["uvicorn", "app:app", "--workers", "2", "--port", "${PORT:-8000}"]
+   ```
+
+5. **Test Performance** (15 min):
+   ```bash
+   # Load test with multiple concurrent requests
+   for i in {1..10}; do
+     curl -s https://cms-pricing-api.onrender.com/health &
+   done
+   wait
+   
+   # Check response times and error rates
+   ```
+
+**Performance Targets:**
+- **Response time**: <500ms for health checks, <2s for pricing queries
+- **Concurrent users**: 50-100 simultaneous requests
+- **Error rate**: <1% (excluding rate limiting)
+- **Uptime**: >99.5%
+
+**Monitoring Setup:**
+- **Render Metrics**: Built-in CPU, memory, response time
+- **Custom Metrics**: `/metrics` endpoint for Prometheus
+- **Alerts**: Set up notifications for high error rates
+- **Logs**: Monitor for performance bottlenecks
+
+**Rollback Plan:**
+- **Downgrade**: Can revert to Starter tier if needed
+- **Workers**: Reduce to 1 worker if memory issues
+- **Environment**: Revert environment variables
+
+**Acceptance Criteria:**
+- ✅ Database upgraded to Standard tier
+- ✅ Web service upgraded to Standard tier  
+- ✅ 2 workers running (multi-threaded)
+- ✅ Response times <500ms for health checks
+- ✅ Can handle 50+ concurrent requests
+- ✅ Error rate <1%
+- ✅ Monitoring and alerts configured
+
+**Cost Impact:**
+- **Current**: $14/month (Starter database + Starter web service)
+- **Upgraded**: $50/month (Standard database + Standard web service)
+- **Increase**: +$36/month (+257%)
+
+**Related Documents:**
+- `prds/RUN-render-deployment-prd-v1.0.md` §7.3 - Memory optimization strategies
+- `prds/STD-api-performance-scalability-prd-v1.0.md` - Performance standards
+- `Dockerfile` - Worker configuration
+- `cms_pricing/ingestion/contracts/schema_registry.py` - Lazy loading implementation
+
+**Business Value:**
+- **Higher capacity**: Support 100x more requests
+- **Better performance**: Faster response times
+- **Production ready**: Handles real-world traffic patterns
+- **Scalability**: Foundation for future growth
+
+---
+
+### Task 68: Implement Production Monitoring and Alerting
+
+**Category:** Monitoring  
+**Priority:** Medium  
+**Estimated Time:** 2-3 hours  
+**Labels:** monitoring, observability, production, medium-priority  
+**Status:** Ready to implement (after scaling)  
+
+**Description:**
+Implement comprehensive production monitoring and alerting for the CMS Pricing API on Render. Currently has basic health checks and metrics endpoint, but needs production-grade observability with alerts, dashboards, and incident response procedures.
+
+**Current Monitoring:**
+- ✅ Health endpoint (`/health`) - Basic liveness check
+- ✅ Metrics endpoint (`/metrics`) - Prometheus format
+- ✅ Render built-in metrics - CPU, memory, response time
+- ❌ Custom alerts - Not configured
+- ❌ Dashboards - Not set up
+- ❌ Incident response - Not documented
+
+**Implementation Steps:**
+
+1. **Enhance Metrics Endpoint** (45 min):
+   ```python
+   # Add custom metrics to /metrics endpoint
+   - API request count by endpoint
+   - Response time percentiles (p50, p90, p99)
+   - Error rate by status code
+   - Database connection pool metrics
+   - Cache hit/miss rates
+   - Business metrics (pricing queries, data freshness)
+   ```
+
+2. **Set up External Monitoring** (60 min):
+   - **Uptime monitoring**: Pingdom, UptimeRobot, or StatusCake
+   - **Performance monitoring**: New Relic, DataDog, or Render's built-in
+   - **Log aggregation**: LogDNA, Papertrail, or Render logs
+   - **Alert channels**: Email, Slack, PagerDuty
+
+3. **Configure Render Alerts** (30 min):
+   - **High error rate**: >5% errors for 5 minutes
+   - **High response time**: >2s average for 5 minutes  
+   - **High memory usage**: >80% for 10 minutes
+   - **Service down**: Health check fails for 2 minutes
+
+4. **Create Monitoring Dashboard** (45 min):
+   - **System metrics**: CPU, memory, disk, network
+   - **Application metrics**: Request rate, response time, error rate
+   - **Business metrics**: Pricing queries, data freshness, user activity
+   - **Database metrics**: Connection count, query time, lock waits
+
+5. **Document Incident Response** (30 min):
+   - **Runbook**: Step-by-step troubleshooting guide
+   - **Escalation**: Who to contact for different issues
+   - **Communication**: How to notify stakeholders
+   - **Post-mortem**: Process for learning from incidents
+
+**Monitoring Stack:**
+- **Infrastructure**: Render built-in + external uptime monitoring
+- **Application**: Custom metrics + APM tool
+- **Logs**: Render logs + log aggregation service
+- **Alerts**: Render alerts + external notification service
+- **Dashboards**: Grafana, DataDog, or Render dashboard
+
+**Alert Thresholds:**
+- **Critical**: Service down, >10% error rate, >5s response time
+- **Warning**: >5% error rate, >2s response time, >80% memory
+- **Info**: High request volume, new deployments, data updates
+
+**Incident Response Process:**
+1. **Detection**: Automated alerts trigger
+2. **Assessment**: Check dashboards, logs, metrics
+3. **Response**: Follow runbook procedures
+4. **Communication**: Update stakeholders via status page
+5. **Resolution**: Fix issue, verify recovery
+6. **Post-mortem**: Document lessons learned
+
+**Acceptance Criteria:**
+- ✅ Custom metrics implemented (request count, response time, errors)
+- ✅ External uptime monitoring configured
+- ✅ Render alerts set up (error rate, response time, memory)
+- ✅ Monitoring dashboard created with key metrics
+- ✅ Incident response runbook documented
+- ✅ Alert channels configured (email, Slack)
+- ✅ Post-mortem process defined
+
+**Monitoring Coverage:**
+- **Availability**: 99.9% uptime target
+- **Performance**: <500ms p95 response time
+- **Reliability**: <1% error rate
+- **Capacity**: Monitor for scaling needs
+- **Security**: Failed authentication attempts, unusual traffic
+
+**Related Documents:**
+- `prds/STD-observability-monitoring-prd-v1.0.md` - Monitoring standards
+- `prds/RUN-render-deployment-prd-v1.0.md` §7.4 - Health check configuration
+- `cms_pricing/main.py` - Metrics endpoint implementation
+- `prds/STD-api-security-and-auth-prd-v1.0.md` §8.3 - Health endpoint requirements
+
+**Business Value:**
+- **Proactive monitoring**: Catch issues before users notice
+- **Fast incident response**: Minimize downtime and impact
+- **Performance visibility**: Understand system behavior
+- **Capacity planning**: Scale before hitting limits
+- **Compliance**: Meet SLA requirements for production
+
+---
+
+## Updated Task Summary
+
+**Total Tasks:** 68 (64 original + 4 new deployment follow-up tasks)
+
+**New Tasks Added:**
+- **Task 65**: Set up Render Deploy Hook (High priority, 30 min)
+- **Task 66**: Load GPCI v1.3 Data (High priority, 2-3 hours)  
+- **Task 67**: Scale Render Infrastructure (Medium priority, 1 hour)
+- **Task 68**: Implement Production Monitoring (Medium priority, 2-3 hours)
+
+**Priority Distribution:**
+- **Critical**: 8 tasks (unchanged)
+- **High**: 14 tasks (+2 new)
+- **Medium**: 18 tasks (+2 new)
+- **Low**: 28 tasks (unchanged)
+
+**Category Distribution:**
+- **Data Ingestion**: 14 tasks (unchanged)
+- **General**: 32 tasks (unchanged)
+- **API Development**: 3 tasks (unchanged)
+- **Performance**: 4 tasks (+1 new)
+- **Security**: 2 tasks (unchanged)
+- **Monitoring**: 4 tasks (+1 new)
+- **Testing**: 3 tasks (unchanged)
+- **Documentation**: 1 task (unchanged)
+- **Database**: 3 tasks (+1 new)
+- **DevOps**: 1 task (+1 new)
+
+---
+
+## GitHub CLI Commands for New Tasks
+
+```bash
+# Set your project number
+PROJECT_NUMBER=<your_project_number>
+
+# Task 65: Set up Render Deploy Hook
+gh project item-create $PROJECT_NUMBER --title "Set up Render Deploy Hook for GitHub Actions" --body "Configure Render Deploy Hook to enable fully automated tag-based deployments from GitHub Actions. Currently GitHub Actions builds and pushes Docker images to GHCR, but Render deployment is manual. This task completes the CI/CD pipeline.
+
+Implementation Steps:
+1. Get Deploy Hook URL from Render dashboard
+2. Add Deploy Hook to GitHub Secrets  
+3. Update GitHub Actions workflow with curl command
+4. Test automated deployment with test tag
+
+Related Documents:
+- prds/RUN-render-deployment-prd-v1.0.md §8.4
+- .github/workflows/deploy.yml
+- prds/STD-api-security-and-auth-prd-v1.0.md §8.3" --field "Category=DevOps" --field "Priority=High" --field "Estimated Time=30 minutes"
+
+# Task 66: Load GPCI v1.3 Data
+gh project item-create $PROJECT_NUMBER --title "Load GPCI v1.3 Data to Production Database" --body "Load GPCI (Geographic Practice Cost Index) v1.3 data to the production Render database. This was deferred during initial deployment due to Python environment segmentation fault. Database schema is ready (v1.3 with MAC in natural key), but data loading needs to be completed.
+
+Prerequisites:
+- ✅ Database schema deployed (43 tables, v1.3 unique index)
+- ✅ Alembic migrations applied
+- ❌ Python environment segfault issue (needs resolution)
+
+Implementation Steps:
+1. Fix Python Environment (1 hour)
+2. Test Environment (15 min)  
+3. Load GPCI Data (45 min)
+4. Validate Data Quality (30 min)
+
+Related Documents:
+- scripts/backfill_gpci_v13.py
+- prds/RUN-database-migrations-prd-v1.0.md §5
+- prds/STD-database-platform-prd-v1.0.md §3.6" --field "Category=Database" --field "Priority=High" --field "Estimated Time=2-3 hours"
+
+# Task 67: Scale Render Infrastructure  
+gh project item-create $PROJECT_NUMBER --title "Scale Render Infrastructure for Production Traffic" --body "Upgrade Render infrastructure from Starter tier (512MB) to Standard tier (2GB) when production traffic exceeds current capacity. Currently optimized for 512MB with 1 worker and lazy-loaded schemas, but will need scaling for higher request volumes.
+
+Current: Starter (512MB, \$7/month, <1k requests/day)
+Target: Standard (2GB, \$25/month, <100k requests/day)
+
+Implementation Steps:
+1. Monitor Current Performance (ongoing)
+2. Upgrade Database Tier (15 min)
+3. Upgrade Web Service Tier (15 min)  
+4. Update Dockerfile (15 min)
+5. Test Performance (15 min)
+
+Related Documents:
+- prds/RUN-render-deployment-prd-v1.0.md §7.3
+- prds/STD-api-performance-scalability-prd-v1.0.md
+- Dockerfile" --field "Category=Performance" --field "Priority=Medium" --field "Estimated Time=1 hour"
+
+# Task 68: Implement Production Monitoring
+gh project item-create $PROJECT_NUMBER --title "Implement Production Monitoring and Alerting" --body "Implement comprehensive production monitoring and alerting for the CMS Pricing API on Render. Currently has basic health checks and metrics endpoint, but needs production-grade observability with alerts, dashboards, and incident response procedures.
+
+Current: Basic health checks, metrics endpoint, Render built-in metrics
+Target: Custom alerts, dashboards, incident response, external monitoring
+
+Implementation Steps:
+1. Enhance Metrics Endpoint (45 min)
+2. Set up External Monitoring (60 min)
+3. Configure Render Alerts (30 min)
+4. Create Monitoring Dashboard (45 min)
+5. Document Incident Response (30 min)
+
+Related Documents:
+- prds/STD-observability-monitoring-prd-v1.0.md
+- prds/RUN-render-deployment-prd-v1.0.md §7.4
+- cms_pricing/main.py" --field "Category=Monitoring" --field "Priority=Medium" --field "Estimated Time=2-3 hours"
+```
+
+---
+
+## Next Steps
+
+1. **Immediate (Today)**: Complete Task 65 (Deploy Hook setup) - 30 minutes
+2. **This Week**: Complete Task 66 (GPCI data load) - 2-3 hours  
+3. **When Needed**: Complete Task 67 (Infrastructure scaling) - 1 hour
+4. **Production Ready**: Complete Task 68 (Monitoring) - 2-3 hours
+
+**Total Additional Effort**: 5.5-7.5 hours across 4 tasks
+**Business Impact**: Complete production-ready CMS Pricing API with full CI/CD, data, scaling, and monitoring
+
+---
+
+*Last Updated: 2025-10-21*
+*Added: 4 new deployment follow-up tasks based on successful Render deployment*
 
