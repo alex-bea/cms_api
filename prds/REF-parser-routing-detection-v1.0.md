@@ -413,8 +413,8 @@ All formats are normalized to CMS letters internally for registry lookup.
 - Less translation overhead
 - Already used by GPCI dataset
 
-**Rule:** `R-LAYOUT-001` - All `LAYOUT_REGISTRY` keys MUST use CMS letter notation (A/B/C/D)  
-**Rule:** `R-LAYOUT-002` - Layout lookup functions MUST support backward-compatible conversion from Q-notation
+**Rule:** `R-LAYOUT-001` - All `LAYOUT_REGISTRY` keys are expected to use CMS letter notation (A/B/C/D)  
+**Rule:** `R-LAYOUT-002` - Layout lookup functions are expected to support backward-compatible conversion from Q-notation
 
 **See Also:** `planning/standards/QUARTER_NOTATION_STANDARD.md`
 
