@@ -298,7 +298,7 @@ class TestRVUIngestorE2E:
         
         # Create AdaptedBatch for enrichment
         adapted_batch = AdaptedBatch(
-            normalized_data=normalize_result["normalized_data"],
+            dataframes=normalize_result["normalized_data"],
             schema_contract=normalize_result["schema_contract"],
             metadata=raw_batch.metadata
         )
@@ -350,7 +350,7 @@ class TestRVUIngestorE2E:
         normalize_result = await rvu_ingestor._normalize_stage(raw_batch, validate_result)
         
         adapted_batch = AdaptedBatch(
-            normalized_data=normalize_result["normalized_data"],
+            dataframes=normalize_result["normalized_data"],
             schema_contract=normalize_result["schema_contract"],
             metadata=raw_batch.metadata
         )
@@ -359,9 +359,10 @@ class TestRVUIngestorE2E:
         
         # Create StageFrame for publishing
         stage_frame = StageFrame(
-            enriched_data=enrich_result["enriched_data"],
-            schema_contract=normalize_result["schema_contract"],
-            metadata=raw_batch.metadata
+            data=enrich_result["enriched_data"],
+            schema=normalize_result["schema_contract"],
+            metadata=raw_batch.metadata,
+            quality_metrics={}
         )
         
         # Test Publish stage

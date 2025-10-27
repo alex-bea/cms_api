@@ -156,6 +156,10 @@ class SchemaRegistry:
         """Get schema contract for dataset (lazy-loads if not cached)"""
         return self._lazy_load_schema(dataset_name)
     
+    def get_contract(self, dataset_name: str) -> Optional[SchemaContract]:
+        """Alias for get_schema() for backward compatibility"""
+        return self.get_schema(dataset_name)
+    
     def list_schemas(self) -> List[str]:
         """List all registered dataset names"""
         return list(self._schemas.keys())

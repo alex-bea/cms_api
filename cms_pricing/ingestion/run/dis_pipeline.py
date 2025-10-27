@@ -102,7 +102,7 @@ class DISPipeline:
             validation_results = await self._validate_data(raw_batch, release_id)
             
             # Stage 3: Normalize - Adapt and canonicalize data
-            adapted_batch = await self._normalize_data(raw_batch, release_id)
+            adapted_batch = await self._normalize_data(validation_results, release_id)
             
             # Stage 4: Enrich - Join with reference data
             enriched_data = await self._enrich_data(adapted_batch, release_id)
@@ -196,13 +196,13 @@ class DISPipeline:
         
         return validation_results
     
-    async def _normalize_data(self, raw_batch: RawBatch, release_id: str) -> AdaptedBatch:
+    async def _normalize_data(self, validated_batch: Dict[str, Any], release_id: str) -> AdaptedBatch:
         """Stage 3: Normalize and adapt data"""
         
         logger.info("Normalizing data", dataset=self.ingestor.dataset_name)
         
         # Use ingestor's normalize method
-        normalize_result = await self.ingestor.normalize(raw_batch)
+        normalize_result = await self.ingestor.normalize(validated_batch)
         
         # Create AdaptedBatch from normalize result
         adapted_batch = AdaptedBatch(
@@ -284,6 +284,11 @@ class DISPipeline:
     ) -> Dict[str, Any]:
         """Generate final pipeline results"""
         
+        # Extract quality metrics from validation results
+        quality_score = validation_results.get("quality_score", 100.0)
+        record_count = validation_results.get("total_records", 0)
+        valid_records = validation_results.get("valid_records", 0)
+        
         return {
             "status": "success",
             "dataset_name": self.ingestor.dataset_name,
@@ -292,6 +297,9 @@ class DISPipeline:
             "pipeline_version": "1.0",
             "dis_version": "1.0",
             "execution_timestamp": datetime.utcnow().isoformat(),
+            "record_count": record_count,
+            "valid_records": valid_records,
+            "quality_score": quality_score,
             "record_counts": {
                 table: len(df) for table, df in enriched_data.items()
             },
