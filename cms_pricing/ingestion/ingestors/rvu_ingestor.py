@@ -54,6 +54,10 @@ from ..parsers.oppscap_parser import parse_oppscap, SCHEMA_ID as OPPSCAP_SCHEMA_
 from ..parsers.anes_parser import parse_anes, SCHEMA_ID as ANES_SCHEMA_ID
 from ..parsers.locality_parser import parse_locality_raw, SCHEMA_ID as LOCALITY_SCHEMA_ID
 
+# Import models for database loading
+from cms_pricing.models.rvu import Release, RVUItem, GPCIIndex, OPPSCap, AnesCF, LocalityCounty
+from cms_pricing.database import SessionLocal
+
 logger = structlog.get_logger()
 
 
@@ -2504,6 +2508,26 @@ class RVUIngestor(BaseDISIngestor):
             if enriched_data:
                 self._save_data_with_upserts(enriched_data, data_dir, vintage_date)
             
+            # Load data into Postgres database
+            load_results = {}
+            if enriched_data and self.db_session:
+                try:
+                    load_results = self._load_dataframes_to_database(
+                        enriched_data, 
+                        release_id, 
+                        batch_id, 
+                        vintage_date
+                    )
+                    logger.info("Database loading completed",
+                               batch_id=batch_id,
+                               records_inserted=load_results.get("total_records", 0))
+                except Exception as e:
+                    logger.error("Database loading failed", 
+                               error=str(e), 
+                               batch_id=batch_id)
+                    # Continue with publish even if DB load fails
+                    load_results = {"error": str(e)}
+            
             # Create latest-effective view definition per DIS §3.6
             view_sql = f"""
             CREATE OR REPLACE VIEW v_latest_cms_rvu AS
@@ -2725,3 +2749,233 @@ class RVUIngestor(BaseDISIngestor):
             })
         
         return raw_data
+    
+    def _load_pprrvu_data(self, df: pd.DataFrame, release_uuid: Any, batch_id: str) -> int:
+        """Load PPRRVU data into rvu_items table"""
+        if df is None or df.empty:
+            return 0
+        
+        records_inserted = 0
+        batch_size = 1000
+        
+        for idx, row in df.iterrows():
+            try:
+                rvu_item = RVUItem(
+                    id=uuid.uuid4(),
+                    release_id=release_uuid,
+                    hcpcs_code=str(row.get('hcpcs_code', ''))[:5],
+                    modifiers=[mod for mod in [row.get('modifier')] if mod and pd.notna(mod)],
+                    modifier_key=str(row.get('modifier', '')) if pd.notna(row.get('modifier')) else None,
+                    description=str(row.get('description', '')) if pd.notna(row.get('description')) else None,
+                    status_code=str(row.get('status_code', ''))[:2] if pd.notna(row.get('status_code')) else None,
+                    work_rvu=float(row.get('work_rvu')) if pd.notna(row.get('work_rvu')) else None,
+                    pe_rvu_nonfac=float(row.get('pe_rvu_nonfac')) if pd.notna(row.get('pe_rvu_nonfac')) else None,
+                    pe_rvu_fac=float(row.get('pe_rvu_fac')) if pd.notna(row.get('pe_rvu_fac')) else None,
+                    mp_rvu=float(row.get('mp_rvu')) if pd.notna(row.get('mp_rvu')) else None,
+                    na_indicator=str(row.get('na_indicator', ''))[:1] if pd.notna(row.get('na_indicator')) else None,
+                    global_days=str(row.get('global_days', ''))[:3] if pd.notna(row.get('global_days')) else None,
+                    bilateral_ind=str(row.get('bilateral_ind', ''))[:1] if pd.notna(row.get('bilateral_ind')) else None,
+                    multiple_proc_ind=str(row.get('multiple_proc_ind', ''))[:1] if pd.notna(row.get('multiple_proc_ind')) else None,
+                    assistant_surg_ind=str(row.get('assistant_surg_ind', ''))[:1] if pd.notna(row.get('assistant_surg_ind')) else None,
+                    co_surg_ind=str(row.get('co_surg_ind', ''))[:1] if pd.notna(row.get('co_surg_ind')) else None,
+                    team_surg_ind=str(row.get('team_surg_ind', ''))[:1] if pd.notna(row.get('team_surg_ind')) else None,
+                    endoscopic_base=str(row.get('endoscopic_base', ''))[:1] if pd.notna(row.get('endoscopic_base')) else None,
+                    conversion_factor=float(row.get('conversion_factor')) if pd.notna(row.get('conversion_factor')) else None,
+                    physician_supervision=str(row.get('physician_supervision', ''))[:2] if pd.notna(row.get('physician_supervision')) else None,
+                    diag_imaging_family=str(row.get('diag_imaging_family', ''))[:10] if pd.notna(row.get('diag_imaging_family')) else None,
+                    total_nonfac=float(row.get('total_nonfac')) if pd.notna(row.get('total_nonfac')) else None,
+                    total_fac=float(row.get('total_fac')) if pd.notna(row.get('total_fac')) else None,
+                    effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
+                    effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
+                    source_file=str(row.get('source_filename', batch_id)),
+                    row_num=int(idx) if isinstance(idx, (int, pd.Int64Index)) else None
+                )
+                self.db_session.add(rvu_item)
+                records_inserted += 1
+                
+                # Batch commit for performance
+                if records_inserted % batch_size == 0:
+                    self.db_session.flush()
+                    if records_inserted % 10000 == 0:
+                        logger.info("Loading PPRRVU data progress", 
+                                   records_inserted=records_inserted,
+                                   total=len(df))
+                
+            except Exception as e:
+                logger.warning("Failed to insert PPRRVU record", 
+                             error=str(e), 
+                             hcpcs=row.get('hcpcs_code'))
+                continue
+        
+        # Final flush
+        self.db_session.flush()
+        return records_inserted
+    
+    def _load_gpci_data(self, df: pd.DataFrame, release_uuid: Any, batch_id: str) -> int:
+        """Load GPCI data into gpci_indices table"""
+        if df is None or df.empty:
+            return 0
+        
+        records_inserted = 0
+        batch_size = 1000
+        
+        for idx, row in df.iterrows():
+            try:
+                gpci_index = GPCIIndex(
+                    id=uuid.uuid4(),
+                    release_id=release_uuid,
+                    mac=str(row.get('mac', ''))[:10],
+                    state=str(row.get('state', ''))[:2],
+                    locality_id=str(row.get('locality_id', ''))[:10],
+                    locality_name=str(row.get('locality_name', ''))[:100] if pd.notna(row.get('locality_name')) else None,
+                    work_gpci=float(row.get('work_gpci')) if pd.notna(row.get('work_gpci')) else None,
+                    pe_gpci=float(row.get('pe_gpci')) if pd.notna(row.get('pe_gpci')) else None,
+                    mp_gpci=float(row.get('mp_gpci')) if pd.notna(row.get('mp_gpci')) else None,
+                    effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
+                    effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
+                    source_file=str(row.get('source_filename', batch_id)),
+                    row_num=int(idx) if isinstance(idx, (int, pd.Int64Index)) else None
+                )
+                self.db_session.add(gpci_index)
+                records_inserted += 1
+                
+                # Batch flush
+                if records_inserted % batch_size == 0:
+                    self.db_session.flush()
+                
+            except Exception as e:
+                logger.warning("Failed to insert GPCI record", 
+                             error=str(e), 
+                             mac=row.get('mac'))
+                continue
+        
+        self.db_session.flush()
+        return records_inserted
+    
+    def _load_oppscap_data(self, df: pd.DataFrame, release_uuid: Any, batch_id: str) -> int:
+        """Load OPPSCap data into opps_caps table"""
+        if df is None or df.empty:
+            return 0
+        
+        records_inserted = 0
+        batch_size = 1000
+        
+        for idx, row in df.iterrows():
+            try:
+                opps_cap = OPPSCap(
+                    id=uuid.uuid4(),
+                    release_id=release_uuid,
+                    hcpcs_code=str(row.get('hcpcs_code', ''))[:5],
+                    modifier=str(row.get('modifier', ''))[:2] if pd.notna(row.get('modifier')) else None,
+                    proc_status=str(row.get('proc_status', ''))[:2] if pd.notna(row.get('proc_status')) else None,
+                    mac=str(row.get('mac', ''))[:10],
+                    locality_id=str(row.get('locality_id', ''))[:10],
+                    price_fac=float(row.get('price_fac')) if pd.notna(row.get('price_fac')) else None,
+                    price_nonfac=float(row.get('price_nonfac')) if pd.notna(row.get('price_nonfac')) else None,
+                    effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
+                    effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
+                    source_file=str(row.get('source_filename', batch_id)),
+                    row_num=int(idx) if isinstance(idx, (int, pd.Int64Index)) else None
+                )
+                self.db_session.add(opps_cap)
+                records_inserted += 1
+                
+                # Batch flush
+                if records_inserted % batch_size == 0:
+                    self.db_session.flush()
+                
+            except Exception as e:
+                logger.warning("Failed to insert OPPSCap record", 
+                             error=str(e), 
+                             hcpcs=row.get('hcpcs_code'))
+                continue
+        
+        self.db_session.flush()
+        return records_inserted
+    
+    def _load_anes_data(self, df: pd.DataFrame, release_uuid: Any, batch_id: str) -> int:
+        """Load ANES data into anes_cfs table"""
+        if df is None or df.empty:
+            return 0
+        
+        records_inserted = 0
+        batch_size = 1000
+        
+        for idx, row in df.iterrows():
+            try:
+                anes_cf = AnesCF(
+                    id=uuid.uuid4(),
+                    release_id=release_uuid,
+                    mac=str(row.get('mac', ''))[:10],
+                    locality_id=str(row.get('locality_id', ''))[:10],
+                    locality_name=str(row.get('locality_name', ''))[:100] if pd.notna(row.get('locality_name')) else None,
+                    anesthesia_cf=float(row.get('anesthesia_cf')) if pd.notna(row.get('anesthesia_cf')) else None,
+                    effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
+                    effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
+                    source_file=str(row.get('source_filename', batch_id)),
+                    row_num=int(idx) if isinstance(idx, (int, pd.Int64Index)) else None
+                )
+                self.db_session.add(anes_cf)
+                records_inserted += 1
+                
+                # Batch flush
+                if records_inserted % batch_size == 0:
+                    self.db_session.flush()
+                
+            except Exception as e:
+                logger.warning("Failed to insert ANES record", 
+                             error=str(e), 
+                             mac=row.get('mac'))
+                continue
+        
+        self.db_session.flush()
+        return records_inserted
+    
+    def _load_locality_data(self, df: pd.DataFrame, release_uuid: Any, batch_id: str) -> int:
+        """Load Locality data into locality_counties table"""
+        if df is None or df.empty:
+            return 0
+        
+        records_inserted = 0
+        batch_size = 1000
+        
+        for idx, row in df.iterrows():
+            try:
+                locality_county = LocalityCounty(
+                    id=uuid.uuid4(),
+                    release_id=release_uuid,
+                    mac=str(row.get('mac', ''))[:10],
+                    locality_id=str(row.get('locality_id', ''))[:10],
+                    state=str(row.get('state', ''))[:2],
+                    fee_schedule_area=str(row.get('fee_schedule_area', ''))[:10] if pd.notna(row.get('fee_schedule_area')) else None,
+                    county_name=str(row.get('county_name', ''))[:100] if pd.notna(row.get('county_name')) else None,
+                    effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
+                    effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
+                    source_file=str(row.get('source_filename', batch_id)),
+                    row_num=int(idx) if isinstance(idx, (int, pd.Int64Index)) else None
+                )
+                self.db_session.add(locality_county)
+                records_inserted += 1
+                
+                # Batch flush
+                if records_inserted % batch_size == 0:
+                    self.db_session.flush()
+                
+            except Exception as e:
+                logger.warning("Failed to insert Locality record", 
+                             error=str(e), 
+                             locality_id=row.get('locality_id'))
+                continue
+        
+        self.db_session.flush()
+        return records_inserted
+    
+    def _derive_source_version(self, vintage_date: str) -> str:
+        """Derive source version from vintage date (e.g., 2025D)"""
+        try:
+            # Extract year from vintage date
+            year = str(pd.to_datetime(vintage_date).year)[-2:]  # Last 2 digits
+            # For now, default to 'D' (Q4) - this could be made smarter
+            return f"{year}D"
+        except:
+            return "2025D"
