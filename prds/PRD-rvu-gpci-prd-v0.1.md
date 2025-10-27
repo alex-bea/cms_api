@@ -644,6 +644,7 @@ Automatically discover, download, validate, and ingest CMS RVU artifacts for the
 -  **Scraper CI tests** (discovery, classification, idempotency, E2E). **Owner:** TBD • **Target:** TBD
 
 ### 19.5 Observability & Ops (Production Rollout)
+- [x] **QTS-compliant logging implemented** (QTS §2.1.1, §2.5.2, §G.1, §G.3, §6.1). Parser invocation, parse results, DataFrame structure, reject tracking, and five-pillar observability. **Owner:** Engineering • **Completed:** 2025-10-27
 -  **Promote dashboards** (HTML & JSON) to prod; publish URLs & access. **Owner:** TBD • **Target:** TBD
 -  **Alert rules** finalized (critical/high/medium/low), routes (Email/Slack/Webhook), cooldowns verified. **Owner:** TBD • **Target:** TBD
 -  **Runbook**: incident response, common failures, recovery/rollback steps with examples. **Owner:** TBD • **Target:** TBD
