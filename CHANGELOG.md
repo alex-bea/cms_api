@@ -7,7 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.0.0] - 2025-10-22
+
+### Added
+- **Render CI/CD Integration** - Automated deployment pipeline with One-Off Jobs API
+  - Zero-downtime deployments with backward-compatible migrations
+  - Per-second billing for migrations (~$0.01 per run vs $7/month Background Worker)
+  - Infrastructure as Code with `render.yaml`
+  - Automated database migrations via Render One-Off Jobs API
+  - GitHub Actions workflow for image building and deployment
+  - Comprehensive documentation and troubleshooting guides
+
+### Changed
+- **Deployment Process** - Migrated from manual to automated CI/CD
+  - Deployments now triggered by version tags (`v*.*.*`)
+  - Migrations run automatically after deployment via One-Off Jobs
+  - Image-based deployment with zero Render build minutes
+  - Fail-fast pipeline stops deployment if migrations fail
+
+### Infrastructure
+- **GitHub Actions** - Enhanced `.github/workflows/deploy.yml`
+  - Multi-stage Docker builds for production
+  - GitHub Container Registry (GHCR) integration
+  - Render Deploy Hook integration with specific image tags
+  - One-Off Job API calls for database migrations
+  - Comprehensive error handling and status polling
+
+- **Render Configuration** - Added `render.yaml` Infrastructure as Code
+  - Web service configuration with health checks
+  - Database configuration with PostgreSQL 16
+  - Environment variables and scaling settings
+  - Migration job configuration (via One-Off Jobs API)
+
+### Documentation
+- **Setup Guides** - Comprehensive CI/CD documentation
+  - `RENDER_CI_SETUP_CORRECT.md` - Complete setup and troubleshooting
+  - `.github/workflows/README.md` - CI/CD workflow details
+  - Updated `prds/RUN-render-deployment-prd-v1.0.md` with Part 9 automation guide
+
+### Security
+- **GitHub Secrets** - Required secrets for automated deployment
+  - `RENDER_DEPLOY_HOOK` - Webhook URL for Render deployment
+  - `RENDER_API_KEY` - API key for One-Off Jobs API
+  - `RENDER_SERVICE_ID` - Service ID for Render API calls
+
+## [v0.0.2-test] - 2025-10-22
+
+### Added
+- **Test Deployment** - Validation of CI/CD pipeline
+  - Successful automated deployment to Render
+  - Database migrations via One-Off Jobs API
+  - Health check validation
+
+## [v0.0.1-test] - 2025-10-22
+
+### Added
+- **Initial CI/CD Test** - First automated deployment test
+  - GitHub Actions workflow validation
+  - Render integration testing
+  - Migration automation verification
+
+---
+
 ## [Unreleased]
+
+### Added - 2025-10-27
+
+- **Database Loading for RVU Ingestor** - Complete database persistence for RVU pipeline
+  - **Implementation:** Added database loading to RVU ingestor publish stage (commit `93743e3`)
+  - **Tables Populated:**
+    - `releases` - Release metadata tracking
+    - `rvu_items` - PPRRVU data (20,000+ HCPCS codes)
+    - `gpci_indices` - Geographic Practice Cost Indices
+    - `opps_caps` - OPPS-based Payment Caps
+    - `anes_cfs` - Anesthesia Conversion Factors
+    - `locality_counties` - Locality to County mappings
+  - **Features:**
+    - Row-by-row inserts with batch commits (1000 rows)
+    - Progress logging every 10K rows
+    - Error handling with graceful degradation
+    - Type conversions (dates, decimals, strings, arrays)
+    - Metadata tracking (release_id, row_num, source_file)
+  - **Integration:** Database loading integrated into `publish()` method
+  - **Testing:** All 7/7 DIS pipeline tests passing
+  - **Models Used:** SQLAlchemy models from `cms_pricing/models/rvu.py`
+  - **Pattern:** Follows existing pattern from `cms_zip9_ingester.py`
+  - **Production Readiness:** 87.5% complete (core functionality done)
+  - **Documentation:** See `artifacts/RVU_DATABASE_LOADING_COMPLETE.md`
+  - **Related:** Part of GitHub Task #64: Operationalize RVU Ingestor Pipeline
 
 ### BREAKING CHANGE
 
@@ -124,7 +211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **11-step template:** Follows STD-parser-contracts v2.0 §2.1 (encoding detection, format detection, parsing, normalization, type coercion, validation, metadata injection, sorting, hashing, metrics)
   - **Phase 1 foundation:** Built on `cms_oppscap_v1.1.json` schema, `OPPSCAP_2025D_LAYOUT`, authority matrix (TXT authority, CSV parity, XLSX deferred)
 
-- **Parser Contracts Modularization (v2.0):** Split `STD-parser-contracts-prd-v1.11.md` (4,477 lines) into 6 focused documents for improved AI context loading and governance compliance:
+- **Parser Contracts Modularization (v2.0):** Split `STD-parser-contracts-prd-v2.0.md` (4,477 lines) into 6 focused documents for improved AI context loading and governance compliance:
   - `STD-parser-contracts-prd-v2.0.md` (737 lines) - Core policy: contracts, versioning, goals
   - `STD-parser-contracts-impl-v2.0.md` (809 lines) - Implementation companion: 11-step template, alias maps, type handling
   - `REF-parser-routing-detection-v1.0.md` (735 lines) - Router architecture, layout registry, format detection
@@ -382,7 +469,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Authority Matrix selection guidance
   - Diff artifacts planning
   - Saves 30-60 min debugging per parser
-  - Documented in `STD-parser-contracts-prd-v1.0.md` v1.10 → v1.11
+  - Documented in `STD-parser-contracts-prd-v2.0.md` v1.10 → v1.11
 - **GPCI Parser (v1.0.0)** - Geographic Practice Cost Indices parser
   - Supports TXT (fixed-width), CSV, XLSX, ZIP formats
   - Schema: `cms_gpci_v1.2` (CMS-native naming: `gpci_mp`, `locality_code`)
@@ -704,7 +791,7 @@ Complete production-grade infrastructure for CMS data parsing with deterministic
 - **validate_schema_contracts.py**: Enforces schema contract compliance (precision, hash spec, etc.)
 
 #### Documentation
-- **STD-parser-contracts-prd-v1.0.md v1.1**: Comprehensive parser contracts standard
+- **STD-parser-contracts-prd-v2.0.md v1.1**: Comprehensive parser contracts standard
   - ParseResult specification
   - Router contracts with file_head
   - Row hash specification (64-char SHA-256, schema-driven precision)
@@ -750,7 +837,7 @@ Complete production-grade infrastructure for CMS data parsing with deterministic
 5. [3b1f1c9](https://github.com/alex-bea/cms_api/commit/3b1f1c9) - test(parser-integration): End-to-end Phase 0 pipeline integration tests
 
 ### References
-- [STD-parser-contracts-prd-v1.0.md](prds/STD-parser-contracts-prd-v1.0.md) (v1.1)
+- [STD-parser-contracts-prd-v2.0.md](prds/STD-parser-contracts-prd-v2.0.md) (v1.1)
 - [STD-data-architecture-prd-v1.0.md](prds/STD-data-architecture-prd-v1.0.md)
 - [STD-data-architecture-impl-v1.0.md](prds/STD-data-architecture-impl-v1.0.md) (v1.0.1)
 - [REF-scraper-ingestor-integration-v1.0.md](prds/REF-scraper-ingestor-integration-v1.0.md) (v1.0.1)
