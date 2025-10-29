@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [v1.0.2] - 2025-10-28
+### Added
+- **RVU End-to-End Ingestion Pipeline** – Successfully implemented and tested complete ingestion flow from discovery → download → parsing → database persistence. Processed 4 quarters of 2025 RVU data (208,143 records) with natural-key deduplication, resulting in 570 unique records inserted into PostgreSQL. Full pipeline completed in 19.5s.
+### Fixed
+- **pandas 2.x Compatibility** – Replaced deprecated `pd.Int64Index` with NumPy integer types in all database loaders (rvu_ingestor.py:2893, 2939, 2980, 3018, 3057).
+- **Database Column Mapping** – Fixed `locality_id` extraction to use `locality_code` from parsed dataframes, resolving field mismatch between parser output and database loader expectations.
+- **Unique Constraint Violations** – Implemented natural-key deduplication in `_load_dataframes_to_database()` using pandas `drop_duplicates()` on natural key columns, preventing duplicate key errors when loading overlapping quarterly data.
+### Changed
+- **Database Loading Strategy** – Added pre-insert deduplication with logging of removed duplicates (192,474 total across all datasets) to ensure only unique records are persisted.
+
+---
+
+## [v1.0.1] - 2025-10-26
+### Changed
+- **RVU Scraper v2.0** – Converted the CMS RVU scraper to discovery-only mode with two-hop navigation (landing page → detail page → download URL), HEAD validation guardrails, sanitized filenames, and DIS-compliant manifest output. HistoricalDataManager and RVUIngestor now consume discovery manifests instead of direct downloads.
+### Added
+- **RVU Pipeline Documentation & Tests** – Authored `prds/PRD-rvu-scraper-prd-v1.0.md`, updated `STD-scraper-prd-v1.0.md`, registered `REF-rvu-database-schema-v1.0.md` in the master catalog, and added unit coverage in `tests/scrapers/test_rvu_scraper_methods.py` with discovery verification notes.
+- **RVU Database Loading Enhancements** – Completed publish-stage loaders for releases, RVU items, GPCI indices, OPPS caps, ANES conversion factors, and locality counties; documented outcomes in `artifacts/RVU_DATABASE_LOADING_COMPLETE.md`.
+- **ANES Parser v1.0** – Delivered the anesthesia conversion factor parser (`cms_anescf_v1.1.json`) with corrected natural keys, USD scaling, and policy-compliant validation.
+### Breaking Change
+- **GPCI v1.3 Migration** – Enforced the `(mac, locality_id, effective_start)` unique constraint via Alembic migration `003_gpci_v13_add_mac_to_nk.py`, with backfill support (`scripts/backfill_gpci_v13.py`) and an updated operator runbook.
+
+
 
 ## [v1.0.0] - 2025-10-22
 
@@ -70,6 +93,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## [Unreleased]
+
+### Changed - 2025-10-28
+
+#### cms_pricing/ingestion/scrapers/cms_rvu_scraper.py
+
+- **BREAKING:** Refactored to discovery-only behavior (downloads now optional)
+- **Added:** Two-hop discovery pattern (landing page → detail page → download URL)
+- **Added:** Validation guards via HEAD requests to verify Content-Type and file sizes
+- **Added:** Automatic metadata enrichment (content-type, size_bytes from HTTP headers)
+- **Added:** Filename sanitization (date normalization: `01/10/2025` → `20250110`)
+- **Added:** DiscoveryManifest integration (DIS-compliant manifest generation)
+- **Changed:** Now emits manifest files instead of downloading by default
+- **Changed:** Version bumped to 2.0.0 (from 1.0.0)
+- **Deprecated:** `download_files()`, `download_all_files()` methods (kept for backward compatibility)
+- **Updated:** HistoricalDataManager and RVUIngestor to consume new manifest format
+
+**Impact:**
+- Scraper now discovers file URLs and metadata only
+- Actual downloads handled by HistoricalDataManager (optional, behind approval gate) or RVUIngestor
+- All discovered files validated via HEAD requests before acceptance
+- No HTML pages accepted (only actual data files)
+- Production-ready with validation guards and comprehensive tests
+
+**Testing:**
+- 4 unit tests added to `tests/scrapers/test_rvu_scraper_methods.py` (all passing)
+- Smoke tests passing against live CMS pages (13 files discovered and validated)
+- Manual tests via `test_cms_rvu_scraper.py`
+
+**Documentation:**
+- Created `prds/PRD-rvu-scraper-prd-v1.0.md` (comprehensive RVU scraper PRD)
+- Updated `prds/STD-scraper-prd-v1.0.md` to mark RVU as v2.0
+- Updated `prds/DOC-master-catalog-prd-v1.0.md` to add RVU scraper entry
 
 ### Added - 2025-10-27
 

@@ -145,12 +145,18 @@ class SchemaRegistry:
         """Register a new schema contract"""
         self._schemas[schema.dataset_name] = schema
         
-        # Save to disk
+        # Save to disk (skip if file exists and is read-only in production)
         schema_file = self.contracts_dir / f"{schema.dataset_name}_v{schema.version}.json"
-        with open(schema_file, 'w') as f:
-            json.dump(schema.to_dict(), f, indent=2)
-        
-        logger.info(f"Registered schema contract: {schema.dataset_name} v{schema.version}")
+        try:
+            with open(schema_file, 'w') as f:
+                json.dump(schema.to_dict(), f, indent=2)
+            logger.info(f"Registered schema contract: {schema.dataset_name} v{schema.version}")
+        except (PermissionError, OSError) as e:
+            # In production containers, files may be read-only - this is OK if schema already exists
+            if schema_file.exists():
+                logger.debug(f"Schema file exists, skipping write: {schema.dataset_name} v{schema.version}")
+            else:
+                logger.warning(f"Could not write schema file: {e}")
     
     def get_schema(self, dataset_name: str) -> Optional[SchemaContract]:
         """Get schema contract for dataset (lazy-loads if not cached)"""

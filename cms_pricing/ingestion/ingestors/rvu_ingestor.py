@@ -18,6 +18,7 @@ import re
 import uuid
 import zipfile
 from collections import defaultdict
+import numpy as np
 from datetime import datetime, date
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable, Awaitable
@@ -882,6 +883,104 @@ class RVUIngestor(BaseDISIngestor):
         except Exception as e:
             logger.error(f"Failed to record schema drift: {e}")
     
+    def _load_dataframes_to_database(
+        self,
+        dataframes: Dict[str, Any],
+        release_id: str,
+        batch_id: str,
+        vintage_date: str
+    ) -> Dict[str, Any]:
+        """
+        Persist parsed DataFrames into database tables using loader helpers.
+        """
+        if not self.db_session:
+            logger.info("No database session configured; skipping DB load")
+            return {"total_records": 0, "datasets": {}}
+        
+        release_uuid = uuid.uuid4()
+        source_version = (release_id if release_id else self._derive_source_version(vintage_date))[:10]
+        release_record = Release(
+            id=release_uuid,
+            type="RVU_FULL",
+            source_version=source_version,
+            imported_at=datetime.utcnow().date(),
+            notes=str(batch_id)[:10]  # Truncate to match VARCHAR(10) constraint
+        )
+        
+        self.db_session.add(release_record)
+        self.db_session.flush()
+        
+        loaders = {
+            "pprrvu": self._load_pprrvu_data,
+            "gpci": self._load_gpci_data,
+            "oppscap": self._load_oppscap_data,
+            "anescf": self._load_anes_data,
+            "localitycounty": self._load_locality_data,
+        }
+        natural_keys = {
+            "pprrvu": ["hcpcs_code", "modifier", "effective_start"],
+            "gpci": ["mac", "locality_code", "effective_start"],
+            "oppscap": ["hcpcs_code", "modifier", "mac", "locality_code", "effective_start"],
+            "anescf": ["mac", "locality_code", "effective_start"],
+            "localitycounty": ["mac", "locality_code", "state", "effective_start"],
+        }
+        processed_dataframes: Dict[str, pd.DataFrame] = {}
+        for key, df in dataframes.items():
+            if df is None or df.empty:
+                processed_dataframes[key] = df
+                continue
+            df_copy = df.copy()
+            nk = natural_keys.get(key)
+            if nk:
+                subset = [col for col in nk if col in df_copy.columns]
+                if subset:
+                    before = len(df_copy)
+                    for col in subset:
+                        if df_copy[col].dtype == "O":
+                            df_copy[col] = df_copy[col].fillna("")
+                    df_copy = df_copy.sort_values(subset).drop_duplicates(subset=subset, keep="first").reset_index(drop=True)
+                    after = len(df_copy)
+                    if before != after:
+                        logger.info(
+                            "Dropped duplicate rows before DB load",
+                            dataset=key,
+                            duplicates_removed=before - after,
+                            natural_key=subset,
+                        )
+            processed_dataframes[key] = df_copy
+        
+        dataset_results: Dict[str, int] = {}
+        total_records = 0
+        
+        for key, df in processed_dataframes.items():
+            if df is None or df.empty:
+                dataset_results[key] = 0
+                continue
+            
+            loader = loaders.get(key)
+            if not loader:
+                logger.warning("No loader registered for dataset", dataset=key)
+                dataset_results[key] = 0
+                continue
+            
+            try:
+                inserted = loader(df, release_uuid, batch_id)
+                total_records += inserted
+                dataset_results[key] = inserted
+                logger.info("Dataset loaded into database",
+                           dataset=key,
+                           records_inserted=inserted)
+            except Exception as exc:  # pragma: no cover
+                logger.error("Failed to load dataset", dataset=key, error=str(exc))
+                dataset_results[key] = 0
+        
+        self.db_session.commit()
+        
+        return {
+            "total_records": total_records,
+            "datasets": dataset_results,
+            "release_uuid": str(release_uuid),
+        }
     def _save_data_with_upserts(self, data: Dict[str, Any], data_dir: Path, vintage_date: str):
         """Save data with idempotent upserts per DIS standards"""
         try:
@@ -1175,10 +1274,10 @@ class RVUIngestor(BaseDISIngestor):
                     source_files.append(SourceFile(
                         url=file_info.url,
                         filename=file_info.filename,
-                        content_type="application/zip",
-                        expected_size_bytes=getattr(file_info, 'size_bytes', None) or 50000000,
-                        last_modified=getattr(file_info, 'last_modified', None),
-                        checksum=getattr(file_info, 'checksum', None)
+                        content_type=file_info.content_type or "application/zip",
+                        expected_size_bytes=file_info.size_bytes or 50_000_000,
+                        last_modified=file_info.last_modified,
+                        checksum=file_info.checksum
                     ))
                 
                 logger.info("File discovery completed via scraper", 
@@ -1197,7 +1296,8 @@ class RVUIngestor(BaseDISIngestor):
     
     async def download_historical_data(self, 
                                      start_year: int = 2003, 
-                                     end_year: int = 2025) -> Dict[str, Any]:
+                                     end_year: int = 2025,
+                                     download: bool = True) -> Dict[str, Any]:
         """
         Download historical RVU data using the historical data manager
         
@@ -1214,7 +1314,8 @@ class RVUIngestor(BaseDISIngestor):
         try:
             result = await self.historical_manager.download_historical_data(
                 start_year=start_year, 
-                end_year=end_year
+                end_year=end_year,
+                download=download
             )
             
             logger.info("Historical data download completed", **result)
@@ -1235,7 +1336,7 @@ class RVUIngestor(BaseDISIngestor):
             List of available file information
         """
         try:
-            files = self.historical_manager.get_downloaded_files()
+            files = self.historical_manager.get_discovered_files()
             logger.info("Retrieved available files", count=len(files))
             return files
             
@@ -2306,7 +2407,7 @@ class RVUIngestor(BaseDISIngestor):
                 "error": str(e)
             }
     
-    async def normalize(self, validated_batch: Dict[str, Any]) -> Dict[str, Any]:
+    async def normalize(self, validated_batch: Any) -> Dict[str, Any]:
         """
         Normalize Stage: Canonicalize data and emit schema contract per DIS §3.4
         
@@ -2314,23 +2415,23 @@ class RVUIngestor(BaseDISIngestor):
             validated_batch: Validated data from validate stage (can be dict or RawBatch)
             
         Returns:
-            Normalization results with schema contract
+            Normalization results with schema contract and parsed dataframes
         """
         # Handle both dict and RawBatch inputs
-        if hasattr(validated_batch, 'get') and callable(validated_batch.get):
+        raw_batch = None
+        if isinstance(validated_batch, RawBatch):
+            # It's a RawBatch object - use it for parsing
+            raw_batch = validated_batch
+            batch_id = raw_batch.metadata.get("batch_id", "unknown")
+            release_id = raw_batch.metadata.get("release_id", "unknown")
+        elif hasattr(validated_batch, 'get') and callable(validated_batch.get):
             # It's a dict-like object
             batch_id = validated_batch.get("batch_id", "unknown")
             release_id = validated_batch.get("release_id", "unknown")
         else:
-            # It's a RawBatch object - extract metadata
+            # Fallback
             batch_id = getattr(validated_batch, 'metadata', {}).get("batch_id", "unknown")
             release_id = getattr(validated_batch, 'metadata', {}).get("release_id", "unknown")
-            # Convert to dict for processing
-            validated_batch = {
-                "batch_id": batch_id,
-                "release_id": release_id,
-                "valid_records": 0
-            }
         
         logger.info("Starting normalize stage", batch_id=batch_id)
         
@@ -2374,6 +2475,20 @@ class RVUIngestor(BaseDISIngestor):
                 import json
                 json.dump(schema_contract, f, indent=2)
             
+            # Parse raw data if we have a RawBatch
+            adapted_batch = None
+            if raw_batch:
+                logger.info("Parsing raw ZIP files to extract datasets")
+                # Use the existing adapter to parse ZIP files
+                adapted_batch = self._adapt_raw_data_sync(raw_batch)
+                
+                # Log parsing results
+                logger.info("ZIP parsing completed",
+                           datasets=list(adapted_batch.dataframes.keys()),
+                           total_rows=sum(len(df) for df in adapted_batch.dataframes.values()))
+            else:
+                logger.warning("No raw batch provided - skipping ZIP parsing")
+            
             # Write column dictionary per DIS §3.4
             column_dict = {
                 "dataset_name": self.dataset_name,
@@ -2401,7 +2516,13 @@ class RVUIngestor(BaseDISIngestor):
                        batch_id=batch_id,
                        schema_path=str(schema_path))
             
-            return {
+            # Prepare return value
+            parsed_data = adapted_batch.dataframes if adapted_batch else {}
+            dataset_row_counts = {name: len(df) for name, df in parsed_data.items()}
+            normalized_records = sum(dataset_row_counts.values())
+            schema_bundle = adapted_batch.schema_contract if adapted_batch else {}
+
+            result = {
                 "status": "success",
                 "batch_id": batch_id,
                 "release_id": release_id,
@@ -2409,9 +2530,14 @@ class RVUIngestor(BaseDISIngestor):
                 "column_dictionary_path": str(column_dict_path),
                 "schema_contract": schema_contract,
                 "column_dictionary": column_dict,
-                "normalized_records": validated_batch.get("valid_records", 0),
-                "normalized_data": {}  # Empty for now - would contain actual DataFrames in real implementation
+                "normalized_records": normalized_records,
+                "dataset_row_counts": dataset_row_counts,
+                "metadata": adapted_batch.metadata if adapted_batch else {},
+                "schema": schema_bundle if schema_bundle else schema_contract,
+                "data": parsed_data
             }
+            
+            return result
             
         except Exception as e:
             logger.error("Normalize stage failed", error=str(e), batch_id=batch_id)
@@ -2438,13 +2564,19 @@ class RVUIngestor(BaseDISIngestor):
             release_id = enriched_batch.metadata.get("release_id", "unknown")
             vintage_date = enriched_batch.metadata.get("vintage_date", datetime.now().strftime("%Y-%m-%d"))
             enriched_data = getattr(enriched_batch, 'data', {})
+            if not enriched_data:
+                enriched_data = getattr(enriched_batch, 'dataframes', {})
             quality_metrics = getattr(enriched_batch, 'quality_metrics', {})
         else:
             # It's a dict
             batch_id = enriched_batch.get("batch_id", "unknown")
             release_id = enriched_batch.get("release_id", "unknown")
             vintage_date = enriched_batch.get("vintage_date", datetime.now().strftime("%Y-%m-%d"))
-            enriched_data = enriched_batch.get("data", enriched_batch.get("enriched_data", {}))
+            enriched_data = (
+                enriched_batch.get("data")
+                or enriched_batch.get("enriched_data")
+                or enriched_batch.get("dataframes", {})
+            )
             quality_metrics = enriched_batch.get("quality_metrics", {})
         
         logger.info("Starting publish stage", batch_id=batch_id)
@@ -2479,6 +2611,8 @@ class RVUIngestor(BaseDISIngestor):
             docs_dir.mkdir(parents=True, exist_ok=True)
             
             # Generate data documentation per DIS §3.6
+            total_records = sum(len(df) for df in enriched_data.values()) if enriched_data else 0
+
             data_docs = {
                 "dataset_name": self.dataset_name,
                 "vintage_date": vintage_date,
@@ -2494,7 +2628,7 @@ class RVUIngestor(BaseDISIngestor):
                     "LocalityCounty: Locality to County mapping"
                 ],
                 "quality_score": quality_metrics.get("quality_score", 1.0) if isinstance(quality_metrics, dict) else 1.0,
-                "record_count": 0,
+                "record_count": total_records,
                 "schema_version": "1.0",
                 "attribution_note": "Data sourced from CMS.gov - Public Domain"
             }
@@ -2562,7 +2696,7 @@ class RVUIngestor(BaseDISIngestor):
                 "data_directory": str(data_dir),
                 "docs_directory": str(docs_dir),
                 "latest_effective_view": str(view_path),
-                "record_count": 0,
+                "record_count": total_records,
                 # Additional fields expected by tests
                 "curated_tables": {
                     "rvu_items": f"{data_dir}/rvu_items.parquet",
@@ -2788,7 +2922,7 @@ class RVUIngestor(BaseDISIngestor):
                     effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
                     effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
                     source_file=str(row.get('source_filename', batch_id)),
-                    row_num=int(idx) if isinstance(idx, (int, pd.Int64Index)) else None
+                    row_num=int(idx) if isinstance(idx, (int, np.integer)) else None
                 )
                 self.db_session.add(rvu_item)
                 records_inserted += 1
@@ -2826,7 +2960,7 @@ class RVUIngestor(BaseDISIngestor):
                     release_id=release_uuid,
                     mac=str(row.get('mac', ''))[:10],
                     state=str(row.get('state', ''))[:2],
-                    locality_id=str(row.get('locality_id', ''))[:10],
+                    locality_id=str(row.get('locality_code', row.get('locality_id', '')))[:10],
                     locality_name=str(row.get('locality_name', ''))[:100] if pd.notna(row.get('locality_name')) else None,
                     work_gpci=float(row.get('work_gpci')) if pd.notna(row.get('work_gpci')) else None,
                     pe_gpci=float(row.get('pe_gpci')) if pd.notna(row.get('pe_gpci')) else None,
@@ -2834,7 +2968,7 @@ class RVUIngestor(BaseDISIngestor):
                     effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
                     effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
                     source_file=str(row.get('source_filename', batch_id)),
-                    row_num=int(idx) if isinstance(idx, (int, pd.Int64Index)) else None
+                    row_num=int(idx) if isinstance(idx, (int, np.integer)) else None
                 )
                 self.db_session.add(gpci_index)
                 records_inserted += 1
@@ -2869,13 +3003,13 @@ class RVUIngestor(BaseDISIngestor):
                     modifier=str(row.get('modifier', ''))[:2] if pd.notna(row.get('modifier')) else None,
                     proc_status=str(row.get('proc_status', ''))[:2] if pd.notna(row.get('proc_status')) else None,
                     mac=str(row.get('mac', ''))[:10],
-                    locality_id=str(row.get('locality_id', ''))[:10],
+                    locality_id=str(row.get('locality_code', row.get('locality_id', '')))[:10],
                     price_fac=float(row.get('price_fac')) if pd.notna(row.get('price_fac')) else None,
                     price_nonfac=float(row.get('price_nonfac')) if pd.notna(row.get('price_nonfac')) else None,
                     effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
                     effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
                     source_file=str(row.get('source_filename', batch_id)),
-                    row_num=int(idx) if isinstance(idx, (int, pd.Int64Index)) else None
+                    row_num=int(idx) if isinstance(idx, (int, np.integer)) else None
                 )
                 self.db_session.add(opps_cap)
                 records_inserted += 1
@@ -2907,13 +3041,13 @@ class RVUIngestor(BaseDISIngestor):
                     id=uuid.uuid4(),
                     release_id=release_uuid,
                     mac=str(row.get('mac', ''))[:10],
-                    locality_id=str(row.get('locality_id', ''))[:10],
+                    locality_id=str(row.get('locality_code', row.get('locality_id', '')))[:10],
                     locality_name=str(row.get('locality_name', ''))[:100] if pd.notna(row.get('locality_name')) else None,
                     anesthesia_cf=float(row.get('anesthesia_cf')) if pd.notna(row.get('anesthesia_cf')) else None,
                     effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
                     effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
                     source_file=str(row.get('source_filename', batch_id)),
-                    row_num=int(idx) if isinstance(idx, (int, pd.Int64Index)) else None
+                    row_num=int(idx) if isinstance(idx, (int, np.integer)) else None
                 )
                 self.db_session.add(anes_cf)
                 records_inserted += 1
@@ -2945,14 +3079,14 @@ class RVUIngestor(BaseDISIngestor):
                     id=uuid.uuid4(),
                     release_id=release_uuid,
                     mac=str(row.get('mac', ''))[:10],
-                    locality_id=str(row.get('locality_id', ''))[:10],
+                    locality_id=str(row.get('locality_code', row.get('locality_id', '')))[:10],
                     state=str(row.get('state', ''))[:2],
                     fee_schedule_area=str(row.get('fee_schedule_area', ''))[:10] if pd.notna(row.get('fee_schedule_area')) else None,
                     county_name=str(row.get('county_name', ''))[:100] if pd.notna(row.get('county_name')) else None,
                     effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
                     effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
                     source_file=str(row.get('source_filename', batch_id)),
-                    row_num=int(idx) if isinstance(idx, (int, pd.Int64Index)) else None
+                    row_num=int(idx) if isinstance(idx, (int, np.integer)) else None
                 )
                 self.db_session.add(locality_county)
                 records_inserted += 1
