@@ -69,42 +69,39 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     
     steps:
-      - name: Deploy to Render
+      - name: Trigger Render Deploy (API)
         id: trigger_deploy
         env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
           set -euo pipefail
           echo "Deploying to Render with tag: ${{ github.ref_name }}"
-          
-          # Step 1: Deploy with specific image tag (URL-encoded)
+
           IMAGE_TAG="ghcr.io/${{ github.repository }}:${{ github.sha }}"
-          ENCODED_IMAGE=$(echo -n "$IMAGE_TAG" | jq -sRr @uri)
-          
-          HTTP_CODE=0
-          DEPLOY_RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${RENDER_DEPLOY_HOOK}&imgURL=${ENCODED_IMAGE}")
-          HTTP_CODE=$(echo "$DEPLOY_RESPONSE" | tail -n1)
-          BODY=$(echo "$DEPLOY_RESPONSE" | sed '$d')
-          echo "Deploy hook status: $HTTP_CODE"
-          echo "Deploy hook body: $BODY"
-          
+          echo "Using image: $IMAGE_TAG"
+
+          RESP=$(curl -sS -w "\n%{http_code}" -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"imageUrl\": \"${IMAGE_TAG}\"}")
+          HTTP_CODE=$(echo "$RESP" | tail -n1)
+          BODY=$(echo "$RESP" | sed '$d')
+          echo "Deploy API status: $HTTP_CODE"
+          echo "Deploy API body: $BODY"
+
           if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
-            echo "❌ Deploy hook HTTP $HTTP_CODE"
+            echo "❌ Deploy API HTTP $HTTP_CODE"
             exit 1
           fi
 
-          # Try to parse JSON only if body looks like JSON
-          if echo "$BODY" | grep -q '{'; then
-            DEPLOY_ID=$(echo "$BODY" | jq -r '.deploy.id // empty')
-          else
-            DEPLOY_ID=""
-          fi
+          DEPLOY_ID=$(echo "$BODY" | jq -r '.id // empty')
           if [ -z "$DEPLOY_ID" ]; then
-            echo "❌ Failed to trigger deployment. Response did not include deploy.id"
+            echo "❌ Failed to parse deploy id from API response"
             exit 1
           fi
 
-          echo "✅ Deployment triggered with image: $IMAGE_TAG (deploy id: $DEPLOY_ID)"
+          echo "✅ Deployment triggered (deploy id: $DEPLOY_ID)"
           echo "deploy_id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
 
       - name: Wait for Render Deployment
@@ -156,6 +153,10 @@ jobs:
             echo "❌ Deploy ${DEPLOY_ID} did not reach live state within timeout."
             exit 1
           fi
+
+          # Print the image actually running for verification
+          SERVICE_RESP=$(curl -sS "https://api.render.com/v1/services/${RENDER_SERVICE_ID}" -H "Authorization: Bearer ${RENDER_API_KEY}")
+          echo "Service details: $SERVICE_RESP"
       
       - name: Run Database Migrations (One-Off Job)
         env:
