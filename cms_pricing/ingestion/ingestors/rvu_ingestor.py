@@ -205,7 +205,7 @@ class RVUIngestor(BaseDISIngestor):
                 source_files.append(SourceFile(
                     url=file_info.url,
                     filename=file_info.filename,
-                    content_type="application/zip",
+                    content_type=(getattr(file_info, 'content_type', None) or "application/zip"),
                     expected_size_bytes=getattr(file_info, 'size_bytes', None) or 50000000,
                     last_modified=getattr(file_info, 'last_modified', None),
                     checksum=getattr(file_info, 'checksum', None)
