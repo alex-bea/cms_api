@@ -69,16 +69,135 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     
     steps:
-      - name: Trigger Render Deploy Hook
+      - name: Deploy to Render
+        id: trigger_deploy
         env:
           RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
         run: |
-          echo "Triggering Render deployment for tag: ${{ github.ref_name }}"
-          curl -X POST "$RENDER_DEPLOY_HOOK"
-      
-      - name: Wait for deployment
-        run: |
-          echo "Deployment triggered. Check Render dashboard for status."
-          echo "Service URL: https://cms-pricing-api.onrender.com"
-          echo "Health check will be available at: https://cms-pricing-api.onrender.com/health"
+          set -euo pipefail
+          echo "Deploying to Render with tag: ${{ github.ref_name }}"
+          
+          # Step 1: Deploy with specific image tag (URL-encoded)
+          IMAGE_TAG="ghcr.io/${{ github.repository }}:${{ github.sha }}"
+          ENCODED_IMAGE=$(echo -n "$IMAGE_TAG" | jq -sRr @uri)
+          
+          DEPLOY_RESPONSE=$(curl -sS -X POST "${RENDER_DEPLOY_HOOK}&imgURL=${ENCODED_IMAGE}")
+          echo "Deploy hook response: $DEPLOY_RESPONSE"
+          
+          DEPLOY_ID=$(echo "$DEPLOY_RESPONSE" | jq -r '.deploy.id // empty')
+          if [ -z "$DEPLOY_ID" ]; then
+            echo "❌ Failed to trigger deployment. Response did not include deploy.id"
+            exit 1
+          fi
 
+          echo "✅ Deployment triggered with image: $IMAGE_TAG (deploy id: $DEPLOY_ID)"
+          echo "deploy_id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Render Deployment
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          DEPLOY_ID: ${{ steps.trigger_deploy.outputs.deploy_id }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEPLOY_ID}" ]; then
+            echo "❌ Missing deploy id output from deploy step."
+            exit 1
+          fi
+
+          echo "Waiting for Render deploy ${DEPLOY_ID} to reach live status..."
+
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            sleep 10
+            ATTEMPT=$((ATTEMPT + 1))
+
+            DEPLOY_STATUS=$(curl -sS \
+              "https://api.render.com/v1/deploys/${DEPLOY_ID}" \
+              -H "Authorization: Bearer ${RENDER_API_KEY}" \
+              | jq -r '.status // empty')
+
+            if [ -z "$DEPLOY_STATUS" ]; then
+              echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Unable to read deploy status (empty response)"
+              continue
+            fi
+
+            echo "Deploy status: $DEPLOY_STATUS (attempt $ATTEMPT/$MAX_ATTEMPTS)"
+
+            case "$DEPLOY_STATUS" in
+              live|succeeded)
+                echo "✅ Deploy ${DEPLOY_ID} is live."
+                break
+                ;;
+              failed|canceled|deactivated|build_failed|build_timed_out)
+                echo "❌ Deploy ${DEPLOY_ID} did not succeed (status: $DEPLOY_STATUS)"
+                exit 1
+                ;;
+            esac
+          done
+
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "❌ Deploy ${DEPLOY_ID} did not reach live state within timeout."
+            exit 1
+          fi
+      
+      - name: Run Database Migrations (One-Off Job)
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          echo "Running database migrations via One-Off Job..."
+          
+          # Step 2: Trigger one-off job with alembic upgrade head
+          # One-off jobs use the service's latest successful build artifact + env
+          JOB_RESPONSE=$(curl -s -X POST \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/jobs" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"startCommand":"alembic upgrade head"}')
+          
+          # Extract job ID
+          JOB_ID=$(echo "$JOB_RESPONSE" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+          
+          if [ -z "$JOB_ID" ]; then
+            echo "❌ Failed to start migration job. Response: $JOB_RESPONSE"
+            exit 1
+          fi
+          
+          echo "Migration job started with ID: $JOB_ID"
+          
+          # Step 3: Poll job status until completed (max 5 minutes)
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            sleep 10
+            ATTEMPT=$((ATTEMPT + 1))
+            
+            JOB_STATUS=$(curl -s \
+              "https://api.render.com/v1/jobs/${JOB_ID}" \
+              -H "Authorization: Bearer ${RENDER_API_KEY}" \
+              | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+            
+            echo "Migration status: $JOB_STATUS (attempt $ATTEMPT/$MAX_ATTEMPTS)"
+            
+            if [ "$JOB_STATUS" = "succeeded" ]; then
+              echo "✅ Migrations completed successfully"
+              break
+            elif [ "$JOB_STATUS" = "failed" ]; then
+              echo "❌ Migration job failed - check Render Jobs page for logs"
+              exit 1
+            fi
+          done
+          
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "❌ Migration job timed out after 5 minutes"
+            exit 1
+          fi
+      
+      - name: Deployment Complete
+        run: |
+          echo "🎉 Deployment complete!"
+          echo "Service URL: https://cms-pricing-api.onrender.com"
+          echo "Health check: https://cms-pricing-api.onrender.com/health"

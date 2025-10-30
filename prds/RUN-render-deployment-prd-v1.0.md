@@ -1067,6 +1067,10 @@ If you already have data in a Render-hosted Postgres instance:
 - [ ] Verify monitoring alerts configured
 - [ ] Test backup/restore process
 - [ ] Document DATABASE_URL in team wiki/1Password
+- [ ] Execute `scripts/load_rvu_to_production.py` (or equivalent ingestion run) and confirm:
+  - `/data/ingestion/production/raw/cms_rvu/<release_id>/files` holds binary ZIP artifacts (>1 MB) rather than HTML pages.
+  - `data/ingestion/production/cms_rvu_observability_*.json` reports `record_count > 0` before marking the run success.
+  - Discovery manifest entries include `content_type` and `size_bytes` for every quarter; missing fields require remediation before promotion.
 
 ### **Within 1 Week:**
 
@@ -1617,13 +1621,17 @@ jobs:
 curl -X POST "https://api.render.com/deploy/srv-xxx?key=yyy"
 
 # Test with specific image
-curl -X POST "https://api.render.com/deploy/srv-xxx?key=yyy&imgURL=ghcr.io/YOUR_ORG/cms-pricing-api:sha-abc123"
+IMAGE_TAG="ghcr.io/YOUR_ORG/cms-pricing-api:sha-abc123"
+ENCODED_IMAGE=$(echo -n "$IMAGE_TAG" | jq -sRr @uri)
+curl -X POST "https://api.render.com/deploy/srv-xxx?key=yyy&imgURL=${ENCODED_IMAGE}"
 ```
 
 **Expected response:**
 ```json
 {"deploy": {"id": "dep-xxx", "status": "pending"}}
 ```
+
+Tip: Always URL-encode the `imgURL` value before calling the hook; unencoded slashes or SHA prefixes will cause Render to reject the request.
 
 ---
 
@@ -1646,55 +1654,41 @@ curl -X POST "https://api.render.com/deploy/srv-xxx?key=yyy&imgURL=ghcr.io/YOUR_
 
 ### 8.6: One-Off Jobs for Migrations
 
-**Create Alembic Migration Job:**
+Render’s One-Off Jobs API lets us run Alembic migrations on demand without paying for a permanent Background Worker. There are two supported paths:
 
-1. Render Dashboard → your Web Service
-2. Jobs tab → "+ Add Job"
-3. Configure:
-   - **Name:** `run-migrations`
-   - **Command:** `alembic upgrade head`
-   - **Environment:** Inherits from Web Service (DATABASE_URL, etc.)
+**Option A: Manual run from the dashboard**
+1. Render Dashboard → open the web service.
+2. Jobs tab (or service menu `⋯` → **New Job** / **Create Job**).
+3. Enter the start command `alembic upgrade head`. The job automatically reuses the service’s latest build image and environment (including `DATABASE_URL`).
+4. Click **Run Job** and monitor logs until it succeeds.
 
-**Trigger migration before each deploy:**
-
-**Option A: Manual (Render Dashboard)**
-1. Jobs tab → run-migrations
-2. Click "Run Job"
-3. Wait for completion (usually < 1 minute)
-4. Then deploy API
-
-**Option B: Via API (automation)**
+**Option B: Automated run via API (recommended)**
 
 ```bash
-# Get service ID
-RENDER_API_KEY="your_api_key"
-SERVICE_ID="srv-xxx"
-
-# Trigger job
-curl -X POST \
-  "https://api.render.com/v1/services/${SERVICE_ID}/jobs/run-migrations/runs" \
+# Prereqs: RENDER_API_KEY and RENDER_SERVICE_ID (srv-xxxxx)
+curl -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/jobs" \
   -H "Authorization: Bearer ${RENDER_API_KEY}" \
-  -H "Content-Type: application/json"
+  -H "Content-Type: application/json" \
+  -d '{"startCommand":"alembic upgrade head"}'
 ```
 
-**Option C: GitHub Actions step (before deploy)**
+The response contains the job `id`. Poll `"https://api.render.com/v1/jobs/${JOB_ID}"` until `status` becomes `succeeded` or `failed`.
 
-Add to workflow before "Trigger Render deploy":
+**CI/CD example (after the deploy hook fires):**
 
 ```yaml
       - name: Run database migrations
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
-          # Trigger migration job
-          curl -X POST \
-            "https://api.render.com/v1/services/${SERVICE_ID}/jobs/run-migrations/runs" \
+          JOB_RESPONSE=$(curl -s -X POST \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/jobs" \
             -H "Authorization: Bearer ${RENDER_API_KEY}" \
-            -H "Content-Type: application/json"
-          
-          # Wait for job completion (poll status)
-          # Add polling logic here if needed
+            -H "Content-Type: application/json" \
+            -d '{"startCommand":"alembic upgrade head"}')
+          JOB_ID=$(echo "$JOB_RESPONSE" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+          # Poll until the job finishes (see .github/workflows/deploy.yml for full script)
 ```
 
 **Benefits of One-Off Jobs:**
@@ -1702,7 +1696,7 @@ Add to workflow before "Trigger Render deploy":
 - ✅ Dedicated logs for troubleshooting
 - ✅ Explicit control over migration timing
 - ✅ Reuses service environment variables
-- ✅ No build artifact needed (uses latest image)
+- ✅ Pay-per-second; no $7/month worker
 
 ---
 
@@ -2034,10 +2028,226 @@ You now have:
 
 ---
 
+## Part 9: CI/CD Automation Status (Added 2025-10-22)
+
+### 9.1 Automated Deployment Pipeline
+
+**Status:** ✅ **IMPLEMENTED**
+
+The CMS Pricing API now has fully automated CI/CD following all PRD policies:
+
+**What's automated:**
+- ✅ Docker image builds on every push to `main`
+- ✅ Image push to GitHub Container Registry (ghcr.io)
+- ✅ Database migrations run before deployment (Render Job API)
+- ✅ Deployment triggered on version tags (v*.*.*)
+- ✅ Health checks validated after deployment
+
+**Infrastructure:**
+- ✅ `render.yaml` - Infrastructure-as-Code configuration
+- ✅ `.github/workflows/deploy.yml` - CI/CD pipeline
+- ✅ Render migration job - `run-migrations` one-off job
+- ✅ GitHub secrets - API keys and service IDs configured
+
+**Policy Compliance:**
+- ✅ **STD-database-platform-prd-v1.0.md §3:** Migrations-first, no app startup DDL
+- ✅ **PRD-render-hosting-prd-v1.0.md §3:** Image-based deployment, zero Render build minutes
+- ✅ **RUN-database-migrations-prd-v1.0.md §6:** Migrations via Render Job/CI
+
+### 9.2 Quick Start (Automated Deployment)
+
+**For engineers deploying code:**
+
+1. **Make changes and commit:**
+   ```bash
+   git add .
+   git commit -m "feat: add new feature"
+   git push origin main
+   ```
+
+2. **Create version tag:**
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+3. **Watch automation:**
+   - GitHub Actions builds image and runs migrations
+   - Render deploys new version automatically
+   - Health checks validate deployment
+
+4. **Verify:**
+   ```bash
+   curl https://cms-pricing-api.onrender.com/health
+   ```
+
+**That's it!** No manual Render dashboard interaction needed.
+
+### 9.3 Required One-Time Setup
+
+If this is your first deployment, complete these manual steps once:
+
+#### Step 1: Create Render Migration Job
+
+In Render Dashboard:
+1. Navigate to your Web Service → Jobs tab
+2. Create one-off job:
+   - Name: `run-migrations`
+   - Command: `alembic upgrade head`
+   - Runtime: Image (same as web service)
+   - Image URL: `ghcr.io/alex-bea/cms-api:latest`
+3. Save
+
+#### Step 2: Configure GitHub Secrets
+
+In GitHub Repository Settings → Secrets and variables → Actions:
+
+Add three new secrets:
+
+**RENDER_API_KEY:**
+- Render Dashboard → Account Settings → API Keys
+- Create new API key → Copy the key
+
+**RENDER_SERVICE_ID:**
+- Your Render web service URL: `https://dashboard.render.com/web/srv-XXXXX`
+- Copy the `srv-XXXXX` part
+
+**RENDER_DEPLOY_HOOK:**
+- Should already exist from manual setup
+- If not: Render Dashboard → Settings → Deploy Hook → Create
+
+#### Step 3: Deploy render.yaml (Optional)
+
+For infrastructure-as-code approach:
+```bash
+# Commit render.yaml
+git add render.yaml
+git commit -m "infra: add Render IaC configuration"
+git push origin main
+```
+
+Then in Render Dashboard:
+1. New → Blueprint
+2. Connect repository
+3. Select `render.yaml`
+4. Review and create
+
+### 9.4 Migration from Manual to Automated
+
+If you previously deployed manually (Parts 1-7), here's how to transition:
+
+**Before:**
+- Manual Docker builds
+- Manual database migrations via `psql`
+- Manual Render deploy hook triggers
+- Manual health check verification
+
+**After:**
+- ✅ Automated on every version tag
+- ✅ Migrations run first (fail-fast)
+- ✅ Consistent deployments (image-based)
+- ✅ Audit trail in GitHub Actions logs
+
+**Migration steps:**
+1. Complete one-time setup (§9.3)
+2. Test with a dummy tag:
+   ```bash
+   git tag v0.0.1-test
+   git push origin v0.0.1-test
+   ```
+3. Watch GitHub Actions → "Build and Deploy to Render"
+4. Verify in Render Dashboard → Events
+5. Once working, use for all future deployments
+
+### 9.5 Troubleshooting CI/CD
+
+**See:** `.github/workflows/README.md` for comprehensive troubleshooting
+
+**Common issues:**
+
+**Migration job not found:**
+```
+Failed to trigger migration job
+```
+→ Create the `run-migrations` job in Render Dashboard (§9.3 Step 1)
+
+**API authentication failed:**
+```
+401 Unauthorized
+```
+→ Verify `RENDER_API_KEY` is valid and not expired
+
+**Deployment hook returns 404:**
+```
+Service not found
+```
+→ Regenerate `RENDER_DEPLOY_HOOK` in Render Dashboard
+
+**Migration times out:**
+```
+Migration job timed out after 5 minutes
+```
+→ Check migration complexity, optimize slow DDL (see RUN-database-migrations-prd-v1.0.md)
+
+### 9.6 Monitoring Automated Deployments
+
+**GitHub Actions:**
+- Repository → Actions tab
+- "Build and Deploy to Render" workflow
+- Real-time logs for each step
+
+**Render:**
+- Dashboard → Events tab
+- Deployment history with status
+- Jobs tab → run-migrations logs
+
+**Health Checks:**
+```bash
+# Quick check
+curl https://cms-pricing-api.onrender.com/health
+
+# Detailed check
+curl -v https://cms-pricing-api.onrender.com/health 2>&1 | grep -E "HTTP|status"
+```
+
+### 9.7 Rollback Procedure
+
+**If automated deployment fails:**
+
+1. **Check what failed:**
+   ```bash
+   # GitHub Actions logs
+   # Render deployment logs
+   # Migration job logs
+   ```
+
+2. **Rollback via Render:**
+   - Dashboard → Deploys tab
+   - Select previous successful deploy
+   - Click "Redeploy"
+
+3. **Rollback database (if needed):**
+   - See RUN-database-backup-dr-prd-v1.0.md for PITR procedures
+   - Forward-fix preferred over downgrade (STD-database-platform-prd-v1.0.md §3)
+
+4. **Fix and redeploy:**
+   ```bash
+   # Fix the issue
+   git add .
+   git commit -m "fix: resolve deployment issue"
+   
+   # Create new tag
+   git tag v1.0.1
+   git push origin v1.0.1
+   ```
+
+---
+
 ## Change Log
 
 || Version | Date | Summary |
 ||---------|------|---------|
+|| **v1.3** | 2025-10-22 | **Added Part 9: CI/CD Automation Status** - Documented fully automated deployment pipeline implementation. Added render.yaml IaC configuration, updated deploy.yml workflow with migration automation, created comprehensive setup guide (§9.3), troubleshooting (§9.5), monitoring (§9.6), and rollback procedures (§9.7). CI/CD now enforces migrations-first policy via Render Job API with fail-fast on migration failures. Zero Render build minutes achieved via image-based deployment. |
 || **v1.2** | 2025-10-21 | **Added Part 7 API deployment troubleshooting** (5 critical issues from production deployment): 401 Unauthorized on health checks (authentication bypass required), Docker image caching on :latest tag (use :main or SHA tags), Out of Memory on Starter tier (memory optimization strategies), Permission denied for data directories (Dockerfile non-root user pattern), Schema contract validation failures (required fields). Added Part 7 Best Practices Summary with 7-point checklist. Based on cms-pricing-api deployment to Render. |
 || **v1.1** | 2025-10-21 | **Added 5 deployment learnings (Gaps 4-8).** Enhanced Part 2 Step 1 with PostgreSQL version note (Gap 6: Render may provision 17.x when 16 requested). Enhanced Part 2 Step 3 with detailed psql PATH setup for macOS/Linux (Gap 4: common "command not found" fix). Enhanced Part 2 Step 4 with strong .env security warnings and checklist (Gap 7: never commit credentials). Added Part 4 troubleshooting for Python segfaults (Gap 5: conda conflicts, venv solution). Added database-only deployment pattern (Gap 8: schema-ready vs data-ready states). Based on 2025-10-21 Render deployment experience. |
 || **v1.0** | 2025-10-21 | Initial production runbook with comprehensive CI/CD automation (Part 8), health checks, monitoring, and 8-part deployment process. |

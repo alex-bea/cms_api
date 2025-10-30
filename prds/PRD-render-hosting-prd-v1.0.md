@@ -131,6 +131,15 @@ When the image pipeline is unavailable, Render-native builds are allowed provide
 - Weekly CI job rebuilds base image with security patches
 - Monitor build minute impact
 
+### 4.5 Documentation Audit Automation
+
+**Goal:** Keep automated governance in sync with evolving PRD versions while preventing duplicate documents.
+
+- Audit tooling **must resolve versioned PRDs by pattern** (`*-vX.Y.md`) and select the highest published version for validation. Hard-coded filenames are prohibited.
+- When multiple versions exist for the same base document, audits **warn with upgrade guidance** instead of suggesting a new file—this avoids regenerating PRDs that already exist at newer revisions.
+- Tooling that needs the “current” PRD must call the shared resolver helper (see `tools/README.md`) so new scripts inherit the rule automatically.
+- When no version is found, audits may still fail, but the error message **must include nearby matches** to steer maintainers toward updating an existing PRD.
+
 ---
 
 ## 5. Database & Migrations

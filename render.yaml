@@ -1,0 +1,61 @@
+# render.yaml - Infrastructure as Code for CMS Pricing API
+# Deploy via: Render Dashboard → New → Blueprint
+#
+# This configuration follows:
+# - STD-database-platform-prd-v1.0.md §3: Migrations-first approach
+# - PRD-render-hosting-prd-v1.0.md §3: Image-based deployment strategy
+# - RUN-render-deployment-prd-v1.0.md Part 8: CI/CD automation guide
+
+services:
+  # API Service (image-based for zero build minutes)
+  - type: web
+    name: cms-pricing-api
+    runtime: image
+    image:
+      url: ghcr.io/alex-bea/cms-api:latest
+      # For CI: url is updated via deploy hook with specific SHA tag
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: false  # CI controls deploys via deploy hook
+    
+    # NOTE: Migrations run AFTER deployment via One-Off Jobs API
+    # This enables zero-downtime deployments with backward-compatible migrations
+    # See .github/workflows/deploy.yml for migration automation
+    
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cms-pricing-db
+          property: connectionString
+      - key: LOG_LEVEL
+        value: INFO
+      - key: ENVIRONMENT
+        value: production
+      - key: API_KEYS
+        sync: false  # Prompts for value at creation, never commits secrets
+      - key: MAX_PROVIDERS
+        value: "100"
+      - key: MAX_RADIUS_MILES
+        value: "25"
+      - key: DEFAULT_FALLBACK_MULTIPLIER
+        value: "1.0"
+      - key: RETENTION_MONTHS
+        value: "13"
+    
+    # Scaling (optional)
+    scaling:
+      minInstances: 1
+      maxInstances: 3
+      targetMemoryPercent: 80
+      targetCPUPercent: 80
+
+databases:
+  - name: cms-pricing-db
+    databaseName: cms_pricing
+    user: cms_user
+    plan: starter
+    region: oregon
+    postgresVersion: "16"
+    ipAllowList: []  # Defaults to allow all; restrict in production
+

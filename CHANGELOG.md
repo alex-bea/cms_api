@@ -94,6 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - 2025-10-29
+- Captured Render ingestion guardrails in `prds/RUN-render-deployment-prd-v1.0.md` and `prds/RUN-openapi-docs-maintenance-v1.0.md`, and tightened scraper/data architecture PRDs following the RVU production dry-run that surfaced HTML downloads masquerading as ZIPs and missing reference metadata serialization.
+
 ### Changed - 2025-10-28
 
 #### cms_pricing/ingestion/scrapers/cms_rvu_scraper.py
