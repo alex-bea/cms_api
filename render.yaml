@@ -12,7 +12,7 @@ services:
     name: cms-pricing-api
     runtime: image
     image:
-      url: ghcr.io/alex-bea/cms-api:latest
+      url: ghcr.io/alex-bea/cms_api:latest
       # For CI: url is updated via deploy hook with specific SHA tag
     plan: starter
     region: oregon

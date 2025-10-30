@@ -81,10 +81,24 @@ jobs:
           IMAGE_TAG="ghcr.io/${{ github.repository }}:${{ github.sha }}"
           ENCODED_IMAGE=$(echo -n "$IMAGE_TAG" | jq -sRr @uri)
           
-          DEPLOY_RESPONSE=$(curl -sS -X POST "${RENDER_DEPLOY_HOOK}&imgURL=${ENCODED_IMAGE}")
-          echo "Deploy hook response: $DEPLOY_RESPONSE"
+          HTTP_CODE=0
+          DEPLOY_RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${RENDER_DEPLOY_HOOK}&imgURL=${ENCODED_IMAGE}")
+          HTTP_CODE=$(echo "$DEPLOY_RESPONSE" | tail -n1)
+          BODY=$(echo "$DEPLOY_RESPONSE" | sed '$d')
+          echo "Deploy hook status: $HTTP_CODE"
+          echo "Deploy hook body: $BODY"
           
-          DEPLOY_ID=$(echo "$DEPLOY_RESPONSE" | jq -r '.deploy.id // empty')
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "❌ Deploy hook HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          # Try to parse JSON only if body looks like JSON
+          if echo "$BODY" | grep -q '{'; then
+            DEPLOY_ID=$(echo "$BODY" | jq -r '.deploy.id // empty')
+          else
+            DEPLOY_ID=""
+          fi
           if [ -z "$DEPLOY_ID" ]; then
             echo "❌ Failed to trigger deployment. Response did not include deploy.id"
             exit 1
