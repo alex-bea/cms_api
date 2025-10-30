@@ -1,0 +1,33 @@
+🚀 RVU DEPLOYMENT - QUICK START GUIDE
+=====================================
+
+CURRENT STATUS: ✅ Deployed and Working
+Service: https://cms-pricing-api.onrender.com
+API Key: dev-key-123
+
+NEXT STEPS TO LOAD DATA:
+========================
+
+Option 1: Local Test First (RECOMMENDED - 15 min)
+--------------------------------------------------
+# Run local test
+python -m pytest tests/ingestors/test_rvu_ingestor_e2e.py::test_full_dis_pipeline -v
+
+Option 2: Direct Production Load (60 min)
+------------------------------------------
+# In Render Dashboard → Shell, run:
+# Need to check exact command based on what's available
+
+Option 3: Wait for CLI Tool Fix
+---------------------------------
+# Currently has dependency issues
+# May need to fix before using
+
+VERIFY AFTER LOADING:
+=====================
+curl -H "X-API-Key: dev-key-123" \
+  https://cms-pricing-api.onrender.com/api/v1/rvu/releases
+
+Should return non-empty array with loaded data.
+
+Full plan: artifacts/NEXT_STEPS_DEPLOYMENT.md

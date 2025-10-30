@@ -1,0 +1,52 @@
+{
+  "release_id": "rvu_2025_test_1761712474",
+  "batch_id": "b9d19704-a682-418f-84de-8c28922c3422",
+  "source": "cms_rvu",
+  "files": [
+    {
+      "path": "files/rvu25a-20250110.zip",
+      "sha256": "8871f447d1dfce9df46c155c5170f7ad68a580e49c5492a73e56d7978fd159e6",
+      "size_bytes": 4055697,
+      "content_type": "application/zip",
+      "url": "https://www.cms.gov/files/zip/rvu25a-updated-01/10/2025.zip",
+      "last_modified": "Fri, 10 Jan 2025 18:54:27 GMT",
+      "etag": null
+    },
+    {
+      "path": "files/rvu25b-20250605.zip",
+      "sha256": "2fbe521eb8837073f2cfcefeb4af997d2141e4577cd2040bfec83bf52c2063ef",
+      "size_bytes": 3635807,
+      "content_type": "application/zip",
+      "url": "https://www.cms.gov/files/zip/rvu25b-updated-06/05/2025.zip",
+      "last_modified": "Thu, 05 Jun 2025 18:20:51 GMT",
+      "etag": null
+    },
+    {
+      "path": "files/rvu25c-20250605.zip",
+      "sha256": "ab795bffde2b239fd33cf0267754ee4bc397a2ba29a57e7779b7fe42f09f4039",
+      "size_bytes": 3678758,
+      "content_type": "application/zip",
+      "url": "https://www.cms.gov/files/zip/rvu25c-updated-06/05/2025.zip",
+      "last_modified": "Thu, 05 Jun 2025 14:50:42 GMT",
+      "etag": null
+    },
+    {
+      "path": "files/rvu25d-20250911.zip",
+      "sha256": "ebe658d447353094aaf2068530045079b6875f76451defd163fe701b0c2adf79",
+      "size_bytes": 3618578,
+      "content_type": "application/zip",
+      "url": "https://www.cms.gov/files/zip/rvu25d-updated-09/11/2025.zip",
+      "last_modified": "Tue, 16 Sep 2025 14:17:46 GMT",
+      "etag": null
+    }
+  ],
+  "fetched_at": "2025-10-28T21:34:34.946281",
+  "discovered_from": "https://www.cms.gov/medicare/payment/fee-schedules",
+  "source_url": "https://www.cms.gov/medicare/payment/fee-schedules",
+  "license": {
+    "name": "CMS Public Domain",
+    "url": "https://www.cms.gov/About-CMS/Agency-Information/Aboutwebsite/Privacy-Policy",
+    "attribution_required": false
+  },
+  "notes_url": "https://www.cms.gov/medicare/payment/fee-schedules"
+}

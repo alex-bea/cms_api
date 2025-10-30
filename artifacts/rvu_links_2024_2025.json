@@ -1,0 +1,189 @@
+{
+  "landing_url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files",
+  "detail_links": [
+    {
+      "text": "RVU25A",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25a",
+      "heading": null,
+      "context_snippet": "File NameRVU25A"
+    },
+    {
+      "text": "RVU25B",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25b",
+      "heading": null,
+      "context_snippet": "File NameRVU25B"
+    },
+    {
+      "text": "RVU25C",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25c",
+      "heading": null,
+      "context_snippet": "File NameRVU25C"
+    },
+    {
+      "text": "RVU25D",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25d-0",
+      "heading": null,
+      "context_snippet": "File NameRVU25D"
+    },
+    {
+      "text": "RVU24A",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24a",
+      "heading": null,
+      "context_snippet": "File NameRVU24A"
+    },
+    {
+      "text": "RVU24B",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24b",
+      "heading": null,
+      "context_snippet": "File NameRVU24B"
+    },
+    {
+      "text": "RVU24AR",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24ar",
+      "heading": null,
+      "context_snippet": "File NameRVU24AR"
+    },
+    {
+      "text": "RVU24C",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24c",
+      "heading": null,
+      "context_snippet": "File NameRVU24C"
+    },
+    {
+      "text": "RVU24D",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24d",
+      "heading": null,
+      "context_snippet": "File NameRVU24D"
+    },
+    {
+      "text": "RVU23A",
+      "url": "https://www.cms.gov/medicare/medicare-fee-service-payment/physicianfeesched/pfs-relative-value-files/rvu23a",
+      "heading": null,
+      "context_snippet": "File NameRVU23A"
+    },
+    {
+      "text": "RVU23B",
+      "url": "https://www.cms.gov/medicare/medicare-fee-service-payment/physicianfeesched/pfs-relative-value-files/rvu23b",
+      "heading": null,
+      "context_snippet": "File NameRVU23B"
+    },
+    {
+      "text": "RVU23C",
+      "url": "https://www.cms.gov/medicare/medicare-fee-service-payment/physicianfeesched/pfs-relative-value-files/rvu23c",
+      "heading": null,
+      "context_snippet": "File NameRVU23C"
+    },
+    {
+      "text": "RVU23D",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu23d",
+      "heading": null,
+      "context_snippet": "File NameRVU23D"
+    }
+  ],
+  "downloads": [
+    {
+      "detail_url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25a",
+      "detail_heading": null,
+      "download_text": "RVU25A - Updated 01/10/2025",
+      "download_url": "https://www.cms.gov/files/zip/rvu25a-updated-01/10/2025.zip",
+      "content_type": null,
+      "file_size": null
+    },
+    {
+      "detail_url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25b",
+      "detail_heading": null,
+      "download_text": "RVU25B - Updated 06/05/2025",
+      "download_url": "https://www.cms.gov/files/zip/rvu25b-updated-06/05/2025.zip",
+      "content_type": null,
+      "file_size": null
+    },
+    {
+      "detail_url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25c",
+      "detail_heading": null,
+      "download_text": "RVU25C - Updated 06/05/2025",
+      "download_url": "https://www.cms.gov/files/zip/rvu25c-updated-06/05/2025.zip",
+      "content_type": null,
+      "file_size": null
+    },
+    {
+      "detail_url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25d-0",
+      "detail_heading": null,
+      "download_text": "RVU25D - Updated 09/11/2025",
+      "download_url": "https://www.cms.gov/files/zip/rvu25d-updated-09/11/2025.zip",
+      "content_type": null,
+      "file_size": null
+    },
+    {
+      "detail_url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24a",
+      "detail_heading": null,
+      "download_text": "RVU24A - Updated 04/01/2024",
+      "download_url": "https://www.cms.gov/files/zip/rvu24a-updated-04/01/2024.zip",
+      "content_type": null,
+      "file_size": null
+    },
+    {
+      "detail_url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24b",
+      "detail_heading": null,
+      "download_text": "RVU24B - Updated 03/18/2024",
+      "download_url": "https://www.cms.gov/files/zip/rvu24b-updated-03/18/2024.zip",
+      "content_type": null,
+      "file_size": null
+    },
+    {
+      "detail_url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24ar",
+      "detail_heading": null,
+      "download_text": "RVU24AR - Posted 04/01/2024",
+      "download_url": "https://www.cms.gov/files/zip/rvu24ar-posted-04/01/2024.zip",
+      "content_type": null,
+      "file_size": null
+    },
+    {
+      "detail_url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24c",
+      "detail_heading": null,
+      "download_text": "RVU24C - Updated 09/09/2024",
+      "download_url": "https://www.cms.gov/files/zip/rvu24c-updated-09/09/2024.zip",
+      "content_type": null,
+      "file_size": null
+    },
+    {
+      "detail_url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24d",
+      "detail_heading": null,
+      "download_text": "RVU24D",
+      "download_url": "https://www.cms.gov/files/zip/rvu24d.zip",
+      "content_type": null,
+      "file_size": null
+    },
+    {
+      "detail_url": "https://www.cms.gov/medicare/medicare-fee-service-payment/physicianfeesched/pfs-relative-value-files/rvu23a",
+      "detail_heading": null,
+      "download_text": "RVU23A - Updated 01/31/2023",
+      "download_url": "https://www.cms.gov/files/zip/rvu23a-updated-01/31/2023.zip",
+      "content_type": null,
+      "file_size": null
+    },
+    {
+      "detail_url": "https://www.cms.gov/medicare/medicare-fee-service-payment/physicianfeesched/pfs-relative-value-files/rvu23b",
+      "detail_heading": null,
+      "download_text": "RVU23B - Updated 02/27/2023",
+      "download_url": "https://www.cms.gov/files/zip/rvu23b-updated-02/27/2023.zip",
+      "content_type": null,
+      "file_size": null
+    },
+    {
+      "detail_url": "https://www.cms.gov/medicare/medicare-fee-service-payment/physicianfeesched/pfs-relative-value-files/rvu23c",
+      "detail_heading": null,
+      "download_text": "RVU23C",
+      "download_url": "https://www.cms.gov/files/zip/rvu23c.zip",
+      "content_type": null,
+      "file_size": null
+    },
+    {
+      "detail_url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu23d",
+      "detail_heading": null,
+      "download_text": "RVU23D",
+      "download_url": "https://www.cms.gov/files/zip/rvu23d.zip",
+      "content_type": null,
+      "file_size": null
+    }
+  ]
+}

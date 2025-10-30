@@ -259,7 +259,7 @@ async def download_historical_data(
         # Create response data
         data = {
             "status": result.get("status"),
-            "files_found": result.get("files_found", 0),
+            "files_discovered": result.get("files_discovered", 0),
             "downloads_completed": result.get("downloads_completed", 0),
             "downloads_failed": result.get("downloads_failed", 0),
             "manifest_path": result.get("manifest_path"),
@@ -744,4 +744,3 @@ async def health_check():
         "service": "RVU Data API",
         "version": "1.0.0"
     }
-

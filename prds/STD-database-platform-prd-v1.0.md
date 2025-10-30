@@ -115,6 +115,9 @@
 - **Runtime budgets & windows**
   - Any migration estimated > **5 minutes** requires a maintenance window and backout plan.
   - Migrations run via **Render Job/CI** with clear ownership; prohibit ad‑hoc `psql` DDL in prod.
+- **Backward-compatible sequencing**
+  - Production pipelines (Render One-Off Jobs post-deploy) require every migration to follow an **expand/contract** pattern: add new objects first, migrate data safely, then remove legacy objects in a later release.
+  - Breaking DDL (drops, renames, column type changes) must be split across multiple revisions or executed during a maintenance window with an approved backout plan.
 - **`alembic stamp` usage**
   - Allowed only when the physical schema **exactly** matches the target revision; requires Platform approval and recorded change ticket.
 - **Pre‑merge checklist**
@@ -238,7 +241,7 @@ class FeeOPPS:
     ALTER TABLE public.phi_example ENABLE ROW LEVEL SECURITY;
     ALTER TABLE public.phi_example FORCE ROW LEVEL SECURITY;
     CREATE POLICY tenant_isolation ON public.phi_example
-    USING (tenant_id = current_setting('app.tenant_id')::uuid);
+    USING (tenant_id = (current_setting('app.tenant_id', true))::uuid);
     REVOKE ALL ON public.phi_example FROM PUBLIC;
     ```
   - **Tenant context under PgBouncer**: The application MUST set 
@@ -249,6 +252,8 @@ class FeeOPPS:
   - **Deny unless exception**: `dblink`, unvetted FDWs, `COPY TO PROGRAM`.
   - **Export guardrails**: Allow 
   `COPY TO STDOUT` only for `migrate` and a dedicated `export_ro` role; forbid `COPY ... PROGRAM` entirely; large exports must run as audited jobs.
+  - **UUID standard**: Prefer 
+  `pgcrypto.gen_random_uuid()` for UUIDs; do **not** enable or depend on `uuid-ossp` unless explicitly approved.
 - **Secrets & rotation**
   - Store credentials in Vault/1Password; rotate on schedule (see §2) and on personnel change.
 
@@ -274,7 +279,7 @@ class FeeOPPS:
 ## 6. Performance & Capacity Management
 - **Connection management**
   - PgBouncer required in prod; set `max_connections` and pool mode per environment; coordinate with SQLAlchemy pools.
-  - **Prepared statements in pooling**: In PgBouncer transaction pooling, disable server-side prepares or configure the driver accordingly (e.g., set `prepareThreshold=0`) to avoid prepared-statement reuse across backends.
+  - **Prepared statements in pooling**: In PgBouncer transaction pooling, disable server-side prepares or use the driver’s simple-protocol mode. For JDBC set `prepareThreshold=0`. For Python/psycopg, use the simple protocol / avoid server-side prepares (document exact knob in the RUN book).
 - **Baseline Postgres settings (OLTP)**
   - Timeouts: `statement_timeout=30s`, `lock_timeout=5s`, `idle_in_transaction_session_timeout=60s`, `deadlock_timeout=1s`.
   - Logging: `log_min_duration_statement=200ms`, `log_statement='ddl'`, `log_lock_waits=on`, `log_temp_files=0`.
@@ -287,12 +292,16 @@ class FeeOPPS:
     lock_timeout = '5s'
     idle_in_transaction_session_timeout = '60s'
     deadlock_timeout = '1s'
+    timezone = 'UTC'
+    log_timezone = 'UTC'
+    IntervalStyle = 'iso_8601'
 
     # Logging & observability
     log_min_duration_statement = 200
     log_statement = 'ddl'
     log_lock_waits = on
     log_temp_files = 0
+    temp_file_limit = '1GB'
     shared_preload_libraries = 'pg_stat_statements,pgaudit'
     pg_stat_statements.max = 10000
     pg_stat_statements.track = all
@@ -301,6 +310,8 @@ class FeeOPPS:
     pgaudit.log = 'read,write,ddl,role,grant'
     pgaudit.log_client = off
     pgaudit.log_parameter = off
+    pgaudit.role = 'app_rw,ro,migrate'
+    pgaudit.log_relation = on
     ```
 
 - **Indexing & concurrency**
@@ -340,9 +351,11 @@ class FeeOPPS:
   - At rest: AES‑256 with KMS‑managed keys; document rotation and separation of duties (DBA ≠ Key admin).
 - **Network isolation**
   - Private networking only; no public DB endpoints; IP allowlists; bastion/VPN for admin access.
-- **Data classification**
-  - Maintain **PHI Column Registry** with masking/tokenization rules; apply **minimum necessary** access.
-  - **CI enforcement**: The pipeline fails if any column tagged `phi: true` in `security/phi-registry.yaml` lacks an associated masking rule.
+  - **Data classification**
+    - Maintain **PHI Column Registry** with masking/tokenization rules; apply **minimum necessary** access.
+    - **CI enforcement**: The pipeline fails if any column tagged `phi: true` in `security/phi-registry.yaml` lacks an associated masking rule.
+    - **CI presence check**: The pipeline fails if 
+    `security/phi-registry.yaml` is missing in the repository.
 - **Non‑prod policy**
   - No live PHI in dev/stage; use deterministic tokenization/synthetic data pipeline for refreshes.
 - **Auditing & retention**
@@ -378,6 +391,7 @@ class FeeOPPS:
 - **RLS enforced** on all PHI tables; test users demonstrate tenant isolation.
 - **FORCE RLS** present on all PHI tables.
 - **Tenant isolation test** suite passes (tenant A cannot read tenant B; table owner restricted by RLS).
+- **Owner bypass test**: Execute a SELECT as the table owner/user with elevated privileges and confirm RLS still denies cross-tenant reads (FORCE RLS effective).
 - **pgaudit enabled**; audit stream verified in immutable storage; **≥ 6‑year** retention set.
 - **TLS enforced** end‑to‑end; KMS keys configured with documented rotation.
 - **PITR validated**; latest quarterly restore drill passed; RTO/RPO documented.
@@ -422,6 +436,7 @@ class FeeOPPS:
 - `scripts/lint_schema_names.py` (TBD v1.1 - CI validation for duplicate names)
 - `scripts/seed_*.py` (deterministic seed data per dataset)
 - `scripts/tokenize_phi.py` (TBD v1.1 - PHI masking pipeline for non-prod)
+- scripts/sqlalchemy_tenant_hook.py (TBD v1.1 - per-transaction tenant context hook)
 
 **Future Expansions (Planned for v1.1+):**
 - Redis caching platform standard (security, expiration, eviction policies)
@@ -433,6 +448,86 @@ class FeeOPPS:
 - `prds/DOC-master-catalog-prd-v1.0.md` (register this standard in §3)
 
 ---
+
+## Appendix A: SQLAlchemy Tenant Hook (Example)
+
+Use a per-transaction hook so RLS works under PgBouncer transaction pooling. Middleware sets 
+`session.info["tenant_id"]` for each request.
+
+```python
+# sql_alchemy_tenant_hook_example.py
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker, Session
+
+DB_URL = "postgresql+psycopg://user:pass@host/dbname"
+SERVICE_NAME = "cms-api"
+
+# Ensure application_name is set for observability
+engine = create_engine(
+    DB_URL,
+    pool_pre_ping=True,
+    connect_args={"application_name": f"{SERVICE_NAME}:app_rw"},
+)
+
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
+
+@event.listens_for(Session, "after_begin")
+def set_tenant(session: Session, transaction, connection):
+    """Set tenant for the *current transaction* so RLS works with PgBouncer.
+    Expect your web middleware to assign session.info["tenant_id"] per request.
+    """
+    tenant_id = session.info.get("tenant_id")
+    if tenant_id is None:
+        # No tenant provided → RLS policy denies reads (see current_setting(..., true))
+        return
+    # Use driver-level exec to avoid parameter logging and ensure SET LOCAL semantics
+    connection.exec_driver_sql("SET LOCAL app.tenant_id = %s", (str(tenant_id),))
+
+# Example dependency for a web request
+def get_db(tenant_id):
+    session = SessionLocal()
+    session.info["tenant_id"] = tenant_id
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+```
+
+**Notes**
+- `SET LOCAL` ties the value to the current transaction only (safe for pooling).
+- Avoid session-level `SET` because PgBouncer reuses connections across sessions.
+- Do not log SQL bind parameters; keep `sqlalchemy.engine` at WARNING in prod.
+
+---
+
+## Appendix B: RLS Acceptance Test SQL (Snippet)
+
+Executable checks for §10 acceptance.
+
+```sql
+-- 1) FORCE RLS present on PHI tables
+SELECT relname, relrowsecurity, relforcerowsecurity
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relkind = 'r' AND relname IN ('phi_example');
+
+-- 2) Tenant isolation (A cannot read B)
+-- Simulate two tenants
+SET LOCAL app.tenant_id = '00000000-0000-0000-0000-00000000000A';
+SELECT COUNT(*) FROM public.phi_example; -- expect rows for tenant A only
+
+SET LOCAL app.tenant_id = '00000000-0000-0000-0000-00000000000B';
+SELECT COUNT(*) FROM public.phi_example; -- expect rows for tenant B only
+
+-- 3) Owner-bypass blocked (FORCE RLS)
+-- As table owner or a role with elevated privileges
+RESET ROLE; -- ensure we're using the owner if running under that context
+SET LOCAL app.tenant_id = '00000000-0000-0000-0000-00000000000A';
+SELECT COUNT(*) FROM public.phi_example; -- should still be restricted by RLS
+```
 
 ## Changelog
 

@@ -1,230 +1,209 @@
 """
 Historical Data Manager for CMS RVU Files
-Manages downloading and organizing historical RVU data
+=========================================
+
+Coordinates discovery (and optional downloading) of CMS RVU artifacts using the
+CMSRVUScraper and persists discovery manifests for reuse.
 """
 
+from __future__ import annotations
+
 import asyncio
-import json
-from datetime import datetime, date
+from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 import structlog
 
+from ..metadata.discovery_manifest import DiscoveryManifestStore
 from ..scrapers.cms_rvu_scraper import CMSRVUScraper, RVUFileInfo
 
 logger = structlog.get_logger()
 
 
 class HistoricalDataManager:
-    """Manages historical RVU data downloads and organization"""
-    
-    def __init__(self, data_dir: str = "./data/historical_rvu"):
+    """Manages discovery and archival of CMS RVU artifacts."""
+
+    def __init__(self, data_dir: str = "./data/historical_rvu") -> None:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+
         self.scraper = CMSRVUScraper(str(self.data_dir))
-        
-    async def download_historical_data(self, 
-                                     start_year: int = 2003, 
-                                     end_year: int = 2025,
-                                     max_concurrent: int = 3) -> Dict[str, Any]:
+        self.manifest_store = DiscoveryManifestStore(
+            self.data_dir / "manifests", prefix="cms_rvu_manifest"
+        )
+
+    async def download_historical_data(
+        self,
+        start_year: int = 2003,
+        end_year: int = 2025,
+        max_concurrent: int = 4,
+        download: bool = False,
+    ) -> Dict[str, Any]:
         """
-        Download historical RVU data for the specified year range
-        
+        Discover RVU files for the provided year range and optionally download them.
+
         Args:
-            start_year: Starting year for historical data
-            end_year: Ending year (current year)
-            max_concurrent: Maximum concurrent downloads
-            
-        Returns:
-            Summary of download results
+            start_year: First year (inclusive) to consider.
+            end_year: Last year (inclusive) to consider.
+            max_concurrent: Maximum concurrent download requests.
+            download: When True, download artifacts after discovery.
         """
-        logger.info("Starting historical data download", 
-                   start_year=start_year, end_year=end_year)
-        
-        try:
-            # Scrape files from CMS page
-            files = await self.scraper.scrape_rvu_files(start_year, end_year)
-            
-            if not files:
-                logger.warning("No RVU files found for the specified year range")
-                return {
-                    "status": "no_files_found",
-                    "files_found": 0,
-                    "downloads_completed": 0
-                }
-            
-            # Download files
+        logger.info(
+            "rvu.history.discover.start",
+            start_year=start_year,
+            end_year=end_year,
+            download=download,
+        )
+
+        files = await self.scraper.scrape_rvu_files(start_year, end_year)
+
+        if not files:
+            logger.warning(
+                "rvu.history.discover.empty", start_year=start_year, end_year=end_year
+            )
+            return {
+                "status": "no_files_found",
+                "files_discovered": 0,
+                "downloads_completed": 0,
+                "downloads_failed": 0,
+                "manifest_path": None,
+            }
+
+        downloads_completed = 0
+        downloads_failed = 0
+        download_results: List[Dict[str, Any]] = []
+
+        if download:
             download_results = await self.scraper.download_all_files(
                 files, max_concurrent=max_concurrent
             )
-            
-            # Generate manifest
-            manifest = self.scraper.generate_manifest(files, download_results)
-            
-            # Create summary
-            successful_downloads = sum(1 for r in download_results 
-                                     if isinstance(r, dict) and r.get("status") == "success")
-            failed_downloads = len(download_results) - successful_downloads
-            
-            summary = {
-                "status": "completed",
-                "files_found": len(files),
-                "downloads_completed": successful_downloads,
-                "downloads_failed": failed_downloads,
-                "start_year": start_year,
-                "end_year": end_year,
-                "manifest_path": str(self.data_dir / "rvu_files_manifest.json"),
-                "data_directory": str(self.data_dir)
-            }
-            
-            logger.info("Historical data download completed", **summary)
-            
-            return summary
-            
-        except Exception as e:
-            logger.error("Historical data download failed", error=str(e))
-            return {
-                "status": "failed",
-                "error": str(e),
-                "files_found": 0,
-                "downloads_completed": 0
-            }
-    
-    async def download_recent_data(self, years: int = 3) -> Dict[str, Any]:
+            downloads_completed = sum(
+                1 for result in download_results if result.get("status") == "success"
+            )
+            downloads_failed = sum(
+                1 for result in download_results if result.get("status") != "success"
+            )
+
+        manifest_path = (
+            str(self.scraper.last_manifest_path)
+            if self.scraper.last_manifest_path
+            else None
+        )
+
+        summary = {
+            "status": "completed",
+            "files_discovered": len(files),
+            "downloads_completed": downloads_completed,
+            "downloads_failed": downloads_failed,
+            "start_year": start_year,
+            "end_year": end_year,
+            "manifest_path": manifest_path,
+            "data_directory": str(self.data_dir),
+        }
+
+        logger.info("rvu.history.discover.complete", **summary)
+        return summary
+
+    async def download_recent_data(
+        self,
+        years: int = 3,
+        download: bool = False,
+    ) -> Dict[str, Any]:
         """
-        Download recent RVU data (last N years)
-        
-        Args:
-            years: Number of recent years to download
-            
-        Returns:
-            Summary of download results
+        Discover (and optionally download) RVU data for the most recent N years.
         """
         current_year = datetime.now().year
-        start_year = current_year - years + 1
-        
-        logger.info("Downloading recent RVU data", 
-                   years=years, start_year=start_year, end_year=current_year)
-        
-        return await self.download_historical_data(start_year, current_year)
-    
-    def get_downloaded_files(self) -> List[Dict[str, Any]]:
-        """Get list of already downloaded files from manifest"""
-        manifest_path = self.data_dir / "rvu_files_manifest.json"
-        
-        if not manifest_path.exists():
+        start_year = max(2003, current_year - years + 1)
+
+        return await self.download_historical_data(
+            start_year=start_year,
+            end_year=current_year,
+            download=download,
+        )
+
+    def get_discovered_files(self) -> List[Dict[str, Any]]:
+        """
+        Return the most recent discovery manifest entries as dictionaries.
+        """
+        manifest = self.manifest_store.load_latest()
+        if not manifest:
             return []
-        
-        try:
-            with open(manifest_path, 'r') as f:
-                manifest = json.load(f)
-            
-            return manifest.get("files", [])
-            
-        except Exception as e:
-            logger.error("Failed to read manifest", error=str(e))
-            return []
-    
+
+        return [entry.to_dict() for entry in manifest.files]
+
     def get_files_by_year(self, year: int) -> List[Dict[str, Any]]:
-        """Get downloaded files for a specific year"""
-        all_files = self.get_downloaded_files()
-        return [f for f in all_files if f.get("year") == year]
-    
+        """Filter discovered files by year."""
+        return [file for file in self.get_discovered_files() if file.get("year") == year]
+
     def get_latest_files(self) -> List[Dict[str, Any]]:
-        """Get the most recent RVU files"""
-        all_files = self.get_downloaded_files()
-        
-        if not all_files:
-            return []
-        
-        # Find the latest year
-        latest_year = max(f.get("year", 0) for f in all_files)
-        
-        # Return files from the latest year
-        return [f for f in all_files if f.get("year") == latest_year]
-    
-    def check_data_freshness(self) -> Dict[str, Any]:
-        """Check the freshness of downloaded data"""
-        files = self.get_downloaded_files()
-        
+        """Return discovered files for the most recent year."""
+        files = self.get_discovered_files()
         if not files:
-            return {
-                "status": "no_data",
-                "latest_year": None,
-                "days_since_latest": None
-            }
-        
-        # Find the latest file
-        latest_file = max(files, key=lambda x: x.get("year", 0))
-        latest_year = latest_file.get("year")
-        
-        # Calculate days since latest data
+            return []
+        latest_year = max(file.get("year", 0) for file in files)
+        return [file for file in files if file.get("year") == latest_year]
+
+    def check_data_freshness(self) -> Dict[str, Any]:
+        """
+        Evaluate discovery freshness based on the most recent manifest.
+        """
+        files = self.get_discovered_files()
+        if not files:
+            return {"status": "no_data", "latest_year": None, "days_since_latest": None}
+
+        latest_year = max(file.get("year", 0) for file in files)
         current_year = datetime.now().year
         days_since_latest = (current_year - latest_year) * 365
-        
+
         return {
             "status": "data_available",
             "latest_year": latest_year,
             "days_since_latest": days_since_latest,
-            "latest_file": latest_file.get("filename"),
-            "total_files": len(files)
+            "total_files": len(files),
         }
-    
-    async def incremental_update(self) -> Dict[str, Any]:
+
+    async def incremental_update(self, download: bool = False) -> Dict[str, Any]:
         """
-        Perform incremental update - download only new files since last update
+        Perform an incremental discovery, fetching files for years not yet captured.
         """
-        logger.info("Starting incremental update")
-        
-        # Check current data freshness
         freshness = self.check_data_freshness()
-        
-        if freshness["status"] == "no_data":
-            # No data exists, download recent data
-            logger.info("No existing data found, downloading recent data")
-            return await self.download_recent_data(years=2)
-        
-        # Check if we need to update
-        latest_year = freshness["latest_year"]
         current_year = datetime.now().year
-        
-        if latest_year >= current_year:
-            logger.info("Data is up to date", latest_year=latest_year)
+
+        if freshness["status"] == "no_data":
+            logger.info("rvu.history.incremental.seed")
+            return await self.download_recent_data(years=2, download=download)
+
+        latest_year = freshness["latest_year"]
+        if latest_year and latest_year >= current_year:
+            logger.info("rvu.history.incremental.up_to_date", latest_year=latest_year)
             return {
                 "status": "up_to_date",
                 "latest_year": latest_year,
-                "message": "Data is already up to date"
+                "message": "Discovery is already current",
             }
-        
-        # Download new data
-        logger.info("Downloading new data", 
-                   from_year=latest_year + 1, to_year=current_year)
-        
+
+        logger.info(
+            "rvu.history.incremental.fetch",
+            from_year=(latest_year or current_year) + 1 if latest_year else current_year,
+            to_year=current_year,
+            download=download,
+        )
+
         return await self.download_historical_data(
-            start_year=latest_year + 1, 
-            end_year=current_year
+            start_year=(latest_year or current_year) + 1 if latest_year else current_year,
+            end_year=current_year,
+            download=download,
         )
 
 
-async def main():
-    """Main function to demonstrate the historical data manager"""
+async def main() -> None:  # pragma: no cover - convenience CLI
     manager = HistoricalDataManager()
-    
-    # Check current data status
-    freshness = manager.check_data_freshness()
-    print(f"Data freshness: {freshness}")
-    
-    # Download recent data (last 3 years)
-    result = await manager.download_recent_data(years=3)
-    print(f"Download result: {result}")
-    
-    # List downloaded files
-    files = manager.get_downloaded_files()
-    print(f"Downloaded {len(files)} files")
-    
-    for file_info in files[:5]:  # Show first 5 files
-        print(f"  {file_info['year']} {file_info['quarter']}: {file_info['filename']}")
+    summary = await manager.download_recent_data(years=2, download=False)
+    print("Discovery summary:", summary)
+    files = manager.get_latest_files()
+    print(f"Latest discovery captured {len(files)} files")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     asyncio.run(main())

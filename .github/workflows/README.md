@@ -19,30 +19,25 @@ Automated build and deployment pipeline following:
 1. Build Docker image (multi-stage, production target)
 2. Push to GitHub Container Registry (ghcr.io)
 3. Tag with SHA, semver, and latest
-4. Trigger Render deployment with specific image tag
-5. **Run migrations via One-Off Job API** (after deployment)
-6. Poll job status until completion
+4. Trigger Render deployment via Deploy API with `imageUrl` (explicit SHA/digest)
+5. Print service details after live to verify resolved image matches intended artifact
+6. **Run migrations via One-Off Job API** (after deployment) with HTTP checks and JSON parsing
+7. Poll job status until completion
 
 **Required Secrets:**
-- `GITHUB_TOKEN` - Auto-provided by GitHub Actions
-- `RENDER_DEPLOY_HOOK` - Webhook URL for Render deployment
-- `RENDER_API_KEY` - API key for One-Off Jobs API
+- `GITHUB_TOKEN` - Auto-provided by GitHub Actions (ensure `packages: write` permissions)
+- `RENDER_API_KEY` - API key for Render API
 - `RENDER_SERVICE_ID` - Service ID for your Render web service
 
 ## Setup Instructions
 
-### 1. Configure GitHub Secrets
+### 1. Configure GitHub Secrets & Permissions
 
 Go to: Repository Settings → Secrets and variables → Actions
 
 Add the following secrets:
 
-#### `RENDER_DEPLOY_HOOK`
-Already configured. To regenerate:
-1. Render Dashboard → Your Web Service
-2. Settings → Deploy Hook
-3. Click "Create Deploy Hook"
-4. Copy the URL
+- `GITHUB_TOKEN` permissions: add `packages: write` to allow GHCR push
 
 #### `RENDER_API_KEY`
 1. Render Dashboard → Account Settings
@@ -65,6 +60,13 @@ Already configured. To regenerate:
 - No permanent Background Worker needed
 
 **Reference:** `RENDER_CI_SETUP_CORRECT.md` for complete details
+
+### 2a. Configure Render Registry Access (if GHCR is private)
+
+Render Dashboard → Your Web Service → Settings → Registry
+- Registry: `ghcr.io`
+- Username: GitHub username
+- Password/Token: PAT with `read:packages`
 
 ### 3. Deploy render.yaml Blueprint (Optional)
 

@@ -14,6 +14,8 @@ from datetime import datetime
 from io import BytesIO
 
 import pandas as pd
+import zipfile
+from textwrap import dedent
 
 from cms_pricing.ingestion.parsers.anes_parser import parse_anes, PARSER_VERSION
 
@@ -267,6 +269,43 @@ def test_anes_consistency_txt_csv():
                    f"CF mismatch for {mac}-{loc}: TXT={txt_cf}, CSV={csv_cf}"
 
 
+@pytest.mark.golden
+def test_anes_zip_prefers_anes_payload():
+    """
+    Ensure ZIP archives with multiple CMS files select the ANES member.
+    """
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w') as zf:
+        zf.writestr(
+            '25LOCCO.csv',
+            dedent(
+                """\
+                Contractor,Locality,Locality Name
+                10112,00,ALABAMA
+                """
+            )
+        )
+        zf.writestr(
+            'ANES2025.csv',
+            dedent(
+                """\
+                Contractor,Locality,Locality Name,National Anes CF of 20.3178
+                10112,00,ALABAMA,19.31
+                02102,01,ALASKA,27.86
+                """
+            )
+        )
+
+    zip_buffer.seek(0)
+    result = parse_anes(zip_buffer, 'RVU25_bundle.zip', TEST_METADATA)
+
+    assert not result.data.empty, "Expected ANES rows from ZIP bundle"
+    assert 'mac' in result.data.columns
+    assert 'locality_code' in result.data.columns
+    macs = set(result.data['mac'])
+    assert '10112' in macs and '02102' in macs, "Expected ANES MAC codes parsed from bundle"
+
+
 # =============================================================================
 # Business Logic Tests (ANES-Specific)
 # =============================================================================
@@ -481,4 +520,3 @@ def test_anes_date_from_filename_ANES25D():
     
     # Should still extract 2025 from filename pattern
     assert (result.data['effective_from'] == pd.to_datetime('2025-01-01')).all()
-

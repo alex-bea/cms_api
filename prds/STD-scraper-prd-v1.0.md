@@ -53,6 +53,12 @@ Approval Gate (ask before download/process)
 	•	If new/changed artifacts are detected, emit an approval request (Slack/Email) to Ops (Page Alex) containing: source, diffs, estimated size, and links to manifests/logs.
 	•	On approval, launch the download + normalize job; otherwise, defer until next run or an on‑demand trigger.
 
+Validation Contract (applies to every discovery run)
+	•	Issue a HEAD (or lightweight GET when HEAD unsupported) for each candidate URL and reject responses whose final `Content-Type` is HTML or that report `Content-Length` ≤ 1024 bytes.
+	•	Maintain a per-source allowlist of acceptable MIME types; discovery succeeds only when every accepted artifact matches the allowlist.
+	•	Capture `content_type`, `size_bytes`, and (when returned) `etag`/`last-modified` attributes in the manifest before promoting results to downstream ingestors.
+	•	Log rejected URLs with enough context (discovery page, anchor text) to unblock manual follow-up; runs with missing required artifacts must raise a source-specific alert label (e.g., `rvu.scraper.missing_quarter`) and remain in discovery-only state.
+
 Example GHA skeleton
 
 name: CMS RVU Weekly Discovery
@@ -376,7 +382,7 @@ All CMS scrapers follow the same **Discovery → Metadata → Manifest** pattern
 | Data Type | Scraper Class | Base URL | Discovery Pattern | File Types | Cadence | Status |
 |-----------|---------------|----------|-------------------|------------|---------|--------|
 | **MPFS** | `CMSMPFSScraper` | `/physicianfeesched` | Composes RVU + MPFS patterns | ZIP (RVU bundle + CF) | Annual | ✅ Implemented |
-| **RVU** | `CMSRVUScraper` | `/pfs-relative-value-files` | Direct file links | ZIP/TXT/CSV/XLSX | Quarterly | ✅ Implemented |
+| **RVU** | `CMSRVUScraper` | `/pfs-relative-value-files` | Two-hop detail navigation | ZIP/TXT/CSV/XLSX | Quarterly | ✅ Implemented v2.0 |
 | **OPPS** | `CMSOPPSScraper` | `/hospital-outpatient-pps` | Quarterly addenda navigation | ZIP/CSV/XLSX | Quarterly | ✅ Implemented |
 | **ASC** | `CMSASCScraper` | `/ambulatory-surgical-centers` | Quarterly payment page | ZIP/CSV/XLSX | Quarterly | 🔄 **TO CREATE** |
 | **IPPS** | `CMSIPPSScraper` | `/inpatient-prospective-payment-system` | Annual impact files | ZIP/XLSX | Annual | 🔄 **TO CREATE** |
@@ -420,16 +426,30 @@ All CMS scrapers follow the same **Discovery → Metadata → Manifest** pattern
 **Source URL:** https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files
 
 **Discovery Strategy:**
-- Direct link pattern: Extracts quarterly release links from main page
+- Two-hop navigation pattern: Landing page → Detail page → Download URL
+- Extracts detail page links from main page (e.g., `/rvu25a`, `/rvu24b`)
+- Follows detail pages to discover actual download URLs
+- Validates URLs via HEAD requests (rejects HTML, accepts files only)
 - Identifies revision packages (e.g., RVU24AR for corrections)
 - Supports multiple formats per release
+
+**Validation Guards (v2.0):**
+- Content-Type validation via HEAD requests
+- File size checks (reject 0 bytes, warn >1GB)
+- Automatic metadata enrichment (content-type, size_bytes from HTTP headers)
+- Filename sanitization (date normalization: `01/10/2025` → `20250110`)
 
 **Files Discovered:**
 - Quarterly releases: `RVU24A`, `RVU24B`, `RVU24C`, `RVU24D`
 - Revision packages: `RVU24AR`, `RVU24BR`, etc.
 - Multiple formats: `.zip`, `.txt`, `.csv`, `.xlsx`
 
-**Manifest Output:** `data/manifests/cms_rvu/cms_rvu_manifest_YYYYMMDD_HHMMSS.jsonl`
+**Discovery vs Download:**
+- Scraper discovers only (does not download files by default)
+- Downloads optional via HistoricalDataManager or RVUIngestor
+- Allows for approval gates and change detection
+
+**Manifest Output:** `data/cms_rvu/manifests/cms_rvu_manifest_YYYYMMDD_HHMMSS.jsonl`
 
 ### 23.3.3 OPPS (Outpatient Prospective Payment System)
 

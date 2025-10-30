@@ -278,7 +278,7 @@ class CMSZip9Ingester(BaseDISIngestor):
             "release_id": self.current_release_id
         }
     
-    async def normalize(self, validated_batch: Dict[str, Any]) -> Dict[str, Any]:
+    async def normalize(self, validated_batch: Dict[str, Any], raw_batch: Optional[RawBatch] = None) -> Dict[str, Any]:
         """Stage 3: Normalize and adapt data"""
         logger.info("Starting ZIP9 data normalization", batch_id=self.current_batch_id)
         

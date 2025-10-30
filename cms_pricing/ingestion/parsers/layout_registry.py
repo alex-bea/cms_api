@@ -120,9 +120,9 @@ ANES_2025D_LAYOUT = {
     'source_version': '2025D',
     'columns': {
         'mac': {'start': 0, 'end': 5, 'type': 'string', 'nullable': False},
-        'locality_id': {'start': 12, 'end': 14, 'type': 'string', 'nullable': False},
+        'locality_id': {'start': 12, 'end': 14, 'type': 'string', 'nullable': False},  # Parser maps to locality_code
         'locality_name': {'start': 17, 'end': 57, 'type': 'string', 'nullable': True},
-        'anesthesia_cf': {'start': 73, 'end': 77, 'type': 'decimal', 'nullable': False},  # FIXED: 1931 is at 73-77
+        'anesthesia_cf': {'start': 73, 'end': 77, 'type': 'decimal', 'nullable': False},  # Parser maps to anesthesia_cf_raw then scales to anesthesia_cf_usd
     }
 }
 

@@ -102,7 +102,7 @@ class DISPipeline:
             validation_results = await self._validate_data(raw_batch, release_id)
             
             # Stage 3: Normalize - Adapt and canonicalize data
-            adapted_batch = await self._normalize_data(validation_results, release_id)
+            adapted_batch = await self._normalize_data(validation_results, raw_batch, release_id)
             
             # Stage 4: Enrich - Join with reference data
             enriched_data = await self._enrich_data(adapted_batch, release_id)
@@ -182,6 +182,9 @@ class DISPipeline:
         
         # Use ingestor's validate method
         validation_results = await self.ingestor.validate(raw_batch)
+
+        if isinstance(validation_results, dict):
+            validation_results.setdefault("raw_batch", raw_batch)
         
         # Record validation results in observability
         if self.config.enable_observability:
@@ -196,13 +199,13 @@ class DISPipeline:
         
         return validation_results
     
-    async def _normalize_data(self, validated_batch: Dict[str, Any], release_id: str) -> AdaptedBatch:
+    async def _normalize_data(self, validated_batch: Dict[str, Any], raw_batch: RawBatch, release_id: str) -> AdaptedBatch:
         """Stage 3: Normalize and adapt data"""
         
         logger.info("Normalizing data", dataset=self.ingestor.dataset_name)
         
         # Use ingestor's normalize method
-        normalize_result = await self.ingestor.normalize(validated_batch)
+        normalize_result = await self.ingestor.normalize(validated_batch, raw_batch)
         
         # Create AdaptedBatch from normalize result
         adapted_batch = AdaptedBatch(

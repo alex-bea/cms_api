@@ -1,0 +1,135 @@
+{
+  "discovery": {
+    "files_found": 4,
+    "discovery_time_seconds": 0.5245368480682373,
+    "files": [
+      {
+        "filename": "rvu25a-20250110.zip",
+        "url": "https://www.cms.gov/files/zip/rvu25a-updated-01/10/2025.zip",
+        "content_type": "application/zip",
+        "expected_size_bytes": 4055697
+      },
+      {
+        "filename": "rvu25b-20250605.zip",
+        "url": "https://www.cms.gov/files/zip/rvu25b-updated-06/05/2025.zip",
+        "content_type": "application/zip",
+        "expected_size_bytes": 3635807
+      },
+      {
+        "filename": "rvu25c-20250605.zip",
+        "url": "https://www.cms.gov/files/zip/rvu25c-updated-06/05/2025.zip",
+        "content_type": "application/zip",
+        "expected_size_bytes": 3678758
+      },
+      {
+        "filename": "rvu25d-20250911.zip",
+        "url": "https://www.cms.gov/files/zip/rvu25d-updated-09/11/2025.zip",
+        "content_type": "application/zip",
+        "expected_size_bytes": 3618578
+      }
+    ]
+  },
+  "download": {
+    "release_id": "rvu_2025_test_1761712912",
+    "batch_id": "batch_rvu_2025_test_1761712912",
+    "download_time_seconds": 1.3110578060150146,
+    "files_downloaded": 4,
+    "total_bytes": 14988840,
+    "raw_directory": "test_data/ingestion_2025/full/raw/cms_rvu/rvu_2025_test_1761712912/files"
+  },
+  "parsing": {
+    "parsing_time_seconds": 15.291775226593018,
+    "datasets_parsed": 5,
+    "total_records": 208143,
+    "dataset_counts": {
+      "localitycounty": 1256,
+      "anescf": 872,
+      "gpci": 1308,
+      "oppscap": 128800,
+      "pprrvu": 75907
+    },
+    "adapted_directory": "test_data/ingestion_2025/full/adapted"
+  },
+  "database": {
+    "load_time_seconds": 2.0197718143463135,
+    "initial_counts": {
+      "releases": 0,
+      "rvu_items": 0,
+      "gpci_index": 0,
+      "opps_cap": 0,
+      "anes_cf": 0,
+      "locality_county": 0
+    },
+    "final_counts": {
+      "releases": 1,
+      "rvu_items": 4,
+      "gpci_index": 109,
+      "opps_cap": 230,
+      "anes_cf": 109,
+      "locality_county": 117
+    },
+    "record_deltas": {
+      "releases": 1,
+      "rvu_items": 4,
+      "gpci_index": 109,
+      "opps_cap": 230,
+      "anes_cf": 109,
+      "locality_county": 117
+    },
+    "total_records_inserted": 570,
+    "publish_result": {
+      "status": "success",
+      "batch_id": "batch_rvu_2025_test_1761712912",
+      "release_id": "rvu_2025_test_1761712912",
+      "vintage_date": "2025-10-28",
+      "curated_directory": "test_data/ingestion_2025/full/curated/cms_rvu/2025-10-28",
+      "data_directory": "test_data/ingestion_2025/full/curated/cms_rvu/2025-10-28/data",
+      "docs_directory": "test_data/ingestion_2025/full/curated/cms_rvu/2025-10-28/docs",
+      "latest_effective_view": "test_data/ingestion_2025/full/curated/cms_rvu/2025-10-28/latest_effective_view.sql",
+      "record_count": 208143,
+      "curated_tables": {
+        "rvu_items": "test_data/ingestion_2025/full/curated/cms_rvu/2025-10-28/data/rvu_items.parquet",
+        "gpci_indices": "test_data/ingestion_2025/full/curated/cms_rvu/2025-10-28/data/gpci_indices.parquet",
+        "opps_caps": "test_data/ingestion_2025/full/curated/cms_rvu/2025-10-28/data/opps_caps.parquet",
+        "anes_cfs": "test_data/ingestion_2025/full/curated/cms_rvu/2025-10-28/data/anes_cfs.parquet",
+        "locality_counties": "test_data/ingestion_2025/full/curated/cms_rvu/2025-10-28/data/locality_counties.parquet"
+      },
+      "latest_effective_views": [
+        "test_data/ingestion_2025/full/curated/cms_rvu/2025-10-28/latest_effective_view.sql"
+      ],
+      "export_artifacts": {
+        "schema_contract": "test_data/ingestion_2025/full/curated/cms_rvu/2025-10-28/docs/schema_contract.json",
+        "column_dictionary": "test_data/ingestion_2025/full/curated/cms_rvu/2025-10-28/docs/column_dictionary.json",
+        "manifest": "test_data/ingestion_2025/full/curated/cms_rvu/2025-10-28/manifest.json"
+      }
+    }
+  },
+  "observability": {
+    "log_files_count": 0,
+    "log_files": [],
+    "observability_files_count": 0,
+    "observability_files": [],
+    "logs_directory": "test_data/ingestion_2025/full/logs",
+    "observability_directory": "test_data/ingestion_2025/full/observability"
+  },
+  "metrics": {
+    "total_runtime_seconds": 19.527610301971436,
+    "discovery_time_seconds": 0.5245368480682373,
+    "download_time_seconds": 1.3110578060150146,
+    "parsing_time_seconds": 15.291775226593018,
+    "database_load_time_seconds": 2.0197718143463135,
+    "files_per_second": 3.050971499233948,
+    "records_per_second": 13611.434703672003,
+    "bytes_per_second": 11432630.911644442
+  },
+  "validation": {
+    "all_quarters_discovered": true,
+    "all_files_downloaded": true,
+    "all_datasets_parsed": true,
+    "records_inserted": true,
+    "no_errors": true,
+    "runtime_acceptable": true
+  },
+  "status": "SUCCESS",
+  "runtime_seconds": 19.527644157409668
+}

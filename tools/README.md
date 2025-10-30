@@ -1,5 +1,7 @@
 # Documentation Audit Toolkit
 
+- **Governance:** Tooling must follow the version-aware PRD resolution rules in `prds/PRD-render-hosting-prd-v1.0.md` §4.5. Always rely on the shared helpers when resolving `*-vX.Y.md` documents so audits pick the latest revision and warn on duplicates instead of recreating older files.
+
 - **`run_all_audits.py`** orchestrates the full governance sweep: it runs every documentation-focused audit (catalog, links, metadata, dependencies, companions, changelog, schema alignment, Makefile hygiene, code pattern linting) and, when invoked with `--with-tests`, fans out into the supporting pytest suites. Results are collated into a console summary plus a machine-readable JSON artifact for CI pipelines.
 - **`audit_doc_catalog.py`** validates the master catalog. It flags missing/extra entries, enforces backlinks to the catalog, checks required reference relationships, and catches legacy naming patterns. Passing `--fix` enables an auto-remediation flow that adds alphabetical stub rows, stamps the change log, and patches PRDs with a master backlink—always writing `.bak` files before touching sources.
 - **`audit_doc_links.py`** and **`audit_cross_references.py`** build a reference graph from backtick links and “Cross-References” sections. They ensure every link targets an existing document, enforce mandatory master-catalog links per doc type, validate declared “Section X → Section Y” integration points, and warn when curated pairs lose their reciprocal references.

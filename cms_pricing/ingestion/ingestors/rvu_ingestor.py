@@ -281,7 +281,7 @@ class RVUIngestor(BaseDISIngestor):
         Accepts both (validated_batch) and (validated_batch, raw_batch) signatures.
         The raw_batch argument is ignored for backward compatibility.
         """
-        return await self.normalize(validated_batch)
+        return await self.normalize(validated_batch, raw_batch)
 
     async def _enrich_stage(self, adapted_batch: Dict[str, Any]) -> Dict[str, Any]:
         """Legacy helper retained for compatibility with DIS tests."""
@@ -2407,7 +2407,7 @@ class RVUIngestor(BaseDISIngestor):
                 "error": str(e)
             }
     
-    async def normalize(self, validated_batch: Any) -> Dict[str, Any]:
+    async def normalize(self, validated_batch: Any, raw_batch: Optional[RawBatch] = None) -> Dict[str, Any]:
         """
         Normalize Stage: Canonicalize data and emit schema contract per DIS §3.4
         
@@ -2418,10 +2418,15 @@ class RVUIngestor(BaseDISIngestor):
             Normalization results with schema contract and parsed dataframes
         """
         # Handle both dict and RawBatch inputs
-        raw_batch = None
-        if isinstance(validated_batch, RawBatch):
-            # It's a RawBatch object - use it for parsing
-            raw_batch = validated_batch
+        if raw_batch is None:
+            if isinstance(validated_batch, RawBatch):
+                raw_batch = validated_batch
+            elif hasattr(validated_batch, "get") and callable(validated_batch.get):
+                raw_batch = validated_batch.get("raw_batch")
+            elif hasattr(validated_batch, "raw_batch"):
+                raw_batch = getattr(validated_batch, "raw_batch")
+
+        if raw_batch:
             batch_id = raw_batch.metadata.get("batch_id", "unknown")
             release_id = raw_batch.metadata.get("release_id", "unknown")
         elif hasattr(validated_batch, 'get') and callable(validated_batch.get):
@@ -2532,9 +2537,14 @@ class RVUIngestor(BaseDISIngestor):
                 "column_dictionary": column_dict,
                 "normalized_records": normalized_records,
                 "dataset_row_counts": dataset_row_counts,
-                "metadata": adapted_batch.metadata if adapted_batch else {},
+                "metadata": {
+                    "batch_id": batch_id,
+                    "release_id": release_id,
+                    **(adapted_batch.metadata if adapted_batch else {})
+                },
                 "schema": schema_bundle if schema_bundle else schema_contract,
-                "data": parsed_data
+                "data": parsed_data,
+                "dataframes": parsed_data
             }
             
             return result

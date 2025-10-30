@@ -4,6 +4,7 @@
 .PHONY: docker-build docker-up docker-down docker-logs migrate migrate-create migrate-downgrade
 .PHONY: dev worker shell docs check
 .PHONY: audit audit-with-tests audit-quick audit-companion audit-catalog audit-links audit-cross-refs audit-makefile audit-makefile-fix
+.PHONY: audit-extended audit-contracts doc-reports task-hygiene
 .PHONY: pre-commit pre-commit-run setup
 
 help: ## Show this help message
@@ -105,6 +106,23 @@ audit-makefile: ## Audit Makefile .PHONY declarations
 
 audit-makefile-fix: ## Auto-fix missing .PHONY declarations
 	python tools/audit_makefile_phony.py --fix
+
+audit-extended: ## Run extended documentation audits (size, language, layout)
+	python tools/audit_doc_sizes.py
+	python tools/audit_normative_language.py
+	python tools/verify_layout_positions.py
+
+audit-contracts: ## Validate schema and metrics contracts
+	python tools/validate_schema_contracts.py
+	python tools/validate_metrics_contract.py
+
+doc-reports: ## Generate documentation summary reports
+	python tools/collect_prd_learnings.py
+	python tools/generate_compliance_report.py
+
+task-hygiene: ## Sweep task tracking helpers (checkboxes, TODOs)
+	python tools/md_checkbox_scan.py
+	python tools/todo_lint.py
 
 pre-commit: ## Install pre-commit hooks
 	poetry run pre-commit install

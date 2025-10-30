@@ -32,6 +32,7 @@
 | `STD-qa-testing-prd-v1.0.md` | Draft v1.0 (proposed) | QA Guild | 2025-09-30 | |
 | `STD-scraper-prd-v1.0.md` | Draft v1.1 | Data Engineering | 2025-10-15 | Updated with implementation patterns |
 | `STD-database-platform-prd-v1.0.md` | Draft v1.1 | Platform Engineering, SRE | 2025-10-21 | Migrations-first PostgreSQL standard; fresh DB initialization; schema naming; HIPAA controls |
+| `STD-api-docs-prd-v1.0.md` | Draft v1.0 | Platform Engineering (API Enablement) | 2025-10-22 | API documentation standard (OpenAPI source-of-truth, linting, accessibility). Companion runbook: `prds/RUN-openapi-docs-maintenance-v1.0.md` |
 
 ---
 
@@ -40,6 +41,7 @@
 | Document | Status | Owner | Notes |
 |---|---|---|---|
 | `REF-scraper-ingestor-integration-v1.0.md` | Draft v1.0 | Data Engineering | Scraper→ingestor handoff patterns, manifest contract |
+| `REF-rvu-database-schema-v1.0.md` | Draft v1.0 | Data Engineering | RVU relational schema, table definitions, constraints |
 | `REF-geography-mapping-cursor-prd-v1.0.md` | Draft v1.0 | Data Engineering | ZIP→locality ingestion/resolver pack |
 | `REF-nearest-zip-resolver-prd-v1.0.md` | Draft v1.0 | Data Engineering | Same-state nearest ZIP algorithm |
 | `REF-cms-pricing-source-map-prd-v1.0.md` | Draft v1.0 | Pricing Platform Engineering | CMS pricing datasets, links, work-backwards checklist |
@@ -58,7 +60,8 @@
 | `PRD-geography-locality-mapping-prd-v1.0.md` | Draft v1.0 | Product Engineering | `STD-data-architecture`, `SRC-gazetteer` | `REF-geography-mapping-cursor-prd-v1.0.md` |
 | `PRD-rvu-gpci-prd-v0.1.md` | Draft v0.2 | Product Engineering | `STD-scraper`, `SRC-gpci`, `SRC-carrier-localities` | — |
 | `PRD-opps-scraper-prd-v1.0.md` | Draft v1.0 | Data Engineering | `STD-scraper`, `SRC-opps` | — |
-| `PRD-render-hosting-prd-v1.0.md` | Draft v1.0 | Platform Engineering, SRE | `STD-observability`, `RUN-global-operations` | `prds/RUN-render-deployment-prd-v1.0.md` (companion) |
+| `PRD-rvu-scraper-prd-v1.0.md` | Draft v1.0 | Data Engineering | `STD-scraper`, `SRC-cms-rvu` | — |
+| `PRD-render-hosting-prd-v1.0.md` | Draft v1.0 | Platform Engineering, SRE | `STD-observability`, `RUN-global-operations` | Companion: `prds/RUN-render-deployment-prd-v1.0.md`; audit tooling guidance (§4.5) |
 
 ---
 
@@ -71,6 +74,7 @@
 | `RUN-database-migrations-prd-v1.0.md` | Draft v0.1 | Platform Engineering (DBA), Service Teams | Alembic authoring workflow, dry-runs, bootstrap/stamp policy, emergency procedure |
 | `RUN-database-backup-dr-prd-v1.0.md` | Draft v0.1 | Platform Engineering (DBA), SRE | Automated backup validation, manual dumps, restore/PITR drills, incident response |
 | `RUN-database-sanitization-prd-v1.0.md` | Draft v0.1 | Security, Data Engineering | PHI registry, tokenization pipeline, non-prod refresh process, staging soak checklist |
+| `RUN-openapi-docs-maintenance-v1.0.md` | Draft v1.0 | Platform Engineering (API Enablement) | OpenAPI regeneration, linting, publishing, and distribution workflow tied to Render deploys |
 
 ---
 

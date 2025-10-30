@@ -1,0 +1,95 @@
+{
+  "dataset_name": "cms_rvu",
+  "version": "1.0",
+  "generated_at": "2025-10-26T20:22:19.834227",
+  "columns": [
+    {
+      "name": "hcpcs_code",
+      "type": "string",
+      "unit": null,
+      "description": "HCPCS procedure code",
+      "domain": null,
+      "nullable": false
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "unit": null,
+      "description": "Procedure description",
+      "domain": null,
+      "nullable": false
+    },
+    {
+      "name": "work_rvu",
+      "type": "decimal",
+      "unit": null,
+      "description": "Work RVU value",
+      "domain": null,
+      "nullable": true
+    },
+    {
+      "name": "practice_expense_rvu",
+      "type": "decimal",
+      "unit": null,
+      "description": "Practice expense RVU",
+      "domain": null,
+      "nullable": true
+    },
+    {
+      "name": "malpractice_rvu",
+      "type": "decimal",
+      "unit": null,
+      "description": "Malpractice RVU",
+      "domain": null,
+      "nullable": true
+    },
+    {
+      "name": "total_rvu",
+      "type": "decimal",
+      "unit": null,
+      "description": "Total RVU value",
+      "domain": null,
+      "nullable": false
+    },
+    {
+      "name": "effective_from",
+      "type": "date",
+      "unit": null,
+      "description": "Effective start date",
+      "domain": null,
+      "nullable": false
+    },
+    {
+      "name": "effective_to",
+      "type": "date",
+      "unit": null,
+      "description": "Effective end date",
+      "domain": null,
+      "nullable": true
+    },
+    {
+      "name": "vintage_date",
+      "type": "date",
+      "unit": null,
+      "description": "Data vintage date",
+      "domain": null,
+      "nullable": false
+    },
+    {
+      "name": "release_id",
+      "type": "string",
+      "unit": null,
+      "description": "Release identifier",
+      "domain": null,
+      "nullable": false
+    },
+    {
+      "name": "batch_id",
+      "type": "string",
+      "unit": null,
+      "description": "Batch identifier",
+      "domain": null,
+      "nullable": false
+    }
+  ]
+}

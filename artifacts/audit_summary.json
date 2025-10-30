@@ -1,7 +1,7 @@
 {
-  "passed": 12,
-  "total": 12,
-  "failed": 0,
+  "passed": 11,
+  "total": 13,
+  "failed": 2,
   "results": [
     {
       "name": "Documentation Catalog",
@@ -54,8 +54,8 @@
     {
       "name": "Layout/Schema Alignment",
       "category": "audit",
-      "status": "passed",
-      "exit_code": 0
+      "status": "failed",
+      "exit_code": -11
     },
     {
       "name": "Makefile .PHONY",
@@ -74,6 +74,12 @@
       "category": "audit",
       "status": "passed",
       "exit_code": 0
+    },
+    {
+      "name": "PRD Documentation Tests",
+      "category": "test",
+      "status": "failed",
+      "exit_code": -11
     }
   ]
 }

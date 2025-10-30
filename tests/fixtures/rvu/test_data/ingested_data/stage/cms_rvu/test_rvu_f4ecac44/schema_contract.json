@@ -1,0 +1,66 @@
+{
+  "dataset_name": "cms_rvu",
+  "version": "1.0",
+  "generated_at": "2025-10-28T16:03:13.786062",
+  "release_id": "test_rvu_f4ecac44",
+  "batch_id": "22fcd16a-ad6c-4d1d-9284-e11b66245967",
+  "columns": {
+    "hcpcs_code": {
+      "type": "string",
+      "description": "HCPCS procedure code",
+      "nullable": false
+    },
+    "description": {
+      "type": "string",
+      "description": "Procedure description",
+      "nullable": false
+    },
+    "work_rvu": {
+      "type": "decimal",
+      "description": "Work RVU value",
+      "nullable": true
+    },
+    "practice_expense_rvu": {
+      "type": "decimal",
+      "description": "Practice expense RVU",
+      "nullable": true
+    },
+    "malpractice_rvu": {
+      "type": "decimal",
+      "description": "Malpractice RVU",
+      "nullable": true
+    },
+    "total_rvu": {
+      "type": "decimal",
+      "description": "Total RVU value",
+      "nullable": false
+    },
+    "effective_from": {
+      "type": "date",
+      "description": "Effective start date",
+      "nullable": false
+    },
+    "effective_to": {
+      "type": "date",
+      "description": "Effective end date",
+      "nullable": true
+    },
+    "vintage_date": {
+      "type": "date",
+      "description": "Data vintage date",
+      "nullable": false
+    },
+    "release_id": {
+      "type": "string",
+      "description": "Release identifier",
+      "nullable": false
+    },
+    "batch_id": {
+      "type": "string",
+      "description": "Batch identifier",
+      "nullable": false
+    }
+  },
+  "constraints": [],
+  "business_rules": []
+}

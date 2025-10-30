@@ -7,6 +7,7 @@
 **Last Updated:** 2025-10-27
 
 **Cross-References:**
+- **Catalog:** `DOC-master-catalog-prd-v1.0.md` – Master index
 - **Models:** `cms_pricing/models/rvu.py` - SQLAlchemy model definitions
 - **Ingestion:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py` - Database loading logic
 - **PRD:** `prds/PRD-rvu-gpci-prd-v0.1.md` - Product requirements
@@ -33,6 +34,16 @@ releases (parent)
 ```
 
 All child tables have a foreign key relationship to `releases`, creating a hierarchical structure where each release contains datasets from a specific CMS publication.
+
+### 1.2 Field Provenance & Ownership
+
+Each schema field SHOULD be traceable to its original CMS column name or requirement. Provenance is documented using:
+
+- Inline comments in SQLAlchemy models
+- `x-source-doc` or `x-column-justification` (for OpenAPI overlay)
+- Linked PRDs (see §8)
+
+Schema ownership is shared between Data Engineering (models, ingestion, constraints) and Platform/API teams (semantics, availability). Ownership mapping is defined in `STD-database-platform-prd-v1.0.md`.
 
 ---
 
@@ -311,38 +322,16 @@ WHERE state = 'CA'
 
 ### 3.1 Entity Relationship
 
+```mermaid
+erDiagram
+    releases ||--o{ rvu_items : contains
+    releases ||--o{ gpci_indices : contains
+    releases ||--o{ opps_caps : contains
+    releases ||--o{ anes_cfs : contains
+    releases ||--o{ locality_counties : contains
 ```
-┌─────────────┐
-│  releases   │
-│   (1)       │
-└──────┬──────┘
-       │
-       │ 1:N
-       │
-   ┌───┴─────────────────────────┐
-   │                             │
-   ▼                             ▼
-┌──────────────────┐    ┌──────────────────┐
-│   rvu_items      │    │  gpci_indices    │
-│   (16,000+)      │    │    (~114)        │
-└──────────────────┘    └──────────────────┘
-   │
-   │
-┌───▼──────────────────┐
-│   opps_caps          │
-│   (~2,000)           │
-└──────────────────────┘
-   │
-┌───▼────────────────────┐
-│  anes_cfs              │
-│    (~114)              │
-└────────────────────────┘
-   │
-┌───▼─────────────────────────┐
-│  locality_counties           │
-│    (~3,500)                  │
-└──────────────────────────────┘
-```
+
+> For interactive schema exploration, see dbdiagram.io link in project wiki or ERD export in `/docs/diagrams/rvu_schema.png`.
 
 ### 3.2 Join Examples
 
@@ -404,6 +393,13 @@ ON gpci_indices (mac, locality_id, effective_start);
 
 **Why:** Prevents false duplicates where `locality_code='00'` appears in multiple states. This was the GPCI v1.3 migration fix (see `alembic/versions/003_gpci_v13_add_mac_to_nk.py`).
 
+### 4.3 Constraints & Guardrails
+
+- **Foreign keys**: Enforced from child tables to `releases` to guarantee referential integrity.
+- **Not-null fields**: Enforced on primary keys, join keys, and required identifiers like `hcpcs_code`, `mac`.
+- **Check constraints**: Currently handled in application logic but planned for future migrations.
+- **Soft natural keys**: Used where uniqueness is contextual or spans external business rules. These are documented but not DB-enforced.
+
 ---
 
 ## 5. Data Loading
@@ -438,6 +434,15 @@ DataFrames are mapped to SQLAlchemy models with type conversions:
 - **Strings** - Truncated to column length
 - **Arrays** - Converted to PostgreSQL ARRAY type
 - **Metadata** - `release_id`, `row_num`, `source_file` added
+
+### 5.4 Data Quality Checks
+
+Post-ingestion checks include:
+
+- Row count match between source and loaded table
+- Non-null constraints for required RVU fields (e.g., `work_rvu`)
+- Effective date coverage across all regions
+- Validation tests located in `tests/ingestion/test_rvu_pipeline.py`
 
 ---
 
@@ -478,6 +483,13 @@ WHERE g.mac = '10112'
   AND (g.effective_end IS NULL OR g.effective_end >= CURRENT_DATE);
 ```
 
+### 6.4 Query Performance Tips
+
+- `rvu_items` and `opps_caps` are the largest tables; filter on `effective_start` or `release_id` to avoid full scans.
+- Composite indexes (e.g., `idx_rvu_items_release_hcpcs`) are tuned for these patterns.
+- Use pagination (`LIMIT`, `OFFSET`) for queries over 10,000 rows.
+- Avoid joins on non-indexed soft keys (e.g., `locality_name`); prefer `locality_id`.
+
 ---
 
 ## 7. Maintenance
@@ -501,6 +513,31 @@ See `alembic/versions/` for migration history:
 - `003_gpci_v13_add_mac_to_nk.py` - Added unique constraint to GPCI
 - Future migrations will be tracked here
 
+### 7.4 Schema Evolution Policy
+
+Schema changes MUST follow semantic versioning:
+
+- **Patch:** index tuning, nullable field additions, comment updates
+- **Minor:** new nullable fields or tables
+- **Major:** type changes, column renames, constraint removals
+
+All changes require:
+
+- Alembic migration script
+- Review from Data Engineering + API consumer
+- Updated ERD diagram (see §3.1)
+
+### 7.5 Reference Metadata Contract
+
+- `ReferenceDataManager` writes `reference_metadata.json` during RVU ingestion bootstrap. Every metadata entry MUST serialize enum values (`ReferenceDataSource`, `confidence_level`, etc.) using their string values and persist `effective_from` / `effective_to` / `last_updated` timestamps as ISO 8601 strings.
+- The RVU ingest run is blocked until `reference_metadata.json` exists and contains the mandatory fields: `source_name`, `source_type`, `version`, `effective_from`, `record_count`, `quality_score`, `last_updated`.
+- Enrichment stages SHALL fail fast when the metadata file is unreadable or contains unserializable primitives; Ops must remediate before data reaches curated tables.
+- Reference metadata changes require a corresponding update to `cms_pricing/ingestion/enrichers/dis_reference_data_integration.py` tests to prove JSON compatibility.
+
+### 7.6 External Data Use Policy
+
+All schema fields are approved for external use unless marked `x-internal: true` in OpenAPI or governed by export rules in `RUN-openapi-docs-maintenance.md §8`. Redaction occurs downstream prior to partner delivery.
+
 ---
 
 ## 8. References
@@ -515,7 +552,7 @@ See `alembic/versions/` for migration history:
 
 ## 9. Changelog
 
+- **2025-10-28** - Added schema ownership, provenance, constraint summary, QA checks, schema evolution policy, and query tuning guidance.
 - **2025-10-27** - Initial documentation created
 - Tracks database schema for RVU ingestion pipeline
 - Documents all 6 tables, relationships, and query patterns
-

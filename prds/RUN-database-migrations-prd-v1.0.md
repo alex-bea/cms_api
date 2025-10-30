@@ -4,9 +4,8 @@ doc_type: RUN
 normative: false
 requires:
   - prds/STD-database-platform-prd-v1.0.md#3-schema-lifecycle--migrations
-  - prds/DOC-master-catalog-prd-v1.0.md
 
-**Status:** Draft v0.1  
+**Status:** Draft v0.1 (in progress)  
 **Owners:** Platform Engineering (DBA), Service Teams  
 **Consumers:** Release Engineering, On-Call, Data Engineering  
 **Change control:** PR review + Platform approval  
@@ -18,6 +17,7 @@ requires:
 - `prds/RUN-database-sanitization-prd-v1.0.md` (tokenized snapshot refresh)  
 - `prds/RUN-database-backup-dr-prd-v1.0.md` (rollback/PITR procedures)  
 - `.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md` (recent migration example)
+- `prds/DOC-master-catalog-prd-v1.0.md` (master documentation catalog)
 
 ---
 
@@ -31,6 +31,12 @@ Provide actionable steps for authoring, testing, and executing database schema c
 - [ ] PgBouncer connection details documented  
 - [ ] Access to prod-sized snapshot for dry-run  
 - [ ] Change ticket/PR template (TBD)
+
+- [ ] PgBouncer mode noted (transaction pooling): use **SET LOCAL** for any session state (e.g., tenant GUC) and avoid server-side prepares unless specifically enabled (see §6).
+- [ ] Alembic offline DDL ready: generate SQL via 
+`alembic upgrade --sql` and attach to the PR/change ticket for review (see §3).
+- [ ] Observability: clients set 
+`application_name` per job/role; migration job logs revision IDs and duration.
 
 *(TODO: enumerate command snippets, environment variables, safe sandbox instructions.)*
 
@@ -48,11 +54,23 @@ Provide actionable steps for authoring, testing, and executing database schema c
 ---
 
 ## 3. Dry-Run Procedure (Prod-sized Snapshot)
-- Acquire/refresh sanitized snapshot (see sanitization runbook).  
-- Execute `alembic upgrade --sql` and capture DDL artefact.  
-- Apply DDL against snapshot DB; record execution time and locking behavior.  
-- Validate no unexpected differences (`\d`, `pg_indexes`, constraint dump).  
-- Attach results (DDL script, logs, validation checklist) to PR/change ticket.  
+- Acquire/refresh sanitized snapshot (see sanitization runbook).
+- Generate offline SQL for review:
+
+```bash
+# Produce upgrade SQL without executing it
+alembic upgrade head --sql > /tmp/ddl.sql
+```
+
+- Apply the SQL to the snapshot and measure locks/runtime:
+
+```bash
+/usr/bin/time -l psql $SNAPSHOT_DATABASE_URL -f /tmp/ddl.sql
+```
+
+- Validate no unexpected differences (\d, pg_indexes, constraints).
+- Capture lock-safety evidence (no long ACCESS EXCLUSIVE waits).
+- Attach results (DDL script, logs, validation checklist) to PR/change ticket.
 
 *(TODO: script references, example commands, validation checklist automation.)*
 
@@ -94,6 +112,7 @@ Provide actionable steps for authoring, testing, and executing database schema c
 1. **Stamp ONLY IF:** Physical schema EXACTLY matches target revision + Platform approval + documented
 2. **Never stamp** on unknown/mismatched state → creates permanent drift
 3. **Production:** Always migrations-first (§5.1) → never stamp
+4. For any approved **stamp**, the offline SQL diff (`alembic upgrade --sql`) and schema validation outputs **must be attached** to the change ticket.
 
 ---
 
@@ -320,22 +339,64 @@ alembic check  # If supported by Alembic version
 ## 6. Execution Pipeline (Render/CI Job)
 - Migration job identity: `migrate` role.  
 - Steps:
-  1. Set session safety timeouts (`SET LOCAL lock_timeout = '5s'`, etc.).  
-  2. Run `alembic upgrade head`.  
-  3. Emit structured logs (start/end, revision IDs, duration).  
-  4. Alert on failure (Slack/Incident).  
-- Post-checks: verify `alembic_version`, run smoke queries, monitor metrics.  
+  1. Set session safety timeouts at job start and in each migration transaction:
+
+```sql
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '30s';
+```
+
+  2. (If using PgBouncer transaction pooling) ensure any GUCs use 
+`SET LOCAL` and disable server-side prepares or use the driver's simple protocol.
+  3. Run 
+`alembic upgrade head` and emit structured logs (start/end, revision IDs, duration, success/failure).
+  4. Alert on failure (Slack/Incident).
+- Post-checks: verify `alembic_version`, run smoke queries, monitor metrics.
+## 6.1 Migration Safety Prologue (for Alembic revisions)
+
+```python
+# Prepend in each migration to limit lock blast radius
+from alembic import op
+def upgrade():
+    op.execute("SET LOCAL lock_timeout = '5s'")
+    op.execute("SET LOCAL statement_timeout = '30s'")
+    # ... your DDL here
+```
+
+**Note:** Use `SET LOCAL` so settings apply only to the current transaction, which is safe under PgBouncer transaction pooling.
 
 *(TODO: provide GitHub Actions/Render Job YAML snippets; alert routing.)*
 
 ---
 
 ## 7. Online Migration Patterns & Maintenance Windows
-- Patterns: add/backfill/swap, dual-write triggers, index concurrently, partition backfill.  
-- Maintenance window request template and approval matrix.  
-- Backout plan checklist (PITR cutover, hot standby) — refer to `prds/RUN-database-backup-dr-prd-v1.0.md` for the detailed restore procedures.  
 
-*(TODO: collect examples, scripts for dual-write toggles and link to the relevant backup/restore sections once populated.)*
+### 7.1 Zero‑Downtime DDL Rules (Prod)
+- **Indexes:** always use 
+`CREATE INDEX CONCURRENTLY` / `DROP INDEX CONCURRENTLY`. After creation, verify validity:
+
+```sql
+SELECT i.schemaname, i.tablename, i.indexname
+FROM pg_indexes i
+JOIN pg_class c ON c.relname = i.indexname
+JOIN pg_index x ON x.indexrelid = c.oid
+WHERE NOT x.indisvalid;
+```
+
+- **Adds:** on PG ≥ 11, `ADD COLUMN ... DEFAULT <const>` is metadata‑only; otherwise stage: add nullable → backfill → set DEFAULT → set NOT NULL.
+- **Renames:** add new column/table → dual‑write/backfill → cut reads → drop old (staged swap).
+- **Dangerous:** large `ALTER TYPE`/rewrites without shadow table or view‑swap (avoid).
+
+### 7.2 Schema vs Data Migrations
+- Alembic revisions are for **schema**.
+- Large data backfills run as separate jobs with throttling/checkpoints; never gate deploy on multi‑hour writes.
+
+### 7.3 Partitioning (when and how)
+- Prefer native declarative partitions (time/tenant). For live tables, use shadow table + backfill + swap or a view‑swap to avoid long locks.
+
+### 7.4 Maintenance Windows & Backout
+- Template + approval matrix.
+- Backout plan: PITR cutover or flip to hot standby per RUN‑backup‑dr.
 
 ---
 
@@ -348,10 +409,12 @@ alembic check  # If supported by Alembic version
 
 ---
 
-## 9. Tooling & Automation Backlog
-- `lint_schema_names.py` (enforce global naming) — TBD  
-- CI check for `Base.metadata.create_all` usage  
-- Migration duration telemetry export  
+## 9. Tooling & CI Enforcement
+- CI: fail if a prod migration uses non‑concurrent index ops.
+- CI: flag `ALTER TABLE ... TYPE` on large tables without an approved online plan.
+- CI: flag `DROP COLUMN`/`RENAME` without staged swap plan.
+- CI: detect `Base.metadata.create_all` usage outside tests.
+- Emit migration duration/revision metrics for SLOs.
 
 ---
 
@@ -671,4 +734,5 @@ git diff cms_pricing/models/
 ## Change Log
 | Version | Date | Summary |
 |---------|------|---------|
+| v0.2 | 2025-10-21 | Added offline DDL flow, zero‑downtime rules, migration safety prologue, PgBouncer notes, partitioning guidance, and CI enforcement checks. |
 | v0.1 (stub) | 2025-10-21 | Initial scaffold created. Sections marked TODO for detailed procedures, scripts, and templates. |

@@ -1,0 +1,19 @@
+{
+  "dataset_name": "cms_rvu",
+  "vintage_date": "2025-10-28",
+  "release_id": "unknown",
+  "batch_id": "unknown",
+  "generated_at": "2025-10-28T16:11:26.711627",
+  "description": "CMS RVU data with all RVU-related datasets",
+  "datasets": [
+    "PPRRVU: Physician Fee Schedule RVU Items",
+    "GPCI: Geographic Practice Cost Index",
+    "OPPSCap: OPPS-based Payment Caps",
+    "AnesCF: Anesthesia Conversion Factors",
+    "LocalityCounty: Locality to County mapping"
+  ],
+  "quality_score": 1.0,
+  "record_count": 0,
+  "schema_version": "1.0",
+  "attribution_note": "Data sourced from CMS.gov - Public Domain"
+}

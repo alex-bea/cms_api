@@ -68,6 +68,7 @@ We separate concerns into **Land → Validate → Normalize → Enrich → Publi
 ### 3.4 Normalize (Stage)
 - Canonicalize column names (snake_case), zero‑pad codes (FIPS/ZCTA), standardize units and time semantics.
 - Emit a **Schema Contract** (JSON) and **Column Dictionary** (name, type, unit, description, domain).
+- Accept the landed `RawBatch` (or equivalent raw byte bundle) from §3.2 so adapters operate on the actual payload. If the normalize stage cannot obtain raw bytes, the batch MUST fail rather than emit empty dataframes.
 - When sources include set-logic rows (`ALL COUNTIES`, `ALL COUNTY EQUIVALENTS`, `ALL COUNTIES, EXCEPT …`, `REST OF STATE`), normalize in two passes: (1) collect explicit assignments per state/territory, (2) expand REST/“ALL OTHER” rows with the complement set. Track `expansion_method`, `coverage_by_state`, and `rest_of_state_expanded` metrics.
 - Preserve continuation rows even when state spans contain bleed; rely on fixed-width MAC/locality spans and allow downstream state re‑inference. When multiple states share a county name, apply state-conditioned matching (exact → alias → fuzzy) and use MAC/locality hints to break ties; quarantine only when ambiguity remains.
 

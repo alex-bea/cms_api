@@ -12,13 +12,15 @@ This implementation uses **Render One-Off Jobs API** for migrations:
 - ✅ Uses service's latest successful build artifact + environment
 - ✅ Backward-compatible migrations (expand/contract pattern)
 
+> **Platform note:** Render only accepts `linux/amd64` Docker images. Any manual build (local or CI) must include `docker build --platform linux/amd64 ...` to generate a compatible artifact.
+
 ## Architecture
 
 ### Deployment Flow
 
 ```
 1. Build & Push Image (SHA-tagged) → GHCR
-2. Deploy to Render (with imgURL=)
+2. Deploy to Render (Deploy API with imageUrl)
 3. Run Migrations (One-Off Job API)
 4. Health Check Validation
 ```
@@ -92,13 +94,15 @@ git push origin v0.0.1-test
 ### Step 2: Deploy with Image Tag
 
 ```bash
-# Triggers Deploy Hook with specific image
-IMAGE_TAG="ghcr.io/alex-bea/cms-api:${COMMIT_SHA}"
-ENCODED_IMAGE=$(echo -n "$IMAGE_TAG" | jq -sRr @uri)
-curl -X POST "${RENDER_DEPLOY_HOOK}&imgURL=${ENCODED_IMAGE}"
+# Trigger Deploy API with explicit imageUrl (prefer underscore name or pinned digest)
+IMAGE_TAG="ghcr.io/alex-bea/cms_api:${COMMIT_SHA}"
+curl -X POST "https://api.render.com/v1/services/${SERVICE_ID}/deploys" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d "{\"imageUrl\": \"${IMAGE_TAG}\"}"
 ```
 
-**Why URL encoding?** Ensures special characters in image URLs are handled correctly.
+**Why Deploy API?** Eliminates ambiguity with hooks and lets you verify the resolved image post-deploy.
 
 ### Step 3: Run Migrations (One-Off Job)
 
@@ -239,7 +243,7 @@ alembic upgrade head
 **Error:** `Failed to pull image`
 
 **Solutions:**
-1. Verify image exists in GHCR: `docker pull ghcr.io/alex-bea/cms-api:latest`
+1. Verify image exists in GHCR: `docker pull ghcr.io/alex-bea/cms_api:latest`
 2. Check image visibility (public or Registry Credential configured)
 3. Verify PAT has `read:packages` scope
 4. Check image URL in Render service settings
@@ -338,4 +342,3 @@ git push origin v1.0.0-rollback
 **Status:** ✅ Ready for deployment  
 **Cost:** ~$0.01 per migration (vs $7/month for Background Worker)  
 **Approach:** Zero-downtime with One-Off Jobs API
-

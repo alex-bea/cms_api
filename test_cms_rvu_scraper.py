@@ -4,6 +4,7 @@ Test CMS RVU Scraper
 """
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -40,9 +41,11 @@ async def test_cms_rvu_scraper():
         print(f"   📊 Found {len(files)} RVU files")
         
         for i, file_info in enumerate(files[:10]):  # Show first 10 files
-            print(f"   📄 {i+1}. {file_info.year} {file_info.quarter}: {file_info.filename}")
+            revision = file_info.revision or ""
+            print(f"   📄 {i+1}. {file_info.year}{file_info.quarter}{revision}: {file_info.filename}")
             print(f"      URL: {file_info.url}")
-            print(f"      Type: {file_info.file_type}")
+            print(f"      Version: {file_info.version}")
+            print(f"      Content-Type: {file_info.content_type}")
         
         if len(files) > 10:
             print(f"   ... and {len(files) - 10} more files")
@@ -81,20 +84,21 @@ async def test_cms_rvu_scraper():
         print(f"   ❌ Sample download failed: {e}")
         return False
     
-    # Test 4: Generate Manifest
-    print("\n🔍 Test 4: Generate Manifest")
+    # Test 4: Manifest Verification
+    print("\n🔍 Test 4: Manifest Verification")
     print("-" * 40)
     
     try:
-        manifest = scraper.generate_manifest(files, results)
+        manifest_path = scraper.last_manifest_path
+        assert manifest_path is not None, "Manifest path not set on scraper"
+        manifest_json = json.loads(manifest_path.read_text())
         
-        print(f"   📊 Manifest generated")
-        print(f"   📄 Total files: {manifest['total_files']}")
-        print(f"   📁 Manifest path: {scraper.output_dir}/rvu_files_manifest.json")
-        print("   ✅ Manifest generation successful")
+        print(f"   📊 Manifest generated at {manifest_path}")
+        print(f"   📄 Total files: {len(manifest_json.get('files', []))}")
+        print("   ✅ Manifest verification successful")
         
     except Exception as e:
-        print(f"   ❌ Manifest generation failed: {e}")
+        print(f"   ❌ Manifest verification failed: {e}")
         return False
     
     # Test 5: Historical Data Manager
@@ -104,7 +108,9 @@ async def test_cms_rvu_scraper():
     try:
         manager = HistoricalDataManager("./test_data/historical_rvu")
         
-        # Check data freshness
+        discovery_summary = await manager.download_historical_data(start_year=2024, end_year=2025, download=False)
+        print(f"   📊 Discovery status: {discovery_summary['status']}")
+
         freshness = manager.check_data_freshness()
         print(f"   📊 Data freshness: {freshness['status']}")
         
@@ -123,7 +129,7 @@ async def test_cms_rvu_scraper():
     print("✅ Scraper initialization working")
     print("✅ File scraping working")
     print("✅ Sample download working")
-    print("✅ Manifest generation working")
+    print("✅ Manifest verification working")
     print("✅ Historical data manager working")
     print("\n🚀 CMS RVU scraper is ready for production use!")
     

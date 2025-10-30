@@ -1,0 +1,52 @@
+{
+  "release_id": "test_rvu_8e5f4a88",
+  "batch_id": "7c05dfa2-fbe5-40cd-a252-7b0451a4b300",
+  "source": "cms_rvu",
+  "files": [
+    {
+      "path": "files/RVU25A",
+      "sha256": "c204bb0e654b1747c3e06b2f126250fdc2af08494da0880425a16383031fadad",
+      "size_bytes": 189711,
+      "content_type": "application/zip",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25a",
+      "last_modified": "Thu, 23 Oct 2025 04:11:23 GMT",
+      "etag": "\"1761192683-gzip\""
+    },
+    {
+      "path": "files/RVU25B",
+      "sha256": "7a9abb3f90feaf7c0ad5b1ea45f37b6737fb31fce41b94fbb338111a9b372853",
+      "size_bytes": 189711,
+      "content_type": "application/zip",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25b",
+      "last_modified": "Thu, 23 Oct 2025 04:11:21 GMT",
+      "etag": "\"1761192681-gzip\""
+    },
+    {
+      "path": "files/RVU25C",
+      "sha256": "d3344ed2ee1e9a6939207fe1b46d5b5dbdd20c78a45dfe2a15dba6a45b079c69",
+      "size_bytes": 189711,
+      "content_type": "application/zip",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25c",
+      "last_modified": "Thu, 23 Oct 2025 04:11:20 GMT",
+      "etag": "\"1761192680-gzip\""
+    },
+    {
+      "path": "files/RVU25D",
+      "sha256": "a834b99cbbdde61aac40e36bb9830d59c5cb6faaed4ce05327ea9ca9793db3fa",
+      "size_bytes": 189713,
+      "content_type": "application/zip",
+      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25d-0",
+      "last_modified": "Wed, 22 Oct 2025 19:53:48 GMT",
+      "etag": "\"1761162828-gzip\""
+    }
+  ],
+  "fetched_at": "2025-10-26T20:20:49.565109",
+  "discovered_from": "https://www.cms.gov/medicare/payment/fee-schedules",
+  "source_url": "https://www.cms.gov/medicare/payment/fee-schedules",
+  "license": {
+    "name": "CMS Public Domain",
+    "url": "https://www.cms.gov/About-CMS/Agency-Information/Aboutwebsite/Privacy-Policy",
+    "attribution_required": false
+  },
+  "notes_url": "https://www.cms.gov/medicare/payment/fee-schedules"
+}

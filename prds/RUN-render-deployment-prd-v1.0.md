@@ -12,6 +12,15 @@
 - `prds/RUN-database-migrations-prd-v1.0.md` (migrations workflow)
 - `prds/RUN-database-backup-dr-prd-v1.0.md` (rollback/PITR)
 - `prds/RUN-database-sanitization-prd-v1.0.md` (tokenized refresh)
+
+### CI/CD Learnings (2025-10)
+
+- Use Deploy API with imageUrl: Prefer Render Deploy API (POST /v1/services/{id}/deploys with { imageUrl }) over deploy hooks with imgURL. This removes ambiguity and lets us verify the resolved image after go-live.
+- Image naming: GHCR repo uses underscore (`cms_api`), not dash. Example: `ghcr.io/alex-bea/cms_api:<sha>` or pinned digest `ghcr.io/alex-bea/cms_api@sha256:...`.
+- Registry credentials: If GHCR package is private, add GHCR credentials (username + PAT with read:packages) to the Render service, or make the package public.
+- Post-deploy verification: Query Render service details (GET /v1/services/{id}) and confirm the running image matches the expected SHA/digest. Treat mismatches as deployment failures.
+- One-Off Jobs for migrations: Trigger via Render Jobs API after deploy; poll until `succeeded`. Add HTTP status checks and parse JSON (avoid brittle greps).
+- CI robustness: On tag/detached builds, avoid git diff/log invalid ranges. Our `tools/collect_prd_learnings.py` falls back to `HEAD~1..HEAD` and last commit.
 - `.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md` (historical example)
 
 **Purpose:** Deploy CMS Pricing API with PostgreSQL on Render  
@@ -1462,6 +1471,16 @@ Based on today's deployment, always ensure:
 ```bash
 echo $GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 ```
+
+**Standard build command (Render-compatible)**
+
+Render only runs `linux/amd64` images. When producing a manual image for GHCR, always pin the platform:
+
+```bash
+docker build --platform linux/amd64 -t ghcr.io/YOUR_ORG/cms-pricing-api:latest .
+```
+
+Add additional tags (commit SHA, digest, etc.) as needed before pushing.
 
 ---
 

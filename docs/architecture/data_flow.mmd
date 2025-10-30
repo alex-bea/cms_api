@@ -1,0 +1,62 @@
+```mermaid
+flowchart LR
+    %% High-level CMS Pricing data flow
+    %% See prds/STD-data-architecture-prd-v1.0.md for lifecycle details
+
+    subgraph Discovery_and_Land ["Discovery & Land (STD-scraper, STD-data-architecture §3)"]
+        A1["CMS Sources & Release Feeds
+        - stds: STD-scraper-prd-v1.0.md
+        - tooling: scripts/ingest_all.py, cron jobs"] --> A2["Land Raw Artifacts
+        - data/<dataset>/<ts>/raw/**
+        - manifests w/ sha256, license, release_id"]
+    end
+
+    subgraph Normalize_and_Enrich ["Parser & Transform (Land→Validate→Normalize→Enrich)"]
+        A2 --> A3["Parser Routing + Layout Registry
+        - cms_pricing/ingestion/parsers/**
+        - layout_registry.py, parser_kit"]
+        A3 --> A4["Validation & Drift Checks
+        - Schema contracts (STD-parser-contracts)
+        - tests/ingestion/**"]
+        A4 --> A5["Publish Normalized Parquet
+        - data/<dataset>/<ts>/normalized/**
+        - manifests + dataset digests"]
+    end
+
+    subgraph Storage_and_Models ["Curated Storage & Database Models"]
+        A5 --> A6["Load to Postgres
+        - cms_pricing/models/**
+        - alembic/versions/**
+        - RUN-database-migrations-prd-v1.0.md"]
+    end
+
+    subgraph Application_and_APIs ["FastAPI Application & Pricing Engines"]
+        A6 --> A7["FastAPI Routers & Services
+        - cms_pricing/main.py (middleware, metrics)
+        - routers: plans, pricing, geography, mpfs, opps, rvu
+        - services: pricing, geography, trace"]
+        A7 --> A8["External Clients & Jobs
+        - Render services (PRD-render-hosting)
+        - CLI consumers / partner APIs"]
+    end
+
+    subgraph Observability_and_Governance ["Observability, Tracing & Ops"]
+        A7 --> O1["Trace Service & Replay
+        - cms_pricing/services/trace.py
+        - /trace endpoints"]
+        A7 --> O2["Prometheus Metrics
+        - /metrics endpoint
+        - Render health checks (/health, /readyz)"]
+        A5 --> O3["Dataset Snapshots & Pins
+        - geography snapshots
+        - tools/audit_doc_metadata.py"]
+    end
+
+    %% Compliance & deployment hooks
+    A7 --> D1["Render Deploy Jobs
+    - PRD-render-hosting
+    - render.yaml auto image pulls"]
+    A6 --> S1["Least-Privilege Roles & Backups
+    - STD-database-platform-prd-v1.0.md
+    - RUN-database-backup-dr-prd-v1.0.md"]
+```

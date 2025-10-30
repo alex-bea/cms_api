@@ -121,7 +121,7 @@ echo ""
 echo "Reference:"
 echo "  • Complete example: planning/parsers/gpci/"
 echo "  • Simple example: planning/parsers/conversion_factor/"
-echo "  • Standards: prds/STD-parser-contracts-prd-v1.0.md"
+echo "  • Standards: prds/STD-parser-contracts-prd-v2.0.md"
 echo ""
 echo -e "${GREEN}✓ Done!${NC}"
 

@@ -106,4 +106,5 @@ markers = [
     "geography: marks tests related to geography/nearest_zip",
     "api: marks tests related to API routers",
     "e2e: marks tests as end-to-end tests",
+    "performance: marks tests as performance/benchmark tests",
 ]

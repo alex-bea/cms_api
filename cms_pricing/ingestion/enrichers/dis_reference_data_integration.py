@@ -236,13 +236,17 @@ class ReferenceDataManager:
         # Convert to dict for JSON serialization
         metadata_dict = {}
         for name, metadata in self.reference_sources.items():
-            metadata_dict[name] = asdict(metadata)
-            # Convert datetime objects to ISO strings
-            metadata_dict[name]['last_updated'] = metadata.last_updated.isoformat()
-            if metadata.effective_from:
-                metadata_dict[name]['effective_from'] = metadata.effective_from.isoformat()
-            if metadata.effective_to:
-                metadata_dict[name]['effective_to'] = metadata.effective_to.isoformat()
+            serialized = {}
+            for field in metadata.__dataclass_fields__:  # type: ignore[attr-defined]
+                value = getattr(metadata, field)
+                if isinstance(value, Enum):
+                    value = value.value
+                elif isinstance(value, datetime):
+                    value = value.isoformat()
+                elif isinstance(value, date):
+                    value = value.isoformat()
+                serialized[field] = value
+            metadata_dict[name] = serialized
         
         with open(metadata_file, 'w') as f:
             json.dump(metadata_dict, f, indent=2)

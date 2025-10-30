@@ -1,0 +1,46 @@
+🚀 RENDER DEPLOYMENT INSTRUCTIONS
+================================
+
+CURRENT STATUS:
+✅ All code committed (RVU pipeline + database loading)
+✅ render.yaml configured
+✅ GitHub Actions workflow ready
+✅ Database migrations ready
+
+BEFORE DEPLOYING:
+1. Check GitHub Secrets (Repository → Settings → Secrets → Actions)
+   - RENDER_DEPLOY_HOOK must exist
+   - If missing: Get from Render Dashboard → Settings → Deploy Hook
+
+2. Verify Render Service Exists
+   - Go to Render Dashboard
+   - Check if service "cms-pricing-api" exists
+   - If not: Create from render.yaml blueprint
+
+TO DEPLOY:
+
+Option A: Create Version Tag (Automated)
+  git tag v1.0.0
+  git push origin v1.0.0
+  # This triggers GitHub Actions → Build → Deploy → Migrations
+
+Option B: Manual Deploy via Render Dashboard
+  - Go to Render Dashboard
+  - Click "Manual Deploy" 
+  - Select branch: main
+  - Click "Deploy latest commit"
+
+MONITOR DEPLOYMENT:
+  - GitHub Actions: https://github.com/alex-bea/cms_api/actions
+  - Render Dashboard: https://dashboard.render.com
+  - Service URL: https://cms-pricing-api.onrender.com
+  - Health Check: https://cms-pricing-api.onrender.com/health
+
+VERIFY DEPLOYMENT:
+  curl https://cms-pricing-api.onrender.com/health
+  # Expected: {"status": "healthy", "database": "connected"}
+
+TEST RVU DATA LOADING:
+  After deployment, can run RVU pipeline to load data into database
+  All 5 RVU tables are ready to receive data
+

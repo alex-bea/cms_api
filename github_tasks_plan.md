@@ -1,3 +1,71 @@
+## Task: Optimize Docker Builds (Builder/Runtime Split, Caching, Flags)
+
+Context
+- Current Dockerfile installs build tools in the base/runtime image and copies the entire source after dependency install. We can speed up CI builds and reduce image size by separating build-time deps, improving layer caching, and tightening apt/pip installs.
+
+Goals
+- Reduce cold build time by ~2–4 minutes and hot (code-only) rebuilds by ~2–4 minutes in CI.
+- Decrease image size (100–300 MB), reduce Render pull time, and keep a clean runtime without build toolchain.
+
+Scope
+- Refactor `Dockerfile` to a proper builder/runtime pattern.
+- Improve Docker layer caching and CI cache usage.
+- Tighten APT and pip flags to avoid unnecessary downloads.
+- Ensure behavior parity (healthcheck, user permissions, envs, CMD) with production target.
+
+Acceptance Criteria
+- Dockerfile uses a dedicated builder stage (with build tools) and a slim runtime stage (no build tools).
+- APT installs use `--no-install-recommends`; packages minimized.
+- Dependencies installed before source copy to maximize cache hits.
+- CI workflow (`.github/workflows/deploy.yml`) still builds `--target production` with `cache-from/to: gha` and succeeds.
+- Image builds and runs locally; `/health` returns 200.
+- Image size reduced vs current; CI build time improved on both cold and hot paths (document numbers in PR).
+- Render deploy succeeds and service runs with the new image.
+
+Proposed Implementation Steps
+1) Create a builder stage:
+   - Base: `python:3.11-slim`
+   - Install build deps with `apt-get update && apt-get install -y --no-install-recommends build-essential python3-dev curl … && rm -rf /var/lib/apt/lists/*`
+   - `WORKDIR /app`
+   - `COPY requirements.txt .` then `pip install --upgrade pip` and `pip install -r requirements.txt` (optionally with BuildKit cache mount)
+   - If wheels are preferred, build wheels into a wheels directory (optional optimization)
+2) Create a runtime stage:
+   - Base: `python:3.11-slim`
+   - Install only runtime OS deps (if any) with `--no-install-recommends`
+   - `WORKDIR /app`
+   - Copy site-packages (or wheels install) and entry scripts from builder into runtime
+   - `COPY . .` for application code (or a narrowed subset if appropriate)
+   - Create non-root `appuser` and set directory ownership for `data/*`
+   - Define HEALTHCHECK and final CMD (preserve current behavior: use `$PORT`, workers=1)
+3) Revise order for cache efficiency:
+   - `COPY requirements*.txt` + install deps → then `COPY . .`
+   - Keep dynamic files (e.g., source) late so deps layer gets reused on code-only changes
+4) CI updates (if needed):
+   - Ensure `docker/build-push-action` still uses `platforms: linux/amd64`, `target: production`, and `cache-from/to: gha`
+   - Optionally add `jq` ensure step (already present in runners, but safe)
+5) Verify locally:
+   - Build: `docker build --target production --platform linux/amd64 -t cms_api:test .`
+   - Run: `docker run -p 8000:8000 cms_api:test`
+   - Health: `curl localhost:8000/health`
+6) Verify in CI:
+   - Open PR; compare build times and image size vs baseline in PR description
+7) Verify on Render:
+   - Tag a test release; confirm Deploy API uses the new image; health OK
+
+Notes / Nice-to-Haves
+- Use BuildKit pip cache: `RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt` (guarded; runners typically support BuildKit)
+- Consider `python -m compileall` in builder to precompile pyc (optional)
+- Ensure `.dockerignore` excludes `data/`, `logs/`, VCS and caches (already in place; review for drift)
+
+Owner
+- Platform Engineering (API Enablement)
+
+Effort
+- ~1–2 hours including verification across local, CI, and Render
+
+Risk
+- Low; functional behavior unchanged. Rollback by reverting Dockerfile if needed.
+
 # GitHub Tasks Plan: CMS API Development Tasks
 
 Generated on: 2025-10-03 09:57:53
@@ -7,6 +75,24 @@ Generated on: 2025-10-03 09:57:53
 **Name:** CMS API Development Tasks
 **Description:** Comprehensive task management for CMS API development, data ingestion, and system enhancement
 **Total Tasks:** 63
+
+### Architecture Layers (Data Flow Context)
+
+To keep the task backlog aligned with the system’s runtime architecture, the plan now calls out two cross-cutting layers that every feature should map to:
+
+1. **Parser & Transformation Layer**  
+   - Anchored in the DIS lifecycle (**Land → Validate → Normalize → Enrich → Publish**) defined in `prds/STD-data-architecture-prd-v1.0.md`.  
+   - Parsers live under `cms_pricing/ingestion/parsers/**` and follow the contract kit so every dataset enforces schema governance, drift detection, and provenance tags.  
+   - Layout registries plus parser routing tables make sure new vintages (e.g., RVU, GPCI, OPPS caps) keep deterministic column mappings before anything touches curated storage.  
+   - Related tasks must include updates to schema contracts, parser tests (golden + negative), and ingestion manifests so CI can trace exactly which version of a parser produced a dataset artifact.
+
+2. **Database & Modeling Layer**  
+   - Normalized parquet outputs land in Postgres via SQLAlchemy models (`cms_pricing/models/**`) and Alembic revisions (`alembic/versions/**`), giving the FastAPI layer strongly typed tables and views.  
+   - Standards from `prds/STD-database-platform-prd-v1.0.md` and `RUN-database-migrations-prd-v1.0.md` govern DDL ownership, migration jobs, and least-privilege roles.  
+   - Features that add or mutate curated tables must define natural keys, effective dating, and upsert semantics so they remain compatible with the pricing engines and tracing infrastructure.  
+   - Observability hooks (Prometheus metrics, trace storage) rely on these models, so task descriptions should link to the specific ORM entities/migrations they touch.
+
+Any new backlog item should mention how it threads through these two layers (e.g., “extend parser X and model Y”) to avoid gaps between ingestion outputs and serving endpoints.
 
 ## GitHub Project Setup Instructions
 

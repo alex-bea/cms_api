@@ -4,21 +4,52 @@ Audit schema ↔ API column mappers.
 
 Ensures every schema column referenced in mapper dictionaries exists in the
 corresponding schema contract JSON. Intentionally scoped to detect regressions
-highlighted in STD-parser-contracts-prd-v1.0.md §6.6.
+highlighted in STD-parser-contracts-prd-v2.0.md §6.6.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import importlib
 
 MAPPERS_MODULE = "cms_pricing.mappers"
 CONTRACTS_DIR = Path("cms_pricing/ingestion/contracts")
+PRDS_DIR = Path("prds")
+
+
+def find_current_prd(base_name: str) -> Optional[str]:
+    """Find the current (highest version) PRD for a given base name."""
+    # Remove version suffix to get base name
+    base_pattern = re.sub(r'-v\d+\.\d+.*\.md$', '', base_name)
+    pattern = f"{base_pattern}-v*.md"
+    matches = list(PRDS_DIR.glob(pattern))
+    
+    if not matches:
+        return None
+    
+    # Sort by version number (extract v1.0, v2.0, etc.)
+    def version_key(path):
+        match = re.search(r'-v(\d+)\.(\d+)', path.name)
+        if match:
+            return (int(match.group(1)), int(match.group(2)))
+        return (0, 0)
+    
+    return max(matches, key=version_key).name
+
+
+def get_current_parser_contracts_prd() -> str:
+    """Get the current version of STD-parser-contracts PRD."""
+    current = find_current_prd("STD-parser-contracts-prd-v1.0.md")
+    if current:
+        return current
+    # Fallback to hardcoded if no version found
+    return "STD-parser-contracts-prd-v1.0.md"
 
 
 def _iter_schema_to_api_mappings(module) -> List[Tuple[str, Dict[str, str]]]:

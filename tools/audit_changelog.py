@@ -34,6 +34,7 @@ UNRELEASED_PATTERN = re.compile(r"^\[Unreleased\]", re.IGNORECASE)
 COMMIT_LINK_PATTERN = re.compile(r"\[#?([a-f0-9]{7,40})\](?:\([^)]+\))?")  # Handles both [hash] and [hash](url)
 PR_LINK_PATTERN = re.compile(r"\[#(\d+)\]")
 PRD_LINK_PATTERN = re.compile(r"\b([A-Z]{3}-[a-z-]+-(?:prd|impl)-v\d+\.\d+\.md)\b")
+PRDS_DIR = Path("prds")
 
 
 # ============================================================================
@@ -93,6 +94,52 @@ def get_commits_since_tag(tag: str) -> List[Dict[str, str]]:
         return commits
     except subprocess.CalledProcessError:
         return []
+
+
+# ============================================================================
+# Smart PRD Version Handling
+# ============================================================================
+
+def find_current_prd(base_name: str) -> Optional[str]:
+    """Find the current (highest version) PRD for a given base name."""
+    # Remove version suffix to get base name
+    base_pattern = re.sub(r'-v\d+\.\d+.*\.md$', '', base_name)
+    pattern = f"{base_pattern}-v*.md"
+    matches = list(PRDS_DIR.glob(pattern))
+    
+    if not matches:
+        return None
+    
+    # Sort by version number (extract v1.0, v2.0, etc.)
+    def version_key(path):
+        match = re.search(r'-v(\d+)\.(\d+)', path.name)
+        if match:
+            return (int(match.group(1)), int(match.group(2)))
+        return (0, 0)
+    
+    return max(matches, key=version_key).name
+
+
+def check_duplicate_prds() -> List[str]:
+    """Detect when multiple versions of the same PRD exist."""
+    prd_files = list(PRDS_DIR.glob("*.md"))
+    
+    # Group by base name (without version)
+    base_groups = {}
+    for prd in prd_files:
+        base_name = re.sub(r'-v\d+\.\d+.*\.md$', '', prd.name)
+        if base_name not in base_groups:
+            base_groups[base_name] = []
+        base_groups[base_name].append(prd.name)
+    
+    # Flag duplicates
+    warnings = []
+    for base_name, versions in base_groups.items():
+        if len(versions) > 1:
+            versions.sort()
+            warnings.append(f"Multiple versions of {base_name}: {versions}")
+    
+    return warnings
 
 
 # ============================================================================
@@ -283,7 +330,7 @@ def check_date_format(parsed: Dict) -> Tuple[bool, str]:
 
 
 def check_prd_references(parsed: Dict) -> Tuple[bool, str]:
-    """Check if PRD references exist."""
+    """Check if PRD references exist, with smart version handling."""
     all_prds = []
     for version_info in parsed["versions"]:
         all_prds.extend(version_info["prds"])
@@ -294,15 +341,38 @@ def check_prd_references(parsed: Dict) -> Tuple[bool, str]:
     if not all_prds:
         return False, "⚠️  No PRD cross-references found in changelog"
     
-    # Check if PRD files exist
+    # Check if PRD files exist, with smart version suggestions
     missing_prds = []
+    suggestions = []
+    warnings = []
+    
     for prd in set(all_prds):
-        prd_path = Path("prds") / prd
+        prd_path = PRDS_DIR / prd
         if not prd_path.exists():
             missing_prds.append(prd)
+            
+            # Suggest existing versions
+            existing = find_current_prd(prd)
+            if existing:
+                suggestions.append(f"  → Did you mean: {existing}")
     
+    # Check for duplicate PRDs (warnings only)
+    duplicate_warnings = check_duplicate_prds()
+    if duplicate_warnings:
+        warnings.extend(duplicate_warnings)
+    
+    # Build result message
     if missing_prds:
-        return False, f"❌ Missing PRD files: {missing_prds}"
+        msg = f"❌ Missing PRD files: {missing_prds}\n"
+        if suggestions:
+            msg += "Suggestions:\n" + "\n".join(suggestions)
+        if warnings:
+            msg += "\nWarnings:\n" + "\n".join(f"  ⚠️  {w}" for w in warnings)
+        return False, msg
+    
+    if warnings:
+        warning_msg = "Warnings:\n" + "\n".join(f"  ⚠️  {w}" for w in warnings)
+        return True, f"✅ {len(set(all_prds))} PRD references, all valid\n{warning_msg}"
     
     return True, f"✅ {len(set(all_prds))} PRD references, all valid"
 

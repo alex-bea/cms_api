@@ -614,21 +614,33 @@ def _parse_zip(content: bytes, encoding: str, metadata: dict) -> Tuple[pd.DataFr
         if len(members) == 0:
             raise ParseError("ZIP file contains no files")
         
+        def choose(preference_list):
+            txt_files = [m for m in preference_list if m.lower().endswith('.txt')]
+            csv_files = [m for m in preference_list if m.lower().endswith('.csv')]
+            xlsx_files = [m for m in preference_list if m.lower().endswith(('.xlsx', '.xls'))]
+
+            if txt_files:
+                return txt_files[0]
+            if csv_files:
+                return csv_files[0]
+            if xlsx_files:
+                return xlsx_files[0]
+            return None
+
         if len(members) == 1:
             inner_name = members[0]
         else:
-            # Prefer TXT, then CSV, then XLSX
-            txt_files = [m for m in members if m.lower().endswith('.txt')]
-            csv_files = [m for m in members if m.lower().endswith('.csv')]
-            xlsx_files = [m for m in members if m.lower().endswith(('.xlsx', '.xls'))]
-            
-            if txt_files:
-                inner_name = txt_files[0]
-            elif csv_files:
-                inner_name = csv_files[0]
-            elif xlsx_files:
-                inner_name = xlsx_files[0]
-            else:
+            # Prefer ANES-specific members before falling back to generic selection
+            anes_members = [m for m in members if 'anes' in m.lower()]
+            inner_name = None
+
+            if anes_members:
+                inner_name = choose(anes_members)
+
+            if inner_name is None:
+                inner_name = choose(members)
+
+            if inner_name is None:
                 # Fallback: largest file
                 inner_name = max(members, key=lambda m: zf.getinfo(m).file_size)
         
@@ -754,4 +766,3 @@ def _load_schema(schema_id: str) -> dict:
         schema = json.load(f)
     
     return schema
-

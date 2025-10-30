@@ -60,7 +60,7 @@
 
 **Render auto-deploy:** ❌ **DISABLED**
 
-**Deployments initiated via:** CI job on tagged commits (e.g., `release/*`)
+**Deployments initiated via:** CI job on tagged commits (e.g., `release/*`) using the Render Deploy API with explicit `imageUrl` set to the GHCR image (SHA tag or pinned digest).
 
 **Monorepo change filters:** CI deploy jobs only fire when:
 - `cms_pricing/**` changes
@@ -85,7 +85,7 @@
 ### 3.5 Image Registry
 
 **Registry:** GitHub Container Registry  
-**Path:** `ghcr.io/<org>/cms-pricing:<sha>`  
+**Path:** `ghcr.io/<org>/cms_api:<sha>` (use underscore) or pinned digest `ghcr.io/<org>/cms_api@sha256:...`  
 **Retention:** 90 days for images  
 **Tags:** Git SHA for immutability, also tag `latest` for dev
 
@@ -100,7 +100,7 @@
 2. Build multi-stage Dockerfile
 3. Tag with git SHA
 4. Push to GHCR
-5. Trigger Render deploy pointing to image
+5. Trigger Render deploy via API with `imageUrl` (explicit image SHA/digest)
 
 **Benefits:**
 - Zero on-platform build minutes (Render just pulls image)
@@ -119,6 +119,15 @@ When the image pipeline is unavailable, Render-native builds are allowed provide
 - Avoid double work
 - Prevent pipeline charges
 - Migrations run as explicit Job (see §5.1)
+
+### 4.6 Private Registry Access
+
+If GHCR packages are private, the Render service MUST be configured with registry credentials:
+- Registry: `ghcr.io`
+- Username: GitHub username
+- Password/Token: GitHub PAT with `read:packages`
+
+Production SHOULD use pinned digests to eliminate tag drift.
 
 ### 4.4 Spend Guardrails
 

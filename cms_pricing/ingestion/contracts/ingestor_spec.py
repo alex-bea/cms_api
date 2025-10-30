@@ -7,7 +7,7 @@ to be compliant with the DIS standard.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, List, Optional, Any, Dict
 from datetime import datetime
@@ -54,8 +54,15 @@ class SourceFile:
 class RawBatch:
     """Raw data batch from source"""
     source_files: List[SourceFile]
-    raw_content: Dict[str, bytes]
-    metadata: Dict[str, Any]
+    raw_content: Optional[Dict[str, bytes]] = None
+    metadata: Optional[Dict[str, Any]] = None
+    raw_data_path: Optional[str] = None
+
+    def __post_init__(self):
+        if self.raw_content is None:
+            self.raw_content = {}
+        if self.metadata is None:
+            self.metadata = {}
 
 
 @dataclass

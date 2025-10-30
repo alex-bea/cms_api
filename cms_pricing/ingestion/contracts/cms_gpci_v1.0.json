@@ -1,14 +1,7 @@
 {
   "dataset_name": "cms_gpci",
-  "version": "1.1",
-  "status": "DEPRECATED - Use cms_gpci_v1.2.json instead (CMS-native naming)",
-  "generated_at": "2025-10-15T00:00:00Z",
-  "deprecated_at": "2025-10-16T00:00:00Z",
-  "superseded_by": "cms_gpci_v1.2.json",
-  "hash_spec_version": "1",
-  "natural_keys": ["locality_code", "effective_from"],
-  "column_order": ["locality_code", "state_fips", "gpci_work", "gpci_pe", "gpci_malp", "effective_from"],
-  "hash_metadata_exclusions": ["release_id", "vintage_date", "product_year", "quarter_vintage", "source_filename", "source_file_sha256", "source_uri", "parsed_at", "row_content_hash", "effective_to"],
+  "version": "1.0",
+  "generated_at": "2025-10-30T19:19:54.086188",
   "columns": {
     "locality_code": {
       "name": "locality_code",
@@ -37,10 +30,6 @@
     "gpci_work": {
       "name": "gpci_work",
       "type": "float64",
-      "precision": 3,
-      "scale": 3,
-      "rounding_mode": "HALF_UP",
-      "multipleOf": 0.001,
       "nullable": false,
       "description": "Work GPCI index",
       "unit": null,
@@ -53,10 +42,6 @@
     "gpci_pe": {
       "name": "gpci_pe",
       "type": "float64",
-      "precision": 3,
-      "scale": 3,
-      "rounding_mode": "HALF_UP",
-      "multipleOf": 0.001,
       "nullable": false,
       "description": "Practice expense GPCI index",
       "unit": null,
@@ -69,10 +54,6 @@
     "gpci_malp": {
       "name": "gpci_malp",
       "type": "float64",
-      "precision": 3,
-      "scale": 3,
-      "rounding_mode": "HALF_UP",
-      "multipleOf": 0.001,
       "nullable": false,
       "description": "Malpractice GPCI index",
       "unit": null,
@@ -105,18 +86,6 @@
       "max_value": null,
       "pattern": null,
       "sample_values": null
-    },
-    "row_content_hash": {
-      "name": "row_content_hash",
-      "type": "str",
-      "nullable": false,
-      "description": "64-character SHA-256 hex digest of row content per STD-parser-contracts v1.1 §5.2. Computed from columns in declared order excluding metadata fields. Uses schema-defined precision for numeric normalization.",
-      "unit": null,
-      "domain": null,
-      "min_value": null,
-      "max_value": null,
-      "pattern": "^[a-f0-9]{64}$",
-      "sample_values": ["a1b2c3d4e5f6789012345678901234567890123456789012345678901234"]
     }
   },
   "primary_keys": [
@@ -135,23 +104,5 @@
   "quality_thresholds": {
     "null_rate_threshold": 0.0,
     "duplicate_rate_threshold": 0.0
-  },
-  "storage_note": "Stored as float64 in Parquet for efficiency. Canonicalized to Decimal with schema-defined precision before hashing to ensure determinism.",
-  "changelog": [
-    {
-      "version": "1.1",
-      "date": "2025-10-15",
-      "changes": [
-        "Added precision (3dp), rounding_mode (HALF_UP), scale, multipleOf to 3 GPCI numeric columns for hash stability",
-        "Updated row_content_hash pattern from 16-char to 64-char SHA-256 digest",
-        "Added hash_spec_version, column_order, hash_metadata_exclusions for deterministic hashing",
-        "Enables schema-driven numeric precision per STD-parser-contracts v1.1"
-      ]
-    },
-    {
-      "version": "1.0",
-      "date": "2025-09-30",
-      "changes": ["Initial GPCI schema contract"]
-    }
-  ]
+  }
 }
