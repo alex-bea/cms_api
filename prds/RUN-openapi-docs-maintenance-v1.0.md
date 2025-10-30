@@ -63,7 +63,7 @@
 3. Regenerate Markdown endpoint table (`docs/api/endpoints.md`) via `make docs-api`  
 4. Run `make lint-openapi` (Spectral) | Authoring engineer |
 | Release candidate build | Bundle HTML: `npx redoc-cli bundle docs/api/openapi.json -o docs/api/index.html` | Platform Eng |
-| Deploy to Render | Attach latest spec artifacts to release tag; ensure Render static site (if used) updated | Release manager |
+| Deploy to Render | Attach latest spec artifacts to release tag; ensure Render static site (if used) updated; verify required curated datasets (e.g., RVU) were published with non-zero record counts before propagating docs | Release manager |
 
 **Automation recommendations**
 - Add `make docs-api` target to regenerate JSON + HTML + Markdown endpoint table (writes to `docs/api/endpoints.md`).  
