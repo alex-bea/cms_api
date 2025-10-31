@@ -4192,9 +4192,10 @@ class RVUIngestor(BaseDISIngestor):
                     "state": str(row.get('state', '')).strip()[:2],
                     "locality_id": locality_id,
                     "locality_name": str(row.get('locality_name', '')).strip()[:100] if pd.notna(row.get('locality_name')) else None,
-                    "work_gpci": float(row.get('work_gpci')) if pd.notna(row.get('work_gpci')) else None,
-                    "pe_gpci": float(row.get('pe_gpci')) if pd.notna(row.get('pe_gpci')) else None,
-                    "mp_gpci": float(row.get('mp_gpci')) if pd.notna(row.get('mp_gpci')) else None,
+                    # Map parser output columns (gpci_work/gpci_pe/gpci_mp) to database columns (work_gpci/pe_gpci/mp_gpci)
+                    "work_gpci": float(row.get('gpci_work') or row.get('work_gpci')) if pd.notna(row.get('gpci_work') or row.get('work_gpci')) else None,
+                    "pe_gpci": float(row.get('gpci_pe') or row.get('pe_gpci')) if pd.notna(row.get('gpci_pe') or row.get('pe_gpci')) else None,
+                    "mp_gpci": float(row.get('gpci_mp') or row.get('gpci_malp') or row.get('mp_gpci')) if pd.notna(row.get('gpci_mp') or row.get('gpci_malp') or row.get('mp_gpci')) else None,
                     "effective_start": effective_start,
                     "effective_end": effective_end,
                     "source_file": str(row.get('source_filename', batch_id)),
