@@ -1791,7 +1791,8 @@ class RVUIngestor(BaseDISIngestor):
         release_id: str,
         source_file: Optional[SourceFile],
         inner_filename: str,
-        file_bytes: bytes
+        file_bytes: bytes,
+        batch_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Construct parser metadata payload."""
         context = self._derive_release_context(inner_filename, release_id)
@@ -1805,6 +1806,10 @@ class RVUIngestor(BaseDISIngestor):
             "schema_id": self._dataset_parsers[dataset_key]["schema_id"],
             "source_release": context["source_release"]
         }
+        # Provenance tracking (Phase 2) - include batch_id when available
+        if batch_id:
+            metadata["batch_id"] = batch_id
+        
         # Provide a layout hint for fixed-width parsers when available
         metadata["layout_version"] = f"v{context['product_year']}{context['release_letter']}.0"
         return metadata
@@ -2075,6 +2080,7 @@ class RVUIngestor(BaseDISIngestor):
         parser_metrics: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         rejects_summary: Dict[str, int] = defaultdict(int)
         release_id = raw_batch.metadata.get("release_id", self.current_release_id or "unknown")
+        batch_id = raw_batch.metadata.get("batch_id", raw_batch.batch_id)
         
         for filename, content in raw_content.items():
             if content is None:
@@ -2204,7 +2210,8 @@ class RVUIngestor(BaseDISIngestor):
                             release_id,
                             source_lookup.get(filename),
                             Path(inner_name).name,
-                            inner_bytes
+                            inner_bytes,
+                            batch_id=batch_id
                         )
                         try:
                             # QTS §2.1.1 Implementation Analysis - Log parser invocation
@@ -2322,7 +2329,8 @@ class RVUIngestor(BaseDISIngestor):
                     release_id,
                     source_lookup.get(filename),
                     Path(filename).name,
-                    content_bytes
+                    content_bytes,
+                    batch_id=batch_id
                 )
                 try:
                     # QTS §2.1.1 Implementation Analysis - Log parser invocation

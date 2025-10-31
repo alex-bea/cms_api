@@ -48,7 +48,7 @@ USER appuser
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
-# Run migrations and start server
+# Run migrations/bootstrap and start server
 # Use $PORT for Render compatibility (Render sets PORT=10000)
 # Single worker to reduce memory footprint (512MB target for Starter tier)
-CMD ["sh", "-c", "if [ \"$RUN_MIGRATIONS\" = \"true\" ]; then alembic upgrade head; fi && uvicorn cms_pricing.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
+CMD ["sh", "-c", "set -e; if [ \"$RUN_BOOTSTRAP_TEST_DB\" = \"true\" ] || [ \"$ENVIRONMENT\" = \"staging\" ]; then python tests/scripts/bootstrap_test_db.py --alembic-ini /app/alembic.ini; elif [ \"$RUN_MIGRATIONS\" = \"true\" ]; then alembic upgrade head; fi; uvicorn cms_pricing.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]

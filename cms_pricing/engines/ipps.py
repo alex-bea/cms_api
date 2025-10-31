@@ -12,6 +12,9 @@ import structlog
 
 logger = structlog.get_logger()
 
+# Dataset identifier constant (Phase 2.5)
+DATASET_ID = "IPPS"
+
 
 class IPPSEngine(BasePricingEngine):
     """Inpatient Prospective Payment System pricing engine"""
@@ -123,6 +126,35 @@ class IPPSEngine(BasePricingEngine):
             beneficiary_total_cents = int(beneficiary_total * 100)
             program_payment_cents = int(program_payment * 100)
             
+            # Build trace refs with provenance (Phase 2.5)
+            dataset_id = DATASET_ID
+            trace_refs = [
+                f"ipps_{fy}_{code}",
+                f"ipps_base_{fy}",
+                f"wage_index_{year}_{cbsa}"
+            ]
+            
+            # Add IPPS DRG provenance (standardized format)
+            if drg_data.release_id:
+                trace_refs.append(f"{dataset_id}:release:{drg_data.release_id}")
+            if drg_data.batch_id:
+                trace_refs.append(f"{dataset_id}:batch:{drg_data.batch_id}")
+            
+            # Add base rate provenance if available
+            if base_rate_data.release_id:
+                trace_refs.append(f"IPPSBaseRate:release:{base_rate_data.release_id}")
+            if base_rate_data.batch_id:
+                trace_refs.append(f"IPPSBaseRate:batch:{base_rate_data.batch_id}")
+            
+            # Add wage index provenance if available
+            if wage_index_data.release_id:
+                trace_refs.append(f"WageIndex:release:{wage_index_data.release_id}")
+            if wage_index_data.batch_id:
+                trace_refs.append(f"WageIndex:batch:{wage_index_data.batch_id}")
+            
+            # Filter out None values and deduplicate while preserving order
+            trace_refs = list(dict.fromkeys([ref for ref in trace_refs if ref is not None]))
+            
             return {
                 "allowed_cents": allowed_cents,
                 "beneficiary_deductible_cents": beneficiary_deductible_cents,
@@ -134,11 +166,11 @@ class IPPSEngine(BasePricingEngine):
                 "source": "benchmark",
                 "facility_specific": False,
                 "packaged": False,
-                "trace_refs": [
-                    f"ipps_{fy}_{code}",
-                    f"ipps_base_{fy}",
-                    f"wage_index_{year}_{cbsa}"
-                ]
+                "trace_refs": trace_refs,
+                # Direct provenance fields (Phase 2.5)
+                "release_id": drg_data.release_id,
+                "batch_id": drg_data.batch_id,
+                "dataset_id": dataset_id
             }
             
         except Exception as e:

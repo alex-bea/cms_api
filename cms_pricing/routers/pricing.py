@@ -32,7 +32,21 @@ async def price_single_code(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    """Price a single code/component"""
+    """
+    Price a single code/component.
+    
+    **Provenance Metadata (Phase 2):**
+    The response includes provenance information to trace pricing results back to specific CMS data versions:
+    
+    - **datasets_used**: List of datasets with release_id and batch_id. May contain None values for legacy data.
+    - **trace_refs**: Trace references in standardized format:
+      - Format: `{dataset_id}:release:{release_id}` or `{dataset_id}:batch:{batch_id}`
+      - Examples: 'MPFS:release:mpfs_2025_annual_20250115', 'OPPS:batch:batch_abc123'
+      - Automatically deduplicated
+    
+    **Backward Compatibility:**
+    Legacy data (ingested before Phase 2) will have None values for release_id and batch_id.
+    """
     
     # Validate inputs
     if not zip.isdigit() or len(zip) != 5:
@@ -80,7 +94,25 @@ async def price_plan(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    """Price a complete treatment plan"""
+    """
+    Price a complete treatment plan.
+    
+    **Provenance Metadata (Phase 2):**
+    The response includes provenance information in two places:
+    
+    1. **datasets_used** (response.datasets_used): List of datasets with release_id and batch_id
+       - May contain None values for legacy data ingested before Phase 2
+       - Enables traceability to specific CMS data versions
+    
+    2. **trace_refs** (line_items[].trace_refs): Trace references in standardized format
+       - Format: `{dataset_id}:release:{release_id}` or `{dataset_id}:batch:{batch_id}`
+       - Examples: 'MPFS:release:mpfs_2025_annual_20250115', 'OPPS:batch:batch_abc123'
+       - Automatically deduplicated
+    
+    **Backward Compatibility:**
+    Legacy data (ingested before Phase 2) will have None values for release_id and batch_id.
+    The API structure remains consistent; consumers should handle optional provenance gracefully.
+    """
     
     try:
         pricing_service = PricingService(db)
@@ -100,7 +132,20 @@ async def compare_locations(
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    """Compare pricing between two locations"""
+    """
+    Compare pricing between two locations.
+    
+    **Provenance Metadata (Phase 2):**
+    Both location_a and location_b responses include provenance information:
+    
+    - **datasets_used**: List of datasets with release_id and batch_id for each location
+    - **trace_refs**: Trace references in standardized format (see /price endpoint documentation)
+    
+    The parity_report validates that both locations use the same dataset snapshots.
+    
+    **Backward Compatibility:**
+    Legacy data (ingested before Phase 2) will have None values for release_id and batch_id.
+    """
     
     try:
         pricing_service = PricingService(db)

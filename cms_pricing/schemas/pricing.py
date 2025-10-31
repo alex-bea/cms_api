@@ -39,6 +39,13 @@ class PricingRequest(BaseModel):
         if v is not None and (not v.isdigit() or len(v) != 6):
             raise ValueError('CCN must be exactly 6 digits')
         return v
+    
+    @field_validator('quarter')
+    @classmethod
+    def validate_quarter(cls, v):
+        if v is not None and v not in ['1', '2', '3', '4']:
+            raise ValueError('Quarter must be 1, 2, 3, or 4')
+        return v
 
 
 class LineItemResponse(BaseModel):
@@ -70,7 +77,17 @@ class LineItemResponse(BaseModel):
     unit_conversion: Optional[Dict[str, Any]] = Field(None, description="Unit conversion details")
     
     # Trace references
-    trace_refs: List[str] = Field(default_factory=list, description="Trace reference IDs")
+    trace_refs: List[str] = Field(
+        default_factory=list,
+        description="""Trace reference IDs for debugging and audit purposes.
+        
+    Format:
+    - Dataset-specific references: '{dataset}_{year}_{params}_{code}' (e.g., 'mpfs_2025_01_99213')
+    - Provenance references (Phase 2): '{dataset_id}:release:{release_id}' or '{dataset_id}:batch:{batch_id}'
+      Examples: 'MPFS:release:mpfs_2025_annual_20250115', 'MPFS:batch:batch_abc123'
+    
+    Duplicates are automatically removed to keep logs clean."""
+    )
 
 
 class GeographyResponse(BaseModel):
@@ -113,7 +130,31 @@ class PricingResponse(BaseModel):
     facility_specific_used: bool = Field(default=False, description="Facility-specific rates used")
     
     # Dataset information
-    datasets_used: List[Dict[str, Any]] = Field(..., description="Datasets and versions used")
+    datasets_used: List[Dict[str, Any]] = Field(
+        ...,
+        description="""List of datasets used in this pricing calculation, including provenance metadata.
+    
+    Each entry contains:
+    - dataset_id (str): Dataset identifier (e.g., 'MPFS', 'OPPS', 'ASC', 'CLFS', 'DMEPOS', 'IPPS')
+    - release_id (str, optional): CMS release identifier (e.g., 'mpfs_2025_annual_20250115'). 
+      May be None for legacy data ingested before Phase 2.
+    - batch_id (str, optional): Batch identifier from ingestion run (e.g., 'batch_abc123').
+      May be None for legacy data ingested before Phase 2.
+    - effective_from (str, optional): ISO date when dataset snapshot becomes effective
+    - effective_to (str, optional): ISO date when dataset snapshot expires (None for current)
+    - digest (str, optional): Content digest/hash of dataset snapshot
+    
+    Example:
+    [
+        {
+            "dataset_id": "MPFS",
+            "release_id": "mpfs_2025_annual_20250115",
+            "batch_id": "batch_abc123",
+            "effective_from": "2025-01-01",
+            "effective_to": None
+        }
+    ]"""
+    )
     
     # Warnings
     warnings: List[str] = Field(default_factory=list, description="Pricing warnings")
@@ -151,6 +192,13 @@ class ComparisonRequest(BaseModel):
     def validate_ccn(cls, v):
         if v is not None and (not v.isdigit() or len(v) != 6):
             raise ValueError('CCN must be exactly 6 digits')
+        return v
+    
+    @field_validator('quarter')
+    @classmethod
+    def validate_quarter(cls, v):
+        if v is not None and v not in ['1', '2', '3', '4']:
+            raise ValueError('Quarter must be 1, 2, 3, or 4')
         return v
 
 

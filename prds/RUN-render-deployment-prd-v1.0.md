@@ -1773,7 +1773,9 @@ services:
       - key: LOG_LEVEL
         value: INFO
       - key: ENVIRONMENT
-        value: production
+        value: production  # Set to "staging" on non-prod services to auto-run bootstrap seeds
+      - key: RUN_BOOTSTRAP_TEST_DB
+        value: "false"
     
     # Scaling (optional)
     scaling:
@@ -1813,6 +1815,8 @@ databases:
 3. Connect repository
 4. Select `render.yaml`
 5. Review and create
+
+> **Seeding note:** The Docker entrypoint now runs `tests/scripts/bootstrap_test_db.py` automatically whenever `ENVIRONMENT` is set to `staging`, or when the optional `RUN_BOOTSTRAP_TEST_DB=true` flag is present. This ensures staging databases receive the minimal reference datasets on first boot while keeping production untouched.
 
 ---
 

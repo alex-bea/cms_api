@@ -18,6 +18,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import nullslast
 from pydantic import BaseModel, Field
 
 from cms_pricing.database import get_db
@@ -28,6 +29,7 @@ from cms_pricing.models.opps import (
     OPPSRatesEnriched, 
     RefSILookup
 )
+from cms_pricing.models.fee_schedules import WageIndex
 
 
 router = APIRouter()
@@ -143,6 +145,33 @@ class OPPSErrorResponse(BaseModel):
     timestamp: datetime
 
 
+class WageIndexItem(BaseModel):
+    """Wage index item response model."""
+    id: str
+    year: int
+    quarter: Optional[str]
+    cbsa: str
+    wage_index: Decimal
+    effective_from: date
+    effective_to: Optional[date]
+    release_id: Optional[str] = Field(None, description="Release identifier. Will be None until Phase 2 provenance migration is complete.")
+    batch_id: Optional[str] = Field(None, description="Batch identifier. Will be None until Phase 2 provenance migration is complete.")
+    
+    class Config:
+        from_attributes = True
+
+
+class WageIndexListResponse(BaseModel):
+    """Wage index list response model."""
+    items: List[WageIndexItem]
+    total: int
+    page: int
+    page_size: int
+    has_next: bool
+    has_prev: bool
+    correlation_id: str
+
+
 def get_correlation_id(request: Request) -> str:
     """Get correlation ID from request headers or generate new one."""
     correlation_id = request.headers.get("X-Correlation-Id")
@@ -195,7 +224,7 @@ async def get_health(
 async def get_apc_payments(
     request: Request,
     year: Optional[int] = Query(None, description="Filter by year"),
-    quarter: Optional[int] = Query(None, description="Filter by quarter"),
+    quarter: Optional[int] = Query(None, ge=1, le=4, description="Filter by quarter (1-4)"),
     apc_code: Optional[str] = Query(None, description="Filter by APC code"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=1000, description="Page size"),
@@ -255,7 +284,7 @@ async def get_apc_payments(
 async def get_hcpcs_crosswalk(
     request: Request,
     year: Optional[int] = Query(None, description="Filter by year"),
-    quarter: Optional[int] = Query(None, description="Filter by quarter"),
+    quarter: Optional[int] = Query(None, ge=1, le=4, description="Filter by quarter (1-4)"),
     hcpcs_code: Optional[str] = Query(None, description="Filter by HCPCS code"),
     modifier: Optional[str] = Query(None, description="Filter by modifier"),
     status_indicator: Optional[str] = Query(None, description="Filter by status indicator"),
@@ -324,7 +353,7 @@ async def get_hcpcs_crosswalk(
 async def get_rates_enriched(
     request: Request,
     year: Optional[int] = Query(None, description="Filter by year"),
-    quarter: Optional[int] = Query(None, description="Filter by quarter"),
+    quarter: Optional[int] = Query(None, ge=1, le=4, description="Filter by quarter (1-4)"),
     apc_code: Optional[str] = Query(None, description="Filter by APC code"),
     ccn: Optional[str] = Query(None, description="Filter by CCN"),
     cbsa_code: Optional[str] = Query(None, description="Filter by CBSA code"),
@@ -447,7 +476,7 @@ async def get_si_lookup(
 async def get_stats(
     request: Request,
     year: Optional[int] = Query(None, description="Filter by year"),
-    quarter: Optional[int] = Query(None, description="Filter by quarter"),
+    quarter: Optional[int] = Query(None, ge=1, le=4, description="Filter by quarter (1-4)"),
     db: Session = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
@@ -512,6 +541,147 @@ async def get_stats(
             content=OPPSErrorResponse(
                 error=f"Failed to retrieve stats: {str(e)}",
                 code="STATS_RETRIEVAL_FAILED",
+                correlation_id=correlation_id,
+                timestamp=datetime.utcnow()
+            ).dict(),
+            headers={"X-Correlation-Id": correlation_id}
+        )
+
+
+@router.get("/wage-index", response_model=WageIndexListResponse)
+async def get_wage_index(
+    request: Request,
+    cbsa: Optional[str] = Query(None, description="Filter by CBSA code (5 characters)"),
+    year: Optional[int] = Query(None, description="Filter by year"),
+    quarter: Optional[str] = Query(None, pattern='^[1-4]$', description="Filter by quarter (1-4)"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=1000, description="Page size"),
+    db: Session = Depends(get_db),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get facility-level wage index data for OPPS and IPPS.
+    
+    This endpoint provides wage index lookups by CBSA for hospital bill validation.
+    Wage index values are used to adjust national payment rates for geographic variation.
+    """
+    correlation_id = get_correlation_id(request)
+    
+    try:
+        from sqlalchemy import and_, or_
+        
+        # Build query
+        query = db.query(WageIndex)
+        
+        filters = []
+        if year:
+            filters.append(WageIndex.year == year)
+        if quarter:
+            # Coalesce quarter value
+            quarter_value = quarter if quarter else "1"
+            filters.append(WageIndex.quarter == quarter_value)
+        elif year:
+            # If year specified but no quarter, return all quarters for that year
+            pass
+        if cbsa:
+            if len(cbsa) != 5 or not cbsa.isdigit():
+                raise HTTPException(
+                    status_code=400,
+                    detail="CBSA must be exactly 5 digits"
+                )
+            filters.append(WageIndex.cbsa == cbsa)
+        
+        if filters:
+            query = query.filter(and_(*filters))
+        
+        # Get total count
+        total = query.count()
+        
+        # Single-record lookup mode: if all filters provided, return just latest matching record
+        single_lookup = cbsa and year and quarter
+        
+        if single_lookup:
+            # Get latest matching record
+            # Build order_by clauses - only include created_at if column exists
+            ordering = [WageIndex.effective_from.desc()]
+            if hasattr(WageIndex, 'created_at'):
+                ordering.append(WageIndex.created_at.desc())
+            
+            item = query.order_by(*ordering).first()
+            
+            if not item:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No wage index found for CBSA {cbsa}, year {year}, quarter {quarter}"
+                )
+            
+            # Convert to response format
+            wage_item = WageIndexItem(
+                id=str(item.id),
+                year=item.year,
+                quarter=item.quarter,
+                cbsa=item.cbsa,
+                wage_index=Decimal(str(item.wage_index)),
+                effective_from=item.effective_from,
+                effective_to=item.effective_to,
+                release_id=getattr(item, 'release_id', None),
+                batch_id=getattr(item, 'batch_id', None)
+            )
+            
+            return WageIndexListResponse(
+                items=[wage_item],
+                total=1,
+                page=1,
+                page_size=1,
+                has_next=False,
+                has_prev=False,
+                correlation_id=correlation_id
+            )
+        
+        # Multi-record paginated response
+        offset = (page - 1) * page_size
+        
+        # Order by year desc, then quarter desc (nulls last for IPPS annual records), then CBSA asc
+        items = query.order_by(
+            WageIndex.year.desc(),
+            nullslast(WageIndex.quarter.desc()),
+            WageIndex.cbsa.asc()
+        ).offset(offset).limit(page_size).all()
+        
+        # Convert to response format
+        response_items = [
+            WageIndexItem(
+                id=str(item.id),
+                year=item.year,
+                quarter=item.quarter,
+                cbsa=item.cbsa,
+                wage_index=Decimal(str(item.wage_index)),
+                effective_from=item.effective_from,
+                effective_to=item.effective_to,
+                release_id=getattr(item, 'release_id', None),
+                batch_id=getattr(item, 'batch_id', None)
+            )
+            for item in items
+        ]
+        
+        return WageIndexListResponse(
+            items=response_items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            has_next=offset + page_size < total,
+            has_prev=page > 1,
+            correlation_id=correlation_id
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=OPPSErrorResponse(
+                error=f"Failed to retrieve wage index: {str(e)}",
+                code="WAGE_INDEX_RETRIEVAL_FAILED",
                 correlation_id=correlation_id,
                 timestamp=datetime.utcnow()
             ).dict(),

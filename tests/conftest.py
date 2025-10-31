@@ -10,6 +10,7 @@ import asyncio
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.exc import ProgrammingError, OperationalError
 import importlib.util
 from typing import Dict, Any
 
@@ -175,6 +176,50 @@ def test_data_dir():
     creator = RVUTestDatasetCreator(base_dir)
     data_dir = creator.create_all()
     return data_dir
+
+
+@pytest.fixture(scope="function")
+def db_requires_plans_table(test_db_session):
+    """Check if the plans table exists, skip test if not.
+    
+    This fixture provides graceful skipping for tests that require database tables
+    that may not be set up yet. It checks for the 'plans' table as a proxy for
+    whether the database has been migrated.
+    
+    Usage:
+        def test_something(db_requires_plans_table, client, ...):
+            # Test will skip if plans table doesn't exist
+            ...
+    """
+    try:
+        # Check if plans table exists by querying it
+        test_db_session.execute(text("SELECT 1 FROM plans LIMIT 1"))
+        yield test_db_session
+    except (ProgrammingError, OperationalError) as e:
+        if "does not exist" in str(e) or "relation" in str(e).lower():
+            pytest.skip(
+                "Database tables not initialized. Run: "
+                "python tests/scripts/bootstrap_test_db.py --database-url $TEST_DATABASE_URL"
+            )
+        raise
+
+
+def require_db_table(test_db_session, table_name: str):
+    """Helper function to check if a table exists, skip test if not.
+    
+    Can be used in tests to check for specific tables:
+        require_db_table(test_db_session, "plans")
+    """
+    try:
+        test_db_session.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1"))
+        return True
+    except (ProgrammingError, OperationalError) as e:
+        if "does not exist" in str(e) or "relation" in str(e).lower():
+            pytest.skip(
+                f"Table '{table_name}' does not exist. "
+                "Run: python tests/scripts/bootstrap_test_db.py --database-url $TEST_DATABASE_URL"
+            )
+        raise
 
 
 # Pytest configuration

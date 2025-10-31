@@ -12,6 +12,7 @@ from .drugs import DrugASP, DrugNADAC, NDCHCPCSXwalk
 from .plans import Plan, PlanComponent
 from .benefits import BenefitParams
 from .snapshots import Snapshot
+from .dataset_snapshots import DatasetSnapshot
 from .runs import Run, RunInput, RunOutput, RunTrace
 from .facility_rates import HospitalMRFRate
 from .rvu import (
@@ -31,6 +32,7 @@ __all__ = [
     "Plan", "PlanComponent",
     "BenefitParams",
     "Snapshot",
+    "DatasetSnapshot",
     "Run", "RunInput", "RunOutput", "RunTrace",
     "HospitalMRFRate",
     "Release", "RVUItem", "GPCIIndex", "OPPSCap", "AnesCF", "LocalityCounty",

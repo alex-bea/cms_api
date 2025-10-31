@@ -33,6 +33,7 @@ Defines the canonical requirements for producing, validating, and distributing A
    - Overview + auth + rate limits + environment URLs.  
    - Grouped endpoints with descriptions, tags, and operationIds (mirrored in `docs/api/endpoints.md`; see workflow in `prds/RUN-openapi-docs-maintenance-v1.0.md` §3).  
    - Request/response schemas documented via OpenAPI components.  
+   - Provenance metadata documented wherever responses include dataset tracking (e.g., `datasets_used`, `trace_refs`), including field descriptions and standardized formats (`{dataset_id}:release:{release_id}`, `{dataset_id}:batch:{batch_id}`).  
    - Copy-pastable examples + common error payloads.  
    - Observability endpoints (`/metrics`, `/health`, `/trace`) and operational guidance.  
    - Versioning + deprecation notes.  

@@ -12,6 +12,9 @@ import structlog
 
 logger = structlog.get_logger()
 
+# Dataset identifier constant (Phase 2.5)
+DATASET_ID = "MPFS"
+
 
 class MPSFEngine(BasePricingEngine):
     """Medicare Physician Fee Schedule pricing engine"""
@@ -48,11 +51,11 @@ class MPSFEngine(BasePricingEngine):
             if not locality_id:
                 raise ValueError("No locality found for ZIP code")
             
-            # Get MPFS data
+            # Get MPFS data (FeeMPFS contains base RVUs - no locality in the table itself)
+            # Locality adjustment is applied via GPCI lookup
             mpfs_data = self.db.query(FeeMPFS).filter(
                 and_(
                     FeeMPFS.year == year,
-                    FeeMPFS.locality_id == locality_id,
                     FeeMPFS.hcpcs == code,
                     FeeMPFS.effective_from <= f"{year}-12-31",
                     or_(
@@ -63,7 +66,7 @@ class MPSFEngine(BasePricingEngine):
             ).first()
             
             if not mpfs_data:
-                raise ValueError(f"No MPFS data found for code {code} in locality {locality_id}")
+                raise ValueError(f"No MPFS data found for code {code} for year {year}")
             
             # Get GPCI
             gpci_data = self.db.query(GPCI).filter(
@@ -123,6 +126,34 @@ class MPSFEngine(BasePricingEngine):
             beneficiary_total_cents = int(cost_sharing["beneficiary_total"] * 100)
             program_payment_cents = int(cost_sharing["program_payment"] * 100)
             
+            # Build trace refs with provenance (Phase 2.5)
+            dataset_id = DATASET_ID
+            trace_refs = [
+                f"mpfs_{year}_{locality_id}_{code}",
+                f"gpci_{year}_{locality_id}",
+                f"cf_{year}_MPFS"
+            ]
+            
+            # Add MPFS provenance (standardized format)
+            if mpfs_data.release_id:
+                trace_refs.append(f"{dataset_id}:release:{mpfs_data.release_id}")
+            if mpfs_data.batch_id:
+                trace_refs.append(f"{dataset_id}:batch:{mpfs_data.batch_id}")
+            
+            # Add supporting data provenance if available
+            if gpci_data.release_id:
+                trace_refs.append(f"GPCI:release:{gpci_data.release_id}")
+            if gpci_data.batch_id:
+                trace_refs.append(f"GPCI:batch:{gpci_data.batch_id}")
+            
+            if cf_data.release_id:
+                trace_refs.append(f"CF:release:{cf_data.release_id}")
+            if cf_data.batch_id:
+                trace_refs.append(f"CF:batch:{cf_data.batch_id}")
+            
+            # Filter out None values and deduplicate while preserving order
+            trace_refs = list(dict.fromkeys([ref for ref in trace_refs if ref is not None]))
+            
             return {
                 "allowed_cents": allowed_cents,
                 "beneficiary_deductible_cents": beneficiary_deductible_cents,
@@ -134,11 +165,11 @@ class MPSFEngine(BasePricingEngine):
                 "source": "benchmark",
                 "facility_specific": False,
                 "packaged": False,
-                "trace_refs": [
-                    f"mpfs_{year}_{locality_id}_{code}",
-                    f"gpci_{year}_{locality_id}",
-                    f"cf_{year}_MPFS"
-                ]
+                "trace_refs": trace_refs,
+                # Direct provenance fields (Phase 2.5)
+                "release_id": mpfs_data.release_id,
+                "batch_id": mpfs_data.batch_id,
+                "dataset_id": dataset_id
             }
             
         except Exception as e:

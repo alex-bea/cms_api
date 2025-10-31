@@ -263,6 +263,176 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 ---
 
+### Task 67: Fix Connection Pool Configuration for Sync ORM
+
+**Category:** Database  
+**Priority:** High  
+**Estimated Time:** 0.5 day  
+**Labels:** database, performance, high-priority  
+**Status:** ⏳ TODO  
+
+**Context:** `cms_pricing/database.py:12` uses `StaticPool`, forcing all FastAPI requests to share a single connection. Under concurrency this creates lock contention and request pileups. Swapping to SQLAlchemy’s default QueuePool with tuned limits satisfies the pooling standard in `prds/STD-database-platform-prd-v1.0.md`.
+
+**Detailed Steps:**
+1. Update `create_engine` to drop `StaticPool`, set sensible `pool_size`, `max_overflow`, and `pool_timeout`, and expose overrides through settings.  
+2. Run load tests against `/pricing/price` and `/pricing/codes/price` to confirm connection reuse and absence of pool exhaustion errors.  
+3. Document the new pool defaults in the database runbook and wire env overrides for staging/prod.
+
+---
+
+### Task 68: Repair Async DB Connector URL
+
+**Category:** Database  
+**Priority:** Medium  
+**Estimated Time:** 0.25 day  
+**Labels:** database, devops, medium-priority  
+**Status:** ⏳ TODO  
+
+**Context:** `cms_pricing/database.py:35` rewrites the Postgres DSN to `postgresql+asyncpg://`, which `asyncpg.connect` cannot parse. Background tasks therefore fail to connect. Aligning the DSN with asyncpg expectations restores the asynchronous dependency path.
+
+**Detailed Steps:**
+1. Remove the `.replace()` shim so `asyncpg.connect` receives the native DSN; add lightweight retry/error logging.  
+2. Add an integration smoke test that exercises an async code path (or stub) to prove the connector works.  
+3. Ensure deployment secrets and env files carry the same DSN for async workers; update docs if format requirements change.
+
+---
+
+### Task 69: Cache Parsed API Keys
+
+**Category:** Security  
+**Priority:** Medium  
+**Estimated Time:** 0.25 day  
+**Labels:** security, api, medium-priority  
+**Status:** ⏳ TODO  
+
+**Context:** Both `cms_pricing/auth.py:12` and `cms_pricing/middleware.py:68` split the comma-separated API key string on every request. Caching the parsed set at startup reduces overhead and aligns with the RBAC readiness plan.
+
+**Detailed Steps:**
+1. Cache the parsed API key list/set on `settings` during startup and reuse it across auth checks.  
+2. Update unit tests to cover cached vs reloaded configurations (including env override scenarios).  
+3. Add debug metrics or logs to confirm validation hits the cached lookup without repeated parsing.
+
+---
+
+### Task 70: Provide Default Deductible in Cost Sharing Helper
+
+**Category:** API Development  
+**Priority:** Medium  
+**Estimated Time:** 0.25 day  
+**Labels:** api, backend, medium-priority  
+**Status:** ⏳ TODO  
+
+**Context:** `_calculate_beneficiary_cost_sharing` (`cms_pricing/engines/base.py:39`) requires `deductible_remaining`, yet engine callers omit it. The helper raises `TypeError`, preventing correct pricing. Supplying a default unblocks engine usage and matches the pricing PRD.
+
+**Detailed Steps:**
+1. Give `_calculate_beneficiary_cost_sharing` a sensible default (e.g., `deductible_remaining: float = 0.0`).  
+2. Update engines to pass explicit remaining deductibles when they are known (future-proof for plan data).  
+3. Extend engine unit tests to cover defaulted and explicit deductible paths.
+
+---
+
+### Task 71: Normalize Date Filters in Pricing Engines
+
+**Category:** Performance  
+**Priority:** Medium  
+**Estimated Time:** 0.5 day  
+**Labels:** performance, database, medium-priority  
+**Status:** ⏳ TODO  
+
+**Context:** `cms_pricing/engines/mpfs.py:47`, `cms_pricing/engines/opps.py:64`, and `cms_pricing/engines/asc.py:53` compare dates as strings (`"2025-12-31"`). Casting forces table scans and breaks index usage. Switching to `date()` comparisons restores planner optimizations.
+
+**Detailed Steps:**
+1. Replace string literals with `date(year, month, day)` helpers and centralize the logic for reuse.  
+2. Share a utility function (e.g., `effective_date_filters.py`) so engines stay consistent and testable.  
+3. Benchmark representative queries before/after to confirm index usage and update performance notes.
+
+---
+
+### Task 72: Share Request-Scoped Sessions Across Engines
+
+**Category:** Performance  
+**Priority:** High  
+**Estimated Time:** 1 day  
+**Labels:** performance, api, database, high-priority  
+**Status:** ⏳ TODO  
+
+**Context:** `PricingService`, `GeographyService`, `TraceService`, and each engine instantiate `SessionLocal()` independently. Requests therefore hold multiple connections, complicating transaction boundaries and leaking sessions. Injecting the FastAPI-scoped session fixes lifecycle control.
+
+**Detailed Steps:**
+1. Refactor services/engines to accept an injected `Session` instead of constructing `SessionLocal()` internally.  
+2. Update FastAPI dependency wiring so a single session flows through the entire request and closes cleanly.  
+3. Add teardown tests (or instrumentation) ensuring connections release at request end and no extra commits occur.
+
+---
+
+### Task 73: Optimize Nearest-ZIP Candidate Query
+
+**Category:** Performance  
+**Priority:** Medium  
+**Estimated Time:** 0.5 day  
+**Labels:** performance, geography, medium-priority  
+**Status:** ⏳ TODO  
+
+**Context:** `_find_zip_candidates_in_radius` (`cms_pricing/services/geography.py:358`) re-queries the entire state for each radius increment and ignores effective-date filters. This slows ZIP resolution. A single, filtered fetch reused across iterations reduces DB load.
+
+**Detailed Steps:**
+1. Fetch eligible ZIP geometries once per resolution (respecting effective-date predicates) and reuse in-memory as radius expands.  
+2. Incorporate the effective-date filter logic into the initial query to avoid stale results.  
+3. Add profiling logs or tests to validate the reduced query count and improved response time.
+
+---
+
+### Task 74: Add LRU Cache for ZIP Resolutions
+
+**Category:** Performance  
+**Priority:** Medium  
+**Estimated Time:** 0.5 day  
+**Labels:** performance, caching, geography, medium-priority  
+**Status:** ⏳ TODO  
+
+**Context:** Popular ZIP codes trigger repeated DB lookups in `GeographyService.resolve_zip`. A small in-memory LRU/TTL cache (respecting HIPAA constraints) alleviates hot path latency and aligns with readiness caching goals.
+
+**Detailed Steps:**
+1. Introduce a TTL/LRU cache keyed by `(zip5, valuation_year, quarter)` with safe eviction policies.  
+2. Expose cache statistics via the geography health endpoint for observability.  
+3. Create fuzz tests ensuring stale entries expire and cache misses repopulate correctly.
+
+---
+
+### Task 75: Bulk-Insert Trace Inputs and Outputs
+
+**Category:** Monitoring  
+**Priority:** Medium  
+**Estimated Time:** 0.5 day  
+**Labels:** monitoring, performance, medium-priority  
+**Status:** ⏳ TODO  
+
+**Context:** `TraceService.store_run` (`cms_pricing/services/trace.py:89`) calls `self.db.add` in loops, generating many round-trips. Batched inserts or `bulk_save_objects` bring latency in line with observability SLOs.
+
+**Detailed Steps:**
+1. Switch to `session.add_all` or SQLAlchemy bulk APIs for `RunInput`/`RunOutput` collections.  
+2. Ensure the transaction commits once per run and capture timing metrics to validate improvement.  
+3. Update tests to assert row counts and ordering after bulk insertion.
+
+---
+
+### Task 76: Make ORM Usage Async-Friendly
+
+**Category:** Performance  
+**Priority:** Medium  
+**Estimated Time:** 1 day  
+**Labels:** performance, api, async, medium-priority  
+**Status:** ⏳ TODO  
+
+**Context:** Async endpoints call synchronous ORM code (`pricing_service.price_plan`, geography lookups), blocking the event loop. Wrapping database work in `asyncio.to_thread` (short term) or switching to `AsyncSession` preserves responsiveness.
+
+**Detailed Steps:**
+1. Wrap blocking ORM sections in `asyncio.to_thread` while planning the longer-term `AsyncSession` migration.  
+2. Add concurrency stress tests (or Locust scenarios) to demonstrate improved event-loop responsiveness.  
+3. Document the async pattern for future endpoints and enforce via linting/static checks.
+
+---
+
 ### Task 1: CMS Website Scraper
 
 **Category:** Data Ingestion
@@ -3605,4 +3775,3 @@ Based on E2E test output (`pytest tests/ingestors/test_rvu_ingestor_e2e.py`), we
 - TODO: Monitor Render logs/metrics for ingestion anomalies over next run.
 - TODO: Draft backlog item for SQL `ON CONFLICT DO UPDATE` upsert optimization.
 - TODO: Update external documentation / CHANGELOG with DB upsert fix summary.
-

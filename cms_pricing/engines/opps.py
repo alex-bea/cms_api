@@ -12,6 +12,9 @@ import structlog
 
 logger = structlog.get_logger()
 
+# Dataset identifier constant (Phase 2.5)
+DATASET_ID = "OPPS"
+
 
 class OPPSEngine(BasePricingEngine):
     """Outpatient Prospective Payment System pricing engine"""
@@ -48,11 +51,14 @@ class OPPSEngine(BasePricingEngine):
             if not cbsa:
                 raise ValueError("No CBSA found for ZIP code")
             
+            # Coalesce quarter to default to "1" if None
+            quarter_value = quarter if quarter is not None else "1"
+            
             # Get OPPS data
             opps_data = self.db.query(FeeOPPS).filter(
                 and_(
                     FeeOPPS.year == year,
-                    FeeOPPS.quarter == quarter or "1",  # Default to Q1
+                    FeeOPPS.quarter == quarter_value,
                     FeeOPPS.hcpcs == code,
                     FeeOPPS.effective_from <= f"{year}-12-31",
                     or_(
@@ -69,7 +75,7 @@ class OPPSEngine(BasePricingEngine):
             wage_index_data = self.db.query(WageIndex).filter(
                 and_(
                     WageIndex.year == year,
-                    WageIndex.quarter == quarter or "1",
+                    WageIndex.quarter == quarter_value,
                     WageIndex.cbsa == cbsa
                 )
             ).first()
@@ -107,6 +113,28 @@ class OPPSEngine(BasePricingEngine):
             beneficiary_total_cents = int(cost_sharing["beneficiary_total"] * 100)
             program_payment_cents = int(cost_sharing["program_payment"] * 100)
             
+            # Build trace refs with provenance (Phase 2.5)
+            dataset_id = DATASET_ID
+            trace_refs = [
+                f"opps_{year}_{quarter_value}_{code}",
+                f"wage_index_{year}_{quarter_value}_{cbsa}"
+            ]
+            
+            # Add OPPS provenance (standardized format)
+            if opps_data.release_id:
+                trace_refs.append(f"{dataset_id}:release:{opps_data.release_id}")
+            if opps_data.batch_id:
+                trace_refs.append(f"{dataset_id}:batch:{opps_data.batch_id}")
+            
+            # Add wage index provenance if available
+            if wage_index_data.release_id:
+                trace_refs.append(f"WageIndex:release:{wage_index_data.release_id}")
+            if wage_index_data.batch_id:
+                trace_refs.append(f"WageIndex:batch:{wage_index_data.batch_id}")
+            
+            # Filter out None values and deduplicate while preserving order
+            trace_refs = list(dict.fromkeys([ref for ref in trace_refs if ref is not None]))
+            
             return {
                 "allowed_cents": allowed_cents,
                 "beneficiary_deductible_cents": beneficiary_deductible_cents,
@@ -118,10 +146,11 @@ class OPPSEngine(BasePricingEngine):
                 "source": "benchmark",
                 "facility_specific": False,
                 "packaged": packaged,
-                "trace_refs": [
-                    f"opps_{year}_{quarter}_{code}",
-                    f"wage_index_{year}_{quarter}_{cbsa}"
-                ]
+                "trace_refs": trace_refs,
+                # Direct provenance fields (Phase 2.5)
+                "release_id": opps_data.release_id,
+                "batch_id": opps_data.batch_id,
+                "dataset_id": dataset_id
             }
             
         except Exception as e:

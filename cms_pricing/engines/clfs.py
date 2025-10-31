@@ -12,6 +12,9 @@ import structlog
 
 logger = structlog.get_logger()
 
+# Dataset identifier constant (Phase 2.5)
+DATASET_ID = "CLFS"
+
 
 class CLFSEngine(BasePricingEngine):
     """Clinical Laboratory Fee Schedule pricing engine"""
@@ -40,11 +43,14 @@ class CLFSEngine(BasePricingEngine):
         """Price a code using CLFS"""
         
         try:
+            # Coalesce quarter to default to "1" if None
+            quarter_value = quarter if quarter is not None else "1"
+            
             # Get CLFS data
             clfs_data = self.db.query(FeeCLFS).filter(
                 and_(
                     FeeCLFS.year == year,
-                    FeeCLFS.quarter == quarter or "1",  # Default to Q1
+                    FeeCLFS.quarter == quarter_value,
                     FeeCLFS.hcpcs == code,
                     FeeCLFS.effective_from <= f"{year}-12-31",
                     or_(
@@ -77,6 +83,21 @@ class CLFSEngine(BasePricingEngine):
             beneficiary_total_cents = int(cost_sharing["beneficiary_total"] * 100)
             program_payment_cents = int(cost_sharing["program_payment"] * 100)
             
+            # Build trace refs with provenance (Phase 2.5)
+            dataset_id = DATASET_ID
+            trace_refs = [
+                f"clfs_{year}_{quarter_value}_{code}"
+            ]
+            
+            # Add CLFS provenance (standardized format)
+            if clfs_data.release_id:
+                trace_refs.append(f"{dataset_id}:release:{clfs_data.release_id}")
+            if clfs_data.batch_id:
+                trace_refs.append(f"{dataset_id}:batch:{clfs_data.batch_id}")
+            
+            # Filter out None values and deduplicate while preserving order
+            trace_refs = list(dict.fromkeys([ref for ref in trace_refs if ref is not None]))
+            
             return {
                 "allowed_cents": allowed_cents,
                 "beneficiary_deductible_cents": beneficiary_deductible_cents,
@@ -88,9 +109,11 @@ class CLFSEngine(BasePricingEngine):
                 "source": "benchmark",
                 "facility_specific": False,
                 "packaged": False,
-                "trace_refs": [
-                    f"clfs_{year}_{quarter}_{code}"
-                ]
+                "trace_refs": trace_refs,
+                # Direct provenance fields (Phase 2.5)
+                "release_id": clfs_data.release_id,
+                "batch_id": clfs_data.batch_id,
+                "dataset_id": dataset_id
             }
             
         except Exception as e:

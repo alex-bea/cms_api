@@ -31,7 +31,9 @@ services:
       - key: LOG_LEVEL
         value: INFO
       - key: ENVIRONMENT
-        value: production
+        value: production  # Set to "staging" on non-prod services to auto-run bootstrap seeds
+      - key: RUN_BOOTSTRAP_TEST_DB
+        value: "false"  # Optional override to force bootstrap seeding on startup
       - key: API_KEYS
         sync: false  # Prompts for value at creation, never commits secrets
       - key: MAX_PROVIDERS
@@ -58,4 +60,3 @@ databases:
     region: oregon
     postgresVersion: "16"
     ipAllowList: []  # Defaults to allow all; restrict in production
-

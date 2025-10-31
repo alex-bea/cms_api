@@ -23,11 +23,15 @@ class FeeMPFS(Base):
     status_indicator = Column(String(2), nullable=True)
     effective_from = Column(Date, nullable=False)
     effective_to = Column(Date, nullable=True)
+    release_id = Column(String(50), nullable=True)
+    batch_id = Column(String(50), nullable=True)
     
     # Indexes
     __table_args__ = (
         Index("idx_mpfs_year_hcpcs", "year", "hcpcs"),
         Index("idx_mpfs_effective", "effective_from", "effective_to"),
+        Index("idx_fee_mpfs_release", "release_id"),
+        Index("idx_fee_mpfs_batch", "batch_id"),
     )
 
 
@@ -45,10 +49,14 @@ class GPCI(Base):
     gpci_mp = Column(Float, nullable=False)
     effective_from = Column(Date, nullable=False)
     effective_to = Column(Date, nullable=True)
+    release_id = Column(String(50), nullable=True)
+    batch_id = Column(String(50), nullable=True)
     
     # Indexes
     __table_args__ = (
         Index("idx_gpci_year_locality", "year", "locality_id"),
+        Index("idx_gpci_release", "release_id"),
+        Index("idx_gpci_batch", "batch_id"),
     )
 
 
@@ -63,6 +71,14 @@ class ConversionFactor(Base):
     source = Column(String(50), nullable=False)  # MPFS, ASC, etc.
     effective_from = Column(Date, nullable=False)
     effective_to = Column(Date, nullable=True)
+    release_id = Column(String(50), nullable=True)
+    batch_id = Column(String(50), nullable=True)
+    
+    # Indexes
+    __table_args__ = (
+        Index("idx_conversion_factors_release", "release_id"),
+        Index("idx_conversion_factors_batch", "batch_id"),
+    )
 
 
 class FeeOPPS(Base):
@@ -80,11 +96,15 @@ class FeeOPPS(Base):
     packaging_flag = Column(String(10), nullable=True)
     effective_from = Column(Date, nullable=False)
     effective_to = Column(Date, nullable=True)
+    release_id = Column(String(50), nullable=True)
+    batch_id = Column(String(50), nullable=True)
     
     # Indexes
     __table_args__ = (
         Index("idx_opps_year_quarter_hcpcs", "year", "quarter", "hcpcs"),
         Index("idx_fee_opps_effective", "effective_from", "effective_to"),  # Renamed to avoid conflict with OPPSCap
+        Index("idx_fee_opps_release", "release_id"),
+        Index("idx_fee_opps_batch", "batch_id"),
     )
 
 
@@ -100,10 +120,14 @@ class WageIndex(Base):
     wage_index = Column(Float, nullable=False)
     effective_from = Column(Date, nullable=False)
     effective_to = Column(Date, nullable=True)
+    release_id = Column(String(50), nullable=True)
+    batch_id = Column(String(50), nullable=True)
     
     # Indexes
     __table_args__ = (
         Index("idx_wage_year_cbsa", "year", "cbsa"),
+        Index("idx_wage_index_release", "release_id"),
+        Index("idx_wage_index_batch", "batch_id"),
     )
 
 
@@ -119,10 +143,14 @@ class FeeASC(Base):
     asc_rate = Column(Float, nullable=True)
     effective_from = Column(Date, nullable=False)
     effective_to = Column(Date, nullable=True)
+    release_id = Column(String(50), nullable=True)
+    batch_id = Column(String(50), nullable=True)
     
     # Indexes
     __table_args__ = (
         Index("idx_asc_year_quarter_hcpcs", "year", "quarter", "hcpcs"),
+        Index("idx_fee_asc_release", "release_id"),
+        Index("idx_fee_asc_batch", "batch_id"),
     )
 
 
@@ -137,10 +165,14 @@ class FeeIPPS(Base):
     weight = Column(Float, nullable=False)
     effective_from = Column(Date, nullable=False)
     effective_to = Column(Date, nullable=True)
+    release_id = Column(String(50), nullable=True)
+    batch_id = Column(String(50), nullable=True)
     
     # Indexes
     __table_args__ = (
         Index("idx_ipps_fy_drg", "fy", "drg"),
+        Index("idx_fee_ipps_release", "release_id"),
+        Index("idx_fee_ipps_batch", "batch_id"),
     )
 
 
@@ -155,6 +187,14 @@ class IPPSBaseRate(Base):
     capital_base = Column(Float, nullable=False)
     effective_from = Column(Date, nullable=False)
     effective_to = Column(Date, nullable=True)
+    release_id = Column(String(50), nullable=True)
+    batch_id = Column(String(50), nullable=True)
+    
+    # Indexes
+    __table_args__ = (
+        Index("idx_ipps_base_rates_release", "release_id"),
+        Index("idx_ipps_base_rates_batch", "batch_id"),
+    )
 
 
 class FeeCLFS(Base):
@@ -169,10 +209,14 @@ class FeeCLFS(Base):
     fee = Column(Float, nullable=True)
     effective_from = Column(Date, nullable=False)
     effective_to = Column(Date, nullable=True)
+    release_id = Column(String(50), nullable=True)
+    batch_id = Column(String(50), nullable=True)
     
     # Indexes
     __table_args__ = (
         Index("idx_clfs_year_quarter_hcpcs", "year", "quarter", "hcpcs"),
+        Index("idx_fee_clfs_release", "release_id"),
+        Index("idx_fee_clfs_batch", "batch_id"),
     )
 
 
@@ -189,8 +233,12 @@ class FeeDMEPOS(Base):
     fee = Column(Float, nullable=True)
     effective_from = Column(Date, nullable=False)
     effective_to = Column(Date, nullable=True)
+    release_id = Column(String(50), nullable=True)
+    batch_id = Column(String(50), nullable=True)
     
     # Indexes
     __table_args__ = (
         Index("idx_dmepos_year_quarter_code", "year", "quarter", "code"),
+        Index("idx_fee_dmepos_release", "release_id"),
+        Index("idx_fee_dmepos_batch", "batch_id"),
     )

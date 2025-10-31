@@ -12,6 +12,9 @@ import structlog
 
 logger = structlog.get_logger()
 
+# Dataset identifier constant (Phase 2.5)
+DATASET_ID = "DMEPOS"
+
 
 class DMEPOSEngine(BasePricingEngine):
     """Durable Medical Equipment, Prosthetics, Orthotics, and Supplies pricing engine"""
@@ -40,6 +43,9 @@ class DMEPOSEngine(BasePricingEngine):
         """Price a code using DMEPOS fee schedule"""
         
         try:
+            # Coalesce quarter to default to "1" if None
+            quarter_value = quarter if quarter is not None else "1"
+            
             # Determine rural status
             is_rural = False
             if geography and geography.selected_candidate:
@@ -49,7 +55,7 @@ class DMEPOSEngine(BasePricingEngine):
             dmepos_data = self.db.query(FeeDMEPOS).filter(
                 and_(
                     FeeDMEPOS.year == year,
-                    FeeDMEPOS.quarter == quarter or "1",  # Default to Q1
+                    FeeDMEPOS.quarter == quarter_value,
                     FeeDMEPOS.code == code,
                     FeeDMEPOS.rural_flag == is_rural,
                     FeeDMEPOS.effective_from <= f"{year}-12-31",
@@ -83,6 +89,21 @@ class DMEPOSEngine(BasePricingEngine):
             beneficiary_total_cents = int(cost_sharing["beneficiary_total"] * 100)
             program_payment_cents = int(cost_sharing["program_payment"] * 100)
             
+            # Build trace refs with provenance (Phase 2.5)
+            dataset_id = DATASET_ID
+            trace_refs = [
+                f"dmepos_{year}_{quarter_value}_{code}_{is_rural}"
+            ]
+            
+            # Add DMEPOS provenance (standardized format)
+            if dmepos_data.release_id:
+                trace_refs.append(f"{dataset_id}:release:{dmepos_data.release_id}")
+            if dmepos_data.batch_id:
+                trace_refs.append(f"{dataset_id}:batch:{dmepos_data.batch_id}")
+            
+            # Filter out None values and deduplicate while preserving order
+            trace_refs = list(dict.fromkeys([ref for ref in trace_refs if ref is not None]))
+            
             return {
                 "allowed_cents": allowed_cents,
                 "beneficiary_deductible_cents": beneficiary_deductible_cents,
@@ -94,9 +115,11 @@ class DMEPOSEngine(BasePricingEngine):
                 "source": "benchmark",
                 "facility_specific": False,
                 "packaged": False,
-                "trace_refs": [
-                    f"dmepos_{year}_{quarter}_{code}_{is_rural}"
-                ]
+                "trace_refs": trace_refs,
+                # Direct provenance fields (Phase 2.5)
+                "release_id": dmepos_data.release_id,
+                "batch_id": dmepos_data.batch_id,
+                "dataset_id": dataset_id
             }
             
         except Exception as e:

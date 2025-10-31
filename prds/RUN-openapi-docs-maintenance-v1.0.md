@@ -61,7 +61,8 @@
 | Endpoint or schema change (routers, schemas, middleware) | 1. `uvicorn cms_pricing.main:app --host 0.0.0.0 --port 8000`  
 2. `curl -H "X-API-Key: <dev key>" http://localhost:8000/openapi.json > docs/api/openapi.json`  
 3. Regenerate Markdown endpoint table (`docs/api/endpoints.md`) via `make docs-api`  
-4. Run `make lint-openapi` (Spectral) | Authoring engineer |
+4. Run `make lint-openapi` (Spectral)  
+5. Manually review provenance sections (`datasets_used`, `trace_refs`) to ensure descriptions include standardized release/batch formats and backward-compatibility notes | Authoring engineer |
 | Release candidate build | Bundle HTML: `npx redoc-cli bundle docs/api/openapi.json -o docs/api/index.html` | Platform Eng |
 | Deploy to Render | Attach latest spec artifacts to release tag; ensure Render static site (if used) updated; verify required curated datasets (e.g., RVU) were published with non-zero record counts before propagating docs | Release manager |
 
@@ -79,6 +80,7 @@ Every published package (JSON/HTML/PDF) must include or link to:
 3. **Endpoint grouping:** Plans, Pricing, Geography, Dataset (MPFS/OPPS/RVU), Trace/Health.  
 4. **Examples:** Copy-pastable `curl` + request/response JSON for success and common errors (HTTP 4xx/5xx).  
 5. **Schemas:** Reference OpenAPI components with descriptions, enums, formats, and sample values; link to relevant PRDs for domain meaning.  
+   - When responses expose provenance metadata (e.g., `datasets_used`, `trace_refs`), document field semantics (`dataset_id`, `release_id`, `batch_id`, `effective_from`, `effective_to`, `digest`) and the standardized `{dataset_id}:release:{release_id}` / `{dataset_id}:batch:{batch_id}` formats, including example payloads and legacy behavior.  
 6. **Observability + Ops:** `/metrics`, `/health`, `/readyz`, `/trace/*` availability and usage guidance.  
 7. **Testing hooks:** Sandbox keys, pointers to replay endpoints, and how to debug via traces.  
 8. **Accessibility:** Provide HTML + downloadable PDF/text; ensure color-safe diagrams where applicable.

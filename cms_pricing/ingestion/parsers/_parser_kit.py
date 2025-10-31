@@ -385,11 +385,13 @@ def inject_metadata(
     
     Required metadata from ingestor:
     - release_id, vintage_date, product_year, quarter_vintage
+    - batch_id (optional, but recommended for provenance tracking)
     
     Columns added:
     - All metadata fields above
     - source_filename, source_file_sha256, source_uri
     - parsed_at (timestamp)
+    - batch_id (if provided in metadata)
     
     Args:
         df: Parsed DataFrame
@@ -408,6 +410,11 @@ def inject_metadata(
     
     # Core identity
     df['release_id'] = metadata['release_id']
+    
+    # Provenance tracking (Phase 2)
+    # batch_id is optional but should be included when available
+    if 'batch_id' in metadata:
+        df['batch_id'] = metadata['batch_id']
     
     # Provenance
     df['source_filename'] = filename

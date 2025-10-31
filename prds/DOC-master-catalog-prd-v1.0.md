@@ -57,6 +57,7 @@
 | `PRD-opps-prd-v1.0.md` | Draft v1.0 | Product Engineering | `STD-scraper`, `STD-api-security-and-auth`, `SRC-opps` | `REF-geography-mapping-cursor-prd-v1.0.md` |
 | `PRD-ncci-mue-prd-v1.0.md` | Draft v1.0 | Product Engineering | `STD-data-architecture`, `SRC-ncci` | — |
 | `PRD-cms-treatment-plan-api-prd-v0.1.md` | Draft v0.1 | Product Engineering | `STD-api-contract-management`, `STD-api-security-and-auth` | — |
+| `PRD-clearbill-prd-v1.0.md` | Draft v1.0 | Product Operations | `STD-api-contract-management`, `STD-api-security-and-auth`, `PRD-mpfs-prd-v1.0.md`, `PRD-opps-prd-v1.0.md`, `PRD-rvu-gpci-prd-v0.1.md` | `REF-rvu-database-schema-v1.0.md`, `RUN-openapi-docs-maintenance-v1.0.md` |
 | `PRD-geography-locality-mapping-prd-v1.0.md` | Draft v1.0 | Product Engineering | `STD-data-architecture`, `SRC-gazetteer` | `REF-geography-mapping-cursor-prd-v1.0.md` |
 | `PRD-rvu-gpci-prd-v0.1.md` | Draft v0.2 | Product Engineering | `STD-scraper`, `SRC-gpci`, `SRC-carrier-localities` | — |
 | `PRD-opps-scraper-prd-v1.0.md` | Draft v1.0 | Data Engineering | `STD-scraper`, `SRC-opps` | — |
