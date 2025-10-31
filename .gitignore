@@ -154,3 +154,14 @@ Desktop.ini
 .venv_gpci/
 .venv-deploy/
 tmp/
+
+# Generated test fixtures (created during test runs)
+tests/fixtures/rvu/test_data/ingested_data/curated/**/*.parquet
+tests/fixtures/rvu/test_data/ingested_data/stage/**/*.parquet
+tests/fixtures/rvu/test_data/ingested_data/raw/**/*.zip
+tests/fixtures/rvu/test_data/ingested_data/raw/**/test_rvu_*/
+tests/fixtures/rvu/test_data/ingested_data/raw/**/test_invalid_*/
+tests/fixtures/rvu/test_data/ingested_data/stage/**/test_rvu_*/
+tests/fixtures/rvu/test_data/ingested_data/stage/**/test_invalid_*/
+tests/fixtures/rvu/test_data/manifests/cms_rvu_manifest_*.jsonl
+tests/fixtures/rvu/test_data/ingested_data/curated/cms_rvu/*/data/
