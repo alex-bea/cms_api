@@ -164,4 +164,6 @@ tests/fixtures/rvu/test_data/ingested_data/raw/**/test_invalid_*/
 tests/fixtures/rvu/test_data/ingested_data/stage/**/test_rvu_*/
 tests/fixtures/rvu/test_data/ingested_data/stage/**/test_invalid_*/
 tests/fixtures/rvu/test_data/manifests/cms_rvu_manifest_*.jsonl
-tests/fixtures/rvu/test_data/ingested_data/curated/cms_rvu/*/data/
+
+# Generated test fixtures - date-specific curated/stage data
+tests/fixtures/rvu/test_data/ingested_data/curated/cms_rvu/*/
