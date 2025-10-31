@@ -3598,3 +3598,11 @@ Based on E2E test output (`pytest tests/ingestors/test_rvu_ingestor_e2e.py`), we
 
 **Related Issues:**
 - RVU E2E Harness Modernization (Part 7: Documentation & guidance extraction)
+
+### Follow-up Checklist (Added 2025-10-31)
+
+- [ ] Verify Render API endpoint returns 2025-10-31 data (spot check `rvu_items`).
+- [ ] Monitor Render logs/metrics for ingestion anomalies over next run.
+- [ ] Draft backlog item for SQL `ON CONFLICT DO UPDATE` upsert optimization.
+- [ ] Update external documentation / CHANGELOG with DB upsert fix summary.
+
