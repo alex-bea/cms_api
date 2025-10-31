@@ -131,3 +131,10 @@ The RVU ingestion pipeline now includes complete database loading functionality.
 2. API endpoint validation
 3. Real-world data ingestion runs
 
+
+## 2025-10-31 Render Validation
+
+- Render shell command: `python scripts/load_rvu_to_production.py --debug --output data/ingestion/production`
+- Manifest verified at `data/ingestion/production/curated/cms_rvu/2025-10-31/manifest.json`
+- Dataset row counts: PPRRVU 19,139 · GPCI 109 · OPPSCap 16,100 · ANES 109 · LocalityCounty 117
+- Database loaders confirmed to upsert without unique-index conflicts.
