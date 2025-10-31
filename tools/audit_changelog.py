@@ -350,7 +350,7 @@ def check_prd_references(parsed: Dict) -> Tuple[bool, str]:
         prd_path = PRDS_DIR / prd
         if not prd_path.exists():
             missing_prds.append(prd)
-            
+    
             # Suggest existing versions
             existing = find_current_prd(prd)
             if existing:

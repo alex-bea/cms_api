@@ -100,7 +100,7 @@ def audit_layout_schema_alignment(
         schema_columns = set(schema.get("columns", {}).keys())
         natural_keys = set(schema.get("natural_keys", []))
         layout_columns = set(layout.get("columns", {}).keys())
-        
+
         # Metadata columns that are injected by parsers, not in raw CMS files
         metadata_columns = {
             'effective_from', 'effective_to', 'row_content_hash', 'parsed_at',
@@ -141,7 +141,7 @@ def audit_layout_schema_alignment(
                 f"[{dataset}] layout missing natural key columns: {sorted(missing_natural_keys)} "
                 f"(schema={schema_file.name})"
             )
-        
+
         # Check 2: Core schema columns SHOULD be in layout (warn if missing)
         missing_core = core_schema_columns - mapped_layout_columns
         if missing_core:
@@ -149,7 +149,7 @@ def audit_layout_schema_alignment(
                 f"[{dataset}] layout missing core schema columns: {sorted(missing_core)} "
                 f"(schema={schema_file.name})"
             )
-        
+
         # Check 3: Extra columns in layout are OK (additional CMS data)
         # This is informational only - no error
         

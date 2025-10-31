@@ -79,7 +79,7 @@ def gather_changed_files(base_sha: Optional[str]) -> List[str]:
         diff_range = "HEAD~1..HEAD"
 
     try:
-        output = run_git_cmd(["diff", "--name-only", diff_range])
+    output = run_git_cmd(["diff", "--name-only", diff_range])
     except RuntimeError:
         # Fallback for detached HEAD or invalid base SHA (e.g., tag builds)
         output = run_git_cmd(["diff", "--name-only", "HEAD~1..HEAD"])
@@ -100,7 +100,7 @@ def gather_commit_messages(base_sha: Optional[str]) -> str:
     else:
         range_arg = "HEAD"
     try:
-        output = run_git_cmd(["log", "--format=%B", range_arg])
+    output = run_git_cmd(["log", "--format=%B", range_arg])
     except RuntimeError:
         # Fallback for invalid range in tag builds
         output = run_git_cmd(["log", "--format=%B", "-1"])
