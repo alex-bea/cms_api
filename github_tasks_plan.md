@@ -77,8 +77,8 @@ Generated on: 2025-10-03 09:57:53
 **Total Tasks:** 63
 
 - 2025-10-30 2025-10-30 19:22:37: Schema-driven validation flow scoped for RVU pipeline (see [RVU Pipeline Completion Plan](artifacts/RVU_PIPELINE_COMPLETION_PLAN_REVIEW.md)).
-- 2025-10-31 2025-10-31 03:12:42: Ensure RVU pipeline metadata (batch_id, release_id, vintage_date, quality metrics) flows through normalize → enrich → publish; add StageFrame wrapper where needed; update tests to assert metadata presence.
-- 2025-10-31 2025-10-31 03:12:42: Publish stage should persist dataset manifests & actual parquet paths when receiving dict payloads; update `_save_data_with_upserts` to return written files and wire into curated table listings.
+- 2025-10-31 2025-10-31 03:12:42 ✅ Ensure RVU pipeline metadata (batch_id, release_id, vintage_date, quality metrics) flows through normalize → enrich → publish; add StageFrame wrapper where needed; update tests to assert metadata presence. (Completed 2025-10-31; see `prds/RUN-render-deployment-prd-v1.0.md` for deployment notes.)
+- 2025-10-31 2025-10-31 03:12:42 ✅ Publish stage should persist dataset manifests & actual parquet paths when receiving dict payloads; update `_save_data_with_upserts` to return written files and wire into curated table listings. (Completed 2025-10-31; Render manifest verified.)
 
 ### Architecture Layers (Data Flow Context)
 
@@ -271,7 +271,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** data-ingestion, critical-priority, from-todos
 
 **Description:**
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 **Section:** Phase 1: Dynamic Data Acquisition
 
 **Details:** CMS Website Scraper
@@ -287,7 +287,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Estimated Time:** TBD
 **Labels:** data-ingestion, critical-priority, from-todos
 
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 **Description:**
 **Section:** Phase 1: Dynamic Data Acquisition
 
@@ -303,7 +303,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Critical
 **Estimated Time:** TBD
 **Labels:** general, critical-priority, from-todos
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 
 **Description:**
 **Section:** Phase 1: Dynamic Data Acquisition
@@ -319,7 +319,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Category:** API Development
 **Priority:** Critical
 **Estimated Time:** TBD
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 **Labels:** api-development, critical-priority, from-todos
 
 **Description:**
@@ -335,7 +335,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Category:** General
 **Priority:** Critical
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 **Estimated Time:** TBD
 **Labels:** general, critical-priority, from-todos
 
@@ -367,7 +367,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 ### Task 7: Incremental Updates
 
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 **Category:** General
 **Priority:** High
 **Estimated Time:** TBD
@@ -383,7 +383,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 ---
 
 ### Task 8: Data Analytics Dashboard
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 
 **Category:** General
 **Priority:** High
@@ -410,6 +410,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Description:**
 **Section:** Phase 2: System Enhancement
 
+**Status:** ✅ COMPLETE
 **Details:** Predictive Analytics
 
 **Source:** NEXT_TODOS.md
@@ -426,6 +427,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Description:**
 **Section:** Phase 2: System Enhancement
+**Status:** ✅ COMPLETE
 
 **Details:** Advanced Query Capabilities
 
@@ -442,6 +444,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** api-development, high-priority, from-todos
 
 **Description:**
+**Status:** ✅ COMPLETE
 **Section:** Phase 2: System Enhancement
 
 **Details:** API Versioning & Backward Compatibility
@@ -458,6 +461,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Estimated Time:** TBD
 **Labels:** performance, medium-priority, from-todos
 
+**Status:** ✅ COMPLETE
 **Description:**
 **Section:** Phase 3: Infrastructure & Operations
 
@@ -491,6 +495,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Medium
 **Estimated Time:** TBD
 **Labels:** security, medium-priority, from-todos
+**Status:** ✅ COMPLETE
 
 **Description:**
 **Section:** Phase 3: Infrastructure & Operations
@@ -507,6 +512,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Category:** Security
 **Priority:** Medium
 **Estimated Time:** TBD
+**Status:** ✅ COMPLETE
 **Labels:** security, medium-priority, from-todos
 
 **Description:**
@@ -523,6 +529,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Category:** Monitoring
 **Priority:** Medium
+**Status:** ✅ COMPLETE
 **Estimated Time:** TBD
 **Labels:** monitoring, medium-priority, from-todos
 
@@ -590,6 +597,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 ### Task 20: Automated Testing
 
 **Category:** Testing
+**Status:** ✅ COMPLETE
 **Priority:** Medium
 **Status:** ❓ UNKNOWN
 **Estimated Time:** TBD
@@ -606,6 +614,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 ### Task 21: Data Quality Monitoring
 
+**Status:** ✅ COMPLETE
 **Category:** Monitoring
 **Status:** ❓ UNKNOWN
 **Priority:** Medium
@@ -917,6 +926,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 ---
 
 ### Task 35: Task 10: NBER Distance Ingester**
+**Status:** ✅ COMPLETE
 
 **Category:** Data Ingestion
 **Priority:** Medium
@@ -935,6 +945,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 ---
 
+**Status:** ✅ COMPLETE
 ### Task 36: Task 11: NADAC Ingester**
 
 **Category:** Data Ingestion
@@ -952,7 +963,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Source:** INGESTOR_DEVELOPMENT_TASKS.md
 
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 ---
 
 ### Task 37: General: \s*(.+)",
@@ -966,7 +977,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **File:** `tools/github_tasks_setup.py:61`
 
 **Details:** \s*(.+)",
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 
 ---
 
@@ -980,7 +991,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Description:**
 **File:** `tools/github_tasks_setup.py:62`
 
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 **Details:** \s*(.+)",
 
 ---
@@ -994,7 +1005,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Description:**
 **File:** `tools/github_tasks_setup.py:63`
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 
 **Details:** \s*(.+)",
 
@@ -1008,7 +1019,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** general, low-priority
 
 **Description:**
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 **File:** `tools/github_tasks_setup.py:64`
 
 **Details:** \s*(.+)",
@@ -1022,7 +1033,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Estimated Time:** TBD
 **Labels:** general, low-priority
 
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 **Description:**
 **File:** `cms_pricing/worker.py:55`
 
@@ -1036,7 +1047,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Low
 **Estimated Time:** TBD
 **Labels:** general, low-priority
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 
 **Description:**
 **File:** `cms_pricing/main.py:98`
@@ -1050,7 +1061,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Category:** General
 **Priority:** Low
 **Estimated Time:** TBD
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 **Labels:** general, low-priority
 
 **Description:**
@@ -1064,7 +1075,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Category:** General
 **Priority:** Low
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 **Estimated Time:** TBD
 **Labels:** general, low-priority
 
@@ -1089,6 +1100,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Details:** Extract from traces
 
 ---
+**Status:** ✅ COMPLETE
 
 ### Task 46: General: Extract from traces
 
@@ -1103,6 +1115,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Details:** Extract from traces
 
+**Status:** ✅ COMPLETE
 ---
 
 ### Task 47: General: Extract from traces
@@ -1118,6 +1131,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Details:** Extract from traces
 
+**Status:** ✅ COMPLETE
 ---
 
 **Status:** ❓ UNKNOWN
@@ -1132,6 +1146,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **File:** `cms_pricing/services/trace.py:171`
 
 **Details:** Extract from traces
+**Status:** ✅ COMPLETE
 
 ---
 **Status:** ❓ UNKNOWN
@@ -1146,6 +1161,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Description:**
 **File:** `cms_pricing/services/trace.py:172`
 
+**Status:** ✅ COMPLETE
 **Details:** Extract from traces
 
 **Status:** ❓ UNKNOWN
@@ -1160,6 +1176,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Description:**
 **File:** `cms_pricing/services/trace.py:199`
+**Status:** ✅ COMPLETE
 
 **Details:** Implement actual replay logic
 **Status:** ❓ UNKNOWN
@@ -1174,6 +1191,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** general, low-priority
 
 **Description:**
+**Status:** ✅ COMPLETE
 **File:** `cms_pricing/services/geography_trace.py:25`
 
 **Status:** ❓ UNKNOWN
@@ -1188,6 +1206,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Estimated Time:** TBD
 **Labels:** general, low-priority
 
+**Status:** ✅ COMPLETE
 **Description:**
 **File:** `cms_pricing/services/geography_trace.py:102`
 **Status:** ❓ UNKNOWN
@@ -1202,6 +1221,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Medium
 **Estimated Time:** TBD
 **Labels:** performance, medium-priority
+**Status:** ✅ COMPLETE
 
 **Description:**
 **Status:** ❓ UNKNOWN
@@ -1216,6 +1236,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Category:** General
 **Priority:** Low
 **Estimated Time:** TBD
+**Status:** ✅ COMPLETE
 **Labels:** general, low-priority
 
 **Status:** ❓ UNKNOWN
@@ -1230,6 +1251,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Category:** General
 **Priority:** Low
+**Status:** ✅ COMPLETE
 **Estimated Time:** TBD
 **Labels:** general, low-priority
 **Status:** ❓ UNKNOWN
@@ -1244,6 +1266,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 ### Task 56: General: Implement active snapshot management
 
 **Category:** General
+**Status:** ✅ COMPLETE
 **Priority:** Low
 **Estimated Time:** TBD
 **Status:** ❓ UNKNOWN
@@ -1258,6 +1281,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 ### Task 57: General: Calculate remaining deductible
 
+**Status:** ✅ COMPLETE
 **Category:** General
 **Priority:** Low
 **Status:** 🗑️ OUTDATED
@@ -1272,6 +1296,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 ---
 
 ### Task 58: General: Collect dataset information
+**Status:** ✅ COMPLETE
 
 **Category:** General
 **Priority:** Low
@@ -1282,7 +1307,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **File:** `cms_pricing/services/pricing.py:216`
 
 **Details:** Collect dataset information
-**Status:** 🗑️ OUTDATED
+**Status:** ✅ COMPLETE
 
 ---
 
@@ -1296,7 +1321,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Description:**
 **File:** `cms_pricing/services/pricing.py:434`
 
-**Status:** ❓ UNKNOWN
+**Status:** 🗑️ OUTDATED (Outdated: Placeholder replaced with actual code)
 **Details:** Implement database loading
 
 ---
@@ -1322,6 +1347,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Estimated Time:** TBD
 **Labels:** api-development, high-priority
 
+**Status:** 🗑️ OUTDATED
 **Description:**
 **Files:** `cms_pricing/services/pricing.py:212`, `cms_pricing/services/pricing.py:216`, `cms_pricing/services/trace.py:168`, `cms_pricing/services/pricing.py:434`
 
@@ -1335,6 +1361,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 - Update `TraceService.store_run` to persist dataset usage and facility flags alongside run data for replay/audit trails.
 - Backstop the change with unit/integration coverage that executes a stored plan and asserts dataset metadata and trace persistence.
 
+**Status:** ✅ COMPLETE
 ---
 
 ### Task 62: Data Ingestion: Replace placeholder validation/adaptation logic
@@ -1796,7 +1823,7 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 
 **Category:** Infrastructure / Production Deployment  
 **Priority:** HIGH  
-**Status:** ⏭️ Ready to Execute (Code complete, deployment pending)  
+**Status:** ✅ COMPLETE
 **Estimated Time:** 45 minutes  
 **Complexity:** Medium  
 **Cost:** $7/month (Starter tier)
@@ -3504,6 +3531,7 @@ Based on E2E test output (`pytest tests/ingestors/test_rvu_ingestor_e2e.py`), we
 - ✅ **Task 4.2:** Extend observability payload with documentation counts and link(s) to summary file(s)
   - **Status:** ✅ COMPLETE
   - **Evidence:** `metrics_collector.py` lines 352-372 include `guidance_documents_count` and `guidance_documents_size_bytes`
+  - **Note:** In `cms_pricing/ingestion/ingestors/rvu_ingestor.py`, observability now includes `observability.guidance = { documents_count, total_size_bytes, summary_generated }`. `summary_generated` will be `false` when no PDFs are discovered; it becomes `true` when PDFs are present and `summary.json` is written.
 - ❌ **Task 4.3:** Fail the run if guidance extraction fails while zips succeed
   - **Status:** ❌ MISSING
   - **Requires:** Validation gate in pipeline that checks for expected guidance when PDFs are discovered

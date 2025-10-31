@@ -21,7 +21,7 @@ from collections import defaultdict
 import numpy as np
 from datetime import datetime, date
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Callable, Awaitable
+from typing import Dict, Any, List, Optional, Callable, Awaitable, Tuple
 import httpx
 import pandas as pd
 import structlog
@@ -113,6 +113,37 @@ class RVUIngestor(BaseDISIngestor):
     DATA_FILE_TYPES = {"zip", "csv", "txt", "xlsx", "xls"}
     GUIDANCE_FILE_TYPES = {"pdf"}
     SUPPORTED_FILE_TYPES = DATA_FILE_TYPES | GUIDANCE_FILE_TYPES
+    
+    # Task #6: Expected filename patterns for inner file validation
+    # Pattern provenance:
+    # - PPRRVU: https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files
+    # - GPCI: Same source as PPRRVU (geographic practice cost indices)
+    # - OPPSCAP: https://www.cms.gov/medicare/payment/acute-inpatient-pps/opps-addenda-and-supporting-files
+    # - ANES: Same source as PPRRVU (anesthesia conversion factors)
+    # - Locality: Same source as PPRRVU (locality to county mapping)
+    EXPECTED_PATTERNS = {
+        "pprrvu": [
+            r".*pprrvu.*\.(txt|csv|xlsx|xls)$",
+            r"^rvu\d+[a-z]\.(txt|csv|xlsx|xls)$"
+        ],
+        "gpci": [
+            r".*gpci.*\.(txt|csv|xlsx|xls)$"
+        ],
+        "oppscap": [
+            r".*oppscap.*\.(txt|csv|xlsx|xls)$",
+            r".*opps.*cap.*\.(txt|csv|xlsx|xls)$"
+        ],
+        "anescf": [
+            r".*anescf.*\.(txt|csv|xlsx|xls)$",
+            r".*anes.*\.(txt|csv|xlsx|xls)$"
+        ],
+        "localitycounty": [
+            r".*locco.*\.(txt|csv|xlsx|xls)$",
+            r".*locality.*\.(txt|csv|xlsx|xls)$"
+        ]
+    }
+    # Catch-all pattern for detecting potentially unclassified RVU-related files
+    CATCHALL_RVU_PATTERN = r".*(rvu|pprrvu|gpci|opps|anes|locality|locco).*\.(txt|csv|xlsx|xls)$"
     
     def __init__(self, output_dir: str, db_session: Any = None):
         super().__init__(output_dir, db_session)
@@ -1484,6 +1515,26 @@ class RVUIngestor(BaseDISIngestor):
             return "localitycounty"
         return None
 
+    def _validate_inner_file_pattern(self, filename: str, dataset_key: str) -> Tuple[bool, Optional[str]]:
+        """
+        Validate that an inner file matches expected patterns for its dataset.
+        Returns (is_valid, reason).
+        """
+        import re
+        if dataset_key not in self.EXPECTED_PATTERNS:
+            return True, None
+        patterns = self.EXPECTED_PATTERNS[dataset_key]
+        filename_lower = filename.lower()
+        for pattern in patterns:
+            if re.match(pattern, filename_lower):
+                return True, None
+        return False, f"File '{filename}' classified as {dataset_key} but doesn't match expected patterns"
+
+    def _check_catchall_pattern(self, filename: str) -> bool:
+        """Check if an unclassified file matches the generic RVU pattern."""
+        import re
+        return bool(re.match(self.CATCHALL_RVU_PATTERN, filename.lower()))
+
     @staticmethod
     def _infer_file_type_from_name(filename: str, content_type: Optional[str] = None) -> Optional[str]:
         """Infer a logical file_type label based on filename or content-type.
@@ -2013,6 +2064,10 @@ class RVUIngestor(BaseDISIngestor):
             if zipfile.is_zipfile(buffer):
                 with zipfile.ZipFile(buffer) as zf:
                     members = [name for name in zf.namelist() if not name.endswith("/")]
+                    # Task #6: Toggle for aggregation and accumulator for unexpected files
+                    import os
+                    aggregate_warnings = os.getenv("AGGREGATE_ZIP_WARNINGS", "true").lower() == "true"
+                    unexpected_files: List[Dict[str, Any]] = []
                     dataset_suffixes: Dict[str, set] = defaultdict(set)
                     unclassified_members: List[str] = []
                     for member in members:
@@ -2047,12 +2102,27 @@ class RVUIngestor(BaseDISIngestor):
                         recognized.append(member)
 
                     for raw_member in unclassified_members:
-                        logger.warning(
-                            "Skipping unclassified inner file (may be CSV/XLSX variant)",
-                            filename=raw_member,
-                            archive=filename,
-                            suggestion="Verify file format matches expected patterns. If this is a valid data file, update _classify_inner_file() to recognize it."
-                        )
+                        # Optional catch-all detection for potential new dataset types
+                        if self._check_catchall_pattern(raw_member):
+                            logger.warning(
+                                "Possible new dataset type detected",
+                                archive=filename,
+                                filename=raw_member,
+                                note="File matches RVU naming patterns but wasn't classified. May indicate new dataset type or classification gap."
+                            )
+                            if aggregate_warnings:
+                                unexpected_files.append({
+                                    "filename": raw_member,
+                                    "dataset": None,
+                                    "reason": "Unclassified but matches RVU catch-all pattern"
+                                })
+                        else:
+                            logger.warning(
+                                "Skipping unclassified inner file (may be CSV/XLSX variant)",
+                                filename=raw_member,
+                                archive=filename,
+                                suggestion="Verify file format matches expected patterns. If this is a valid data file, update _classify_inner_file() to recognize it."
+                            )
 
                     if not recognized:
                         logger.error(
@@ -2085,6 +2155,23 @@ class RVUIngestor(BaseDISIngestor):
                         dataset_key = self._classify_inner_file(inner_name)
                         if not dataset_key:
                             continue
+                        # Task #6: Validate inner file name matches expected pattern for dataset
+                        is_valid_pattern, invalid_reason = self._validate_inner_file_pattern(inner_name, dataset_key)
+                        if not is_valid_pattern:
+                            logger.warning(
+                                "Inner file pattern mismatch",
+                                archive=filename,
+                                filename=inner_name,
+                                dataset=dataset_key,
+                                reason=invalid_reason,
+                                expected=", ".join(self.EXPECTED_PATTERNS.get(dataset_key, []))
+                            )
+                            if aggregate_warnings:
+                                unexpected_files.append({
+                                    "filename": inner_name,
+                                    "dataset": dataset_key,
+                                    "reason": invalid_reason
+                                })
                         inner_bytes = zf.read(inner_name)
                         metadata = self._build_parser_metadata(
                             dataset_key,
@@ -2160,6 +2247,31 @@ class RVUIngestor(BaseDISIngestor):
                                 rejects=len(result.rejects),
                                 sample_reject=str(result.rejects.iloc[0].to_dict()) if len(result.rejects) > 0 else None
                             )
+                            # Task #3: Persist reject samples per dataset under stage/<release>/reject/
+                            try:
+                                reject_dir = Path(self.output_dir) / "stage" / "cms_rvu" / release_id / "reject"
+                                reject_dir.mkdir(parents=True, exist_ok=True)
+                                # Enrich rejects with minimal provenance
+                                rejects_df = result.rejects.copy()
+                                rejects_df["_source_filename"] = Path(inner_name).name
+                                rejects_df["_dataset"] = dataset_key
+                                rejects_df["_release_id"] = release_id
+                                # Use unique suffix to avoid collisions across inner files
+                                reject_file = reject_dir / f"{dataset_key}_rejects_{uuid.uuid4().hex[:8]}.parquet"
+                                rejects_df.to_parquet(reject_file)
+                                logger.info(
+                                    "rejects_persisted",
+                                    dataset=dataset_key,
+                                    filename=str(reject_file),
+                                    rows=len(rejects_df)
+                                )
+                            except Exception as persist_err:
+                                logger.error(
+                                    "rejects_persist_failed",
+                                    dataset=dataset_key,
+                                    filename=inner_name,
+                                    error=str(persist_err)
+                                )
                         parser_metrics[dataset_key].append(result.metrics)
             else:
                 suffix = Path(filename).suffix.lower()
@@ -2287,6 +2399,23 @@ class RVUIngestor(BaseDISIngestor):
                             natural_keys=natural_keys
                         )
 
+                    # Task #6: Aggregated summary and metric emission after processing this ZIP
+                    if aggregate_warnings and unexpected_files:
+                        logger.warning(
+                            "rvu.ingestor.zip_unexpected_files_summary",
+                            archive=filename,
+                            unexpected_count=len(unexpected_files),
+                            unexpected_files=unexpected_files[:10]
+                        )
+                    if unexpected_files:
+                        try:
+                            self.observability_collector.record_metric(
+                                "inner_file_unexpected_count",
+                                len(unexpected_files),
+                                tags={"archive": filename, "release_id": release_id}
+                            )
+                        except Exception as metric_err:
+                            logger.debug("Failed to record unexpected files metric", error=str(metric_err))
             combined = combined.reset_index(drop=True)
             final_dataframes[dataset_key] = combined
 
@@ -2680,8 +2809,8 @@ class RVUIngestor(BaseDISIngestor):
         """Enrich data with reference information using DIS-compliant enricher"""
         
         try:
-            # Load reference data into the reference data manager
-            self._load_reference_data_for_enrichment(ref_data)
+            # Load reference data into the reference data manager and capture summary
+            ref_load_summary = self._load_reference_data_for_enrichment(ref_data)
             
             # Get enrichment rules for RVU data
             geography_rules = get_rvu_geography_enrichment_rules()
@@ -2706,6 +2835,25 @@ class RVUIngestor(BaseDISIngestor):
                 "enrichment_rules_applied": len(enrichment_results),
                 "enrichment_successful": len([r for r in enrichment_results if r.success])
             })
+
+            # Optional guardrail: flag if all reference datasets were missing/empty
+            try:
+                nonempty_ref = (ref_load_summary or {}).get("nonempty_count", 0)
+                if nonempty_ref == 0:
+                    updated_quality_metrics["reference_data_missing"] = True
+                    logger.warning(
+                        "reference_data_all_missing",
+                        release_id=self.current_release_id or stage_frame.metadata.get("release_id", "unknown")
+                    )
+                    try:
+                        self.observability_collector.record_metric(
+                            "reference_data_all_missing", 1,
+                            tags={"release_id": self.current_release_id or stage_frame.metadata.get("release_id", "unknown")}
+                        )
+                    except Exception as metric_err:
+                        logger.debug("reference_missing_metric_emit_failed", error=str(metric_err))
+            except Exception as guard_err:
+                logger.debug("reference_missing_guard_failed", error=str(guard_err))
             
             # Log enrichment results
             logger.info("Data enrichment completed",
@@ -2726,33 +2874,61 @@ class RVUIngestor(BaseDISIngestor):
             return stage_frame
     
     def _load_reference_data_for_enrichment(self, ref_data: RefData):
-        """Load reference data into the reference data manager"""
+        """Load and verify reference data for enrichment with structured logging and metrics.
+        Returns a summary dict with nonempty_count, empty_count, failure_count.
+        """
+        load_targets = [
+            ("cms_zip_locality", ref_data.tables.get("cms_zip_locality")),
+            ("cms_gpci", ref_data.tables.get("cms_gpci")),
+            ("cms_hcpcs_codes", ref_data.tables.get("cms_hcpcs_codes")),
+        ]
+        success_count = 0
+        failure_count = 0
+        empty_count = 0
+        for name, table in load_targets:
+            if table is None:
+                continue
+            try:
+                self.reference_data_manager.load_reference_data(name, table)
+                row_count = len(table) if hasattr(table, "__len__") else None
+                if row_count is None or row_count == 0:
+                    logger.warning(
+                        "reference_data_loaded_empty",
+                        dataset=name,
+                        rows=row_count
+                    )
+                    empty_count += 1
+                else:
+                    success_count += 1
+                    logger.info(
+                        "reference_data_loaded",
+                        dataset=name,
+                        rows=row_count
+                    )
+            except Exception as load_err:
+                failure_count += 1
+                logger.error(
+                    "reference_data_load_failed",
+                    dataset=name,
+                    error=str(load_err)
+                )
+        # Emit observability metrics (best-effort)
         try:
-            # Load ZIP locality data if available
-            if "cms_zip_locality" in ref_data.tables:
-                self.reference_data_manager.load_reference_data(
-                    "cms_zip_locality", 
-                    ref_data.tables["cms_zip_locality"]
-                )
-            
-            # Load GPCI data if available
-            if "cms_gpci" in ref_data.tables:
-                self.reference_data_manager.load_reference_data(
-                    "cms_gpci", 
-                    ref_data.tables["cms_gpci"]
-                )
-            
-            # Load HCPCS codes if available
-            if "cms_hcpcs_codes" in ref_data.tables:
-                self.reference_data_manager.load_reference_data(
-                    "cms_hcpcs_codes", 
-                    ref_data.tables["cms_hcpcs_codes"]
-                )
-            
-            logger.info("Reference data loaded for enrichment")
-            
-        except Exception as e:
-            logger.error(f"Failed to load reference data: {e}")
+            self.observability_collector.record_metric(
+                "reference_data_load_success_count", success_count,
+                tags={"release_id": self.current_release_id or "unknown"}
+            )
+            self.observability_collector.record_metric(
+                "reference_data_load_failure_count", failure_count,
+                tags={"release_id": self.current_release_id or "unknown"}
+            )
+            self.observability_collector.record_metric(
+                "reference_data_load_empty_count", empty_count,
+                tags={"release_id": self.current_release_id or "unknown"}
+            )
+        except Exception as metric_err:
+            logger.debug("reference_data_metrics_emit_failed", error=str(metric_err))
+        return {"nonempty_count": success_count, "empty_count": empty_count, "failure_count": failure_count}
     
     async def land(self, release_id: str) -> Dict[str, Any]:
         """
@@ -2913,6 +3089,8 @@ class RVUIngestor(BaseDISIngestor):
                         raise
             
             manifest_data["files"] = data_file_entries
+            # Task #3: Link reject output directory for this release (written during normalize)
+            manifest_data["rejects_directory"] = str(Path(self.output_dir) / "stage" / "cms_rvu" / release_id / "reject")
             if guidance_entries:
                 manifest_data["guidance_docs"] = guidance_entries
                 docs_dir.mkdir(parents=True, exist_ok=True)
@@ -3107,6 +3285,8 @@ class RVUIngestor(BaseDISIngestor):
             with open(docs_manifest_path, 'w') as f:
                 json.dump(docs_manifest, f, indent=2)
         
+        # Task #3: Link reject output directory for this release (written during normalize)
+        manifest_data["rejects_directory"] = str(Path(self.output_dir) / "stage" / "cms_rvu" / release_id / "reject")
         manifest_path = release_dir / "manifest.json"
         with open(manifest_path, 'w') as f:
             json.dump(manifest_data, f, indent=2)
@@ -3820,6 +4000,31 @@ class RVUIngestor(BaseDISIngestor):
                 "message": f"{rejected_count} records were rejected during validation"
             })
 
+        # Guidance document observability (count, size, summary status)
+        guidance_docs = pipeline_result.get("guidance_documents", []) or []
+        guidance_documents_count = len(guidance_docs)
+        guidance_total_size = 0
+        try:
+            guidance_total_size = int(sum(int(d.get("size_bytes", 0)) for d in guidance_docs))
+        except Exception:
+            guidance_total_size = 0
+        guidance_summary_generated = False
+        try:
+            docs_dir = pipeline_result.get("docs_directory")
+            if docs_dir:
+                summary_path = Path(docs_dir) / "summary.json"
+                guidance_summary_generated = summary_path.exists()
+        except Exception:
+            guidance_summary_generated = False
+
+        # Log guidance observability snapshot for verification
+        logger.info(
+            "Guidance observability",
+            documents_count=guidance_documents_count,
+            total_size_bytes=guidance_total_size,
+            summary_generated=guidance_summary_generated,
+        )
+
         pipeline_result["observability"] = {
             "overall_score": observability_report.overall_score,
             "freshness_score": freshness.freshness_score,
@@ -3828,7 +4033,12 @@ class RVUIngestor(BaseDISIngestor):
             "quality_score": quality.quality_score,
             "lineage_score": lineage.lineage_score,
             "critical_alerts": observability_report.critical_alerts,
-            "warnings": warnings
+            "warnings": warnings,
+            "guidance": {
+                "documents_count": guidance_documents_count,
+                "total_size_bytes": guidance_total_size,
+                "summary_generated": guidance_summary_generated
+            }
         }
     
     def _get_raw_data_for_quarantine(self, raw_batch: RawBatch, violation_count: int) -> List[Dict[str, Any]]:

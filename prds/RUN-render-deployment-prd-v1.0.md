@@ -1087,6 +1087,24 @@ If you already have data in a Render-hosted Postgres instance:
     - Additional scraper metadata (year, quarter, revision)
   - Guidance extraction outputs (`summary.md` + `summary.json`) are present next to the PDFs with processing metadata (generator_version, extraction_tool_version, ingestion_batch_id) and their paths appear inside the published `manifest.json → guidance_docs` section.
   - Observability payload lists the guidance doc count and no `guidance_extraction_failed` alerts fire; if extraction fails, rerun the helper script before marking deployment complete.
+  - Render validation (2025-10-31 run):
+    - Command executed in Render shell:  
+      ```bash
+      python scripts/load_rvu_to_production.py --debug --output data/ingestion/production
+      ```
+    - Manifest produced at `data/ingestion/production/curated/cms_rvu/2025-10-31/manifest.json`.
+    - Row counts recorded:
+      | Dataset | Records | Parquet Path |
+      |---------|---------|--------------|
+      | anescf | 109 | `data/ingestion/production/curated/cms_rvu/2025-10-31/data/anescf/anescf_2025-10-31.parquet` |
+      | gpci | 109 | `data/ingestion/production/curated/cms_rvu/2025-10-31/data/gpci/gpci_2025-10-31.parquet` |
+      | localitycounty | 117 | `data/ingestion/production/curated/cms_rvu/2025-10-31/data/localitycounty/localitycounty_2025-10-31.parquet` |
+      | oppscap | 16,100 | `data/ingestion/production/curated/cms_rvu/2025-10-31/data/oppscap/oppscap_2025-10-31.parquet` |
+      | pprrvu | 19,139 | `data/ingestion/production/curated/cms_rvu/2025-10-31/data/pprrvu/pprrvu_2025-10-31.parquet` |
+
+#### Runbook Note
+- Publish artifacts for 2025-10-31 release confirmed in Render at `data/ingestion/production/curated/cms_rvu/2025-10-31/`.
+- Manifest excerpt stored in this runbook; reuse command above for future production refreshes.
 
 ### **Within 1 Week:**
 
