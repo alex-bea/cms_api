@@ -76,6 +76,10 @@ Generated on: 2025-10-03 09:57:53
 **Description:** Comprehensive task management for CMS API development, data ingestion, and system enhancement
 **Total Tasks:** 63
 
+- 2025-10-30 2025-10-30 19:22:37: Schema-driven validation flow scoped for RVU pipeline (see [RVU Pipeline Completion Plan](artifacts/RVU_PIPELINE_COMPLETION_PLAN_REVIEW.md)).
+- 2025-10-31 2025-10-31 03:12:42: Ensure RVU pipeline metadata (batch_id, release_id, vintage_date, quality metrics) flows through normalize → enrich → publish; add StageFrame wrapper where needed; update tests to assert metadata presence.
+- 2025-10-31 2025-10-31 03:12:42: Publish stage should persist dataset manifests & actual parquet paths when receiving dict payloads; update `_save_data_with_upserts` to return written files and wire into curated table listings.
+
 ### Architecture Layers (Data Flow Context)
 
 To keep the task backlog aligned with the system’s runtime architecture, the plan now calls out two cross-cutting layers that every feature should map to:
@@ -3440,3 +3444,129 @@ Based on E2E test output (`pytest tests/ingestors/test_rvu_ingestor_e2e.py`), we
 **Related Issues:**
 - RVU E2E Harness Modernization (Part 8: Deprecation cleanup backlog item)
 
+---
+
+## Task: RVU Guidance PDF Extraction & Documentation Pipeline
+
+**Context:**
+- CMS publishes RVU PDFs alongside machine-readable ZIP files containing payment guidance, formulas, status code legends, and policy notes
+- We need to preserve these PDFs and extract structured summaries to feed manifests, observability, and PRDs
+- Current implementation stores PDFs and generates summaries from parsed data, but does not extract text/metadata directly from PDFs
+
+**Goals:**
+- Keep every CMS RVU PDF alongside machine-readable payloads so we never lose published guidance
+- Extract useful context (release dates, formulas, status-code legends, file descriptions) into structured summaries
+- Surface summaries wherever operators or consumers need them (RUN books, REF schemas, documentation portal)
+
+**Status Summary:**
+- ✅ **COMPLETE (5 tasks):** PDF discovery/tagging, docs storage, summary generation, manifest integration, observability metrics
+- ⚠️ **PARTIAL (1 task):** Warning logging for missing guidance
+- ❌ **MISSING (9 tasks):** PDF text extraction tool, PDF parsing logic, validation gates, PRD updates, tests, re-run script
+
+**Detailed Task Breakdown:**
+
+### Phase 1: Land Stage ✅ COMPLETE
+- ✅ **Task 1.1:** Allow PDFs through discovery, tagged with `file_type="pdf"`
+  - **Status:** ✅ COMPLETE
+  - **Evidence:** `SourceFile.file_type` field exists; `cms_rvu_scraper.py` infers file_type on line 104
+- ✅ **Task 1.2:** On unzip, copy PDFs into `docs/cms_rvu/<release_id>/raw/` and write `docs_manifest.json`
+  - **Status:** ✅ COMPLETE
+  - **Evidence:** Implemented in `rvu_ingestor.py` lines 2538-2614 and 2703-2754
+
+### Phase 2: Guidance Extraction ⚠️ PARTIAL
+- ❌ **Task 2.1:** Create `tools/extract_rvu_pdf_guidance.py` step (run post-land)
+  - **Status:** ❌ MISSING
+  - **Requires:** pdfminer.six or PyPDF2 dependency, text extraction logic
+  - **Effort:** ~4-6 hours (PDF parsing, regex patterns, error handling)
+- ❌ **Task 2.2:** Parse and store: release metadata (effective/update dates, CF=32.3465), data file inventory, MPFS payment formula, Work/PE/MP definitions, status indicator legend, global period descriptions, policy warnings, support contacts
+  - **Status:** ❌ MISSING
+  - **Current:** `generate_guidance_summary` uses hardcoded templates + extracts CF/status/global from DataFrames
+  - **Gap:** No actual PDF text extraction; need to parse PDF content directly
+  - **Effort:** ~6-8 hours (pattern matching, table extraction, validation)
+- ✅ **Task 2.3:** Save outputs under `docs/.../summary.md` and `docs/.../summary.json`
+  - **Status:** ✅ COMPLETE
+  - **Evidence:** `write_summary_files` function in `cms_pricing/ingestion/docs/guidance_summary.py`
+
+### Phase 3: Normalize Stage ⚠️ PARTIAL
+- ⚠️ **Task 3.1:** Skip PDFs for dataset parsing but ensure docs folder exists; log WARN if release ships without guidance
+  - **Status:** ⚠️ PARTIAL
+  - **Done:** PDFs are filtered out of raw ingestion payloads (line 2538-2574)
+  - **Missing:** Explicit WARN logging when expected PDFs are absent
+  - **Effort:** ~30 minutes
+- ✅ **Task 3.2:** Reset indices before combining frames
+  - **Status:** ✅ COMPLETE
+  - **Evidence:** `reset_index(drop=True)` on line 1135 in normalize stage
+
+### Phase 4: Publish & Observability ✅ COMPLETE
+- ✅ **Task 4.1:** Append `guidance_docs` entries to published `manifest.json`
+  - **Status:** ✅ COMPLETE
+  - **Evidence:** `manifest_data["guidance_docs"] = guidance_entries` on line 2603
+- ✅ **Task 4.2:** Extend observability payload with documentation counts and link(s) to summary file(s)
+  - **Status:** ✅ COMPLETE
+  - **Evidence:** `metrics_collector.py` lines 352-372 include `guidance_documents_count` and `guidance_documents_size_bytes`
+- ❌ **Task 4.3:** Fail the run if guidance extraction fails while zips succeed
+  - **Status:** ❌ MISSING
+  - **Requires:** Validation gate in pipeline that checks for expected guidance when PDFs are discovered
+  - **Effort:** ~1-2 hours (add validation logic, error handling)
+
+### Phase 5: Documentation Integration ❌ MISSING
+- ❌ **Task 5.1:** Update `REF-rvu-database-schema-v1.0.md` to reference generated summaries for current release
+  - **Status:** ❌ MISSING
+  - **Effort:** ~30 minutes
+- ❌ **Task 5.2:** Update `RUN-render-deployment-prd-v1.0.md` to reference generated summaries
+  - **Status:** ❌ MISSING (mentioned in PRD line 1084 but may need explicit integration points)
+  - **Effort:** ~30 minutes
+- ❌ **Task 5.3:** Create `docs/rvu_guidance/README.md` that describes the pipeline
+  - **Status:** ❌ MISSING
+  - **Effort:** ~1 hour (document structure, workflow, usage examples)
+
+### Phase 6: Automation & Validation ❌ MISSING
+- ❌ **Task 6.1:** Add smoke tests ensuring every manifest result has corresponding doc entries when PDFs are discovered
+  - **Status:** ❌ MISSING
+  - **Evidence:** No test files found matching "guidance" or "docs_manifest"
+  - **Effort:** ~2-3 hours (test fixtures, assertions, edge cases)
+- ❌ **Task 6.2:** Provide manual re-run script that re-extracts summaries for a specific release if upstream PDF changes
+  - **Status:** ❌ MISSING
+  - **Effort:** ~2-3 hours (CLI tool, path resolution, idempotency)
+
+**Acceptance Criteria:**
+- PDFs are discovered, tagged, and stored alongside data files
+- `docs_manifest.json` is created for every release with guidance PDFs
+- `summary.json` and `summary.md` are generated from actual PDF text extraction (not just templates)
+- Observability metrics include guidance document counts and sizes
+- Tests verify guidance pipeline end-to-end
+- PRDs reference guidance summary locations
+- Re-run script allows regenerating summaries for specific releases
+
+**Implementation Priority:**
+1. **High:** Task 2.1 & 2.2 (PDF extraction - core functionality gap)
+2. **High:** Task 4.3 (Validation gate - ensure quality)
+3. **Medium:** Task 6.1 (Smoke tests - prevent regressions)
+4. **Medium:** Task 6.2 (Re-run script - operational support)
+5. **Low:** Task 5.1-5.3 (Documentation updates - nice to have)
+6. **Low:** Task 3.1 (WARN logging - minor enhancement)
+
+**Estimated Total Effort:**
+- Core gaps (2.1, 2.2, 4.3): ~11-16 hours
+- Testing & tooling (6.1, 6.2): ~4-6 hours
+- Documentation (5.1-5.3, 3.1): ~2-3 hours
+- **Total: ~17-25 hours**
+
+**Owner:**
+- Data Engineering (RVU Ingestion)
+
+**Dependencies:**
+- Requires: pdfminer.six or PyPDF2 (add to requirements.txt)
+- Requires: Existing guidance_summary.py infrastructure (✅ already exists)
+- Requires: PDF samples for testing extraction patterns
+
+**Cross-References:**
+- `cms_pricing/ingestion/ingestors/rvu_ingestor.py` (land stage, generate_guidance_summary)
+- `cms_pricing/ingestion/docs/guidance_summary.py` (summary formatter)
+- `cms_pricing/ingestion/run/dis_pipeline.py` (pipeline integration)
+- `cms_pricing/ingestion/observability/metrics_collector.py` (metrics)
+- `prds/REF-rvu-database-schema-v1.0.md` (needs update)
+- `prds/RUN-render-deployment-prd-v1.0.md` (needs update)
+
+**Related Issues:**
+- RVU E2E Harness Modernization (Part 7: Documentation & guidance extraction)
