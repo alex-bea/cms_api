@@ -48,6 +48,101 @@ class PricingRequest(BaseModel):
         return v
 
 
+class CodePricingItem(BaseModel):
+    """Unified pricing item response across all datasets
+    
+    This schema provides a consistent structure for single-code pricing results
+    returned by all pricing engines. It includes pricing amounts, component
+    breakdowns, provenance metadata, and source information.
+    
+    Part of Quick Win #2: Unified CodePricingItem Schema
+    """
+    
+    # Identity
+    code: str = Field(..., description="HCPCS/CPT code")
+    setting: str = Field(..., description="Payment setting (MPFS, OPPS, ASC, IPPS, CLFS, DMEPOS)")
+    modifier: Optional[str] = Field(None, description="Modifier code (e.g., 25, 59, TC)")
+    
+    # Pricing results (all amounts in cents)
+    allowed_cents: int = Field(..., description="Medicare allowed amount in cents")
+    beneficiary_deductible_cents: int = Field(..., description="Beneficiary deductible in cents")
+    beneficiary_coinsurance_cents: int = Field(..., description="Beneficiary coinsurance in cents")
+    beneficiary_total_cents: int = Field(..., description="Total beneficiary cost in cents")
+    program_payment_cents: int = Field(..., description="Program payment in cents")
+    
+    # Component breakdown
+    professional_allowed_cents: Optional[int] = Field(None, description="Professional component allowed amount in cents")
+    facility_allowed_cents: Optional[int] = Field(None, description="Facility component allowed amount in cents")
+    
+    # Provenance (Phase 2)
+    dataset_id: str = Field(..., description="Dataset identifier (e.g., MPFS, OPPS, ASC)")
+    release_id: Optional[str] = Field(None, description="CMS release identifier (Phase 2 provenance)")
+    batch_id: Optional[str] = Field(None, description="Batch identifier from ingestion (Phase 2 provenance)")
+    trace_refs: List[str] = Field(
+        default_factory=list,
+        description="""Trace reference IDs for debugging and audit purposes.
+        
+        Format:
+        - Dataset-specific references: '{dataset}_{year}_{params}_{code}' (e.g., 'mpfs_2025_01_99213')
+        - Provenance references (Phase 2): '{dataset_id}:release:{release_id}' or '{dataset_id}:batch:{batch_id}'
+          Examples: 'MPFS:release:mpfs_2025_annual_20250115', 'MPFS:batch:batch_abc123'
+        
+        Duplicates are automatically removed to keep logs clean."""
+    )
+    
+    # Source information
+    source: str = Field(..., description="Data source (benchmark, mrf, tic)")
+    facility_specific: bool = Field(default=False, description="Whether facility-specific rate was used")
+    packaged: bool = Field(default=False, description="Whether item is packaged (OPPS-specific)")
+    
+    # Drug-specific fields (optional)
+    reference_price_cents: Optional[int] = Field(None, description="NADAC reference price in cents (drugs only)")
+    unit_conversion: Optional[Dict[str, Any]] = Field(None, description="Unit conversion details (drugs only)")
+    
+    # Metadata
+    units: float = Field(default=1.0, description="Number of units (default 1.0 for single-code pricing)")
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any], setting: str, code: str, modifier: Optional[str] = None) -> "CodePricingItem":
+        """Create CodePricingItem from engine result dict (backward compatibility)"""
+        return cls(
+            code=code,
+            setting=setting,
+            modifier=modifier,
+            allowed_cents=data.get('allowed_cents', 0),
+            beneficiary_deductible_cents=data.get('beneficiary_deductible_cents', 0),
+            beneficiary_coinsurance_cents=data.get('beneficiary_coinsurance_cents', 0),
+            beneficiary_total_cents=data.get('beneficiary_total_cents', 0),
+            program_payment_cents=data.get('program_payment_cents', 0),
+            professional_allowed_cents=data.get('professional_allowed_cents'),
+            facility_allowed_cents=data.get('facility_allowed_cents'),
+            dataset_id=data.get('dataset_id', setting),
+            release_id=data.get('release_id'),
+            batch_id=data.get('batch_id'),
+            trace_refs=data.get('trace_refs', []),
+            source=data.get('source', 'benchmark'),
+            facility_specific=data.get('facility_specific', False),
+            packaged=data.get('packaged', False),
+            reference_price_cents=data.get('reference_price_cents'),
+            unit_conversion=data.get('unit_conversion'),
+            units=data.get('units', 1.0)
+        )
+
+
+class CodePricingItemWithGeography(CodePricingItem):
+    """CodePricingItem with geography metadata (response model for /pricing/codes/price)
+    
+    Extends CodePricingItem to include geography resolution information and run_id
+    for single-code pricing endpoint responses.
+    
+    Part of Quick Win #2: Unified CodePricingItem Schema
+    """
+    
+    # Additional metadata for single-code endpoint
+    geography: "GeographyResponse" = Field(..., description="Geography resolution information")
+    run_id: str = Field(..., description="Unique run identifier for this pricing request")
+
+
 class LineItemResponse(BaseModel):
     """Response schema for a pricing line item"""
     sequence: int = Field(..., description="Line sequence number")
@@ -88,6 +183,35 @@ class LineItemResponse(BaseModel):
     
     Duplicates are automatically removed to keep logs clean."""
     )
+    
+    @classmethod
+    def from_code_pricing_item(
+        cls,
+        item: "CodePricingItem",
+        sequence: int,
+        utilization_weight: float = 1.0
+    ) -> "LineItemResponse":
+        """Create LineItemResponse from CodePricingItem (Quick Win #2 compatibility adapter)"""
+        return cls(
+            sequence=sequence,
+            code=item.code,
+            setting=item.setting,
+            units=item.units,
+            utilization_weight=utilization_weight,
+            allowed_cents=item.allowed_cents,
+            beneficiary_deductible_cents=item.beneficiary_deductible_cents,
+            beneficiary_coinsurance_cents=item.beneficiary_coinsurance_cents,
+            beneficiary_total_cents=item.beneficiary_total_cents,
+            program_payment_cents=item.program_payment_cents,
+            professional_allowed_cents=item.professional_allowed_cents,
+            facility_allowed_cents=item.facility_allowed_cents,
+            source=item.source,
+            facility_specific=item.facility_specific,
+            packaged=item.packaged,
+            reference_price_cents=item.reference_price_cents,
+            unit_conversion=item.unit_conversion,
+            trace_refs=item.trace_refs
+        )
 
 
 class GeographyResponse(BaseModel):

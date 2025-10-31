@@ -36,14 +36,15 @@ class PricingService:
         self.geography_service = GeographyService(db)
         self.trace_service = TraceService(db)
         self._plan_name_cache: Dict[Any, str] = {}
+        # Pass db session to engines for connection reuse (optimization)
         self.engines = {
-            'MPFS': MPSFEngine(),
-            'OPPS': OPPSEngine(),
-            'ASC': ASCEngine(),
-            'IPPS': IPPSEngine(),
-            'CLFS': CLFSEngine(),
-            'DMEPOS': DMEPOSEngine(),
-            'DRUGS': DrugEngine()
+            'MPFS': MPSFEngine(db=db),
+            'OPPS': OPPSEngine(db=db),
+            'ASC': ASCEngine(db=db),
+            'IPPS': IPPSEngine(db=db),
+            'CLFS': CLFSEngine(db=db),
+            'DMEPOS': DMEPOSEngine(db=db),
+            'DRUGS': DrugEngine(db=db)
         }
     
     async def price_single_code(
@@ -56,8 +57,10 @@ class PricingService:
         ccn: Optional[str] = None,
         payer: Optional[str] = None,
         plan: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Price a single code/component"""
+    ) -> "CodePricingItemWithGeography":
+        """Price a single code/component (returns CodePricingItemWithGeography)"""
+        
+        from cms_pricing.schemas.pricing import CodePricingItemWithGeography, GeographyResponse
         
         run_id = str(uuid.uuid4())
         
@@ -70,7 +73,7 @@ class PricingService:
             if not engine:
                 raise ValueError(f"Unknown setting: {setting}")
             
-            # Price the code
+            # Price the code (returns CodePricingItem)
             result = await engine.price_code(
                 code=code,
                 zip=zip,
@@ -82,11 +85,26 @@ class PricingService:
                 plan=plan
             )
             
-            # Add geography info
-            result['geography'] = geography_result.dict()
-            result['run_id'] = run_id
+            # Create geography response
+            geography_response = GeographyResponse(
+                zip5=geography_result.zip5,
+                locality_id=geography_result.selected_candidate.locality_id if geography_result.selected_candidate else None,
+                locality_name=geography_result.selected_candidate.locality_name if geography_result.selected_candidate else None,
+                cbsa=geography_result.selected_candidate.cbsa if geography_result.selected_candidate else None,
+                cbsa_name=geography_result.selected_candidate.cbsa_name if geography_result.selected_candidate else None,
+                county_fips=geography_result.selected_candidate.county_fips if geography_result.selected_candidate else None,
+                state_code=geography_result.selected_candidate.state_code if geography_result.selected_candidate else None,
+                rural_flag=geography_result.selected_candidate.rural_flag if geography_result.selected_candidate else None,
+                resolution_method=geography_result.resolution_method,
+                candidates=geography_result.candidates
+            )
             
-            return result
+            # Return CodePricingItemWithGeography (Quick Win #2)
+            return CodePricingItemWithGeography(
+                **result.model_dump(),
+                geography=geography_response,
+                run_id=run_id
+            )
             
         except Exception as e:
             logger.error(
@@ -143,11 +161,7 @@ class PricingService:
                     )
                     continue
                 
-                # Track dataset used
-                if component['setting']:
-                    datasets_seen.add(component['setting'])
-                
-                # Price the component
+                # Price the component (returns CodePricingItem)
                 result = await engine.price_code(
                     code=component['code'],
                     zip=request.zip,
@@ -166,36 +180,25 @@ class PricingService:
                     ndc11=component['ndc11']
                 )
 
-                # Create line item response
-                line_item = LineItemResponse(
+                # Track dataset used from authoritative CodePricingItem.dataset_id (Quick Win #2)
+                if result.dataset_id:
+                    datasets_seen.add(result.dataset_id)
+
+                # Convert CodePricingItem to LineItemResponse using adapter (Quick Win #2)
+                line_item = LineItemResponse.from_code_pricing_item(
+                    item=result,
                     sequence=i + 1,
-                    code=component['code'],
-                    setting=component['setting'],
-                    units=component['units'],
-                    utilization_weight=component['utilization_weight'],
-                    allowed_cents=result['allowed_cents'],
-                    beneficiary_deductible_cents=result.get('beneficiary_deductible_cents', 0),
-                    beneficiary_coinsurance_cents=result.get('beneficiary_coinsurance_cents', 0),
-                    beneficiary_total_cents=result.get('beneficiary_total_cents', 0),
-                    program_payment_cents=result.get('program_payment_cents', 0),
-                    professional_allowed_cents=result.get('professional_allowed_cents'),
-                    facility_allowed_cents=result.get('facility_allowed_cents'),
-                    source=result.get('source', 'benchmark'),
-                    facility_specific=result.get('facility_specific', False),
-                    packaged=result.get('packaged', False),
-                    reference_price_cents=result.get('reference_price_cents'),
-                    unit_conversion=result.get('unit_conversion'),
-                    trace_refs=result.get('trace_refs', [])
+                    utilization_weight=component['utilization_weight']
                 )
                 
                 line_items.append(line_item)
                 
-                # Accumulate totals
-                total_allowed_cents += result['allowed_cents']
-                total_beneficiary_deductible_cents += result.get('beneficiary_deductible_cents', 0)
-                total_beneficiary_coinsurance_cents += result.get('beneficiary_coinsurance_cents', 0)
-                total_beneficiary_cents += result.get('beneficiary_total_cents', 0)
-                total_program_payment_cents += result.get('program_payment_cents', 0)
+                # Accumulate totals using CodePricingItem attributes
+                total_allowed_cents += result.allowed_cents
+                total_beneficiary_deductible_cents += result.beneficiary_deductible_cents
+                total_beneficiary_coinsurance_cents += result.beneficiary_coinsurance_cents
+                total_beneficiary_cents += result.beneficiary_total_cents
+                total_program_payment_cents += result.program_payment_cents
             
             # Create geography response
             geography_response = GeographyResponse(

@@ -8,6 +8,7 @@ from cms_pricing.engines.base import BasePricingEngine
 from cms_pricing.database import SessionLocal
 from cms_pricing.models.fee_schedules import FeeIPPS, IPPSBaseRate, WageIndex
 from cms_pricing.schemas.geography import GeographyResolveResponse
+from cms_pricing.schemas.pricing import CodePricingItem
 import structlog
 
 logger = structlog.get_logger()
@@ -19,8 +20,16 @@ DATASET_ID = "IPPS"
 class IPPSEngine(BasePricingEngine):
     """Inpatient Prospective Payment System pricing engine"""
     
-    def __init__(self):
-        self.db = SessionLocal()
+    def __init__(self, db: Optional[Session] = None):
+        """
+        Initialize IPPS engine with optional database session.
+        
+        Args:
+            db: Optional SQLAlchemy session. If None, creates a new session.
+                Session will be closed when engine is destroyed.
+        """
+        self.db = db if db is not None else SessionLocal()
+        self._owns_session = db is None
     
     async def price_code(
         self,
@@ -39,8 +48,8 @@ class IPPSEngine(BasePricingEngine):
         modifiers: Optional[List[str]] = None,
         pos: Optional[str] = None,
         ndc11: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Price a code using IPPS"""
+    ) -> CodePricingItem:
+        """Price a code using IPPS (Quick Win #2: Returns unified CodePricingItem)"""
         
         try:
             # Get CBSA from geography
@@ -54,8 +63,20 @@ class IPPSEngine(BasePricingEngine):
             # Convert year to fiscal year
             fy = year if year >= 10 else year + 2000
             
-            # Get DRG data
-            drg_data = self.db.query(FeeIPPS).filter(
+            # Pre-compute trace ref base (optimization)
+            trace_refs = [
+                f"ipps_{fy}_{code}",
+                f"ipps_base_{fy}",
+                f"wage_index_{year}_{cbsa}"
+            ]
+            dataset_id = DATASET_ID
+            
+            # Query only necessary columns using with_entities (optimization)
+            drg_result = self.db.query(
+                FeeIPPS.weight,
+                FeeIPPS.release_id,
+                FeeIPPS.batch_id
+            ).filter(
                 and_(
                     FeeIPPS.fy == fy,
                     FeeIPPS.drg == code,
@@ -67,11 +88,16 @@ class IPPSEngine(BasePricingEngine):
                 )
             ).first()
             
-            if not drg_data:
+            if not drg_result:
                 raise ValueError(f"No IPPS data found for DRG {code}")
             
-            # Get base rates
-            base_rate_data = self.db.query(IPPSBaseRate).filter(
+            # Query base rates with column selection
+            base_rate_result = self.db.query(
+                IPPSBaseRate.operating_base,
+                IPPSBaseRate.capital_base,
+                IPPSBaseRate.release_id,
+                IPPSBaseRate.batch_id
+            ).filter(
                 and_(
                     IPPSBaseRate.fy == fy,
                     IPPSBaseRate.effective_from <= f"{year}-12-31",
@@ -82,11 +108,15 @@ class IPPSEngine(BasePricingEngine):
                 )
             ).first()
             
-            if not base_rate_data:
+            if not base_rate_result:
                 raise ValueError(f"No IPPS base rates found for FY {fy}")
             
-            # Get wage index
-            wage_index_data = self.db.query(WageIndex).filter(
+            # Query wage index with column selection
+            wage_index_result = self.db.query(
+                WageIndex.wage_index,
+                WageIndex.release_id,
+                WageIndex.batch_id
+            ).filter(
                 and_(
                     WageIndex.year == year,
                     WageIndex.cbsa == cbsa,
@@ -94,15 +124,29 @@ class IPPSEngine(BasePricingEngine):
                 )
             ).first()
             
-            if not wage_index_data:
+            if not wage_index_result:
                 raise ValueError(f"No wage index found for CBSA {cbsa}")
+            
+            # Extract values from Row results
+            drg_weight = drg_result.weight
+            drg_release_id = drg_result.release_id
+            drg_batch_id = drg_result.batch_id
+            
+            operating_base = base_rate_result.operating_base
+            capital_base = base_rate_result.capital_base
+            base_release_id = base_rate_result.release_id
+            base_batch_id = base_rate_result.batch_id
+            
+            wage_index = wage_index_result.wage_index
+            wage_release_id = wage_index_result.release_id
+            wage_batch_id = wage_index_result.batch_id
             
             # Calculate IPPS payment
             # Formula: DRG_weight × ((operating_base × WI) + (capital_base × WI))
-            operating_component = base_rate_data.operating_base * wage_index_data.wage_index
-            capital_component = base_rate_data.capital_base * wage_index_data.wage_index
+            operating_component = operating_base * wage_index
+            capital_component = capital_base * wage_index
             
-            base_payment = drg_data.weight * (operating_component + capital_component)
+            base_payment = drg_weight * (operating_component + capital_component)
             
             # Apply modifiers
             if modifiers:
@@ -126,52 +170,50 @@ class IPPSEngine(BasePricingEngine):
             beneficiary_total_cents = int(beneficiary_total * 100)
             program_payment_cents = int(program_payment * 100)
             
-            # Build trace refs with provenance (Phase 2.5)
-            dataset_id = DATASET_ID
-            trace_refs = [
-                f"ipps_{fy}_{code}",
-                f"ipps_base_{fy}",
-                f"wage_index_{year}_{cbsa}"
-            ]
-            
             # Add IPPS DRG provenance (standardized format)
-            if drg_data.release_id:
-                trace_refs.append(f"{dataset_id}:release:{drg_data.release_id}")
-            if drg_data.batch_id:
-                trace_refs.append(f"{dataset_id}:batch:{drg_data.batch_id}")
+            if drg_release_id:
+                trace_refs.append(f"{dataset_id}:release:{drg_release_id}")
+            if drg_batch_id:
+                trace_refs.append(f"{dataset_id}:batch:{drg_batch_id}")
             
             # Add base rate provenance if available
-            if base_rate_data.release_id:
-                trace_refs.append(f"IPPSBaseRate:release:{base_rate_data.release_id}")
-            if base_rate_data.batch_id:
-                trace_refs.append(f"IPPSBaseRate:batch:{base_rate_data.batch_id}")
+            if base_release_id:
+                trace_refs.append(f"IPPSBaseRate:release:{base_release_id}")
+            if base_batch_id:
+                trace_refs.append(f"IPPSBaseRate:batch:{base_batch_id}")
             
             # Add wage index provenance if available
-            if wage_index_data.release_id:
-                trace_refs.append(f"WageIndex:release:{wage_index_data.release_id}")
-            if wage_index_data.batch_id:
-                trace_refs.append(f"WageIndex:batch:{wage_index_data.batch_id}")
+            if wage_release_id:
+                trace_refs.append(f"WageIndex:release:{wage_release_id}")
+            if wage_batch_id:
+                trace_refs.append(f"WageIndex:batch:{wage_batch_id}")
             
             # Filter out None values and deduplicate while preserving order
             trace_refs = list(dict.fromkeys([ref for ref in trace_refs if ref is not None]))
             
-            return {
-                "allowed_cents": allowed_cents,
-                "beneficiary_deductible_cents": beneficiary_deductible_cents,
-                "beneficiary_coinsurance_cents": beneficiary_coinsurance_cents,
-                "beneficiary_total_cents": beneficiary_total_cents,
-                "program_payment_cents": program_payment_cents,
-                "professional_allowed_cents": 0,  # IPPS is facility only
-                "facility_allowed_cents": allowed_cents if facility_component else 0,
-                "source": "benchmark",
-                "facility_specific": False,
-                "packaged": False,
-                "trace_refs": trace_refs,
-                # Direct provenance fields (Phase 2.5)
-                "release_id": drg_data.release_id,
-                "batch_id": drg_data.batch_id,
-                "dataset_id": dataset_id
-            }
+            # Extract primary modifier (if multiple, use first)
+            primary_modifier = modifiers[0] if modifiers and len(modifiers) > 0 else None
+            
+            return CodePricingItem(
+                code=code,
+                setting="IPPS",
+                modifier=primary_modifier,
+                allowed_cents=allowed_cents,
+                beneficiary_deductible_cents=beneficiary_deductible_cents,
+                beneficiary_coinsurance_cents=beneficiary_coinsurance_cents,
+                beneficiary_total_cents=beneficiary_total_cents,
+                program_payment_cents=program_payment_cents,
+                professional_allowed_cents=0,  # IPPS is facility only
+                facility_allowed_cents=allowed_cents if facility_component else 0,
+                dataset_id=dataset_id,
+                release_id=drg_release_id,
+                batch_id=drg_batch_id,
+                trace_refs=trace_refs,
+                source="benchmark",
+                facility_specific=False,
+                packaged=False,
+                units=units
+            )
             
         except Exception as e:
             logger.error(
@@ -187,6 +229,9 @@ class IPPSEngine(BasePricingEngine):
             raise
     
     def __del__(self):
-        """Clean up database session"""
-        if hasattr(self, 'db'):
-            self.db.close()
+        """Clean up database session if we own it"""
+        if hasattr(self, '_owns_session') and self._owns_session and hasattr(self, 'db'):
+            try:
+                self.db.close()
+            except Exception:
+                pass  # Ignore errors during cleanup

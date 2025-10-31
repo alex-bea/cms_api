@@ -8,6 +8,7 @@ from cms_pricing.engines.base import BasePricingEngine
 from cms_pricing.database import SessionLocal
 from cms_pricing.models.drugs import DrugASP, DrugNADAC, NDCHCPCSXwalk
 from cms_pricing.schemas.geography import GeographyResolveResponse
+from cms_pricing.schemas.pricing import CodePricingItem
 import structlog
 
 logger = structlog.get_logger()
@@ -16,8 +17,16 @@ logger = structlog.get_logger()
 class DrugEngine(BasePricingEngine):
     """Drug pricing engine for Part B ASP and NADAC"""
     
-    def __init__(self):
-        self.db = SessionLocal()
+    def __init__(self, db: Optional[Session] = None):
+        """
+        Initialize Drug engine with optional database session.
+        
+        Args:
+            db: Optional SQLAlchemy session. If None, creates a new session.
+                Session will be closed when engine is destroyed.
+        """
+        self.db = db if db is not None else SessionLocal()
+        self._owns_session = db is None
     
     async def price_code(
         self,
@@ -36,8 +45,8 @@ class DrugEngine(BasePricingEngine):
         modifiers: Optional[List[str]] = None,
         pos: Optional[str] = None,
         ndc11: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Price a drug code using ASP and optionally NADAC"""
+    ) -> CodePricingItem:
+        """Price a drug code using ASP and optionally NADAC (Quick Win #2: Returns unified CodePricingItem)"""
         
         try:
             # Get ASP data for Part B drugs
@@ -76,21 +85,18 @@ class DrugEngine(BasePricingEngine):
             beneficiary_total_cents = int(cost_sharing["beneficiary_total"] * 100)
             program_payment_cents = int(cost_sharing["program_payment"] * 100)
             
-            result = {
-                "allowed_cents": allowed_cents,
-                "beneficiary_deductible_cents": beneficiary_deductible_cents,
-                "beneficiary_coinsurance_cents": beneficiary_coinsurance_cents,
-                "beneficiary_total_cents": beneficiary_total_cents,
-                "program_payment_cents": program_payment_cents,
-                "professional_allowed_cents": allowed_cents if professional_component else 0,
-                "facility_allowed_cents": 0,  # Drugs are professional only
-                "source": "benchmark",
-                "facility_specific": False,
-                "packaged": False,
-                "trace_refs": [
-                    f"asp_{year}_{quarter}_{code}"
-                ]
-            }
+            # Build trace refs
+            trace_refs = [
+                f"asp_{year}_{quarter}_{code}"
+            ]
+            
+            # Drug engine doesn't have Phase 2 provenance yet (no release_id/batch_id in DrugASP)
+            # Extract primary modifier (if multiple, use first)
+            primary_modifier = modifiers[0] if modifiers and len(modifiers) > 0 else None
+            
+            # Initialize reference price and unit conversion
+            reference_price_cents = None
+            unit_conversion = None
             
             # Add NADAC reference if NDC provided
             if ndc11:
@@ -100,17 +106,38 @@ class DrugEngine(BasePricingEngine):
                     conversion = await self._get_unit_conversion(ndc11, code)
                     if conversion:
                         nadac_price = nadac_data['unit_price'] * conversion * units * utilization_weight
-                        result['reference_price_cents'] = int(nadac_price * 100)
-                        result['unit_conversion'] = {
+                        reference_price_cents = int(nadac_price * 100)
+                        unit_conversion = {
                             "ndc11": ndc11,
                             "hcpcs": code,
                             "units_per_hcpcs": conversion,
                             "nadac_unit_price": nadac_data['unit_price'],
                             "nadac_as_of": nadac_data['as_of']
                         }
-                        result['trace_refs'].append(f"nadac_{nadac_data['as_of']}_{ndc11}")
+                        trace_refs.append(f"nadac_{nadac_data['as_of']}_{ndc11}")
             
-            return result
+            return CodePricingItem(
+                code=code,
+                setting="DRUGS",
+                modifier=primary_modifier,
+                allowed_cents=allowed_cents,
+                beneficiary_deductible_cents=beneficiary_deductible_cents,
+                beneficiary_coinsurance_cents=beneficiary_coinsurance_cents,
+                beneficiary_total_cents=beneficiary_total_cents,
+                program_payment_cents=program_payment_cents,
+                professional_allowed_cents=allowed_cents if professional_component else 0,
+                facility_allowed_cents=0,  # Drugs are professional only
+                dataset_id="DRUGS",
+                release_id=None,  # Drug engine doesn't have Phase 2 provenance yet
+                batch_id=None,
+                trace_refs=trace_refs,
+                source="benchmark",
+                facility_specific=False,
+                packaged=False,
+                reference_price_cents=reference_price_cents,
+                unit_conversion=unit_conversion,
+                units=units
+            )
             
         except Exception as e:
             logger.error(
@@ -177,6 +204,9 @@ class DrugEngine(BasePricingEngine):
             return None
     
     def __del__(self):
-        """Clean up database session"""
-        if hasattr(self, 'db'):
-            self.db.close()
+        """Clean up database session if we own it"""
+        if hasattr(self, '_owns_session') and self._owns_session and hasattr(self, 'db'):
+            try:
+                self.db.close()
+            except Exception:
+                pass  # Ignore errors during cleanup

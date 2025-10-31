@@ -8,6 +8,7 @@ from cms_pricing.engines.base import BasePricingEngine
 from cms_pricing.database import SessionLocal
 from cms_pricing.models.fee_schedules import FeeDMEPOS
 from cms_pricing.schemas.geography import GeographyResolveResponse
+from cms_pricing.schemas.pricing import CodePricingItem
 import structlog
 
 logger = structlog.get_logger()
@@ -19,8 +20,31 @@ DATASET_ID = "DMEPOS"
 class DMEPOSEngine(BasePricingEngine):
     """Durable Medical Equipment, Prosthetics, Orthotics, and Supplies pricing engine"""
     
-    def __init__(self):
-        self.db = SessionLocal()
+    def __init__(self, db: Optional[Session] = None):
+        """
+        Initialize DMEPOS engine with optional database session.
+        
+        Args:
+            db: Optional SQLAlchemy session. If None, creates a new session.
+                Session will be closed when engine is destroyed.
+        """
+        self.db = db if db is not None else SessionLocal()
+        self._owns_session = db is None
+    
+    @staticmethod
+    def _build_dmepos_filter(year: int, quarter: str, code: str, is_rural: bool):
+        """Build reusable filter expression for DMEPOS queries"""
+        return and_(
+            FeeDMEPOS.year == year,
+            FeeDMEPOS.quarter == quarter,
+            FeeDMEPOS.code == code,
+            FeeDMEPOS.rural_flag == is_rural,
+            FeeDMEPOS.effective_from <= f"{year}-12-31",
+            or_(
+                FeeDMEPOS.effective_to.is_(None),
+                FeeDMEPOS.effective_to >= f"{year}-01-01"
+            )
+        )
     
     async def price_code(
         self,
@@ -39,8 +63,8 @@ class DMEPOSEngine(BasePricingEngine):
         modifiers: Optional[List[str]] = None,
         pos: Optional[str] = None,
         ndc11: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Price a code using DMEPOS fee schedule"""
+    ) -> CodePricingItem:
+        """Price a code using DMEPOS fee schedule (Quick Win #2: Returns unified CodePricingItem)"""
         
         try:
             # Coalesce quarter to default to "1" if None
@@ -51,26 +75,26 @@ class DMEPOSEngine(BasePricingEngine):
             if geography and geography.selected_candidate:
                 is_rural = geography.selected_candidate.rural_flag in ['R', 'B'] if geography.selected_candidate and geography.selected_candidate.rural_flag else False
             
-            # Get DMEPOS data
-            dmepos_data = self.db.query(FeeDMEPOS).filter(
-                and_(
-                    FeeDMEPOS.year == year,
-                    FeeDMEPOS.quarter == quarter_value,
-                    FeeDMEPOS.code == code,
-                    FeeDMEPOS.rural_flag == is_rural,
-                    FeeDMEPOS.effective_from <= f"{year}-12-31",
-                    or_(
-                        FeeDMEPOS.effective_to.is_(None),
-                        FeeDMEPOS.effective_to >= f"{year}-01-01"
-                    )
-                )
+            # Pre-compute trace ref base (optimization)
+            trace_refs = [f"dmepos_{year}_{quarter_value}_{code}_{is_rural}"]
+            dataset_id = DATASET_ID
+            
+            # Query only necessary columns using with_entities (optimization)
+            dmepos_result = self.db.query(
+                FeeDMEPOS.fee,
+                FeeDMEPOS.release_id,
+                FeeDMEPOS.batch_id
+            ).filter(
+                self._build_dmepos_filter(year, quarter_value, code, is_rural)
             ).first()
             
-            if not dmepos_data:
+            if not dmepos_result:
                 raise ValueError(f"No DMEPOS data found for code {code} (rural: {is_rural})")
             
-            # Get base fee
-            base_fee = dmepos_data.fee or 0
+            # Extract values from Row result
+            base_fee = dmepos_result.fee if dmepos_result.fee else 0
+            release_id = dmepos_result.release_id
+            batch_id = dmepos_result.batch_id
             
             # Apply modifiers
             if modifiers:
@@ -89,38 +113,38 @@ class DMEPOSEngine(BasePricingEngine):
             beneficiary_total_cents = int(cost_sharing["beneficiary_total"] * 100)
             program_payment_cents = int(cost_sharing["program_payment"] * 100)
             
-            # Build trace refs with provenance (Phase 2.5)
-            dataset_id = DATASET_ID
-            trace_refs = [
-                f"dmepos_{year}_{quarter_value}_{code}_{is_rural}"
-            ]
-            
             # Add DMEPOS provenance (standardized format)
-            if dmepos_data.release_id:
-                trace_refs.append(f"{dataset_id}:release:{dmepos_data.release_id}")
-            if dmepos_data.batch_id:
-                trace_refs.append(f"{dataset_id}:batch:{dmepos_data.batch_id}")
+            if release_id:
+                trace_refs.append(f"{dataset_id}:release:{release_id}")
+            if batch_id:
+                trace_refs.append(f"{dataset_id}:batch:{batch_id}")
             
             # Filter out None values and deduplicate while preserving order
             trace_refs = list(dict.fromkeys([ref for ref in trace_refs if ref is not None]))
             
-            return {
-                "allowed_cents": allowed_cents,
-                "beneficiary_deductible_cents": beneficiary_deductible_cents,
-                "beneficiary_coinsurance_cents": beneficiary_coinsurance_cents,
-                "beneficiary_total_cents": beneficiary_total_cents,
-                "program_payment_cents": program_payment_cents,
-                "professional_allowed_cents": allowed_cents if professional_component else 0,
-                "facility_allowed_cents": 0,  # DMEPOS is professional only
-                "source": "benchmark",
-                "facility_specific": False,
-                "packaged": False,
-                "trace_refs": trace_refs,
-                # Direct provenance fields (Phase 2.5)
-                "release_id": dmepos_data.release_id,
-                "batch_id": dmepos_data.batch_id,
-                "dataset_id": dataset_id
-            }
+            # Extract primary modifier (if multiple, use first)
+            primary_modifier = modifiers[0] if modifiers and len(modifiers) > 0 else None
+            
+            return CodePricingItem(
+                code=code,
+                setting="DMEPOS",
+                modifier=primary_modifier,
+                allowed_cents=allowed_cents,
+                beneficiary_deductible_cents=beneficiary_deductible_cents,
+                beneficiary_coinsurance_cents=beneficiary_coinsurance_cents,
+                beneficiary_total_cents=beneficiary_total_cents,
+                program_payment_cents=program_payment_cents,
+                professional_allowed_cents=allowed_cents if professional_component else 0,
+                facility_allowed_cents=0,  # DMEPOS is professional only
+                dataset_id=dataset_id,
+                release_id=release_id,
+                batch_id=batch_id,
+                trace_refs=trace_refs,
+                source="benchmark",
+                facility_specific=False,
+                packaged=False,
+                units=units
+            )
             
         except Exception as e:
             logger.error(
@@ -136,6 +160,9 @@ class DMEPOSEngine(BasePricingEngine):
             raise
     
     def __del__(self):
-        """Clean up database session"""
-        if hasattr(self, 'db'):
-            self.db.close()
+        """Clean up database session if we own it"""
+        if hasattr(self, '_owns_session') and self._owns_session and hasattr(self, 'db'):
+            try:
+                self.db.close()
+            except Exception:
+                pass  # Ignore errors during cleanup

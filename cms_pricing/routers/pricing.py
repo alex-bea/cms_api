@@ -8,7 +8,8 @@ from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from cms_pricing.schemas.pricing import (
-    PricingRequest, PricingResponse, ComparisonRequest, ComparisonResponse
+    PricingRequest, PricingResponse, ComparisonRequest, ComparisonResponse,
+    CodePricingItem, CodePricingItemWithGeography, GeographyResponse
 )
 from cms_pricing.auth import verify_api_key
 from cms_pricing.services.pricing import PricingService
@@ -18,7 +19,7 @@ router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
 
-@router.get("/codes/price")
+@router.get("/codes/price", response_model=CodePricingItemWithGeography)
 async def price_single_code(
     request: Request,
     zip: str,
@@ -35,10 +36,21 @@ async def price_single_code(
     """
     Price a single code/component.
     
+    **Response Format (Quick Win #2):**
+    Returns CodePricingItemWithGeography, which extends CodePricingItem with geography and run_id metadata.
+    The core pricing data follows CodePricingItem structure for consistency across all datasets.
+    
+    **Response Fields:**
+    - All fields from CodePricingItem (code, setting, allowed_cents, dataset_id, etc.)
+    - **geography**: GeographyResponse object with ZIP resolution details (locality_id, CBSA, etc.)
+    - **run_id**: Unique identifier for this pricing request
+    
     **Provenance Metadata (Phase 2):**
     The response includes provenance information to trace pricing results back to specific CMS data versions:
     
-    - **datasets_used**: List of datasets with release_id and batch_id. May contain None values for legacy data.
+    - **dataset_id**: Dataset identifier (MPFS, OPPS, ASC, etc.)
+    - **release_id**: CMS release identifier (Phase 2 provenance, may be None for legacy data)
+    - **batch_id**: Batch identifier from ingestion (Phase 2 provenance, may be None for legacy data)
     - **trace_refs**: Trace references in standardized format:
       - Format: `{dataset_id}:release:{release_id}` or `{dataset_id}:batch:{batch_id}`
       - Examples: 'MPFS:release:mpfs_2025_annual_20250115', 'OPPS:batch:batch_abc123'

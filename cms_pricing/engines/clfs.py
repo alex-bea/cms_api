@@ -8,6 +8,7 @@ from cms_pricing.engines.base import BasePricingEngine
 from cms_pricing.database import SessionLocal
 from cms_pricing.models.fee_schedules import FeeCLFS
 from cms_pricing.schemas.geography import GeographyResolveResponse
+from cms_pricing.schemas.pricing import CodePricingItem
 import structlog
 
 logger = structlog.get_logger()
@@ -19,8 +20,30 @@ DATASET_ID = "CLFS"
 class CLFSEngine(BasePricingEngine):
     """Clinical Laboratory Fee Schedule pricing engine"""
     
-    def __init__(self):
-        self.db = SessionLocal()
+    def __init__(self, db: Optional[Session] = None):
+        """
+        Initialize CLFS engine with optional database session.
+        
+        Args:
+            db: Optional SQLAlchemy session. If None, creates a new session.
+                Session will be closed when engine is destroyed.
+        """
+        self.db = db if db is not None else SessionLocal()
+        self._owns_session = db is None
+    
+    @staticmethod
+    def _build_clfs_filter(year: int, quarter: str, code: str):
+        """Build reusable filter expression for CLFS queries"""
+        return and_(
+            FeeCLFS.year == year,
+            FeeCLFS.quarter == quarter,
+            FeeCLFS.hcpcs == code,
+            FeeCLFS.effective_from <= f"{year}-12-31",
+            or_(
+                FeeCLFS.effective_to.is_(None),
+                FeeCLFS.effective_to >= f"{year}-01-01"
+            )
+        )
     
     async def price_code(
         self,
@@ -39,32 +62,33 @@ class CLFSEngine(BasePricingEngine):
         modifiers: Optional[List[str]] = None,
         pos: Optional[str] = None,
         ndc11: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Price a code using CLFS"""
+    ) -> CodePricingItem:
+        """Price a code using CLFS (Quick Win #2: Returns unified CodePricingItem)"""
         
         try:
             # Coalesce quarter to default to "1" if None
             quarter_value = quarter if quarter is not None else "1"
             
-            # Get CLFS data
-            clfs_data = self.db.query(FeeCLFS).filter(
-                and_(
-                    FeeCLFS.year == year,
-                    FeeCLFS.quarter == quarter_value,
-                    FeeCLFS.hcpcs == code,
-                    FeeCLFS.effective_from <= f"{year}-12-31",
-                    or_(
-                        FeeCLFS.effective_to.is_(None),
-                        FeeCLFS.effective_to >= f"{year}-01-01"
-                    )
-                )
+            # Pre-compute trace ref base (optimization)
+            trace_refs = [f"clfs_{year}_{quarter_value}_{code}"]
+            dataset_id = DATASET_ID
+            
+            # Query only necessary columns using with_entities (optimization)
+            clfs_result = self.db.query(
+                FeeCLFS.fee,
+                FeeCLFS.release_id,
+                FeeCLFS.batch_id
+            ).filter(
+                self._build_clfs_filter(year, quarter_value, code)
             ).first()
             
-            if not clfs_data:
+            if not clfs_result:
                 raise ValueError(f"No CLFS data found for code {code}")
             
-            # Get base fee
-            base_fee = clfs_data.fee or 0
+            # Extract values from Row result
+            base_fee = clfs_result.fee if clfs_result.fee else 0
+            release_id = clfs_result.release_id
+            batch_id = clfs_result.batch_id
             
             # Apply modifiers
             if modifiers:
@@ -83,38 +107,38 @@ class CLFSEngine(BasePricingEngine):
             beneficiary_total_cents = int(cost_sharing["beneficiary_total"] * 100)
             program_payment_cents = int(cost_sharing["program_payment"] * 100)
             
-            # Build trace refs with provenance (Phase 2.5)
-            dataset_id = DATASET_ID
-            trace_refs = [
-                f"clfs_{year}_{quarter_value}_{code}"
-            ]
-            
             # Add CLFS provenance (standardized format)
-            if clfs_data.release_id:
-                trace_refs.append(f"{dataset_id}:release:{clfs_data.release_id}")
-            if clfs_data.batch_id:
-                trace_refs.append(f"{dataset_id}:batch:{clfs_data.batch_id}")
+            if release_id:
+                trace_refs.append(f"{dataset_id}:release:{release_id}")
+            if batch_id:
+                trace_refs.append(f"{dataset_id}:batch:{batch_id}")
             
             # Filter out None values and deduplicate while preserving order
             trace_refs = list(dict.fromkeys([ref for ref in trace_refs if ref is not None]))
             
-            return {
-                "allowed_cents": allowed_cents,
-                "beneficiary_deductible_cents": beneficiary_deductible_cents,
-                "beneficiary_coinsurance_cents": beneficiary_coinsurance_cents,
-                "beneficiary_total_cents": beneficiary_total_cents,
-                "program_payment_cents": program_payment_cents,
-                "professional_allowed_cents": allowed_cents if professional_component else 0,
-                "facility_allowed_cents": 0,  # CLFS is professional only
-                "source": "benchmark",
-                "facility_specific": False,
-                "packaged": False,
-                "trace_refs": trace_refs,
-                # Direct provenance fields (Phase 2.5)
-                "release_id": clfs_data.release_id,
-                "batch_id": clfs_data.batch_id,
-                "dataset_id": dataset_id
-            }
+            # Extract primary modifier (if multiple, use first)
+            primary_modifier = modifiers[0] if modifiers and len(modifiers) > 0 else None
+            
+            return CodePricingItem(
+                code=code,
+                setting="CLFS",
+                modifier=primary_modifier,
+                allowed_cents=allowed_cents,
+                beneficiary_deductible_cents=beneficiary_deductible_cents,
+                beneficiary_coinsurance_cents=beneficiary_coinsurance_cents,
+                beneficiary_total_cents=beneficiary_total_cents,
+                program_payment_cents=program_payment_cents,
+                professional_allowed_cents=allowed_cents if professional_component else 0,
+                facility_allowed_cents=0,  # CLFS is professional only
+                dataset_id=dataset_id,
+                release_id=release_id,
+                batch_id=batch_id,
+                trace_refs=trace_refs,
+                source="benchmark",
+                facility_specific=False,
+                packaged=False,
+                units=units
+            )
             
         except Exception as e:
             logger.error(
@@ -129,6 +153,9 @@ class CLFSEngine(BasePricingEngine):
             raise
     
     def __del__(self):
-        """Clean up database session"""
-        if hasattr(self, 'db'):
-            self.db.close()
+        """Clean up database session if we own it"""
+        if hasattr(self, '_owns_session') and self._owns_session and hasattr(self, 'db'):
+            try:
+                self.db.close()
+            except Exception:
+                pass  # Ignore errors during cleanup

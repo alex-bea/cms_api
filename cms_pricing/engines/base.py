@@ -1,7 +1,11 @@
 """Base pricing engine"""
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cms_pricing.schemas.pricing import CodePricingItem
+
 from cms_pricing.schemas.geography import GeographyResolveResponse
 
 
@@ -26,8 +30,8 @@ class BasePricingEngine(ABC):
         modifiers: Optional[List[str]] = None,
         pos: Optional[str] = None,
         ndc11: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Price a single code/component"""
+    ) -> "CodePricingItem":
+        """Price a single code/component (Quick Win #2: Returns unified CodePricingItem)"""
         pass
     
     def _apply_modifiers(self, base_amount: float, modifiers: List[str]) -> float:

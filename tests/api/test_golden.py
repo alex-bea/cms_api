@@ -54,6 +54,19 @@ def test_pricing_parity(client: TestClient, api_key: str, scenario: dict):
     assert abs(actual_beneficiary_cents - expected_beneficiary_cents) <= 1, \
         f"Scenario {scenario_name}: Expected {expected_beneficiary_cents} beneficiary cents, got {actual_beneficiary_cents} cents"
     
+    # Verify CodePricingItem structure (Quick Win #2)
+    assert "code" in data, f"Scenario {scenario_name}: Response should include 'code' field (CodePricingItem)"
+    assert "setting" in data, f"Scenario {scenario_name}: Response should include 'setting' field (CodePricingItem)"
+    request_setting = request_data.get("setting")
+    assert data.get("setting") == request_setting, f"Scenario {scenario_name}: setting should match request setting"
+    assert "dataset_id" in data, f"Scenario {scenario_name}: Response should include 'dataset_id' field (CodePricingItem)"
+    
+    # Verify CodePricingItemWithGeography fields (geography and run_id)
+    assert "geography" in data, f"Scenario {scenario_name}: Response should include 'geography' field (CodePricingItemWithGeography)"
+    assert "run_id" in data, f"Scenario {scenario_name}: Response should include 'run_id' field (CodePricingItemWithGeography)"
+    assert isinstance(data.get("geography"), dict), f"Scenario {scenario_name}: geography should be a dict"
+    assert isinstance(data.get("run_id"), str), f"Scenario {scenario_name}: run_id should be a string"
+    
     # Verify trace references
     actual_trace_refs = data.get("trace_refs", [])
     for expected_ref in expected_trace_refs:
@@ -62,16 +75,14 @@ def test_pricing_parity(client: TestClient, api_key: str, scenario: dict):
     
     # Verify provenance fields structure (Phase 2.5)
     # Note: These may be None for legacy data, but fields should exist when provenance is available
-    # Check for release_id, batch_id, or dataset_id fields (at least one should be present)
-    has_provenance_fields = any(key in data for key in ["release_id", "batch_id", "dataset_id"])
-    if has_provenance_fields:
-        # If provenance fields exist, verify structure
-        if "release_id" in data:
-            assert data["release_id"] is None or isinstance(data["release_id"], str)
-        if "batch_id" in data:
-            assert data["batch_id"] is None or isinstance(data["batch_id"], str)
-        if "dataset_id" in data:
-            assert data["dataset_id"] is None or isinstance(data["dataset_id"], str)
+    # release_id and batch_id may be None for legacy data
+    assert "release_id" in data or "batch_id" in data, \
+        f"Scenario {scenario_name}: Response should include provenance fields (release_id or batch_id)"
+    
+    if "release_id" in data:
+        assert data["release_id"] is None or isinstance(data["release_id"], str)
+    if "batch_id" in data:
+        assert data["batch_id"] is None or isinstance(data["batch_id"], str)
     
     # Verify trace_refs deduplication (Phase 2.5)
     # Should not have duplicates
