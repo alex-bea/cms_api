@@ -1,46 +1,46 @@
 {
   "release_id": "empty_test",
-  "batch_id": "d22e846c-ff18-4468-b8e6-1483c58c8437",
+  "batch_id": "f7581ef2-f961-418f-aee6-02824f9d419f",
   "source": "cms_rvu",
   "files": [
     {
-      "path": "files/RVU25A",
-      "sha256": "9821f26b319bdf1336b60c9e55a781eb2bd5e9add5029bdeef39b1135a23d177",
-      "size_bytes": 189704,
+      "path": "files/rvu25a-20250110.zip",
+      "sha256": "8871f447d1dfce9df46c155c5170f7ad68a580e49c5492a73e56d7978fd159e6",
+      "size_bytes": 4055697,
       "content_type": "application/zip",
-      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25a",
-      "last_modified": "Tue, 28 Oct 2025 14:58:32 GMT",
-      "etag": "\"1761663512-gzip\""
+      "url": "https://www.cms.gov/files/zip/rvu25a-updated-01/10/2025.zip",
+      "last_modified": "Fri, 10 Jan 2025 18:54:27 GMT",
+      "etag": null
     },
     {
-      "path": "files/RVU25B",
-      "sha256": "dc22b0bd00c6f74d8e67c59561cd185915049aa0659411bed092668efd76d546",
-      "size_bytes": 189704,
+      "path": "files/rvu25b-20250605.zip",
+      "sha256": "2fbe521eb8837073f2cfcefeb4af997d2141e4577cd2040bfec83bf52c2063ef",
+      "size_bytes": 3635807,
       "content_type": "application/zip",
-      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25b",
-      "last_modified": "Tue, 28 Oct 2025 15:09:03 GMT",
-      "etag": "\"1761664143-gzip\""
+      "url": "https://www.cms.gov/files/zip/rvu25b-updated-06/05/2025.zip",
+      "last_modified": "Thu, 05 Jun 2025 18:20:51 GMT",
+      "etag": null
     },
     {
-      "path": "files/RVU25C",
-      "sha256": "6e9dcb05ee9191ce0e265699b002f8f10e8d1a32e008eb10c24319bb0427d708",
-      "size_bytes": 189704,
+      "path": "files/rvu25c-20250605.zip",
+      "sha256": "ab795bffde2b239fd33cf0267754ee4bc397a2ba29a57e7779b7fe42f09f4039",
+      "size_bytes": 3678758,
       "content_type": "application/zip",
-      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25c",
-      "last_modified": "Tue, 28 Oct 2025 14:59:00 GMT",
-      "etag": "\"1761663540-gzip\""
+      "url": "https://www.cms.gov/files/zip/rvu25c-updated-06/05/2025.zip",
+      "last_modified": "Thu, 05 Jun 2025 14:50:42 GMT",
+      "etag": null
     },
     {
-      "path": "files/RVU25D",
-      "sha256": "804876258509456a27268e7d65390ddb214100b8d29c05bd3d33b17000a7d9a2",
-      "size_bytes": 189706,
+      "path": "files/rvu25d-20250911.zip",
+      "sha256": "ebe658d447353094aaf2068530045079b6875f76451defd163fe701b0c2adf79",
+      "size_bytes": 3618578,
       "content_type": "application/zip",
-      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25d-0",
-      "last_modified": "Tue, 28 Oct 2025 14:58:51 GMT",
-      "etag": "\"1761663531-gzip\""
+      "url": "https://www.cms.gov/files/zip/rvu25d-updated-09/11/2025.zip",
+      "last_modified": "Tue, 16 Sep 2025 14:17:46 GMT",
+      "etag": null
     }
   ],
-  "fetched_at": "2025-10-28T16:03:54.617053",
+  "fetched_at": "2025-10-30T15:10:50.054367",
   "discovered_from": "https://www.cms.gov/medicare/payment/fee-schedules",
   "source_url": "https://www.cms.gov/medicare/payment/fee-schedules",
   "license": {

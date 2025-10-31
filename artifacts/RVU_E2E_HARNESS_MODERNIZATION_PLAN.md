@@ -81,4 +81,9 @@
 - Full RVU (post-modernization): `pytest tests/ingestors/test_rvu_ingestor_e2e.py -q`
 - Temp dir: `export RVU_TEST_DATA_DIR=$(mktemp -d /tmp/rvu_tests.XXXXXX)`
 
+### Task Completion Tracking
+- Audit task completion: `python tools/audit_task_completion.py --dry-run` (preview)
+- Update task statuses: `python tools/audit_task_completion.py --update`
+- Tool uses 5 verification methods: git history, test results, AST analysis, acceptance criteria, documentation checks
+
 

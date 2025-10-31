@@ -308,13 +308,14 @@ class RVUTestDatasetCreator:
     
     def create_manifest(self):
         """Create test manifest.json"""
+        base_url = self.output_dir.resolve()
         manifest = {
             "source": "cms_rvu_test",
             "discovered_at": datetime.now().isoformat(),
             "files": [
                 {
                     "filename": "PPRRVU2025_Oct_test.txt",
-                    "url": "file://tests/fixtures/rvu/test_data/PPRRVU2025_Oct_test.txt",
+                    "url": f"file://{base_url}/PPRRVU2025_Oct_test.txt",
                     "sha256": self._calculate_file_hash(self.output_dir / "PPRRVU2025_Oct_test.txt"),
                     "size_bytes": (self.output_dir / "PPRRVU2025_Oct_test.txt").stat().st_size,
                     "content_type": "text/plain",
@@ -322,7 +323,7 @@ class RVUTestDatasetCreator:
                 },
                 {
                     "filename": "GPCI2025_test.txt",
-                    "url": "file://tests/fixtures/rvu/test_data/GPCI2025_test.txt",
+                    "url": f"file://{base_url}/GPCI2025_test.txt",
                     "sha256": self._calculate_file_hash(self.output_dir / "GPCI2025_test.txt"),
                     "size_bytes": (self.output_dir / "GPCI2025_test.txt").stat().st_size,
                     "content_type": "text/plain",
@@ -330,7 +331,7 @@ class RVUTestDatasetCreator:
                 },
                 {
                     "filename": "OPPSCAP_Oct_test.txt",
-                    "url": "file://tests/fixtures/rvu/test_data/OPPSCAP_Oct_test.txt",
+                    "url": f"file://{base_url}/OPPSCAP_Oct_test.txt",
                     "sha256": self._calculate_file_hash(self.output_dir / "OPPSCAP_Oct_test.txt"),
                     "size_bytes": (self.output_dir / "OPPSCAP_Oct_test.txt").stat().st_size,
                     "content_type": "text/plain",
@@ -338,7 +339,7 @@ class RVUTestDatasetCreator:
                 },
                 {
                     "filename": "ANES2025_test.txt",
-                    "url": "file://tests/fixtures/rvu/test_data/ANES2025_test.txt",
+                    "url": f"file://{base_url}/ANES2025_test.txt",
                     "sha256": self._calculate_file_hash(self.output_dir / "ANES2025_test.txt"),
                     "size_bytes": (self.output_dir / "ANES2025_test.txt").stat().st_size,
                     "content_type": "text/plain",
@@ -346,7 +347,7 @@ class RVUTestDatasetCreator:
                 },
                 {
                     "filename": "25LOCCO_test.txt",
-                    "url": "file://tests/fixtures/rvu/test_data/25LOCCO_test.txt",
+                    "url": f"file://{base_url}/25LOCCO_test.txt",
                     "sha256": self._calculate_file_hash(self.output_dir / "25LOCCO_test.txt"),
                     "size_bytes": (self.output_dir / "25LOCCO_test.txt").stat().st_size,
                     "content_type": "text/plain",
