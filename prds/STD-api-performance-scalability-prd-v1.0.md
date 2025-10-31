@@ -382,6 +382,13 @@ def get_pricing_data(zip_code: str, code: str):
 - Optimize query patterns
 - Use database indexes effectively
 
+**DataFrame/Pandas Optimization (for ingestion pipelines):**
+- Prefer vectorized operations (`.isin()`, `.merge()`, `.groupby()`) over row-by-row loops
+- Use `.iterrows()` or `.apply(axis=1)` only when necessary; for 10k+ rows, batch operations are 10-50x faster
+- Cache reference data lookups at ingestor initialization to avoid repeated database queries
+- Use bulk insert operations (`executemany` or `to_sql()` with `method='multi'`) instead of row-by-row inserts
+- For enrichment joins, use pandas `.merge()` with proper indexing rather than Python-level lookups
+
 ### 8.2 Infrastructure Optimization
 **CDN Configuration:**
 - Cache static assets

@@ -163,10 +163,16 @@ def event_loop():
 
 @pytest.fixture(scope="function")
 def test_data_dir():
-    """Create test data directory with sample data"""
+    """Create test data directory with sample data under tmp or RVU_TEST_DATA_DIR."""
+    import os
+    import tempfile
     from tests.fixtures.rvu.test_dataset_creator import RVUTestDatasetCreator
-    
-    creator = RVUTestDatasetCreator("tests/fixtures/rvu/test_data")
+
+    base_dir = os.getenv("RVU_TEST_DATA_DIR")
+    if not base_dir:
+        base_dir = tempfile.mkdtemp(prefix="rvu_tests.")
+
+    creator = RVUTestDatasetCreator(base_dir)
     data_dir = creator.create_all()
     return data_dir
 

@@ -77,6 +77,18 @@ if missing:
 for col, spec in schema['columns'].items():
     if spec['type'] == 'decimal' and df[col].dtype != 'object':
         logger.warning(f"Column {col} not decimal type")
+
+# Domain validation (use vectorized pandas operations for performance)
+# ✅ CORRECT: Vectorized validation (10-50x faster for 10k+ rows)
+if col_spec.domain:
+    domain_set = set(col_spec.domain)
+    invalid_mask = ~col_data.isin(domain_set) & col_data.notna()
+    invalid_count = invalid_mask.sum()
+    
+# ❌ ANTI-PATTERN: Row-by-row or set operations on large datasets
+# if col_spec.domain:
+#     for value in col_data:
+#         if value not in col_spec.domain:  # Slow!
 ```
 
 ### 2.2 Reference Validation Hooks

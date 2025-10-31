@@ -414,6 +414,11 @@ Data is loaded via the RVU ingestor's `publish()` method:
 4. **Progress logging** - Logs every 10,000 rows
 5. **Error handling** - Continues on individual record failures
 
+**Performance Optimization:**
+- Use bulk insert operations (`executemany` or pandas `to_sql()` with `method='multi'`) instead of row-by-row inserts
+- Pre-validate data types and constraints in pandas before database writes to reduce round-trips
+- For large datasets (100k+ rows), consider chunking DataFrames and parallel processing where safe
+
 ### 5.2 Loading Methods
 
 Located in `cms_pricing/ingestion/ingestors/rvu_ingestor.py`:
