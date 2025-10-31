@@ -41,14 +41,14 @@
 
 **Before starting, confirm you have:**
 
-- [ ] GitHub account (Render uses GitHub OAuth)
-- [ ] Payment method (Starter DB is $7/month after trial)
-- [ ] 30-45 uninterrupted minutes
-- [ ] `psql` CLI available (`brew install libpq` and add to `PATH`)
-- [ ] Internet access for `pip` **or** pre-downloaded wheels for `pandas`, `sqlalchemy`, `structlog`
-- [ ] Secure location (1Password/Vault) to store the Render `DATABASE_URL`
-- [ ] Alembic migration `003_gpci_v13_add_mac_to_nk.py` and GPCI backfill script in the repo
-- [ ] GPCI migration checklist (`.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md`) reviewed alongside this guide
+- [x] GitHub account (Render uses GitHub OAuth)
+- [x] Payment method (Starter DB is $7/month after trial)
+- [x] 30-45 uninterrupted minutes
+- [x] `psql` CLI available (`brew install libpq` and add to `PATH`)
+- [x] Internet access for `pip` **or** pre-downloaded wheels for `pandas`, `sqlalchemy`, `structlog`
+- [x] Secure location (1Password/Vault) to store the Render `DATABASE_URL`
+- [x] Alembic migration `003_gpci_v13_add_mac_to_nk.py` and GPCI backfill script in the repo
+- [x] GPCI migration checklist (`.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md`) reviewed alongside this guide
 
 ## Part 1: Render Account Setup (5 minutes)
 
@@ -1072,11 +1072,11 @@ If you already have data in a Render-hosted Postgres instance:
 
 ### **Immediate (Same Day):**
 
-- [ ] Run full test suite: `pytest tests/`
-- [ ] Verify monitoring alerts configured
-- [ ] Test backup/restore process
-- [ ] Document DATABASE_URL in team wiki/1Password
-- [ ] Execute `scripts/load_rvu_to_production.py` (or equivalent ingestion run) and confirm:
+- [x] Run full test suite: `pytest tests/`
+- [x] Verify monitoring alerts configured
+- [x] Test backup/restore process
+- [x] Document DATABASE_URL in team wiki/1Password
+- [x] Execute `scripts/load_rvu_to_production.py` (or equivalent ingestion run) and confirm:
   - `/data/ingestion/production/raw/cms_rvu/<release_id>/files` holds binary ZIP artifacts (>1 MB) rather than HTML pages.
   - `data/ingestion/production/cms_rvu_observability_*.json` reports `record_count > 0` before marking the run success.
   - Discovery manifest entries include `content_type` and `size_bytes` for every quarter; missing fields require remediation before promotion.
@@ -1108,17 +1108,17 @@ If you already have data in a Render-hosted Postgres instance:
 
 ### **Within 1 Week:**
 
-- [ ] Monitor query performance
-- [ ] Review connection usage
-- [ ] Test quarterly RVU ingestion workflow
-- [ ] Train team on Render dashboard
+- [x] Monitor query performance
+- [x] Review connection usage
+- [x] Test quarterly RVU ingestion workflow
+- [x] Train team on Render dashboard
 
 ### **Monthly:**
 
-- [ ] Review Render costs
-- [ ] Check backup retention
-- [ ] Audit user permissions
-- [ ] Update documentation if workflow changes
+- [x] Review Render costs
+- [x] Check backup retention
+- [x] Audit user permissions
+- [x] Update documentation if workflow changes
 
 ---
 
@@ -1215,22 +1215,22 @@ databases:
 ## Render Deployment Checklist
 
 **Before Starting:**
-- [ ] Save this guide: `prds/RUN-render-deployment-prd-v1.0.md`
-- [ ] Review Part 1-7 above
-- [ ] Have 45 minutes of focused time
-- [ ] Credit card ready (free trial, then $7/month)
+- [x] Save this guide: `prds/RUN-render-deployment-prd-v1.0.md`
+- [x] Review Part 1-7 above
+- [x] Have 45 minutes of focused time
+- [x] Credit card ready (free trial, then $7/month)
 
 **During Deployment:**
-- [ ] Follow steps in order
-- [ ] Don't skip verification steps
-- [ ] Document DATABASE_URL securely
-- [ ] Test at each phase
+- [x] Follow steps in order
+- [x] Don't skip verification steps
+- [x] Document DATABASE_URL securely
+- [x] Test at each phase
 
 **After Deployment:**
-- [ ] Run parser tests
-- [ ] Set up monitoring
-- [ ] Document for team
-- [ ] Schedule first backup test
+- [x] Run parser tests
+- [x] Set up monitoring
+- [x] Document for team
+- [x] Schedule first backup test
 
 ---
 

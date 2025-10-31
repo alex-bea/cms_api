@@ -25,6 +25,7 @@ from typing import Dict, Any, List, Optional, Callable, Awaitable, Tuple
 import httpx
 import pandas as pd
 import structlog
+from sqlalchemy import delete
 
 from ..contracts.ingestor_spec import (
     BaseDISIngestor, SourceFile, RawBatch, AdaptedBatch, 
@@ -1255,11 +1256,11 @@ class RVUIngestor(BaseDISIngestor):
             "localitycounty": self._load_locality_data,
         }
         natural_keys = {
-            "pprrvu": ["hcpcs_code", "modifier", "effective_start"],
-            "gpci": ["mac", "locality_code", "effective_start"],
-            "oppscap": ["hcpcs_code", "modifier", "mac", "locality_code", "effective_start"],
-            "anescf": ["mac", "locality_code", "effective_start"],
-            "localitycounty": ["mac", "locality_code", "state", "effective_start"],
+            "pprrvu": ["hcpcs_code", "modifier_key", "effective_start"],
+            "gpci": ["mac", "locality_id", "effective_start"],
+            "oppscap": ["hcpcs_code", "modifier", "mac", "locality_id", "effective_start"],
+            "anescf": ["mac", "locality_id", "effective_start"],
+            "localitycounty": ["mac", "locality_id", "state", "effective_start"],
         }
         processed_dataframes: Dict[str, pd.DataFrame] = {}
         for key, df in dataframes.items():
@@ -1383,6 +1384,31 @@ class RVUIngestor(BaseDISIngestor):
         except Exception as e:
             logger.error(f"Failed to save data with upserts: {e}")
             raise
+
+    def _delete_existing_record(self, model, natural_keys: List[str], record: Dict[str, Any]) -> None:
+        """Delete existing database record matching the provided natural keys."""
+        if not natural_keys:
+            return
+
+        filters = []
+        for key in natural_keys:
+            if key not in record:
+                continue
+            column_attr = getattr(model, key, None)
+            if column_attr is None:
+                continue
+            value = record[key]
+            if value is None:
+                filters.append(column_attr.is_(None))
+            else:
+                filters.append(column_attr == value)
+
+        if not filters:
+            return
+
+        self.db_session.execute(delete(model).where(*filters))
+        # Ensure delete executes before a new insert to avoid unique constraint conflicts
+        self.db_session.flush()
     
     def _get_natural_keys(self, dataset_name: str) -> List[str]:
         """Get natural keys for a dataset for upsert logic"""
@@ -4068,59 +4094,67 @@ class RVUIngestor(BaseDISIngestor):
             return 0
         
         records_inserted = 0
-        batch_size = 1000
         
         for idx, row in df.iterrows():
             try:
-                rvu_item = RVUItem(
-                    id=uuid.uuid4(),
-                    release_id=release_uuid,
-                    hcpcs_code=str(row.get('hcpcs_code', ''))[:5],
-                    modifiers=[mod for mod in [row.get('modifier')] if mod and pd.notna(mod)],
-                    modifier_key=str(row.get('modifier', '')) if pd.notna(row.get('modifier')) else None,
-                    description=str(row.get('description', '')) if pd.notna(row.get('description')) else None,
-                    status_code=str(row.get('status_code', ''))[:2] if pd.notna(row.get('status_code')) else None,
-                    work_rvu=float(row.get('work_rvu')) if pd.notna(row.get('work_rvu')) else None,
-                    pe_rvu_nonfac=float(row.get('pe_rvu_nonfac')) if pd.notna(row.get('pe_rvu_nonfac')) else None,
-                    pe_rvu_fac=float(row.get('pe_rvu_fac')) if pd.notna(row.get('pe_rvu_fac')) else None,
-                    mp_rvu=float(row.get('mp_rvu')) if pd.notna(row.get('mp_rvu')) else None,
-                    na_indicator=str(row.get('na_indicator', ''))[:1] if pd.notna(row.get('na_indicator')) else None,
-                    global_days=str(row.get('global_days', ''))[:3] if pd.notna(row.get('global_days')) else None,
-                    bilateral_ind=str(row.get('bilateral_ind', ''))[:1] if pd.notna(row.get('bilateral_ind')) else None,
-                    multiple_proc_ind=str(row.get('multiple_proc_ind', ''))[:1] if pd.notna(row.get('multiple_proc_ind')) else None,
-                    assistant_surg_ind=str(row.get('assistant_surg_ind', ''))[:1] if pd.notna(row.get('assistant_surg_ind')) else None,
-                    co_surg_ind=str(row.get('co_surg_ind', ''))[:1] if pd.notna(row.get('co_surg_ind')) else None,
-                    team_surg_ind=str(row.get('team_surg_ind', ''))[:1] if pd.notna(row.get('team_surg_ind')) else None,
-                    endoscopic_base=str(row.get('endoscopic_base', ''))[:1] if pd.notna(row.get('endoscopic_base')) else None,
-                    conversion_factor=float(row.get('conversion_factor')) if pd.notna(row.get('conversion_factor')) else None,
-                    physician_supervision=str(row.get('physician_supervision', ''))[:2] if pd.notna(row.get('physician_supervision')) else None,
-                    diag_imaging_family=str(row.get('diag_imaging_family', ''))[:10] if pd.notna(row.get('diag_imaging_family')) else None,
-                    total_nonfac=float(row.get('total_nonfac')) if pd.notna(row.get('total_nonfac')) else None,
-                    total_fac=float(row.get('total_fac')) if pd.notna(row.get('total_fac')) else None,
-                    effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
-                    effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
-                    source_file=str(row.get('source_filename', batch_id)),
-                    row_num=int(idx) if isinstance(idx, (int, np.integer)) else None
-                )
-                self.db_session.add(rvu_item)
+                modifier_raw = row.get('modifier')
+                modifier_key = None
+                if pd.notna(modifier_raw):
+                    modifier_key = str(modifier_raw).strip()[:10]
+                    if modifier_key == "":
+                        modifier_key = None
+
+                modifiers = [modifier_key] if modifier_key else None
+
+                effective_start = None
+                effective_start_value = row.get('effective_start', row.get('vintage_date'))
+                if pd.notna(effective_start_value):
+                    effective_start = pd.to_datetime(effective_start_value).date()
+
+                effective_end = None
+                if pd.notna(row.get('effective_end')):
+                    effective_end = pd.to_datetime(row.get('effective_end')).date()
+
+                record = {
+                    "id": uuid.uuid4(),
+                    "release_id": release_uuid,
+                    "hcpcs_code": str(row.get('hcpcs_code', '')).strip()[:5],
+                    "modifiers": modifiers,
+                    "modifier_key": modifier_key,
+                    "description": str(row.get('description', '')).strip() if pd.notna(row.get('description')) else None,
+                    "status_code": str(row.get('status_code', '')).strip()[:2] if pd.notna(row.get('status_code')) else None,
+                    "work_rvu": float(row.get('work_rvu')) if pd.notna(row.get('work_rvu')) else None,
+                    "pe_rvu_nonfac": float(row.get('pe_rvu_nonfac')) if pd.notna(row.get('pe_rvu_nonfac')) else None,
+                    "pe_rvu_fac": float(row.get('pe_rvu_fac')) if pd.notna(row.get('pe_rvu_fac')) else None,
+                    "mp_rvu": float(row.get('mp_rvu')) if pd.notna(row.get('mp_rvu')) else None,
+                    "na_indicator": str(row.get('na_indicator', '')).strip()[:1] if pd.notna(row.get('na_indicator')) else None,
+                    "global_days": str(row.get('global_days', '')).strip()[:3] if pd.notna(row.get('global_days')) else None,
+                    "bilateral_ind": str(row.get('bilateral_ind', '')).strip()[:1] if pd.notna(row.get('bilateral_ind')) else None,
+                    "multiple_proc_ind": str(row.get('multiple_proc_ind', '')).strip()[:1] if pd.notna(row.get('multiple_proc_ind')) else None,
+                    "assistant_surg_ind": str(row.get('assistant_surg_ind', '')).strip()[:1] if pd.notna(row.get('assistant_surg_ind')) else None,
+                    "co_surg_ind": str(row.get('co_surg_ind', '')).strip()[:1] if pd.notna(row.get('co_surg_ind')) else None,
+                    "team_surg_ind": str(row.get('team_surg_ind', '')).strip()[:1] if pd.notna(row.get('team_surg_ind')) else None,
+                    "endoscopic_base": str(row.get('endoscopic_base', '')).strip()[:1] if pd.notna(row.get('endoscopic_base')) else None,
+                    "conversion_factor": float(row.get('conversion_factor')) if pd.notna(row.get('conversion_factor')) else None,
+                    "physician_supervision": str(row.get('physician_supervision', '')).strip()[:2] if pd.notna(row.get('physician_supervision')) else None,
+                    "diag_imaging_family": str(row.get('diag_imaging_family', '')).strip()[:10] if pd.notna(row.get('diag_imaging_family')) else None,
+                    "total_nonfac": float(row.get('total_nonfac')) if pd.notna(row.get('total_nonfac')) else None,
+                    "total_fac": float(row.get('total_fac')) if pd.notna(row.get('total_fac')) else None,
+                    "effective_start": effective_start,
+                    "effective_end": effective_end,
+                    "source_file": str(row.get('source_filename', batch_id)),
+                    "row_num": int(idx) if isinstance(idx, (int, np.integer)) else None
+                }
+
+                self._delete_existing_record(RVUItem, ["hcpcs_code", "modifier_key", "effective_start"], record)
+                self.db_session.add(RVUItem(**record))
                 records_inserted += 1
-                
-                # Batch commit for performance
-                if records_inserted % batch_size == 0:
-                    self.db_session.flush()
-                    if records_inserted % 10000 == 0:
-                        logger.info("Loading PPRRVU data progress", 
-                                   records_inserted=records_inserted,
-                                   total=len(df))
                 
             except Exception as e:
                 logger.warning("Failed to insert PPRRVU record", 
                              error=str(e), 
                              hcpcs=row.get('hcpcs_code'))
                 continue
-        
-        # Final flush
-        self.db_session.flush()
         return records_inserted
     
     def _load_gpci_data(self, df: pd.DataFrame, release_uuid: Any, batch_id: str) -> int:
@@ -4129,39 +4163,45 @@ class RVUIngestor(BaseDISIngestor):
             return 0
         
         records_inserted = 0
-        batch_size = 1000
         
         for idx, row in df.iterrows():
             try:
-                gpci_index = GPCIIndex(
-                    id=uuid.uuid4(),
-                    release_id=release_uuid,
-                    mac=str(row.get('mac', ''))[:10],
-                    state=str(row.get('state', ''))[:2],
-                    locality_id=str(row.get('locality_code', row.get('locality_id', '')))[:10],
-                    locality_name=str(row.get('locality_name', ''))[:100] if pd.notna(row.get('locality_name')) else None,
-                    work_gpci=float(row.get('work_gpci')) if pd.notna(row.get('work_gpci')) else None,
-                    pe_gpci=float(row.get('pe_gpci')) if pd.notna(row.get('pe_gpci')) else None,
-                    mp_gpci=float(row.get('mp_gpci')) if pd.notna(row.get('mp_gpci')) else None,
-                    effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
-                    effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
-                    source_file=str(row.get('source_filename', batch_id)),
-                    row_num=int(idx) if isinstance(idx, (int, np.integer)) else None
-                )
-                self.db_session.add(gpci_index)
+                effective_start = None
+                effective_start_value = row.get('effective_start', row.get('vintage_date'))
+                if pd.notna(effective_start_value):
+                    effective_start = pd.to_datetime(effective_start_value).date()
+
+                effective_end = None
+                if pd.notna(row.get('effective_end')):
+                    effective_end = pd.to_datetime(row.get('effective_end')).date()
+
+                locality_id = str(row.get('locality_code', row.get('locality_id', ''))).strip()[:10]
+
+                record = {
+                    "id": uuid.uuid4(),
+                    "release_id": release_uuid,
+                    "mac": str(row.get('mac', '')).strip()[:10],
+                    "state": str(row.get('state', '')).strip()[:2],
+                    "locality_id": locality_id,
+                    "locality_name": str(row.get('locality_name', '')).strip()[:100] if pd.notna(row.get('locality_name')) else None,
+                    "work_gpci": float(row.get('work_gpci')) if pd.notna(row.get('work_gpci')) else None,
+                    "pe_gpci": float(row.get('pe_gpci')) if pd.notna(row.get('pe_gpci')) else None,
+                    "mp_gpci": float(row.get('mp_gpci')) if pd.notna(row.get('mp_gpci')) else None,
+                    "effective_start": effective_start,
+                    "effective_end": effective_end,
+                    "source_file": str(row.get('source_filename', batch_id)),
+                    "row_num": int(idx) if isinstance(idx, (int, np.integer)) else None
+                }
+
+                self._delete_existing_record(GPCIIndex, ["mac", "locality_id", "effective_start"], record)
+                self.db_session.add(GPCIIndex(**record))
                 records_inserted += 1
-                
-                # Batch flush
-                if records_inserted % batch_size == 0:
-                    self.db_session.flush()
                 
             except Exception as e:
                 logger.warning("Failed to insert GPCI record", 
                              error=str(e), 
                              mac=row.get('mac'))
                 continue
-        
-        self.db_session.flush()
         return records_inserted
     
     def _load_oppscap_data(self, df: pd.DataFrame, release_uuid: Any, batch_id: str) -> int:
@@ -4170,39 +4210,53 @@ class RVUIngestor(BaseDISIngestor):
             return 0
         
         records_inserted = 0
-        batch_size = 1000
         
         for idx, row in df.iterrows():
             try:
-                opps_cap = OPPSCap(
-                    id=uuid.uuid4(),
-                    release_id=release_uuid,
-                    hcpcs_code=str(row.get('hcpcs_code', ''))[:5],
-                    modifier=str(row.get('modifier', ''))[:2] if pd.notna(row.get('modifier')) else None,
-                    proc_status=str(row.get('proc_status', ''))[:2] if pd.notna(row.get('proc_status')) else None,
-                    mac=str(row.get('mac', ''))[:10],
-                    locality_id=str(row.get('locality_code', row.get('locality_id', '')))[:10],
-                    price_fac=float(row.get('price_fac')) if pd.notna(row.get('price_fac')) else None,
-                    price_nonfac=float(row.get('price_nonfac')) if pd.notna(row.get('price_nonfac')) else None,
-                    effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
-                    effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
-                    source_file=str(row.get('source_filename', batch_id)),
-                    row_num=int(idx) if isinstance(idx, (int, np.integer)) else None
+                effective_start = None
+                effective_start_value = row.get('effective_start', row.get('vintage_date'))
+                if pd.notna(effective_start_value):
+                    effective_start = pd.to_datetime(effective_start_value).date()
+
+                effective_end = None
+                if pd.notna(row.get('effective_end')):
+                    effective_end = pd.to_datetime(row.get('effective_end')).date()
+
+                modifier_value = str(row.get('modifier', '')).strip()[:2] if pd.notna(row.get('modifier')) else None
+                if modifier_value == "":
+                    modifier_value = None
+
+                locality_id = str(row.get('locality_code', row.get('locality_id', ''))).strip()[:10]
+
+                record = {
+                    "id": uuid.uuid4(),
+                    "release_id": release_uuid,
+                    "hcpcs_code": str(row.get('hcpcs_code', '')).strip()[:5],
+                    "modifier": modifier_value,
+                    "proc_status": str(row.get('proc_status', '')).strip()[:2] if pd.notna(row.get('proc_status')) else None,
+                    "mac": str(row.get('mac', '')).strip()[:10],
+                    "locality_id": locality_id,
+                    "price_fac": float(row.get('price_fac')) if pd.notna(row.get('price_fac')) else None,
+                    "price_nonfac": float(row.get('price_nonfac')) if pd.notna(row.get('price_nonfac')) else None,
+                    "effective_start": effective_start,
+                    "effective_end": effective_end,
+                    "source_file": str(row.get('source_filename', batch_id)),
+                    "row_num": int(idx) if isinstance(idx, (int, np.integer)) else None
+                }
+
+                self._delete_existing_record(
+                    OPPSCap,
+                    ["hcpcs_code", "modifier", "mac", "locality_id", "effective_start"],
+                    record
                 )
-                self.db_session.add(opps_cap)
+                self.db_session.add(OPPSCap(**record))
                 records_inserted += 1
-                
-                # Batch flush
-                if records_inserted % batch_size == 0:
-                    self.db_session.flush()
                 
             except Exception as e:
                 logger.warning("Failed to insert OPPSCap record", 
                              error=str(e), 
                              hcpcs=row.get('hcpcs_code'))
                 continue
-        
-        self.db_session.flush()
         return records_inserted
     
     def _load_anes_data(self, df: pd.DataFrame, release_uuid: Any, batch_id: str) -> int:
@@ -4211,36 +4265,46 @@ class RVUIngestor(BaseDISIngestor):
             return 0
         
         records_inserted = 0
-        batch_size = 1000
         
         for idx, row in df.iterrows():
             try:
-                anes_cf = AnesCF(
-                    id=uuid.uuid4(),
-                    release_id=release_uuid,
-                    mac=str(row.get('mac', ''))[:10],
-                    locality_id=str(row.get('locality_code', row.get('locality_id', '')))[:10],
-                    locality_name=str(row.get('locality_name', ''))[:100] if pd.notna(row.get('locality_name')) else None,
-                    anesthesia_cf=float(row.get('anesthesia_cf')) if pd.notna(row.get('anesthesia_cf')) else None,
-                    effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
-                    effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
-                    source_file=str(row.get('source_filename', batch_id)),
-                    row_num=int(idx) if isinstance(idx, (int, np.integer)) else None
+                effective_start = None
+                effective_start_value = row.get('effective_start', row.get('vintage_date'))
+                if pd.notna(effective_start_value):
+                    effective_start = pd.to_datetime(effective_start_value).date()
+
+                effective_end = None
+                if pd.notna(row.get('effective_end')):
+                    effective_end = pd.to_datetime(row.get('effective_end')).date()
+
+                locality_id = str(row.get('locality_code', row.get('locality_id', ''))).strip()[:10]
+
+                record = {
+                    "id": uuid.uuid4(),
+                    "release_id": release_uuid,
+                    "mac": str(row.get('mac', '')).strip()[:10],
+                    "locality_id": locality_id,
+                    "locality_name": str(row.get('locality_name', '')).strip()[:100] if pd.notna(row.get('locality_name')) else None,
+                    "anesthesia_cf": float(row.get('anesthesia_cf')) if pd.notna(row.get('anesthesia_cf')) else None,
+                    "effective_start": effective_start,
+                    "effective_end": effective_end,
+                    "source_file": str(row.get('source_filename', batch_id)),
+                    "row_num": int(idx) if isinstance(idx, (int, np.integer)) else None
+                }
+
+                self._delete_existing_record(
+                    AnesCF,
+                    ["mac", "locality_id", "effective_start"],
+                    record
                 )
-                self.db_session.add(anes_cf)
+                self.db_session.add(AnesCF(**record))
                 records_inserted += 1
-                
-                # Batch flush
-                if records_inserted % batch_size == 0:
-                    self.db_session.flush()
                 
             except Exception as e:
                 logger.warning("Failed to insert ANES record", 
                              error=str(e), 
                              mac=row.get('mac'))
                 continue
-        
-        self.db_session.flush()
         return records_inserted
     
     def _load_locality_data(self, df: pd.DataFrame, release_uuid: Any, batch_id: str) -> int:
@@ -4249,37 +4313,47 @@ class RVUIngestor(BaseDISIngestor):
             return 0
         
         records_inserted = 0
-        batch_size = 1000
         
         for idx, row in df.iterrows():
             try:
-                locality_county = LocalityCounty(
-                    id=uuid.uuid4(),
-                    release_id=release_uuid,
-                    mac=str(row.get('mac', ''))[:10],
-                    locality_id=str(row.get('locality_code', row.get('locality_id', '')))[:10],
-                    state=str(row.get('state', ''))[:2],
-                    fee_schedule_area=str(row.get('fee_schedule_area', ''))[:10] if pd.notna(row.get('fee_schedule_area')) else None,
-                    county_name=str(row.get('county_name', ''))[:100] if pd.notna(row.get('county_name')) else None,
-                    effective_start=pd.to_datetime(row.get('effective_start', row.get('vintage_date'))).date() if pd.notna(row.get('effective_start', row.get('vintage_date'))) else None,
-                    effective_end=pd.to_datetime(row.get('effective_end')).date() if pd.notna(row.get('effective_end')) else None,
-                    source_file=str(row.get('source_filename', batch_id)),
-                    row_num=int(idx) if isinstance(idx, (int, np.integer)) else None
+                effective_start = None
+                effective_start_value = row.get('effective_start', row.get('vintage_date'))
+                if pd.notna(effective_start_value):
+                    effective_start = pd.to_datetime(effective_start_value).date()
+
+                effective_end = None
+                if pd.notna(row.get('effective_end')):
+                    effective_end = pd.to_datetime(row.get('effective_end')).date()
+
+                locality_id = str(row.get('locality_code', row.get('locality_id', ''))).strip()[:10]
+
+                record = {
+                    "id": uuid.uuid4(),
+                    "release_id": release_uuid,
+                    "mac": str(row.get('mac', '')).strip()[:10],
+                    "locality_id": locality_id,
+                    "state": str(row.get('state', '')).strip()[:2],
+                    "fee_schedule_area": str(row.get('fee_schedule_area', '')).strip()[:10] if pd.notna(row.get('fee_schedule_area')) else None,
+                    "county_name": str(row.get('county_name', '')).strip()[:100] if pd.notna(row.get('county_name')) else None,
+                    "effective_start": effective_start,
+                    "effective_end": effective_end,
+                    "source_file": str(row.get('source_filename', batch_id)),
+                    "row_num": int(idx) if isinstance(idx, (int, np.integer)) else None
+                }
+
+                self._delete_existing_record(
+                    LocalityCounty,
+                    ["mac", "locality_id", "state", "effective_start"],
+                    record
                 )
-                self.db_session.add(locality_county)
+                self.db_session.add(LocalityCounty(**record))
                 records_inserted += 1
-                
-                # Batch flush
-                if records_inserted % batch_size == 0:
-                    self.db_session.flush()
                 
             except Exception as e:
                 logger.warning("Failed to insert Locality record", 
                              error=str(e), 
                              locality_id=row.get('locality_id'))
                 continue
-        
-        self.db_session.flush()
         return records_inserted
     
     def _derive_source_version(self, vintage_date: str) -> str:
