@@ -4170,6 +4170,24 @@ class RVUIngestor(BaseDISIngestor):
         if df is None or df.empty:
             return 0
         
+        # Debug: Log available columns
+        logger.info("Loading GPCI data", 
+                   df_columns=list(df.columns),
+                   row_count=len(df),
+                   sample_columns_with_gpci=[col for col in df.columns if 'gpci' in col.lower()])
+        
+        # Debug: Check if we have GPCI values in first row
+        if len(df) > 0:
+            first_row = df.iloc[0]
+            logger.debug("Sample row columns", 
+                        gpci_work=first_row.get('gpci_work'),
+                        work_gpci=first_row.get('work_gpci'),
+                        gpci_pe=first_row.get('gpci_pe'),
+                        pe_gpci=first_row.get('pe_gpci'),
+                        gpci_mp=first_row.get('gpci_mp'),
+                        gpci_malp=first_row.get('gpci_malp'),
+                        mp_gpci=first_row.get('mp_gpci'))
+        
         records_inserted = 0
         
         for idx, row in df.iterrows():
@@ -4185,6 +4203,15 @@ class RVUIngestor(BaseDISIngestor):
 
                 locality_id = str(row.get('locality_code', row.get('locality_id', ''))).strip()[:10]
 
+                # Map parser output columns (gpci_work/gpci_pe/gpci_mp) to database columns (work_gpci/pe_gpci/mp_gpci)
+                # Parser outputs: gpci_work, gpci_pe, gpci_mp (or gpci_malp for malpractice)
+                # Database expects: work_gpci, pe_gpci, mp_gpci
+                work_val = row.get('gpci_work') if pd.notna(row.get('gpci_work')) else (row.get('work_gpci') if pd.notna(row.get('work_gpci')) else None)
+                pe_val = row.get('gpci_pe') if pd.notna(row.get('gpci_pe')) else (row.get('pe_gpci') if pd.notna(row.get('pe_gpci')) else None)
+                mp_val = (row.get('gpci_mp') if pd.notna(row.get('gpci_mp')) else None) or \
+                         (row.get('gpci_malp') if pd.notna(row.get('gpci_malp')) else None) or \
+                         (row.get('mp_gpci') if pd.notna(row.get('mp_gpci')) else None)
+
                 record = {
                     "id": uuid.uuid4(),
                     "release_id": release_uuid,
@@ -4192,10 +4219,9 @@ class RVUIngestor(BaseDISIngestor):
                     "state": str(row.get('state', '')).strip()[:2],
                     "locality_id": locality_id,
                     "locality_name": str(row.get('locality_name', '')).strip()[:100] if pd.notna(row.get('locality_name')) else None,
-                    # Map parser output columns (gpci_work/gpci_pe/gpci_mp) to database columns (work_gpci/pe_gpci/mp_gpci)
-                    "work_gpci": float(row.get('gpci_work') or row.get('work_gpci')) if pd.notna(row.get('gpci_work') or row.get('work_gpci')) else None,
-                    "pe_gpci": float(row.get('gpci_pe') or row.get('pe_gpci')) if pd.notna(row.get('gpci_pe') or row.get('pe_gpci')) else None,
-                    "mp_gpci": float(row.get('gpci_mp') or row.get('gpci_malp') or row.get('mp_gpci')) if pd.notna(row.get('gpci_mp') or row.get('gpci_malp') or row.get('mp_gpci')) else None,
+                    "work_gpci": float(work_val) if work_val is not None else None,
+                    "pe_gpci": float(pe_val) if pe_val is not None else None,
+                    "mp_gpci": float(mp_val) if mp_val is not None else None,
                     "effective_start": effective_start,
                     "effective_end": effective_end,
                     "source_file": str(row.get('source_filename', batch_id)),
