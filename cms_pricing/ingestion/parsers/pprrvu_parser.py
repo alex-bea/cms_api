@@ -11,6 +11,7 @@ import pandas as pd
 import structlog
 from io import StringIO, BytesIO
 from datetime import datetime
+import re
 
 from cms_pricing.ingestion.parsers._parser_kit import (
     ParseResult,
@@ -35,6 +36,8 @@ logger = structlog.get_logger()
 PARSER_VERSION = "v1.0.0"
 SCHEMA_ID = "cms_pprrvu_v1.1"
 NATURAL_KEYS = ["hcpcs", "modifier", "status_code", "effective_from"]
+
+CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def parse_pprrvu(
@@ -127,7 +130,19 @@ def parse_pprrvu(
     
     # Step 3: Normalize column names
     df = _normalize_column_names(df)
-    
+
+    if 'status_code' not in df.columns:
+        fallback = None
+        if 'status' in df.columns:
+            fallback = df['status']
+        elif 'statusindicator' in df.columns:
+            fallback = df['statusindicator']
+
+        if fallback is not None:
+            df['status_code'] = fallback.astype(str).str.strip().str.upper()
+        else:
+            df['status_code'] = 'NONE'
+
     # Step 4: Cast dtypes (explicit, no coercion)
     df = _cast_dtypes(df, metadata)
     
@@ -272,6 +287,46 @@ def _parse_fixed_width(content: bytes, encoding: str, metadata: Dict) -> pd.Data
     return pd.DataFrame(records)
 
 
+def _promote_header_row(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Promote the first row containing the HCPCS column to the header.
+    """
+    if df.empty:
+        return df
+
+    def _clean(value):
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return value
+        text = str(value)
+        text = CONTROL_CHAR_RE.sub('', text)
+        return text.strip()
+
+    df = df.applymap(_clean)
+
+    header_idx = None
+    for idx in range(len(df)):
+        first_val = str(df.iloc[idx, 0]).strip().lower()
+        if first_val == 'hcpcs':
+            header_idx = idx
+            break
+
+    if header_idx is not None:
+        header = df.iloc[header_idx].fillna('').astype(str).map(lambda x: x.strip())
+        df = df.iloc[header_idx + 1:].copy()
+        df.columns = header
+    else:
+        df.columns = [str(c).strip() for c in df.columns]
+
+    # Drop any residual rows that are entirely blank after header promotion
+    df = df[~(df.apply(lambda row: all((str(val).strip() == '' for val in row)), axis=1))]
+    hcpcs_col = next((col for col in df.columns if str(col).strip().lower() == 'hcpcs'), None)
+    if hcpcs_col is not None:
+        df = df[df[hcpcs_col].notna()]
+        df = df[df[hcpcs_col].astype(str).str.strip() != '']
+
+    return df.reset_index(drop=True)
+
+
 def _parse_csv(content: bytes, encoding: str) -> pd.DataFrame:
     """
     Parse CSV format with header detection.
@@ -283,8 +338,9 @@ def _parse_csv(content: bytes, encoding: str) -> pd.DataFrame:
     Returns:
         DataFrame with raw parsed data
     """
-    text = content.decode(encoding)
-    return pd.read_csv(StringIO(text))
+    text = content.decode(encoding, errors='replace')
+    df = pd.read_csv(StringIO(text), header=None, dtype=str)
+    return _promote_header_row(df)
 
 
 def _parse_xlsx(content: bytes) -> pd.DataFrame:
@@ -297,7 +353,8 @@ def _parse_xlsx(content: bytes) -> pd.DataFrame:
     Returns:
         DataFrame with raw parsed data
     """
-    return pd.read_excel(BytesIO(content), sheet_name=0)
+    df = pd.read_excel(BytesIO(content), sheet_name=0, header=None, dtype=str)
+    return _promote_header_row(df)
 
 
 def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
@@ -342,7 +399,9 @@ def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
         
         # Status
         'STATUS': 'status_code',
+        'status code': 'status_code',
         'STATUS_CODE': 'status_code',
+        'CODE': 'status_code',
         'STAT': 'status_code',
         
         # Work RVU (support both API and schema formats)
@@ -386,7 +445,7 @@ def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
     
     df = df.copy()
     df.columns = [
-        COLUMN_ALIASES.get(c.strip().upper(), c.lower().strip().replace(' ', '_'))
+        COLUMN_ALIASES.get(str(c).strip().upper(), str(c).lower().strip().replace(' ', '_'))
         for c in df.columns
     ]
     return df

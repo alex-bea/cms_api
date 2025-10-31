@@ -450,7 +450,11 @@ def finalize_parser_output(
     ).reset_index(drop=True)
     
     # Compute row content hash (VECTORIZED for performance)
-    column_order = schema.get('column_order', [])
+    column_order = schema.get('column_order')
+    if not column_order:
+        column_order = list(schema.get('columns', {}).keys())
+    if not column_order:
+        column_order = [col for col in df.columns if col != 'row_content_hash']
     df['row_content_hash'] = compute_row_hashes_vectorized(df, column_order, schema)
     
     return df

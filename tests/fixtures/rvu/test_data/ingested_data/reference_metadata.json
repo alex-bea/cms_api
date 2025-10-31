@@ -1,4 +1,50 @@
 {
   "cms_zip_locality": {
     "source_name": "cms_zip_locality",
-    "source_type": 
+    "source_type": "cms_official",
+    "version": "1.0",
+    "effective_from": "2025-01-01",
+    "effective_to": null,
+    "last_updated": "2025-10-30T22:10:49.305095",
+    "record_count": 0,
+    "quality_score": 0.98,
+    "schema_version": "1.0",
+    "data_license": "CMS Public Domain",
+    "attribution_required": false,
+    "refresh_cadence": "quarterly",
+    "confidence_level": "high",
+    "coverage_scope": "national"
+  },
+  "cms_gpci": {
+    "source_name": "cms_gpci",
+    "source_type": "cms_official",
+    "version": "1.0",
+    "effective_from": "2025-01-01",
+    "effective_to": null,
+    "last_updated": "2025-10-30T22:10:49.305204",
+    "record_count": 0,
+    "quality_score": 0.99,
+    "schema_version": "1.0",
+    "data_license": "CMS Public Domain",
+    "attribution_required": false,
+    "refresh_cadence": "quarterly",
+    "confidence_level": "high",
+    "coverage_scope": "national"
+  },
+  "cms_hcpcs_codes": {
+    "source_name": "cms_hcpcs_codes",
+    "source_type": "cms_official",
+    "version": "1.0",
+    "effective_from": "2025-01-01",
+    "effective_to": null,
+    "last_updated": "2025-10-30T22:10:49.305296",
+    "record_count": 0,
+    "quality_score": 0.99,
+    "schema_version": "1.0",
+    "data_license": "CMS Public Domain",
+    "attribution_required": false,
+    "refresh_cadence": "quarterly",
+    "confidence_level": "high",
+    "coverage_scope": "national"
+  }
+}

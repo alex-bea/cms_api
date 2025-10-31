@@ -38,6 +38,14 @@ from ..adapters.data_adapters import AdapterFactory, AdapterConfig
 from ..validators.validation_engine import ValidationEngine
 from ..enrichers.data_enrichers import EnricherFactory
 from ..publishers.data_publishers import PublisherFactory
+from ..docs.guidance_summary import (
+    PAYMENT_FORMULA,
+    STATUS_INDICATOR_DESCRIPTIONS,
+    GLOBAL_PERIOD_DESCRIPTIONS,
+    POLICY_NOTES,
+    SUPPORT_CONTACTS,
+    write_summary_files
+)
 from ..observability.dis_observability import (
     DISObservabilityCollector, FreshnessMetrics, VolumeMetrics, 
     SchemaMetrics, QualityMetrics, LineageMetrics, DISObservabilityReport
@@ -47,13 +55,15 @@ from ..enrichers.dis_reference_data_integration import (
     DISReferenceDataEnricher, ReferenceDataManager, ReferenceDataSource,
     get_rvu_geography_enrichment_rules, get_rvu_code_enrichment_rules
 )
-from ..validators.validation_engine import ValidationEngine
 from ..contracts.schema_registry import SchemaRegistry
-from ..parsers.pprrvu_parser import parse_pprrvu, SCHEMA_ID as PPRRVU_SCHEMA_ID
-from ..parsers.gpci_parser import parse_gpci, SCHEMA_ID as GPCI_SCHEMA_ID
-from ..parsers.oppscap_parser import parse_oppscap, SCHEMA_ID as OPPSCAP_SCHEMA_ID
-from ..parsers.anes_parser import parse_anes, SCHEMA_ID as ANES_SCHEMA_ID
-from ..parsers.locality_parser import parse_locality_raw, SCHEMA_ID as LOCALITY_SCHEMA_ID
+from ..parsers.pprrvu_parser import parse_pprrvu, SCHEMA_ID as PPRRVU_SCHEMA_ID, NATURAL_KEYS as PPRRVU_NK
+from ..parsers.gpci_parser import parse_gpci, SCHEMA_ID as GPCI_SCHEMA_ID, NATURAL_KEYS as GPCI_NK
+from ..parsers.oppscap_parser import parse_oppscap, SCHEMA_ID as OPPSCAP_SCHEMA_ID, NATURAL_KEYS as OPPSCAP_NK
+from ..parsers.anes_parser import parse_anes, SCHEMA_ID as ANES_SCHEMA_ID, NATURAL_KEYS as ANES_NK
+from ..parsers.locality_parser import parse_locality_raw, SCHEMA_ID as LOCALITY_SCHEMA_ID, NATURAL_KEYS as LOCALITY_NK
+from ..parsers._parser_kit import check_natural_key_uniqueness
+from ..parsers.gpci_parser import _validate_gpci_ranges
+from ..validators.validation_engine import ValidationResult, ValidationSeverity
 
 # Import models for database loading
 from cms_pricing.models.rvu import Release, RVUItem, GPCIIndex, OPPSCap, AnesCF, LocalityCounty
@@ -99,6 +109,11 @@ class RVUIngestor(BaseDISIngestor):
     - LocalityCounty: Locality to County mapping
     """
     
+    # Task A: Explicit file type allowlist for better code clarity and maintainability
+    DATA_FILE_TYPES = {"zip", "csv", "txt", "xlsx", "xls"}
+    GUIDANCE_FILE_TYPES = {"pdf"}
+    SUPPORTED_FILE_TYPES = DATA_FILE_TYPES | GUIDANCE_FILE_TYPES
+    
     def __init__(self, output_dir: str, db_session: Any = None):
         super().__init__(output_dir, db_session)
         self.validation_engine = ValidationEngine()
@@ -133,11 +148,11 @@ class RVUIngestor(BaseDISIngestor):
         
         # Natural keys mapping for QTS §2.5 Test Accuracy Metrics logging
         self.NATURAL_KEYS_MAPPING = {
-            "pprrvu": ["hcpcs_code", "modifier"],
-            "gpci": ["mac", "locality_code"],
-            "oppscap": ["hcpcs", "modifier", "mac", "locality_code"],
-            "anes": ["cf_type"],
-            "locality": ["mac", "locality_code"]
+            "pprrvu": PPRRVU_NK,
+            "gpci": GPCI_NK,
+            "oppscap": OPPSCAP_NK,
+            "anescf": ANES_NK,
+            "localitycounty": LOCALITY_NK,
         }
         
         # Initialize dataset parsers (imports already at module level)
@@ -172,6 +187,111 @@ class RVUIngestor(BaseDISIngestor):
         # Initialize scraper and historical data manager
         self.scraper = CMSRVUScraper(str(Path(output_dir) / "scraped_data"))
         self.historical_manager = HistoricalDataManager(str(Path(output_dir) / "historical_data"))
+        
+        # Task #2: Register dataset-specific validation rules
+        self._register_validation_rules()
+
+    # ------------------------------------------------------------------
+    # Task #2: Validation Rule Registration
+    # ------------------------------------------------------------------
+    def _register_validation_rules(self):
+        """
+        Register dataset-specific validation rules with ValidationEngine.
+        
+        Task #2: Register PPRRVU natural key uniqueness and GPCI range validation.
+        """
+        # PPRRVU: Natural key uniqueness validation
+        def validate_pprrvu_uniqueness(df: pd.DataFrame) -> ValidationResult:
+            """Validate PPRRVU natural key (hcpcs, modifier) uniqueness."""
+            if df.empty:
+                return ValidationResult(
+                    rule_name="pprrvu_natural_key_uniqueness",
+                    severity=ValidationSeverity.ERROR,
+                    passed=True,
+                    message="Empty dataframe - no uniqueness check needed"
+                )
+            
+            # Check if required columns exist (PPRRVU uses "hcpcs" not "hcpcs_code")
+            required_cols = ["hcpcs", "modifier"]
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                return ValidationResult(
+                    rule_name="pprrvu_natural_key_uniqueness",
+                    severity=ValidationSeverity.ERROR,
+                    passed=False,
+                    message=f"Missing required columns for uniqueness check: {missing_cols}"
+                )
+            
+            # Use check_natural_key_uniqueness from parser_kit
+            try:
+                unique_df, dup_df = check_natural_key_uniqueness(
+                    df, 
+                    required_cols,
+                    severity=ValidationSeverity.WARNING  # Return rejects, don't raise
+                )
+                has_duplicates = len(dup_df) > 0
+                
+                return ValidationResult(
+                    rule_name="pprrvu_natural_key_uniqueness",
+                    severity=ValidationSeverity.ERROR,
+                    passed=not has_duplicates,
+                    message=f"Found {len(dup_df)} duplicate natural keys" if has_duplicates else "All natural keys are unique",
+                    details={"duplicate_count": len(dup_df)} if has_duplicates else None
+                )
+            except Exception as e:
+                return ValidationResult(
+                    rule_name="pprrvu_natural_key_uniqueness",
+                    severity=ValidationSeverity.ERROR,
+                    passed=False,
+                    message=f"Uniqueness check failed: {str(e)}"
+                )
+        
+        # GPCI: Range validation
+        def validate_gpci_ranges_wrapper(df: pd.DataFrame) -> ValidationResult:
+            """Validate GPCI values are within acceptable ranges."""
+            if df.empty:
+                return ValidationResult(
+                    rule_name="gpci_range_validation",
+                    severity=ValidationSeverity.ERROR,
+                    passed=True,
+                    message="Empty dataframe - no range check needed"
+                )
+            
+            # Check if GPCI columns exist
+            gpci_cols = ['gpci_work', 'gpci_pe', 'gpci_mp']
+            existing_cols = [col for col in gpci_cols if col in df.columns]
+            if not existing_cols:
+                return ValidationResult(
+                    rule_name="gpci_range_validation",
+                    severity=ValidationSeverity.WARNING,
+                    passed=True,
+                    message="No GPCI columns found - skipping range validation"
+                )
+            
+            # Use _validate_gpci_ranges from gpci_parser
+            try:
+                # _validate_gpci_ranges returns a DataFrame of rejected rows
+                rejects_df = _validate_gpci_ranges(df)
+                has_rejects = len(rejects_df) > 0
+                
+                return ValidationResult(
+                    rule_name="gpci_range_validation",
+                    severity=ValidationSeverity.ERROR,
+                    passed=not has_rejects,
+                    message=f"Found {len(rejects_df)} rows with GPCI values outside acceptable ranges [0.20, 2.50]" if has_rejects else "All GPCI values within acceptable ranges",
+                    details={"reject_count": len(rejects_df)} if has_rejects else None
+                )
+            except Exception as e:
+                return ValidationResult(
+                    rule_name="gpci_range_validation",
+                    severity=ValidationSeverity.ERROR,
+                    passed=False,
+                    message=f"Range validation failed: {str(e)}"
+                )
+        
+        # Register rules
+        self.validation_engine.register_business_rule("pprrvu", validate_pprrvu_uniqueness)
+        self.validation_engine.register_business_rule("gpci", validate_gpci_ranges_wrapper)
 
     # ------------------------------------------------------------------
     # Compatibility helpers
@@ -262,13 +382,25 @@ class RVUIngestor(BaseDISIngestor):
             # Convert scraped files to SourceFile objects
             source_files = []
             for file_info in scraped_files:
+                metadata = dict(getattr(file_info, 'metadata', {}) or {})
+                posted_at = getattr(file_info, 'posted_at', None)
+                if posted_at and "posted_at" not in metadata:
+                    metadata["posted_at"] = posted_at
+                version = getattr(file_info, 'version', None)
+                if version and "version" not in metadata:
+                    metadata["version"] = version
+                file_type = getattr(file_info, 'file_type', None) or self._infer_file_type_from_name(
+                    file_info.filename, getattr(file_info, 'content_type', None)
+                )
                 source_files.append(SourceFile(
                     url=file_info.url,
                     filename=file_info.filename,
                     content_type=(getattr(file_info, 'content_type', None) or "application/zip"),
                     expected_size_bytes=getattr(file_info, 'size_bytes', None) or 50000000,
                     last_modified=getattr(file_info, 'last_modified', None),
-                    checksum=getattr(file_info, 'checksum', None)
+                    checksum=getattr(file_info, 'checksum', None),
+                    file_type=file_type,
+                    metadata=metadata
                 ))
             
             logger.info("File discovery completed via scraper", 
@@ -1155,12 +1287,22 @@ class RVUIngestor(BaseDISIngestor):
             "datasets": dataset_results,
             "release_uuid": str(release_uuid),
         }
-    def _save_data_with_upserts(self, data: Dict[str, Any], data_dir: Path, vintage_date: str):
+    def _save_data_with_upserts(self, data: Dict[str, Any], data_dir: Path, vintage_date: str) -> Dict[str, Path]:
         """Save data with idempotent upserts per DIS standards"""
         try:
             # Save each dataset with upsert logic
+            logger.info(
+                "Upsert save invoked",
+                datasets=list(data.keys()) if isinstance(data, dict) else type(data).__name__,
+            )
+            saved_paths: Dict[str, Path] = {}
             for dataset_name, df in data.items():
                 if df is None or df.empty:
+                    logger.info(
+                        "Skipping empty dataset during publish save",
+                        dataset=dataset_name,
+                        rows=0,
+                    )
                     continue
                 
                 # Create dataset-specific directory
@@ -1202,7 +1344,11 @@ class RVUIngestor(BaseDISIngestor):
                 logger.info(f"Saved {dataset_name} with upsert manifest", 
                            record_count=len(df), 
                            file_path=str(parquet_path))
-                
+                saved_paths[dataset_name] = parquet_path
+            
+            logger.info("Data saved with upsert manifests", data_dir=str(data_dir))
+            return saved_paths
+
         except Exception as e:
             logger.error(f"Failed to save data with upserts: {e}")
             raise
@@ -1337,6 +1483,205 @@ class RVUIngestor(BaseDISIngestor):
         if "locco" in name or "locality" in name:
             return "localitycounty"
         return None
+
+    @staticmethod
+    def _infer_file_type_from_name(filename: str, content_type: Optional[str] = None) -> Optional[str]:
+        """Infer a logical file_type label based on filename or content-type.
+        
+        Returns a file type that matches one of the supported types in SUPPORTED_FILE_TYPES.
+        """
+        extension_map = {
+            ".zip": "zip",
+            ".csv": "csv",
+            ".txt": "txt",
+            ".xlsx": "xlsx",
+            ".xls": "xls",
+            ".pdf": "pdf"
+        }
+        mime_map = {
+            "application/zip": "zip",
+            "application/x-zip-compressed": "zip",
+            "application/octet-stream": "binary",
+            "text/plain": "txt",
+            "text/csv": "csv",
+            "application/csv": "csv",
+            "application/vnd.ms-excel": "xls",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+            "application/pdf": "pdf"
+        }
+        ext = Path(filename).suffix.lower()
+        if ext in extension_map:
+            return extension_map[ext]
+        if content_type:
+            ctype = content_type.lower()
+            for key, label in mime_map.items():
+                if key in ctype:
+                    return label
+        return None
+    
+    def _is_data_file(self, file_type: str) -> bool:
+        """Check if file type is considered a data file.
+        
+        Args:
+            file_type: File type string (e.g., "zip", "csv", "txt", "xlsx", "xls")
+            
+        Returns:
+            True if file type is in DATA_FILE_TYPES, False otherwise
+        """
+        return file_type in self.DATA_FILE_TYPES
+    
+    def _is_guidance_file(self, file_type: str) -> bool:
+        """Check if file type is considered a guidance document.
+        
+        Args:
+            file_type: File type string (e.g., "pdf")
+            
+        Returns:
+            True if file type is in GUIDANCE_FILE_TYPES, False otherwise
+        """
+        return file_type in self.GUIDANCE_FILE_TYPES
+
+    def _map_manifest_to_datasets(self, manifest_files: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+        mapping: Dict[str, List[str]] = defaultdict(list)
+        for entry in manifest_files:
+            path_value = entry.get("path") or entry.get("filename")
+            if not path_value:
+                continue
+            filename = Path(path_value).name
+            dataset_key = self._classify_inner_file(filename) or "other"
+            mapping[dataset_key].append(filename)
+        return {key: sorted(set(values)) for key, values in mapping.items()}
+
+    @staticmethod
+    def _extract_conversion_factor(ppr_df: Optional[pd.DataFrame]) -> Optional[float]:
+        if ppr_df is None:
+            return None
+        candidate_columns = [col for col in ppr_df.columns if "conversion" in col.lower()]
+        for col in candidate_columns:
+            series = ppr_df[col].dropna()
+            if series.empty:
+                continue
+            first_value = series.iloc[0]
+            try:
+                return float(first_value)
+            except (ValueError, TypeError):
+                continue
+        return None
+
+    @staticmethod
+    def _infer_release_components(release_id: Optional[str]) -> Dict[str, Optional[str]]:
+        if not release_id:
+            return {"product_year": None, "release_letter": None}
+        release_upper = release_id.upper()
+        year_match = re.search(r"(20\d{2})", release_upper)
+        year = year_match.group(1) if year_match else None
+        letter_match = re.search(r"RVU[^\w]?(\d{2})?([ABCD])", release_upper)
+        letter = None
+        if letter_match:
+            letter = letter_match.group(2)
+        else:
+            simple_letter = re.search(r"\b([ABCD])\b", release_upper)
+            if simple_letter:
+                letter = simple_letter.group(1)
+        return {"product_year": year, "release_letter": letter}
+
+    def generate_guidance_summary(self, raw_batch: RawBatch, adapted_batch: AdaptedBatch) -> Optional[Dict[str, Any]]:
+        """Create JSON/Markdown summaries for guidance PDFs when available."""
+        docs_directory = raw_batch.metadata.get("docs_directory")
+        guidance_docs = raw_batch.metadata.get("guidance_documents") or []
+        if not docs_directory or not guidance_docs:
+            return None
+
+        docs_dir_path = Path(docs_directory)
+        manifest = raw_batch.metadata.get("manifest") or {}
+        manifest_files = manifest.get("files", [])
+        dataset_sources = self._map_manifest_to_datasets(manifest_files)
+
+        dataset_summary: List[Dict[str, Any]] = []
+        dataframes = getattr(adapted_batch, "dataframes", {}) or {}
+        for dataset_key, df in dataframes.items():
+            sample_columns = list(df.columns[:6]) if hasattr(df, "columns") else []
+            dataset_summary.append({
+                "dataset": dataset_key,
+                "row_count": int(len(df)),
+                "source_files": dataset_sources.get(dataset_key, []),
+                "sample_columns": sample_columns
+            })
+        dataset_summary.sort(key=lambda entry: entry["dataset"])
+
+        ppr_df = dataframes.get("pprrvu")
+        status_info: Dict[str, Any] = {}
+        if ppr_df is not None and "status_code" in ppr_df.columns:
+            codes_present = sorted({str(code) for code in ppr_df["status_code"].dropna().unique()})
+            if codes_present:
+                status_info["codes_present"] = codes_present
+                glossary = {
+                    code: STATUS_INDICATOR_DESCRIPTIONS.get(code)
+                    for code in codes_present
+                    if STATUS_INDICATOR_DESCRIPTIONS.get(code)
+                }
+                if glossary:
+                    status_info["glossary"] = glossary
+
+        global_info: Dict[str, Any] = {}
+        if ppr_df is not None and "global_days" in ppr_df.columns:
+            values_present = sorted({
+                str(value).strip() for value in ppr_df["global_days"].dropna().unique()
+                if str(value).strip()
+            })
+            if values_present:
+                global_info["values_present"] = values_present
+                glossary = {
+                    value: GLOBAL_PERIOD_DESCRIPTIONS.get(value)
+                    for value in values_present
+                    if GLOBAL_PERIOD_DESCRIPTIONS.get(value)
+                }
+                if glossary:
+                    global_info["glossary"] = glossary
+
+        release_components = self._infer_release_components(raw_batch.metadata.get("release_id"))
+        conversion_factor = self._extract_conversion_factor(ppr_df)
+        posted_at = None
+        for doc in guidance_docs:
+            posted_at = doc.get("posted_at")
+            if posted_at:
+                break
+
+        release_info = {
+            "release_id": raw_batch.metadata.get("release_id"),
+            "product_year": release_components.get("product_year"),
+            "release_letter": release_components.get("release_letter"),
+            "posted_at": posted_at,
+            "docs_count": len(guidance_docs),
+            "conversion_factor": conversion_factor
+        }
+
+        summary_payload: Dict[str, Any] = {
+            "release": release_info,
+            "guidance_documents": guidance_docs,
+            "datasets": dataset_summary,
+            "payment_formula": PAYMENT_FORMULA,
+            "policy_notes": POLICY_NOTES,
+            "support": SUPPORT_CONTACTS,
+            "generated_at": datetime.utcnow().isoformat()
+        }
+        
+        # Quick win #2: Add ingestion batch ID to summary
+        batch_id = raw_batch.metadata.get("batch_id")
+        if batch_id:
+            summary_payload["ingestion_batch_id"] = batch_id
+        
+        # Quick win #4: Add extraction tool version (will be populated when extraction tool exists)
+        from cms_pricing.ingestion.docs.guidance_summary import GUIDANCE_EXTRACTION_TOOL_VERSION
+        summary_payload["extraction_tool_version"] = GUIDANCE_EXTRACTION_TOOL_VERSION
+        if status_info:
+            summary_payload["status_indicators"] = status_info
+        if global_info:
+            summary_payload["global_periods"] = global_info
+
+        summary_paths = write_summary_files(summary_payload, docs_dir_path)
+        summary_payload.update(summary_paths)
+        return summary_payload
 
     def _derive_release_context(self, filename: str, release_id: str) -> Dict[str, Any]:
         """Infer year, quarter, and source release identifiers."""
@@ -1626,7 +1971,9 @@ class RVUIngestor(BaseDISIngestor):
                 url=file_info["url"],
                 filename=file_info["filename"],
                 content_type="application/zip",
-                expected_size_bytes=file_info["expected_size"]
+                expected_size_bytes=file_info["expected_size"],
+                file_type="zip",
+                metadata={"description": file_info.get("description")}
             ))
         
         # For historical data, we would add more years here
@@ -1666,24 +2013,78 @@ class RVUIngestor(BaseDISIngestor):
             if zipfile.is_zipfile(buffer):
                 with zipfile.ZipFile(buffer) as zf:
                     members = [name for name in zf.namelist() if not name.endswith("/")]
-                    recognized = [
-                        name for name in members if self._classify_inner_file(name)
-                    ]
-                    if not recognized:
+                    dataset_suffixes: Dict[str, set] = defaultdict(set)
+                    unclassified_members: List[str] = []
+                    for member in members:
+                        suffix = Path(member).suffix.lower()
+                        if suffix == ".pdf":
+                            continue
+                        dataset_key = self._classify_inner_file(member)
+                        if not dataset_key:
+                            unclassified_members.append(member)
+                            continue
+                        dataset_suffixes[dataset_key].add(suffix)
+
+                    recognized: List[str] = []
+                    for member in members:
+                        suffix = Path(member).suffix.lower()
+                        if suffix == ".pdf":
+                            continue
+                        dataset_key = self._classify_inner_file(member)
+                        if not dataset_key:
+                            continue
+                        if (
+                            dataset_key == "anescf"
+                            and suffix in {".csv", ".xlsx", ".xls"}
+                            and ".txt" in dataset_suffixes.get(dataset_key, set())
+                        ):
+                            logger.info(
+                                "Skipping ANES CSV/XLSX variant (TXT available in archive)",
+                                archive=filename,
+                                filename=member
+                            )
+                            continue
+                        recognized.append(member)
+
+                    for raw_member in unclassified_members:
                         logger.warning(
+                            "Skipping unclassified inner file (may be CSV/XLSX variant)",
+                            filename=raw_member,
+                            archive=filename,
+                            suggestion="Verify file format matches expected patterns. If this is a valid data file, update _classify_inner_file() to recognize it."
+                        )
+
+                    if not recognized:
+                        logger.error(
                             "rvu.ingestor.zip_no_supported_members",
                             archive=filename,
                             member_count=len(members),
+                            recognized_members=recognized,
+                            skipped_members=members,
                         )
-                        continue
-                    for inner_name in zf.namelist():
-                        if inner_name.endswith("/"):
+                        raise ValueError(f"ZIP contains no supported members: {filename}")
+                    else:
+                        skipped = [name for name in members if name not in recognized]
+                        logger.info(
+                            "rvu.ingestor.zip_members_classified",
+                            archive=filename,
+                            recognized_count=len(recognized),
+                            skipped_count=len(skipped),
+                            recognized_members=recognized[:10],
+                            skipped_members=skipped[:10],
+                        )
+                    for inner_name in recognized:
+                        suffix = Path(inner_name).suffix.lower()
+                        if suffix == ".pdf":
+                            logger.info(
+                                "Skipping guidance PDF discovered in archive",
+                                archive=filename,
+                                filename=inner_name
+                            )
                             continue
                         dataset_key = self._classify_inner_file(inner_name)
                         if not dataset_key:
-                            logger.debug("Skipping unclassified inner file", filename=inner_name)
                             continue
-                        
                         inner_bytes = zf.read(inner_name)
                         metadata = self._build_parser_metadata(
                             dataset_key,
@@ -1725,6 +2126,20 @@ class RVUIngestor(BaseDISIngestor):
                             )
                             continue
                         
+                        if not result.data.columns.is_unique:
+                            logger.warning(
+                                "Duplicate column names detected after parsing; dropping later duplicates",
+                                dataset=dataset_key,
+                                filename=inner_name,
+                                duplicate_columns=[
+                                    col for col in result.data.columns[result.data.columns.duplicated()]
+                                ]
+                            )
+                            deduped_df = result.data.loc[:, ~result.data.columns.duplicated()].copy()
+                            result = result._replace(data=deduped_df)
+                            if not result.rejects.empty:
+                                result = result._replace(rejects=result.rejects.loc[:, ~result.rejects.columns.duplicated()].copy())
+
                         if not result.data.empty:
                             dataset_frames[dataset_key].append(result.data)
                             # QTS §G.3 Rejects Structure Testing - Detailed logging
@@ -1747,9 +2162,21 @@ class RVUIngestor(BaseDISIngestor):
                             )
                         parser_metrics[dataset_key].append(result.metrics)
             else:
+                suffix = Path(filename).suffix.lower()
+                if suffix == ".pdf":
+                    logger.info(
+                        "Skipping guidance PDF",
+                        filename=filename
+                    )
+                    continue
                 dataset_key = self._classify_inner_file(filename)
                 if not dataset_key:
-                    logger.debug("Skipping unclassified file", filename=filename)
+                    # Task #4: Upgrade debug log to warning for better visibility
+                    logger.warning(
+                        "Skipping unclassified file (may be CSV/XLSX variant)",
+                        filename=filename,
+                        suggestion="Verify file format matches expected patterns. If this is a valid data file, update _classify_inner_file() to recognize it."
+                    )
                     continue
                 
                 metadata = self._build_parser_metadata(
@@ -1792,6 +2219,20 @@ class RVUIngestor(BaseDISIngestor):
                     )
                     continue
                 
+                if not result.data.columns.is_unique:
+                    logger.warning(
+                        "Duplicate column names detected after parsing; dropping later duplicates",
+                        dataset=dataset_key,
+                        filename=filename,
+                        duplicate_columns=[
+                            col for col in result.data.columns[result.data.columns.duplicated()]
+                        ]
+                    )
+                    deduped_df = result.data.loc[:, ~result.data.columns.duplicated()].copy()
+                    result = result._replace(data=deduped_df)
+                    if not result.rejects.empty:
+                        result = result._replace(rejects=result.rejects.loc[:, ~result.rejects.columns.duplicated()].copy())
+
                 if not result.data.empty:
                     dataset_frames[dataset_key].append(result.data)
                     # QTS §G.3 Rejects Structure Testing - Detailed logging
@@ -1818,9 +2259,37 @@ class RVUIngestor(BaseDISIngestor):
         for dataset_key, frames in dataset_frames.items():
             if not frames:
                 continue
-            final_dataframes[dataset_key] = (
-                pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
+
+            combined = (
+                pd.concat(frames, ignore_index=True)
+                if len(frames) > 1
+                else frames[0].copy()
             )
+
+            natural_keys = self.NATURAL_KEYS_MAPPING.get(dataset_key)
+            if natural_keys:
+                missing_keys = [col for col in natural_keys if col not in combined.columns]
+                if missing_keys:
+                    logger.debug(
+                        "Natural key columns missing on combined dataframe",
+                        dataset=dataset_key,
+                        missing_columns=missing_keys
+                    )
+                else:
+                    before = len(combined)
+                    combined = combined.drop_duplicates(subset=natural_keys, keep="first")
+                    dropped = before - len(combined)
+                    if dropped > 0:
+                        logger.warning(
+                            "Duplicate natural keys trimmed post-adaptation",
+                            dataset=dataset_key,
+                            duplicates_removed=dropped,
+                            natural_keys=natural_keys
+                        )
+
+            combined = combined.reset_index(drop=True)
+            final_dataframes[dataset_key] = combined
+
             schema_name = self._dataset_parsers[dataset_key]["schema_name"]
             schema_contract = schema_registry.get_schema(schema_name)
             if schema_contract:
@@ -2325,6 +2794,13 @@ class RVUIngestor(BaseDISIngestor):
             }
             
             raw_contents: Dict[str, bytes] = {}
+            guidance_entries: List[Dict[str, Any]] = []
+            data_file_entries: List[Dict[str, Any]] = []
+            total_bytes = 0
+            docs_dir = Path(self.output_dir) / "docs" / "cms_rvu" / release_id
+            docs_raw_dir = docs_dir / "raw"
+            docs_raw_created = False
+            docs_manifest_path: Optional[Path] = None
             async with httpx.AsyncClient(timeout=60.0) as client:
                 for source_file in source_files:
                     try:
@@ -2332,33 +2808,98 @@ class RVUIngestor(BaseDISIngestor):
                         
                         response = await client.get(source_file.url)
                         content = response.content
-                        
+                        total_bytes += len(content)
+
                         # Calculate file hash
                         file_hash = hashlib.sha256(content).hexdigest()
-                        raw_contents[source_file.filename] = content
-                        
-                        # Store file
-                        file_path = raw_dir / source_file.filename
+                        file_type = (source_file.file_type or self._infer_file_type_from_name(
+                            source_file.filename, source_file.content_type
+                        ) or "binary")
+                        source_file.file_type = file_type
+
+                        # Task A: Use explicit helper method instead of hardcoded comparison
+                        is_guidance_doc = self._is_guidance_file(file_type)
+                        target_dir = raw_dir if not is_guidance_doc else docs_raw_dir
+                        if is_guidance_doc and not docs_raw_created:
+                            docs_raw_dir.mkdir(parents=True, exist_ok=True)
+                            docs_raw_created = True
+                        file_path = target_dir / source_file.filename
+                        # Ensure raw_dir exists (already created earlier)
                         with open(file_path, 'wb') as f:
                             f.write(content)
-                        
+
                         # Update source file metadata
                         source_file.checksum = file_hash
                         source_file.expected_size_bytes = len(content)
                         source_file.last_modified = datetime.utcnow()
-                        
-                        # Add to manifest
-                        file_info = {
-                            "path": str(file_path.relative_to(raw_dir.parent)),
-                            "sha256": file_hash,
-                            "size_bytes": len(content),
-                            "content_type": source_file.content_type,
-                            "url": source_file.url,
-                            "last_modified": response.headers.get('last-modified'),
-                            "etag": response.headers.get('etag')
-                        }
-                        manifest_data["files"].append(file_info)
-                        downloaded_files.append(file_info)
+                        last_modified_header = response.headers.get('last-modified')
+                        etag_header = response.headers.get('etag')
+
+                        if is_guidance_doc:
+                            # Extract PDF page count (quick win #3)
+                            pdf_page_count = None
+                            try:
+                                from cms_pricing.ingestion.docs.guidance_summary import extract_pdf_page_count
+                                pdf_page_count = extract_pdf_page_count(file_path)
+                            except Exception as e:
+                                logger.debug("Failed to extract PDF page count", 
+                                           filename=source_file.filename, 
+                                           error=str(e))
+                            
+                            metadata_entry = {
+                                "path": str(file_path.relative_to(docs_dir)),
+                                "filename": source_file.filename,
+                                "file_type": file_type,
+                                "sha256": file_hash,
+                                "size_bytes": len(content),
+                                "content_type": source_file.content_type,
+                                "url": source_file.url,
+                                "last_modified": last_modified_header or (source_file.last_modified.isoformat() if source_file.last_modified else None),
+                                "etag": etag_header
+                            }
+                            
+                            # Add PDF page count if available
+                            if pdf_page_count is not None:
+                                metadata_entry["pdf_page_count"] = pdf_page_count
+                            
+                            # Add lineage metadata (quick wins #1 & #2)
+                            lineage_metadata = {}
+                            
+                            # Quick win #1: Discovery manifest path
+                            # Check if scraper has manifest path available
+                            if hasattr(self.scraper, 'last_manifest_path') and self.scraper.last_manifest_path:
+                                lineage_metadata["discovery_manifest_path"] = str(self.scraper.last_manifest_path)
+                            
+                            # Quick win #2: Ingestion run ID (using batch_id from manifest)
+                            if manifest_data.get("batch_id"):
+                                lineage_metadata["ingestion_batch_id"] = manifest_data["batch_id"]
+                            
+                            # Add lineage if we have any lineage data
+                            if lineage_metadata:
+                                metadata_entry["lineage"] = lineage_metadata
+                            
+                            if source_file.metadata:
+                                metadata_entry["metadata"] = source_file.metadata
+                            posted_at = source_file.metadata.get("posted_at") if source_file.metadata else None
+                            if posted_at:
+                                metadata_entry["posted_at"] = posted_at
+                            guidance_entries.append(metadata_entry)
+                        else:
+                            raw_contents[source_file.filename] = content
+                            file_info = {
+                                "path": str(file_path.relative_to(raw_dir.parent)),
+                                "sha256": file_hash,
+                                "size_bytes": len(content),
+                                "content_type": source_file.content_type,
+                                "file_type": file_type,
+                                "url": source_file.url,
+                                "last_modified": last_modified_header,
+                                "etag": etag_header
+                            }
+                            if source_file.metadata:
+                                file_info["metadata"] = source_file.metadata
+                            data_file_entries.append(file_info)
+                            downloaded_files.append(file_info)
                         
                         logger.info("File downloaded successfully", 
                                   filename=source_file.filename, 
@@ -2371,23 +2912,44 @@ class RVUIngestor(BaseDISIngestor):
                                    error=str(e))
                         raise
             
+            manifest_data["files"] = data_file_entries
+            if guidance_entries:
+                manifest_data["guidance_docs"] = guidance_entries
+                docs_dir.mkdir(parents=True, exist_ok=True)
+                docs_manifest = {
+                    "release_id": release_id,
+                    "batch_id": manifest_data["batch_id"],
+                    "dataset": "cms_rvu",
+                    "generated_at": datetime.now().isoformat(),
+                    "documents": guidance_entries
+                }
+                
+                # Quick win #1: Add discovery manifest path to docs_manifest if available
+                if hasattr(self.scraper, 'last_manifest_path') and self.scraper.last_manifest_path:
+                    docs_manifest["discovery_manifest_path"] = str(self.scraper.last_manifest_path)
+                docs_manifest_path = docs_dir / "docs_manifest.json"
+                with open(docs_manifest_path, 'w') as f:
+                    json.dump(docs_manifest, f, indent=2)
+
             # Write manifest.json
             manifest_path = raw_dir.parent / "manifest.json"
             with open(manifest_path, 'w') as f:
-                import json
                 json.dump(manifest_data, f, indent=2)
             
             logger.info("Land stage completed", 
                        release_id=release_id, 
-                       files_downloaded=len(downloaded_files))
+                       files_downloaded=len(data_file_entries) + len(guidance_entries))
             
             return {
                 "status": "success",
                 "release_id": release_id,
-                "files_downloaded": len(downloaded_files),
+                "files_downloaded": len(data_file_entries) + len(guidance_entries),
                 "raw_directory": str(raw_dir),
                 "manifest_path": str(manifest_path),
-                "total_size_bytes": sum(f["size_bytes"] for f in downloaded_files),
+                "docs_directory": str(docs_dir) if guidance_entries else None,
+                "docs_manifest_path": str(docs_manifest_path) if docs_manifest_path else None,
+                "guidance_documents": guidance_entries,
+                "total_size_bytes": total_bytes,
                 "source_files": source_files,
                 "raw_content": raw_contents,
                 "manifest": manifest_data
@@ -2429,6 +2991,12 @@ class RVUIngestor(BaseDISIngestor):
         
         raw_contents: Dict[str, bytes] = {}
         total_size = 0
+        guidance_entries: List[Dict[str, Any]] = []
+        data_file_entries: List[Dict[str, Any]] = []
+        docs_dir = Path(self.output_dir) / "docs" / "cms_rvu" / release_id
+        docs_raw_dir = docs_dir / "raw"
+        docs_raw_created = False
+        docs_manifest_path: Optional[Path] = None
         
         for sf in source_files:
             try:
@@ -2448,23 +3016,96 @@ class RVUIngestor(BaseDISIngestor):
                 logger.error("Failed to read provided source file", filename=sf.filename, error=str(e))
                 raise
             file_hash = hashlib.sha256(content).hexdigest()
-            raw_contents[sf.filename] = content
-            file_path = raw_dir / sf.filename
+            file_type = sf.file_type or self._infer_file_type_from_name(sf.filename, sf.content_type) or "binary"
+            sf.file_type = file_type
+            # Task A: Use explicit helper method instead of hardcoded comparison
+            is_guidance_doc = self._is_guidance_file(file_type)
+            target_dir = docs_raw_dir if is_guidance_doc else raw_dir
+            if is_guidance_doc and not docs_raw_created:
+                docs_raw_dir.mkdir(parents=True, exist_ok=True)
+                docs_raw_created = True
+            file_path = target_dir / sf.filename
             with open(file_path, 'wb') as f:
                 f.write(content)
             sf.checksum = file_hash
             sf.expected_size_bytes = len(content)
             sf.last_modified = datetime.utcnow()
-            manifest_data["files"].append({
-                "path": str(file_path.relative_to(release_dir)),
+            entry_common = {
                 "sha256": file_hash,
                 "size_bytes": len(content),
                 "content_type": sf.content_type,
+                "file_type": file_type,
                 "url": sf.url,
                 "last_modified": sf.last_modified.isoformat() if sf.last_modified else None,
                 "etag": sf.etag
-            })
+            }
+            if sf.metadata:
+                entry_common["metadata"] = sf.metadata
+            if is_guidance_doc:
+                # Extract PDF page count (quick win #3)
+                pdf_page_count = None
+                try:
+                    from cms_pricing.ingestion.docs.guidance_summary import extract_pdf_page_count
+                    pdf_page_count = extract_pdf_page_count(file_path)
+                except Exception as e:
+                    logger.debug("Failed to extract PDF page count", 
+                               filename=sf.filename, 
+                               error=str(e))
+                
+                guidance_entry = {
+                    **entry_common,
+                    "path": str(file_path.relative_to(docs_dir)),
+                    "filename": sf.filename
+                }
+                
+                # Add PDF page count if available
+                if pdf_page_count is not None:
+                    guidance_entry["pdf_page_count"] = pdf_page_count
+                
+                # Add lineage metadata (quick wins #1 & #2)
+                lineage_metadata = {}
+                
+                # Quick win #1: Discovery manifest path
+                # Check if scraper has manifest path available
+                if hasattr(self.scraper, 'last_manifest_path') and self.scraper.last_manifest_path:
+                    lineage_metadata["discovery_manifest_path"] = str(self.scraper.last_manifest_path)
+                
+                # Quick win #2: Ingestion run ID (using batch_id from manifest)
+                if manifest_data.get("batch_id"):
+                    lineage_metadata["ingestion_batch_id"] = manifest_data["batch_id"]
+                
+                # Add lineage if we have any lineage data
+                if lineage_metadata:
+                    guidance_entry["lineage"] = lineage_metadata
+                
+                guidance_entries.append(guidance_entry)
+            else:
+                raw_contents[sf.filename] = content
+                data_entry = {
+                    **entry_common,
+                    "path": str(file_path.relative_to(release_dir))
+                }
+                data_file_entries.append(data_entry)
             total_size += len(content)
+        
+        manifest_data["files"] = data_file_entries
+        if guidance_entries:
+            manifest_data["guidance_docs"] = guidance_entries
+            docs_dir.mkdir(parents=True, exist_ok=True)
+            docs_manifest = {
+                "release_id": release_id,
+                "batch_id": manifest_data["batch_id"],
+                "dataset": "cms_rvu",
+                "generated_at": datetime.now().isoformat(),
+                "documents": guidance_entries
+            }
+            
+            # Quick win #1: Add discovery manifest path to docs_manifest if available
+            if hasattr(self.scraper, 'last_manifest_path') and self.scraper.last_manifest_path:
+                docs_manifest["discovery_manifest_path"] = str(self.scraper.last_manifest_path)
+            docs_manifest_path = docs_dir / "docs_manifest.json"
+            with open(docs_manifest_path, 'w') as f:
+                json.dump(docs_manifest, f, indent=2)
         
         manifest_path = release_dir / "manifest.json"
         with open(manifest_path, 'w') as f:
@@ -2476,6 +3117,9 @@ class RVUIngestor(BaseDISIngestor):
             "files_downloaded": len(source_files),
             "raw_directory": str(release_dir),  # Return release root, not files/ subdirectory
             "manifest_path": str(manifest_path),
+             "docs_directory": str(docs_dir) if guidance_entries else None,
+             "docs_manifest_path": str(docs_manifest_path) if docs_manifest_path else None,
+             "guidance_documents": guidance_entries,
             "total_size_bytes": total_size,
             "source_files": source_files,
             "raw_content": raw_contents,
@@ -2540,27 +3184,40 @@ class RVUIngestor(BaseDISIngestor):
                         schema_contract = candidate
                         break
                 
-                if schema_contract and not df.empty:
-                    dis_validation_results = await self.validation_engine.validate_dataframe(
-                        df, schema_contract, "cms_rvu"
-                    )
-                    internal_validation["validation_rules"] = dis_validation_results.get("validation_rules", [])
-                    internal_validation["quality_score"] = dis_validation_results.get("quality_score", 1.0)
-                    internal_validation["total_records"] = dis_validation_results.get("total_records", len(df))
-                    internal_validation["valid_records"] = dis_validation_results.get("valid_records", len(df))
-                    internal_validation["rejected_records"] = dis_validation_results.get("rejected_records", 0)
+                # TODO: Schema-driven validation needs to translate SchemaContract into engine config.
+                #       Tracking task: github_tasks_plan.md → "Schema-driven validation flow scoped for RVU pipeline"
+                #       (https://github.com/alex-bea/cms_api/blob/main/github_tasks_plan.md)
+                if not df.empty:
+                    validation_report = self.validation_engine.validate_dataframe(df, "cms_rvu")
+                    internal_validation["validation_rules"] = [
+                        {
+                            "rule_name": r.rule_name,
+                            "passed": r.passed,
+                            "severity": r.severity.value if hasattr(r.severity, 'value') else str(r.severity),
+                            "message": r.message
+                        }
+                        for r in validation_report.results
+                    ]
+                    internal_validation["quality_score"] = validation_report.quality_score
+                    internal_validation["total_records"] = validation_report.total_checks
+                    internal_validation["valid_records"] = validation_report.passed_checks
+                    internal_validation["rejected_records"] = validation_report.failed_checks
                     
-                    if dis_validation_results.get("quarantined_records"):
-                        quarantine_batch = await self.quarantine_manager.create_quarantine_batch(
-                            batch_id=raw_batch.metadata.get("batch_id", "unknown"),
-                            dataset_name="cms_rvu",
-                            records=dis_validation_results["quarantined_records"],
-                            reason="DIS validation failures",
-                            severity=QuarantineSeverity.HIGH
-                        )
-                        internal_validation["quarantine_batch_id"] = quarantine_batch.batch_id
-                        internal_validation["quarantine_priority"] = quarantine_batch.triage_priority
-                        internal_validation["quarantine_summary"] = quarantine_batch.summary
+                    # Check for quarantined records from validation report
+                    # Note: Quarantine handling is typically done at the normalize stage after parsing
+                    # If validation report has critical failures, they should be handled here
+                    if validation_report.failed_checks > 0:
+                        # Log critical validation failures for quarantine consideration
+                        from ..validators.validation_engine import ValidationSeverity
+                        failed_rules = [r for r in validation_report.results if not r.passed and r.severity == ValidationSeverity.ERROR]
+                        if failed_rules:
+                            logger.warning(
+                                "Validation failures detected that may require quarantine",
+                                failed_rules_count=len(failed_rules),
+                                dataset="cms_rvu",
+                                batch_id=raw_batch.metadata.get("batch_id", "unknown")
+                            )
+                            # Quarantine will be handled in normalize stage when we have actual parsed data
                 else:
                     logger.warning("No detailed schema available for cms_rvu validation; recording file counts only")
                     internal_validation["total_records"] = len(df)
@@ -2808,8 +3465,8 @@ class RVUIngestor(BaseDISIngestor):
             quality_metrics = getattr(enriched_batch, 'quality_metrics', {})
         else:
             # It's a dict
-            batch_id = enriched_batch.get("batch_id", "unknown")
-            release_id = enriched_batch.get("release_id", "unknown")
+            batch_id = enriched_batch.get("batch_id", self.current_release_id or "unknown")
+            release_id = enriched_batch.get("release_id", self.current_release_id or "unknown")
             vintage_date = enriched_batch.get("vintage_date", datetime.now().strftime("%Y-%m-%d"))
             enriched_data = (
                 enriched_batch.get("data")
@@ -2817,8 +3474,22 @@ class RVUIngestor(BaseDISIngestor):
                 or enriched_batch.get("dataframes", {})
             )
             quality_metrics = enriched_batch.get("quality_metrics", {})
+            # If dict appears to be the dataset payload itself, use it directly
+            if not enriched_data and isinstance(enriched_batch, dict):
+                non_meta_keys = {
+                    "data", "enriched_data", "dataframes", "batch_id",
+                    "release_id", "vintage_date", "quality_metrics", "status"
+                }
+                data_like_keys = [k for k in enriched_batch.keys() if k not in non_meta_keys]
+                if data_like_keys:
+                    enriched_data = {k: enriched_batch[k] for k in data_like_keys}
         
-        logger.info("Starting publish stage", batch_id=batch_id)
+        logger.info(
+            "Starting publish stage",
+            batch_id=batch_id,
+            release_id=release_id,
+            enriched_keys=list(enriched_data.keys()) if isinstance(enriched_data, dict) else type(enriched_data).__name__,
+        )
         
         try:
             # Get schema for drift detection
@@ -2850,7 +3521,11 @@ class RVUIngestor(BaseDISIngestor):
             docs_dir.mkdir(parents=True, exist_ok=True)
             
             # Generate data documentation per DIS §3.6
-            total_records = sum(len(df) for df in enriched_data.values()) if enriched_data else 0
+            if isinstance(enriched_data, dict):
+                dataset_counts = {name: len(df) for name, df in enriched_data.items()}
+            else:
+                dataset_counts = {}
+            total_records = sum(dataset_counts.values())
 
             data_docs = {
                 "dataset_name": self.dataset_name,
@@ -2878,8 +3553,9 @@ class RVUIngestor(BaseDISIngestor):
                 json.dump(data_docs, f, indent=2)
             
             # Save data with idempotent upserts per DIS §3.6
+            saved_paths: Dict[str, Path] = {}
             if enriched_data:
-                self._save_data_with_upserts(enriched_data, data_dir, vintage_date)
+                saved_paths = self._save_data_with_upserts(enriched_data, data_dir, vintage_date)
             
             # Load data into Postgres database
             load_results = {}
@@ -2921,6 +3597,26 @@ class RVUIngestor(BaseDISIngestor):
             with open(view_path, 'w') as f:
                 f.write(view_sql)
             
+            # Write publish manifest summarizing datasets
+            manifest_payload = {
+                "dataset_name": self.dataset_name,
+                "release_id": release_id,
+                "batch_id": batch_id,
+                "vintage_date": vintage_date,
+                "generated_at": datetime.now().isoformat(),
+                "datasets": [
+                    {
+                        "name": name,
+                        "records": dataset_counts.get(name, 0),
+                        "parquet_path": str(saved_paths.get(name)) if saved_paths.get(name) else None,
+                    }
+                    for name in sorted(enriched_data.keys()) if isinstance(enriched_data, dict)
+                ]
+            }
+            manifest_path = curated_dir / "manifest.json"
+            with open(manifest_path, 'w') as f:
+                json.dump(manifest_payload, f, indent=2)
+
             logger.info("Publish stage completed", 
                        batch_id=batch_id,
                        curated_dir=str(curated_dir))
@@ -2938,17 +3634,17 @@ class RVUIngestor(BaseDISIngestor):
                 "record_count": total_records,
                 # Additional fields expected by tests
                 "curated_tables": {
-                    "rvu_items": f"{data_dir}/rvu_items.parquet",
-                    "gpci_indices": f"{data_dir}/gpci_indices.parquet",
-                    "opps_caps": f"{data_dir}/opps_caps.parquet",
-                    "anes_cfs": f"{data_dir}/anes_cfs.parquet",
-                    "locality_counties": f"{data_dir}/locality_counties.parquet"
+                    "rvu_items": str(saved_paths.get("pprrvu")) if saved_paths.get("pprrvu") else None,
+                    "gpci_indices": str(saved_paths.get("gpci")) if saved_paths.get("gpci") else None,
+                    "opps_caps": str(saved_paths.get("oppscap")) if saved_paths.get("oppscap") else None,
+                    "anes_cfs": str(saved_paths.get("anescf")) if saved_paths.get("anescf") else None,
+                    "locality_counties": str(saved_paths.get("localitycounty")) if saved_paths.get("localitycounty") else None
                 },
                 "latest_effective_views": [str(view_path)],
                 "export_artifacts": {
                     "schema_contract": str(docs_dir / "schema_contract.json"),
                     "column_dictionary": str(docs_dir / "column_dictionary.json"),
-                    "manifest": str(curated_dir / "manifest.json")
+                    "manifest": str(manifest_path)
                 }
             }
             

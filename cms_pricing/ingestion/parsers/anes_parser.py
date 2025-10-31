@@ -668,18 +668,41 @@ def _parse_zip(content: bytes, encoding: str, metadata: dict) -> Tuple[pd.DataFr
         return df, inner_name
 
 
+def _promote_header_row(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Locate the first row that looks like a real header (HCPCS column) and promote it.
+    """
+    if df.empty:
+        return df
+
+    header_idx = None
+    header_row = None
+    header_markers = {'hcpcs', 'contractor', 'mac', 'medicare administrative contractor (mac)'}
+    for idx in range(len(df)):
+        row_series = df.iloc[idx].fillna('').astype(str).map(lambda x: x.strip())
+        row_lower = row_series.str.lower()
+        if not row_lower.empty and header_markers.intersection(set(row_lower)):
+            header_idx = idx
+            header_row = row_series
+            break
+
+    if header_idx is not None:
+        header = header_row
+        df = df.iloc[header_idx + 1:].copy()
+        df.columns = header
+    else:
+        df.columns = [str(c).strip() for c in df.columns]
+
+    df = df.reset_index(drop=True)
+    return df
+
+
 def _parse_xlsx(file_obj: BytesIO) -> pd.DataFrame:
     """
     Parse Excel as strings to avoid coercion.
-    
-    Skips first 2 rows (CMS standard header format):
-    - Row 1: Document title
-    - Row 2: Empty or continuation
-    - Row 3: Column headers
     """
-    df = pd.read_excel(file_obj, skiprows=2, dtype=str, engine='openpyxl')
-    
-    return df
+    df = pd.read_excel(file_obj, dtype=str, header=None, engine='openpyxl')
+    return _promote_header_row(df)
 
 
 def _parse_csv(content: bytes, encoding: str) -> pd.DataFrame:
@@ -690,10 +713,9 @@ def _parse_csv(content: bytes, encoding: str) -> pd.DataFrame:
     - Line 1: Title/notes
     - Line 2: Column headers
     """
-    text = content.decode(encoding)
-    df = pd.read_csv(StringIO(text), skiprows=0, dtype=str)
-    
-    return df
+    text = content.decode(encoding, errors='replace')
+    df = pd.read_csv(StringIO(text), header=None, dtype=str)
+    return _promote_header_row(df)
 
 
 def _parse_fixed_width(content: bytes, encoding: str, layout: dict) -> pd.DataFrame:

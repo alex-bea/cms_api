@@ -164,7 +164,8 @@ class DISPipeline:
                     "filename": sf.filename,
                     "url": sf.url,
                     "size_bytes": sf.expected_size_bytes,
-                    "checksum": sf.checksum
+                    "checksum": sf.checksum,
+                    "file_type": getattr(sf, "file_type", None)
                 }
                 for sf in source_files
             ])
@@ -172,7 +173,14 @@ class DISPipeline:
         return RawBatch(
             source_files=source_files,
             raw_content=raw_content,
-            metadata={"release_id": release_id, "batch_id": batch_id}
+            metadata={
+                "release_id": release_id,
+                "batch_id": batch_id,
+                "manifest": land_result.get("manifest"),
+                "docs_directory": land_result.get("docs_directory"),
+                "docs_manifest_path": land_result.get("docs_manifest_path"),
+                "guidance_documents": land_result.get("guidance_documents", [])
+            }
         )
     
     async def _validate_data(self, raw_batch: RawBatch, release_id: str) -> Dict[str, Any]:
@@ -291,8 +299,24 @@ class DISPipeline:
         quality_score = validation_results.get("quality_score", 100.0)
         record_count = validation_results.get("total_records", 0)
         valid_records = validation_results.get("valid_records", 0)
+
+        guidance_summary = None
+        if hasattr(self.ingestor, "generate_guidance_summary"):
+            try:
+                summary_result = self.ingestor.generate_guidance_summary(raw_batch, adapted_batch)
+                if summary_result:
+                    guidance_summary = summary_result
+            except Exception as exc:
+                logger.warning(
+                    "Guidance summary generation failed",
+                    dataset=self.ingestor.dataset_name,
+                    release_id=release_id,
+                    error=str(exc)
+                )
+                if self.config.enable_observability:
+                    self.observability_collector.record_error("guidance_summary_failed", str(exc))
         
-        return {
+        result = {
             "status": "success",
             "dataset_name": self.ingestor.dataset_name,
             "release_id": release_id,
@@ -313,11 +337,15 @@ class DISPipeline:
                     "filename": sf.filename,
                     "url": sf.url,
                     "size_bytes": sf.expected_size_bytes,
-                    "checksum": sf.checksum
+                    "checksum": sf.checksum,
+                    "file_type": getattr(sf, "file_type", None)
                 }
                 for sf in raw_batch.source_files
             ]
         }
+        if guidance_summary:
+            result["guidance_summary"] = guidance_summary
+        return result
     
     async def _download_file(self, source_file: SourceFile) -> bytes:
         """Download file from source URL"""

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 import pandas as pd
 import structlog
+from pandas.api.types import is_numeric_dtype
 
 logger = structlog.get_logger()
 
@@ -230,13 +231,22 @@ class SchemaRegistry:
                     errors.append(f"Column {col_name} has {invalid_count} invalid values (sample: {invalid_values_str})")
             
             # Check value ranges
-            if col_spec.min_value is not None:
-                below_min = (col_data < col_spec.min_value).sum()
+            numeric_series = None
+            if col_spec.min_value is not None or col_spec.max_value is not None:
+                if is_numeric_dtype(col_data):
+                    numeric_series = col_data
+                else:
+                    numeric_series = pd.to_numeric(col_data.replace('', pd.NA), errors='coerce')
+            
+            if col_spec.min_value is not None and numeric_series is not None:
+                numeric_values = numeric_series.dropna()
+                below_min = (numeric_values < col_spec.min_value).sum()
                 if below_min > 0:
                     errors.append(f"Column {col_name} has {below_min} values below minimum {col_spec.min_value}")
             
-            if col_spec.max_value is not None:
-                above_max = (col_data > col_spec.max_value).sum()
+            if col_spec.max_value is not None and numeric_series is not None:
+                numeric_values = numeric_series.dropna()
+                above_max = (numeric_values > col_spec.max_value).sum()
                 if above_max > 0:
                     errors.append(f"Column {col_name} has {above_max} values above maximum {col_spec.max_value}")
             

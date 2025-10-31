@@ -20,6 +20,8 @@ import asyncio
 import time
 import json
 import uuid
+import zipfile
+import shutil
 from pathlib import Path
 from datetime import datetime, date
 from decimal import Decimal
@@ -79,10 +81,69 @@ class TestRVUIngestorSimpleE2E:
                 content_type=file_info["content_type"],
                 expected_size_bytes=file_info["size_bytes"],
                 last_modified=datetime.fromisoformat(file_info["last_modified"]),
-                checksum=file_info["sha256"]
+                checksum=file_info["sha256"],
+                file_type=file_info.get("file_type"),
+                metadata=file_info.get("metadata", {})
             ))
         
         return source_files
+
+    @pytest.mark.asyncio
+    async def test_land_stage_emits_guidance_docs(self, tmp_path):
+        """Ensure land stage separates PDFs into docs directory and records manifest."""
+        output_dir = tmp_path / "output"
+        ingestor = RVUIngestor(str(output_dir))
+        release_id = "rvu_2025_test"
+        batch_id = "batch_land_docs"
+
+        # Create a minimal ZIP artifact with a single CSV file inside.
+        inner_csv_name = "PPRRVU25_JAN.csv"
+        zip_path = tmp_path / "rvu25a.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr(inner_csv_name, "hcpcs_code,status_code,work_rvu\nA0001,A,1.23\n")
+
+        # Copy a real PDF guidance doc into the temp directory.
+        sample_pdf = Path("sample_data/rvu25a/RVU25A.pdf")
+        pdf_path = tmp_path / sample_pdf.name
+        shutil.copy(sample_pdf, pdf_path)
+
+        zip_sf = SourceFile(
+            url=f"file://{zip_path}",
+            filename=zip_path.name,
+            content_type="application/zip",
+            expected_size_bytes=zip_path.stat().st_size,
+            file_type="zip",
+            metadata={"posted_at": "2025-01-10"}
+        )
+        pdf_sf = SourceFile(
+            url=f"file://{pdf_path}",
+            filename=pdf_path.name,
+            content_type="application/pdf",
+            expected_size_bytes=pdf_path.stat().st_size,
+            file_type="pdf",
+            metadata={"posted_at": "2025-01-10"}
+        )
+
+        result = await ingestor._land_with_provided_files(
+            release_id=release_id,
+            batch_id=batch_id,
+            source_files=[zip_sf, pdf_sf]
+        )
+
+        # Raw ZIP should land in raw directory.
+        raw_dir = Path(result["raw_directory"]) / "files"
+        assert (raw_dir / zip_sf.filename).exists()
+
+        # Guidance docs should be copied under docs/cms_rvu/<release_id>/raw.
+        docs_dir = Path(result["docs_directory"])
+        assert docs_dir.exists()
+        assert (docs_dir / "raw" / pdf_sf.filename).exists()
+
+        # Guidance manifest should list the PDF.
+        docs_manifest_path = Path(result["docs_manifest_path"])
+        with open(docs_manifest_path, "r") as doc_manifest_file:
+            docs_manifest = json.load(doc_manifest_file)
+        assert docs_manifest["documents"][0]["filename"] == pdf_sf.filename
     
     @pytest.mark.asyncio
     async def test_scraper_discovery_integration(self, scraper, test_data_dir):

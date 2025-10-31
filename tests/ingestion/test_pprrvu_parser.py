@@ -130,6 +130,33 @@ def test_pprrvu_precision_rounding():
     print(f"✅ Precision test passed")
 
 
+@pytest.mark.golden
+def test_pprrvu_csv_header_detection():
+    """
+    Verify CSV header promotion handles CMS disclaimer rows.
+    """
+    metadata = create_test_metadata()
+    fixture = Path("sample_data/rvu25a/PPRRVU25_JAN.csv")
+    assert fixture.exists(), "Sample CSV fixture missing"
+
+    with open(fixture, 'rb') as f:
+        result = parse_pprrvu(f, fixture.name, metadata)
+
+    assert not result.data.empty, "CSV should yield data rows"
+    assert 'hcpcs' in result.data.columns, "Expected hcpcs column after header normalization"
+
+    # Parser finalizes output sorted by the natural key; verify ordering instead of positional value
+    sorted_keys = result.data.sort_values(NATURAL_KEYS).reset_index(drop=True)[NATURAL_KEYS]
+    pd.testing.assert_frame_equal(
+        result.data[NATURAL_KEYS].reset_index(drop=True),
+        sorted_keys,
+        check_dtype=False
+    )
+
+    # Ensure the expected HCPCS code survives header normalization
+    assert 'A0021' in result.data['hcpcs'].astype(str).str.strip().values
+
+
 def test_pprrvu_natural_key_uniqueness():
     """
     Test 3: Duplicate natural keys raise DuplicateKeyError.

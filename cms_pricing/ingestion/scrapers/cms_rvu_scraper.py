@@ -34,6 +34,24 @@ USER_AGENT = "DIS-RVU-Scraper/2.0 (+ops@yourco.com)"
 DEFAULT_TIMEOUT = 30.0
 MAX_CONCURRENT_DETAIL_REQUESTS = 4
 SUPPORTED_EXTENSIONS = (".zip", ".csv", ".txt", ".xlsx", ".xls")
+EXTENSION_TO_TYPE = {
+    ".zip": "zip",
+    ".csv": "csv",
+    ".txt": "txt",
+    ".xlsx": "xlsx",
+    ".xls": "xls",
+}
+MIME_TO_TYPE = {
+    "application/zip": "zip",
+    "application/x-zip-compressed": "zip",
+    "application/octet-stream": "binary",
+    "text/plain": "txt",
+    "text/csv": "csv",
+    "application/csv": "csv",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/vnd.ms-excel.sheet.binary.macroenabled.12": "xlsb",
+}
 
 
 @dataclass
@@ -69,6 +87,7 @@ class RVUFileInfo:
     detail_url: str
     display_name: str
     version: str
+    file_type: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     size_bytes: Optional[int] = None
     checksum: Optional[str] = None
@@ -82,6 +101,7 @@ class RVUFileInfo:
             "posted_at": self.posted_at,
             "file_size": self.file_size,
             "version": self.version,
+            "file_type": self.file_type or "unknown",
         }
         entry_metadata.update(self.metadata)
 
@@ -89,6 +109,7 @@ class RVUFileInfo:
             "url": self.url,
             "filename": self.filename,
             "content_type": self.content_type or "application/octet-stream",
+            "file_type": self.file_type or "unknown",
             "year": self.year,
             "quarter": self.quarter,
             "metadata": entry_metadata,
@@ -250,8 +271,19 @@ class CMSRVUScraper:
                         # Update with validated metadata
                         if content_type:
                             file_info.content_type = content_type
+                        file_info.file_type = file_info.file_type or self._infer_file_type(
+                            file_info.url, file_info.content_type, file_info.filename
+                        )
                         if size_bytes:
                             file_info.size_bytes = size_bytes
+                        if not self._is_allowed_file_type(file_info.file_type):
+                            logger.warning(
+                                "rvu.scraper.file_rejected",
+                                url=file_info.url,
+                                reason=f"Unsupported file_type {file_info.file_type}",
+                                content_type=file_info.content_type,
+                            )
+                            continue
                         validated_files.append(file_info)
                     else:
                         logger.warning(
@@ -314,6 +346,7 @@ class CMSRVUScraper:
                     url=download_url,
                     filename=filename,
                     content_type=content_type,
+                    file_type=self._infer_file_type(download_url, content_type, filename),
                     year=link.year,
                     quarter=link.quarter,
                     revision=link.revision,
@@ -469,6 +502,33 @@ class CMSRVUScraper:
         parsed = urlparse(href)
         path = parsed.path.lower()
         return any(path.endswith(ext) for ext in SUPPORTED_EXTENSIONS)
+
+    @staticmethod
+    def _infer_file_type(url: str, content_type: Optional[str], fallback_name: str) -> Optional[str]:
+        """
+        Determine a logical file_type string based on URL extension, mime type, or filename.
+        """
+        path = urlparse(url).path.lower()
+        ext = Path(path).suffix
+        if ext in EXTENSION_TO_TYPE:
+            return EXTENSION_TO_TYPE[ext]
+
+        if content_type:
+            for mime, ftype in MIME_TO_TYPE.items():
+                if mime in content_type.lower():
+                    return ftype
+
+        fallback_ext = Path(fallback_name).suffix.lower()
+        if fallback_ext in EXTENSION_TO_TYPE:
+            return EXTENSION_TO_TYPE[fallback_ext]
+
+        return None
+
+    @staticmethod
+    def _is_allowed_file_type(file_type: Optional[str]) -> bool:
+        if not file_type:
+            return False
+        return file_type in {"zip", "csv", "txt", "xlsx", "xls"}
 
     @staticmethod
     def _extract_content_metadata(anchor: Tag, context_text: str) -> Tuple[Optional[str], Optional[str]]:

@@ -385,6 +385,8 @@ class ValidationEngine:
         self.structural_validator = StructuralValidator()
         self.domain_validator = DomainValidator()
         self.statistical_validator = StatisticalValidator()
+        # Task #2: Registry for dataset-specific business rules
+        self._business_rules: Dict[str, List[Callable]] = {}
     
     def validate_dataset(
         self, 
@@ -461,6 +463,13 @@ class ValidationEngine:
                 self.statistical_validator.validate_drift(df, reference_df)
             )
         
+        # Task #2: Apply dataset-specific business rules if registered
+        if dataset_name in self._business_rules:
+            business_rule_results = self.validate_business_rules(
+                df, self._business_rules[dataset_name]
+            )
+            results.extend(business_rule_results)
+        
         # Calculate summary statistics
         total_checks = len(results)
         passed_checks = sum(1 for r in results if r.passed)
@@ -507,3 +516,36 @@ class ValidationEngine:
                 ))
         
         return results
+    
+    def validate_dataframe(
+        self,
+        df: pd.DataFrame,
+        dataset_name: str,
+        schema: Dict[str, Any] = None,
+        reference_df: pd.DataFrame = None
+    ) -> ValidationReport:
+        """
+        Alias for validate_dataset for backward compatibility and consistency.
+        
+        Args:
+            df: DataFrame to validate
+            dataset_name: Name of the dataset
+            schema: Optional schema contract
+            reference_df: Optional reference data for drift detection
+            
+        Returns:
+            Complete validation report
+        """
+        return self.validate_dataset(df, dataset_name, schema, reference_df)
+    
+    def register_business_rule(self, dataset_name: str, rule_func: Callable):
+        """
+        Register a business rule for a specific dataset.
+        
+        Args:
+            dataset_name: Name of the dataset (e.g., "pprrvu", "gpci")
+            rule_func: Callable that takes a DataFrame and returns ValidationResult or bool
+        """
+        if dataset_name not in self._business_rules:
+            self._business_rules[dataset_name] = []
+        self._business_rules[dataset_name].append(rule_func)

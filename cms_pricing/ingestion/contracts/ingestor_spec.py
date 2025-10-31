@@ -48,6 +48,8 @@ class SourceFile:
     last_modified: Optional[datetime] = None
     etag: Optional[str] = None
     checksum: Optional[str] = None
+    file_type: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

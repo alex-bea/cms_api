@@ -349,6 +349,8 @@ class DISObservabilityCollector(MetricsCollector):
         total_records = self.publish_results.get("record_count", 0)
         total_files = len(self.source_files)
         total_size = sum(f.get("size_bytes", 0) for f in self.source_files)
+        guidance_count = sum(1 for f in self.source_files if f.get("file_type") == "pdf")
+        guidance_size = sum(f.get("size_bytes", 0) for f in self.source_files if f.get("file_type") == "pdf")
         
         # Determine volume status
         if total_records == 0:
@@ -365,7 +367,9 @@ class DISObservabilityCollector(MetricsCollector):
             "total_records": total_records,
             "total_files": total_files,
             "total_size_bytes": total_size,
-            "avg_records_per_file": total_records / total_files if total_files > 0 else 0
+            "avg_records_per_file": total_records / total_files if total_files > 0 else 0,
+            "guidance_documents_count": guidance_count,
+            "guidance_documents_size_bytes": guidance_size
         }
     
     def _calculate_schema_metrics(self) -> Dict[str, Any]:
