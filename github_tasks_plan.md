@@ -1903,14 +1903,14 @@ Deploy GPCI v1.3 schema and data to production-ready Render PostgreSQL database.
 - ✅ Automatic backups enabled
 
 **Acceptance Criteria:**
-- [ ] Render database provisioned and accessible
-- [ ] DATABASE_URL works from local machine
-- [ ] Alembic migrations applied successfully (004 or 6d0f0408be80 at head)
-- [ ] v1.3 unique index `uq_gpci_mac_locality_effective` exists
-- [ ] 109 GPCI rows loaded with 0 duplicates
-- [ ] Parser tests pass against Render database
-- [ ] Monitoring alerts configured
-- [ ] DATABASE_URL documented securely (1Password/vault)
+- Render database provisioned and accessible
+- DATABASE_URL works from local machine
+- Alembic migrations applied successfully (004 or 6d0f0408be80 at head)
+- v1.3 unique index `uq_gpci_mac_locality_effective` exists
+- 109 GPCI rows loaded with 0 duplicates
+- Parser tests pass against Render database
+- Monitoring alerts configured
+- DATABASE_URL documented securely (1Password/vault)
 
 **Documentation:**
 - Deployment guide: `prds/RUN-render-deployment-prd-v1.0.md` (650 lines, 7-part process)
@@ -3601,8 +3601,8 @@ Based on E2E test output (`pytest tests/ingestors/test_rvu_ingestor_e2e.py`), we
 
 ### Follow-up Checklist (Added 2025-10-31)
 
-- [ ] Verify Render API endpoint returns 2025-10-31 data (spot check `rvu_items`).
-- [ ] Monitor Render logs/metrics for ingestion anomalies over next run.
-- [ ] Draft backlog item for SQL `ON CONFLICT DO UPDATE` upsert optimization.
-- [ ] Update external documentation / CHANGELOG with DB upsert fix summary.
+- TODO: Verify Render API endpoint returns 2025-10-31 data (spot check `rvu_items`).
+- TODO: Monitor Render logs/metrics for ingestion anomalies over next run.
+- TODO: Draft backlog item for SQL `ON CONFLICT DO UPDATE` upsert optimization.
+- TODO: Update external documentation / CHANGELOG with DB upsert fix summary.
 
