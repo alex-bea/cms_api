@@ -45,6 +45,36 @@ Each schema field SHOULD be traceable to its original CMS column name or require
 
 Schema ownership is shared between Data Engineering (models, ingestion, constraints) and Platform/API teams (semantics, availability). Ownership mapping is defined in `STD-database-platform-prd-v1.0.md`.
 
+### 1.3 Guidance Artifacts & Summaries
+
+Every RVU release ships with one or more CMS PDF guidance documents (e.g., `RVU25A.pdf`) that explain the payment formula, status indicators, and file inventory. The ingestion pipeline now:
+
+- Stores the original PDFs under `data/ingestion/<env>/docs/cms_rvu/<release_id>/raw/`.
+- Emits a `docs_manifest.json` describing each document with comprehensive metadata:
+  - **File identity:** filename, path, sha256, size_bytes, content_type, file_type
+  - **Source traceability:** url, last_modified, etag, posted_at
+  - **PDF metadata:** pdf_page_count (extracted via pypdf)
+  - **Lineage tracking:** 
+    - `lineage.discovery_manifest_path` - Links to discovery manifest that found the PDF
+    - `lineage.ingestion_batch_id` - Links to ingestion batch that processed the PDF
+  - **Additional metadata:** scraper-discovered metadata (year, quarter, revision, display_name)
+- Generates companion summaries (`summary.md` + `summary.json`) that extract:
+  - Release metadata (effective date, update date, conversion factor).
+  - Dataset inventory (PPRRVU, GPCI, OPPSCAP, ANES, locality) with file variants.
+  - Physician Fee Schedule payment equation and RVU component definitions.
+  - Status indicator, global period, and policy legends.
+  - Important disclaimers (AMA/ADA copyright, sequestration notes) and CMS support contacts.
+  - **Processing metadata:**
+    - `summary_metadata.generated_at` - When summary was created
+    - `summary_metadata.generator_version` - Version of summary generator
+    - `summary_metadata.extraction_tool_version` - Version of PDF extraction tool (when implemented)
+    - `ingestion_batch_id` - Links summary to ingestion batch
+    - `extraction_tool_version` - Tracks tool version used for extraction
+
+The `docs_manifest.json` also includes a top-level `discovery_manifest_path` field linking the entire guidance document set to the discovery run.
+
+Downstream consumers SHOULD reference these artifacts when documenting or troubleshooting schema fields. The latest summary paths are also surfaced in the published `manifest.json → guidance_docs` array and observability payloads.
+
 ---
 
 ## 2. Tables

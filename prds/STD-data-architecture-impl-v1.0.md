@@ -2205,6 +2205,9 @@ python tools/audit_doc_catalog.py
 python tools/audit_doc_links.py
 python tools/audit_cross_references.py
 
+# Task completion audit (optional, for tracking implementation status)
+python tools/audit_task_completion.py --dry-run
+
 # Run tests
 pytest tests/ingestors/test_{dataset}_ingestor_e2e.py -v
 

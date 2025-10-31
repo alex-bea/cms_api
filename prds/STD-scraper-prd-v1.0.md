@@ -58,6 +58,8 @@ Validation Contract (applies to every discovery run)
 	•	Maintain a per-source allowlist of acceptable MIME types; discovery succeeds only when every accepted artifact matches the allowlist.
 	•	Capture `content_type`, `size_bytes`, and (when returned) `etag`/`last-modified` attributes in the manifest before promoting results to downstream ingestors.
 	•	Log rejected URLs with enough context (discovery page, anchor text) to unblock manual follow-up; runs with missing required artifacts must raise a source-specific alert label (e.g., `rvu.scraper.missing_quarter`) and remain in discovery-only state.
+	•	For sources that ship guidance PDFs (e.g., CMS RVU), persist those artifacts alongside data files with a `file_type` attribute (pdf vs zip/csv/txt/xlsx), copy them into the ingestion docs folder, and emit a companion `docs_manifest.json` capturing filename, checksum, posted date, and source URL.
+	•	Fail discovery when downloaded archives contain no recognizable inner members after classification; log the archive name and retain it only for manual inspection.
 
 Example GHA skeleton
 

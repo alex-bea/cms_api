@@ -127,6 +127,9 @@ python tools/audit_changelog.py
    python tools/md_checkbox_scan.py
    python tools/todo_lint.py
    python tools/audit_changelog.py
+   
+   # Audit task completion status (optional, for task tracking)
+   python tools/audit_task_completion.py --dry-run
    ```
 
 4. **Create Release**

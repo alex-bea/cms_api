@@ -1080,6 +1080,13 @@ If you already have data in a Render-hosted Postgres instance:
   - `/data/ingestion/production/raw/cms_rvu/<release_id>/files` holds binary ZIP artifacts (>1 MB) rather than HTML pages.
   - `data/ingestion/production/cms_rvu_observability_*.json` reports `record_count > 0` before marking the run success.
   - Discovery manifest entries include `content_type` and `size_bytes` for every quarter; missing fields require remediation before promotion.
+  - `/data/ingestion/production/docs/cms_rvu/<release_id>/` exists with the source PDFs under `raw/` plus a `docs_manifest.json` describing comprehensive metadata for each document:
+    - File identity (filename, sha256, size_bytes, pdf_page_count)
+    - Source traceability (url, posted_at, last_modified)
+    - Lineage tracking (discovery_manifest_path, ingestion_batch_id)
+    - Additional scraper metadata (year, quarter, revision)
+  - Guidance extraction outputs (`summary.md` + `summary.json`) are present next to the PDFs with processing metadata (generator_version, extraction_tool_version, ingestion_batch_id) and their paths appear inside the published `manifest.json → guidance_docs` section.
+  - Observability payload lists the guidance doc count and no `guidance_extraction_failed` alerts fire; if extraction fails, rerun the helper script before marking deployment complete.
 
 ### **Within 1 Week:**
 

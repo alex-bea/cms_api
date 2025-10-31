@@ -227,6 +227,7 @@ graph TD
 - `.github/workflows/doc-catalog-audit.yml` executes weekly (Monday 12:00 UTC) and on demand; fails the build on inconsistencies.  
 - Pre-commit hooks enforce filename prefixes and header metadata (`tools/verify-prd-headers.sh`).  
 - `tools/update-prd-refs.sh` bulk-updates references after renames.
+- `tools/audit_task_completion.py` audits task completion in `github_tasks_plan.md` using multi-source verification (git history, tests, AST analysis, acceptance criteria, documentation). Run periodically to maintain accurate task status.
 
 ### 8.2 Cross-Reference Validation
 

@@ -874,6 +874,16 @@ API Responses
 - Release ID → stored in `runs.release_id`
 - Full lineage queryable via `runs` and `snapshots` tables
 
+**Guidance Document Lineage:**
+- Guidance PDFs (e.g., RVU25A.pdf) include lineage metadata in `docs_manifest.json`:
+  - `discovery_manifest_path` - References the discovery manifest that found the PDF
+  - `lineage.discovery_manifest_path` - Per-document linkage to discovery run
+  - `lineage.ingestion_batch_id` - Per-document linkage to ingestion batch
+- Summary files (`summary.json`) include:
+  - `ingestion_batch_id` - Links summary to ingestion batch
+  - `summary_metadata.extraction_tool_version` - Tracks tool version for reproducibility
+- This enables full traceability from guidance PDF → discovery run → ingestion batch → curated data
+
 ---
 
 ## 10. Anti-Patterns & Common Mistakes
