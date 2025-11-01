@@ -199,6 +199,23 @@ curl -X POST -H "X-API-Key: dev-key-123" -H "Content-Type: application/json" \
   }'
 ```
 
+### **RVU Ingestion Pipeline Tests (Docker Workaround)**
+
+If your host Python environment crashes while importing `pandas`, run the RVU ingestion tests inside the project’s Docker image:
+
+```bash
+# 1. Start dependencies only
+docker compose up -d db redis
+
+# 2. Run the ingestion E2E suite inside the API container
+docker compose run --rm api pytest tests/ingestors/test_rvu_ingestor_simple_e2e.py
+
+# 3. Stop everything when finished
+docker compose down
+```
+
+Use this flow whenever you need to validate the RVU loaders until your local interpreter is rebuilt with a healthy pandas/numpy stack.
+
 ---
 
 ## 🔧 **Development Commands**

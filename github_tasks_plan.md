@@ -1406,14 +1406,21 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Category:** General
 **Priority:** Low
 **Estimated Time:** TBD
-**Status:** ✅ COMPLETE
+**Status:** ✅ COMPLETE (2025-01-15)
 **Labels:** general, low-priority
 
-**Status:** ❓ UNKNOWN
 **Description:**
 **File:** `cms_pricing/services/geography_health.py:138`
 
 **Details:** Implement snapshots table
+
+**Completion Notes:**
+- ✅ Created `dataset_snapshots` table via Alembic migration `98567c0bbfa8`
+- ✅ Implemented `DatasetSnapshot` SQLAlchemy model
+- ✅ Built `DatasetSnapshotService` with snapshot selection logic
+- ✅ Created registration script `scripts/register_dataset_snapshots.py`
+- ✅ Added `/snapshots/health` endpoint
+- **Quick Win #1:** Dataset Snapshots Table (Complete)
 
 ---
 
@@ -1421,31 +1428,42 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Category:** General
 **Priority:** Low
-**Status:** ✅ COMPLETE
+**Status:** ✅ COMPLETE (2025-01-15)
 **Estimated Time:** TBD
 **Labels:** general, low-priority
-**Status:** ❓ UNKNOWN
 
 **Description:**
 **File:** `cms_pricing/services/geography_health.py:155`
 
 **Details:** Implement proper snapshot selection logic
 
+**Completion Notes:**
+- ✅ Implemented `DatasetSnapshotService.select_snapshot()` with deterministic selection based on valuation date
+- ✅ Integrated into `PricingService._collect_datasets_used()` with fallback to trace_refs extraction
+- ✅ Supports snapshot selection with deterministic ordering (latest effective_from, then created_at)
+- **Quick Win #1:** Dataset Snapshots Table (Complete)
+
 ---
 
 ### Task 56: General: Implement active snapshot management
 
 **Category:** General
-**Status:** ✅ COMPLETE
+**Status:** ✅ COMPLETE (2025-01-15)
 **Priority:** Low
 **Estimated Time:** TBD
-**Status:** ❓ UNKNOWN
 **Labels:** general, low-priority
 
 **Description:**
 **File:** `cms_pricing/services/geography_health.py:174`
 
 **Details:** Implement active snapshot management
+
+**Completion Notes:**
+- ✅ Snapshot registration script supports batch operations from fee schedule tables
+- ✅ Health endpoint provides visibility into active snapshots by dataset
+- ✅ Service layer queries snapshot table for provenance metadata
+- ✅ Fallback mechanisms ensure pricing works even when snapshots aren't registered
+- **Quick Win #1:** Dataset Snapshots Table (Complete)
 
 ---
 
@@ -1466,10 +1484,10 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 ---
 
 ### Task 58: General: Collect dataset information
-**Status:** ✅ COMPLETE
 
 **Category:** General
 **Priority:** Low
+**Status:** ✅ COMPLETE (2025-01-15)
 **Estimated Time:** TBD
 **Labels:** general, low-priority
 
@@ -1477,7 +1495,13 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **File:** `cms_pricing/services/pricing.py:216`
 
 **Details:** Collect dataset information
-**Status:** ✅ COMPLETE
+
+**Completion Notes:**
+- ✅ Implemented `_collect_datasets_used()` in `PricingService` to aggregate provenance from line items
+- ✅ Queries `DatasetSnapshot` table for authoritative metadata (digest, effective dates)
+- ✅ Falls back to extracting provenance from `trace_refs` when snapshot not found
+- ✅ All pricing responses now include `datasets_used` with `dataset_id`, `release_id`, `batch_id`
+- **Phase 2.6:** Service Layer Provenance Aggregation (Complete)
 
 ---
 
@@ -1515,23 +1539,29 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Category:** API Development
 **Priority:** High
 **Estimated Time:** TBD
+**Status:** ✅ COMPLETE (2025-01-15)
 **Labels:** api-development, high-priority
 
-**Status:** 🗑️ OUTDATED
 **Description:**
 **Files:** `cms_pricing/services/pricing.py:212`, `cms_pricing/services/pricing.py:216`, `cms_pricing/services/trace.py:168`, `cms_pricing/services/pricing.py:434`
 
 **Details:** Capture stored plan components and dataset metadata in pricing responses, propagate dataset usage into trace records, and replace placeholder loaders to deliver full parity and auditing.
 
 **Implementation Steps:**
-- Load stored plan definitions by filling in `_load_plan_components`/`_get_plan_name` with SQLAlchemy queries so pricing reuses persisted sequences and metadata.
-- Normalize stored and ad-hoc components through a shared helper before calling the engines to keep pricing inputs consistent.
-- Extend pricing engines (starting with MPFS) to surface dataset identifiers/digests, leveraging revision/effective date data or snapshot lookups.
-- Aggregate those dataset descriptors into `PricingResponse.datasets_used` to support comparison parity checks.
-- Update `TraceService.store_run` to persist dataset usage and facility flags alongside run data for replay/audit trails.
-- Backstop the change with unit/integration coverage that executes a stored plan and asserts dataset metadata and trace persistence.
+- ✅ Load stored plan definitions by filling in `_load_plan_components`/`_get_plan_name` with SQLAlchemy queries so pricing reuses persisted sequences and metadata.
+- ✅ Normalize stored and ad-hoc components through a shared helper before calling the engines to keep pricing inputs consistent.
+- ✅ Extend pricing engines (starting with MPFS) to surface dataset identifiers/digests, leveraging revision/effective date data or snapshot lookups.
+- ✅ Aggregate those dataset descriptors into `PricingResponse.datasets_used` to support comparison parity checks.
+- ✅ Update `TraceService.store_run` to persist dataset usage and facility flags alongside run data for replay/audit trails.
+- ✅ Backstop the change with unit/integration coverage that executes a stored plan and asserts dataset metadata and trace persistence.
 
-**Status:** ✅ COMPLETE
+**Completion Notes:**
+- ✅ All 7 pricing engines return `CodePricingItem` with provenance fields (`dataset_id`, `release_id`, `batch_id`, `trace_refs`)
+- ✅ `PricingService._collect_datasets_used()` aggregates provenance from line items and snapshot table
+- ✅ Pricing responses include `datasets_used` with complete provenance metadata
+- ✅ Comprehensive test coverage validates provenance flow end-to-end
+- **Phase 2:** Provenance Tracking (Complete)
+- **Quick Win #2:** Unified CodePricingItem Schema (Complete)
 ---
 
 ### Task 62: Data Ingestion: Replace placeholder validation/adaptation logic
@@ -1559,6 +1589,922 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Files:** `NEXT_TODOS.md:11`, `cms_pricing/main.py:95`, `.github/workflows/cms_rvu_discovery.yml`
 
 **Details:** Build the CMS release detection, downloader automation, and cache-warming routines so dataset freshness and observability match roadmap expectations.
+
+---
+
+### Task 69: Data Quality: Add locality_id to fee_mpfs table
+
+**Category:** Database
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** database, data-quality, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.1
+
+**Details:** Add `locality_id` column to `fee_mpfs` table and backfill from RVU locality dimension table. This enables proper locality joins and improves MPFS engine queries.
+
+**Implementation Steps:**
+- Create Alembic migration to add `locality_id` column to `fee_mpfs`
+- Backfill `locality_id` from RVU locality dimension using locality code mapping
+- Add index on `locality_id` for efficient joins
+- Update MPFS engine to use `locality_id` instead of locality code lookups
+- Update tests to verify locality_id joins work correctly
+
+**Acceptance Criteria:**
+- `fee_mpfs.locality_id` column exists with proper foreign key relationship
+- All existing rows backfilled with correct locality_id values
+- MPFS engine queries use locality_id for efficient joins
+- Tests verify locality resolution works correctly
+
+---
+
+### Task 70: Data Quality: Extend OPPS ingestion to persist wage index table
+
+**Category:** Data Ingestion
+**Priority:** Medium
+**Estimated Time:** 3-4 hours
+**Labels:** data-ingestion, opps, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.1
+
+**Details:** Extend OPPS ingestion to persist wage index table with natural key constraints and add facility-specific joins in OPPS engine.
+
+**Implementation Steps:**
+- Update OPPS ingestor to persist wage index data to database
+- Add natural key constraints on wage index table (CBSA, year, quarter, effective date)
+- Update OPPS engine to use wage index joins for facility-specific pricing
+- Add tests for wage index ingestion and engine integration
+- Verify wage index data flows through to pricing responses
+
+**Acceptance Criteria:**
+- Wage index table populated from OPPS ingestion
+- Natural key constraints enforced (no duplicates)
+- OPPS engine uses wage index for facility calculations
+- Tests verify wage index integration end-to-end
+
+---
+
+### Task 71: Data Quality: Produce retention/backfill playbook
+
+**Category:** Documentation
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** documentation, operations, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.1
+
+**Details:** Create operational playbook covering data retention policies, backfill procedures, digest reconciliation, and abort criteria for dataset snapshots.
+
+**Implementation Steps:**
+- Document retention policies for each dataset type
+- Define backfill procedures for reprocessing historical data
+- Document digest reconciliation process (how to verify data integrity)
+- Define abort criteria (when to stop/rollback backfill operations)
+- Include examples and troubleshooting guides
+- Review with operations team
+
+**Acceptance Criteria:**
+- Playbook covers retention policies for all datasets
+- Backfill procedures documented with step-by-step instructions
+- Digest reconciliation process clearly explained
+- Abort criteria defined for various failure scenarios
+- Examples and troubleshooting guides included
+
+---
+
+### Task 72: Testing: Add synthetic publish integration test
+
+**Category:** Testing
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** testing, integration, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.1
+
+**Details:** Create integration test that publishes fixture manifests, runs `/pricing/price` calls, and verifies both cents and provenance metadata are correctly returned.
+
+**Implementation Steps:**
+- Create fixture dataset manifests with provenance metadata
+- Write integration test that publishes fixtures
+- Call `/pricing/price` endpoint with test data
+- Verify pricing amounts (cents) are correct
+- Verify provenance metadata (`datasets_used`, `release_id`, `batch_id`) present
+- Add to CI pipeline
+
+**Acceptance Criteria:**
+- Test publishes fixture manifests successfully
+- `/pricing/price` calls return correct pricing amounts
+- Provenance metadata verified in response
+- Test runs in CI pipeline
+
+---
+
+### Task 73: Testing: Add wage index coverage test
+
+**Category:** Testing
+**Priority:** Medium
+**Estimated Time:** 1-2 hours
+**Labels:** testing, opps, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.1
+
+**Details:** Create test verifying wage index works correctly for both indexed (facility) and non-indexed (non-facility) pricing states.
+
+**Implementation Steps:**
+- Create test fixtures with facility and non-facility settings
+- Test OPPS pricing with wage index applied (facility)
+- Test OPPS pricing without wage index (non-facility)
+- Verify correct wage index values retrieved from database
+- Verify pricing calculations differ appropriately
+
+**Acceptance Criteria:**
+- Test covers facility (wage index applied) scenarios
+- Test covers non-facility (no wage index) scenarios
+- Verifies correct wage index values used
+- Verifies pricing calculations accurate
+
+---
+
+### Task 74: Data Quality: Instrument checksum verification and failure alerts
+
+**Category:** Data Ingestion
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** data-ingestion, observability, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.1
+
+**Details:** Add checksum verification during ingestion jobs and configure failure alerts when checksums don't match expected values.
+
+**Implementation Steps:**
+- Calculate checksums during ingestion (SHA-256 of data)
+- Compare calculated checksums to expected values from manifests
+- Emit alerts/metrics when checksum mismatches detected
+- Log checksum verification results
+- Configure alerting rules for checksum failures
+
+**Acceptance Criteria:**
+- Checksums calculated for all ingested datasets
+- Verification compares against expected values
+- Alerts triggered on checksum mismatches
+- Logs include checksum verification results
+
+---
+
+### Task 75: Testing: Expand negative test coverage
+
+**Category:** Testing
+**Priority:** Medium
+**Estimated Time:** 3-4 hours
+**Labels:** testing, api-development, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.2
+
+**Details:** Expand negative test coverage for invalid locality codes, unsupported modifiers, and missing snapshot scenarios.
+
+**Implementation Steps:**
+- Add tests for invalid locality codes (should return 400 or appropriate error)
+- Add tests for unsupported modifiers (verify error handling)
+- Add tests for missing snapshot scenarios (verify fallback behavior)
+- Verify error messages are actionable and include error codes
+- Document expected error responses
+
+**Acceptance Criteria:**
+- Tests cover invalid locality scenarios
+- Tests cover unsupported modifier scenarios
+- Tests cover missing snapshot scenarios
+- Error messages are actionable with error codes
+
+---
+
+### Task 76: Testing: Stand up contract tests for ClearBill staging
+
+**Category:** Testing
+**Priority:** High
+**Estimated Time:** 4-6 hours
+**Labels:** testing, api-development, high-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.2
+
+**Details:** Stand up contract tests executed against ClearBill staging environment to verify API compatibility before production release.
+
+**Implementation Steps:**
+- Set up test environment connecting to ClearBill staging
+- Create contract test suite validating API responses
+- Test all pricing endpoints (`/pricing/price`, `/pricing/compare`, `/pricing/codes/price`)
+- Verify schema compatibility (`CodePricingItem` structure)
+- Verify provenance fields present and correctly formatted
+- Run contract tests in CI/CD pipeline
+- Coordinate with ClearBill team for test data access
+
+**Acceptance Criteria:**
+- Contract tests execute against ClearBill staging
+- All pricing endpoints validated
+- Schema compatibility verified
+- Provenance fields validated
+- Tests run in CI/CD pipeline
+
+---
+
+### Task 77: Testing: Establish downstream regression suite
+
+**Category:** Testing
+**Priority:** Medium
+**Estimated Time:** 3-4 hours
+**Labels:** testing, api-development, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.2
+
+**Details:** Establish downstream regression suite (consumer-driven contract or Postman collection) executed before each release to catch breaking changes.
+
+**Implementation Steps:**
+- Create Postman collection or consumer-driven contract tests
+- Include critical API scenarios used by downstream consumers
+- Validate response schemas match expected structure
+- Test backward compatibility scenarios
+- Integrate into pre-release validation workflow
+- Document how to update collection when API changes
+
+**Acceptance Criteria:**
+- Regression suite covers critical API scenarios
+- Schema validation included
+- Backward compatibility tested
+- Integrated into release workflow
+- Documentation for maintenance included
+
+---
+
+### Task 78: Documentation: Produce versioned API change log
+
+**Category:** Documentation
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** documentation, api-development, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.2
+
+**Details:** Produce versioned API change log documenting schema changes, new endpoints, deprecations, and breaking changes with schema diffs.
+
+**Implementation Steps:**
+- Create API change log document or section in existing docs
+- Document schema changes (e.g., `CodePricingItem` introduction)
+- Include schema diffs showing before/after
+- Document new endpoints and their purposes
+- Mark deprecated endpoints and removal timelines
+- Version the change log (e.g., v1.0, v1.1)
+- Keep change log updated with each release
+
+**Acceptance Criteria:**
+- Change log documents all schema changes
+- Schema diffs included for major changes
+- New endpoints documented
+- Deprecations clearly marked
+- Change log is versioned and maintained
+
+---
+
+### Task 79: Documentation: Coordinate client enablement guide
+
+**Category:** Documentation
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** documentation, api-development, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.2
+
+**Details:** Coordinate with product marketing and developer relations to produce client enablement guide for API consumers.
+
+**Implementation Steps:**
+- Create client enablement guide document
+- Include API overview and use cases
+- Document authentication and authorization
+- Provide code examples for common scenarios
+- Include troubleshooting and FAQ sections
+- Coordinate review with product marketing
+- Coordinate review with developer relations
+- Publish guide in accessible location
+
+**Acceptance Criteria:**
+- Enablement guide covers API overview
+- Authentication documented
+- Code examples provided
+- Troubleshooting section included
+- Reviewed by product marketing and dev relations
+- Published and accessible
+
+---
+
+### Task 80: API Development: Implement L1 in-process cache and L2 Redis cache
+
+**Category:** Performance
+**Priority:** High
+**Estimated Time:** 4-6 hours
+**Labels:** performance, caching, high-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+
+**Details:** Implement L1 in-process LRU cache and L2 Redis cache keyed by `(engine|code|setting|locality|snapshot_digest)` for improved pricing performance.
+
+**Implementation Steps:**
+- Implement L1 in-process LRU cache in pricing service
+- Configure Redis connection for L2 cache
+- Implement cache key generation for `(engine|code|setting|locality|snapshot_digest)`
+- Add cache hit/miss metrics
+- Implement cache invalidation strategy
+- Add cache warming for top cohorts
+- Test cache behavior and performance improvements
+
+**Acceptance Criteria:**
+- L1 cache implemented with LRU eviction
+- L2 Redis cache configured and working
+- Cache keys generated correctly
+- Cache hit/miss metrics exposed
+- Cache invalidation works correctly
+- Performance improvements measured
+
+---
+
+### Task 81: Performance: Develop nightly cache warmers
+
+**Category:** Performance
+**Priority:** Medium
+**Estimated Time:** 3-4 hours
+**Labels:** performance, caching, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+
+**Details:** Develop nightly cache warmers seeded from top ClearBill demand cohorts to pre-populate cache with frequently accessed data.
+
+**Implementation Steps:**
+- Identify top ClearBill demand cohorts (codes, settings, localities)
+- Create cache warmer script/service
+- Schedule nightly execution (cron or scheduled job)
+- Pre-populate cache with top cohorts
+- Monitor cache hit rates after warming
+- Adjust cohorts based on usage patterns
+
+**Acceptance Criteria:**
+- Cache warmer identifies top demand cohorts
+- Nightly execution scheduled and working
+- Cache pre-populated successfully
+- Cache hit rates improved
+- Cohorts adjusted based on data
+
+---
+
+### Task 82: Performance: Run load tests for SLO validation
+
+**Category:** Performance
+**Priority:** High
+**Estimated Time:** 4-6 hours
+**Labels:** performance, testing, high-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+
+**Details:** Run load tests (single lookup, 20-code batch, 40-code batch) with targets p95 < 500 ms / < 2.5 s to validate performance SLOs.
+
+**Implementation Steps:**
+- Set up load testing framework (Locust, k6, or similar)
+- Create test scenarios:
+  - Single code lookup (target: p95 < 500ms)
+  - 20-code batch (target: p95 < 2.5s)
+  - 40-code batch (target: p95 < 2.5s)
+- Run load tests against staging environment
+- Measure and report p50, p95, p99 latencies
+- Identify bottlenecks if SLOs not met
+- Document results and recommendations
+
+**Acceptance Criteria:**
+- Load tests configured for all scenarios
+- SLOs met: single lookup p95 < 500ms
+- SLOs met: batch requests p95 < 2.5s
+- Results documented with recommendations
+- Bottlenecks identified and addressed
+
+---
+
+### Task 83: Observability: Expose pricing and cache metrics
+
+**Category:** Monitoring
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** monitoring, observability, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+
+**Details:** Expose Prometheus metrics: `dataset_snapshot_selected_total`, `pricing_lookup_latency_ms`, `cache_hits_total`/`cache_misses_total`, `requests_total{route, scope}`.
+
+**Implementation Steps:**
+- Add `dataset_snapshot_selected_total` counter metric
+- Add `pricing_lookup_latency_ms` histogram metric
+- Add `cache_hits_total` and `cache_misses_total` counter metrics
+- Add `requests_total{route, scope}` counter with labels
+- Expose metrics via `/metrics` endpoint
+- Document metric names and labels
+
+**Acceptance Criteria:**
+- All metrics exposed via `/metrics` endpoint
+- Metrics include appropriate labels (route, scope)
+- Metrics documented
+- Prometheus can scrape metrics successfully
+
+---
+
+### Task 84: Observability: Publish Grafana dashboards
+
+**Category:** Monitoring
+**Priority:** Medium
+**Estimated Time:** 3-4 hours
+**Labels:** monitoring, observability, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+
+**Details:** Publish Grafana dashboards showing latency, cache hit ratio, error budgets, and snapshot adoption metrics.
+
+**Implementation Steps:**
+- Set up Grafana instance (or use existing)
+- Create dashboard for latency metrics (p50, p95, p99)
+- Create dashboard for cache hit ratio
+- Create dashboard for error budgets (4xx, 5xx rates)
+- Create dashboard for snapshot adoption (which snapshots active)
+- Configure alert thresholds
+- Document dashboard access and interpretation
+
+**Acceptance Criteria:**
+- Grafana dashboards created for all metrics
+- Dashboards show latency, cache, errors, snapshots
+- Alert thresholds configured
+- Dashboards documented
+- Team has access to dashboards
+
+---
+
+### Task 85: Observability: Configure alerts for SLO burn and anomalies
+
+**Category:** Monitoring
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** monitoring, observability, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+
+**Details:** Configure alerts for SLO burn, snapshot mismatch, cache miss spikes, and ingestion drift.
+
+**Implementation Steps:**
+- Configure alert for SLO burn (latency exceeding targets)
+- Configure alert for snapshot mismatch (wrong snapshot selected)
+- Configure alert for cache miss spikes (unusual cache miss rate)
+- Configure alert for ingestion drift (data freshness issues)
+- Set alert severity levels (warning, critical)
+- Configure alert channels (email, Slack, PagerDuty)
+- Test alert triggering and resolution
+
+**Acceptance Criteria:**
+- Alerts configured for all specified scenarios
+- Alert severity levels set appropriately
+- Alert channels configured
+- Alerts tested and working
+- Alert runbook documented
+
+---
+
+### Task 86: Operations: Author operational runbooks
+
+**Category:** Documentation
+**Priority:** Medium
+**Estimated Time:** 3-4 hours
+**Labels:** documentation, operations, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+
+**Details:** Author runbooks for snapshot activation/rollback, cache warmer failures, and RBAC issue remediation.
+
+**Implementation Steps:**
+- Create runbook for snapshot activation/rollback:
+  - How to activate new snapshot
+  - How to rollback to previous snapshot
+  - How to verify snapshot selection
+- Create runbook for cache warmer failures:
+  - How to identify cache warmer failures
+  - How to restart cache warmer
+  - How to verify cache population
+- Create runbook for RBAC issue remediation:
+  - How to identify RBAC failures
+  - How to fix scope issues
+  - How to rotate API keys
+- Include troubleshooting steps and escalation paths
+- Review with operations team
+
+**Acceptance Criteria:**
+- Runbooks created for all scenarios
+- Step-by-step procedures documented
+- Troubleshooting sections included
+- Escalation paths documented
+- Reviewed by operations team
+
+---
+
+### Task 87: Operations: Deliver on-call training
+
+**Category:** Operations
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** operations, training, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+
+**Details:** Deliver on-call training session with recordings and scenario drills, and update paging escalation list.
+
+**Implementation Steps:**
+- Schedule on-call training session
+- Create training materials covering:
+  - Common incidents and resolution
+  - Alert interpretation
+  - Runbook usage
+  - Escalation procedures
+- Conduct scenario drills (practice incidents)
+- Record training session
+- Update paging escalation list with current contacts
+- Document training completion
+
+**Acceptance Criteria:**
+- Training session conducted
+- Training materials created
+- Scenario drills completed
+- Session recorded
+- Escalation list updated
+- Training documented
+
+---
+
+### Task 88: Operations: Prepare deployment checklist
+
+**Category:** Operations
+**Priority:** Medium
+**Estimated Time:** 1-2 hours
+**Labels:** operations, deployment, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+
+**Details:** Prepare deployment checklist covering feature flag sequencing, dual-write window, and rollback triggers.
+
+**Implementation Steps:**
+- Create deployment checklist template
+- Document feature flag sequencing (order of activation)
+- Define dual-write window (old/new schema simultaneously)
+- Define rollback triggers (conditions for rollback)
+- Include pre-deployment checks
+- Include post-deployment verification steps
+- Review with engineering and operations teams
+
+**Acceptance Criteria:**
+- Deployment checklist created
+- Feature flag sequencing documented
+- Dual-write window defined
+- Rollback triggers clearly specified
+- Pre and post-deployment checks included
+- Reviewed by teams
+
+---
+
+### Task 89: Security: Create api_keys table (Quick Win #3)
+
+**Category:** Security
+**Priority:** High
+**Estimated Time:** 3-4 hours
+**Labels:** security, database, high-priority, readiness-plan, quick-win-3
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3, `artifacts/quick_wins_detailed_plans.md`
+
+**Details:** Create `api_keys` table with salted hash storage, scopes, tenant, and attribution fields. This is Quick Win #3 and enables RBAC functionality.
+
+**Implementation Steps:**
+- Create Alembic migration for `api_keys` table with columns:
+  - `key_id` (UUID primary key)
+  - `key_hash` (salted SHA-256 hash, not plaintext)
+  - `scopes` (array of strings: `app`, `advocate`, `developer`)
+  - `tenant_id` (optional, for multi-tenant support)
+  - `attribution_fields` (JSONB for metadata like `created_by`, `purpose`)
+  - `created_at`, `updated_at`, `expires_at` (optional)
+  - `is_active` (boolean flag)
+- Create `APIKey` SQLAlchemy model
+- Create key rotation job (scheduled task or CLI script)
+- Add indexes on `key_hash`, `tenant_id`, `is_active`
+- Create helper functions for key generation, hashing, validation
+
+**Acceptance Criteria:**
+- `api_keys` table created with proper schema
+- Key hashing uses salted SHA-256 (never store plaintext)
+- Scopes array supports RBAC requirements
+- Key rotation job can deactivate/rotate keys
+- Tests verify key storage and retrieval work correctly
+
+---
+
+### Task 90: Security: Implement RBAC middleware enforcing scopes
+
+**Category:** Security
+**Priority:** High
+**Estimated Time:** 4-6 hours
+**Labels:** security, api-development, high-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+
+**Details:** Implement middleware enforcing scope-based access control per router. Replace current env-based API key check with database-backed key lookup and scope validation.
+
+**Implementation Steps:**
+- Update `cms_pricing/auth.py` to query `api_keys` table instead of env vars
+- Create scope decorator/dependency (e.g., `require_scope("app")` or `require_scope(["app", "developer"])`)
+- Update middleware to:
+  - Extract API key from request headers
+  - Look up key in database (hash comparison)
+  - Validate key is active and not expired
+  - Check requested scope is in key's allowed scopes
+  - Reject with 403 if scope check fails
+- Apply scope requirements to all routers:
+  - `/pricing/*` endpoints may require `app` scope
+  - `/opps/*`, `/mpfs/*` may require `developer` scope
+  - Admin endpoints may require special scope
+- Add tests for scope enforcement (valid keys, invalid scopes, expired keys)
+
+**Acceptance Criteria:**
+- Middleware enforces scope checks on all protected routes
+- Invalid or missing scopes return 403 Forbidden
+- Scope checks work with database-backed keys
+- Tests verify scope enforcement for all scenarios
+- No breaking changes to existing API key behavior (backward compatible transition)
+
+---
+
+### Task 91: Observability: Emit per-key metrics for RBAC
+
+**Category:** Monitoring
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** monitoring, observability, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+
+**Details:** Emit Prometheus metrics per API key scope: `requests_total{scope, key_id}`, `requests_4xx_total{scope}`, `requests_rate_limited_total{scope}`.
+
+**Implementation Steps:**
+- Add metrics collection in authentication middleware
+- Create counter metrics:
+  - `api_requests_total{scope, key_id, route}` (with key_id for attribution)
+  - `api_requests_4xx_total{scope, route}` (aggregated, no key_id for privacy)
+  - `api_requests_rate_limited_total{scope, route}`
+- Emit metrics after successful/failed auth checks
+- Ensure key_id is hashed or truncated for privacy (don't expose full UUIDs)
+- Document metric names and labels
+
+**Acceptance Criteria:**
+- Per-key metrics exposed via `/metrics` endpoint
+- Metrics include scope and route labels
+- Key identifiers are privacy-safe (hashed/truncated)
+- Metrics documented
+- Prometheus can scrape metrics successfully
+
+---
+
+### Task 92: Observability: Route correlation IDs through services
+
+**Category:** Observability
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** observability, tracing, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+
+**Details:** Route correlation IDs through ingestion and pricing services to enable end-to-end request tracing. Ensure no PHI persists outside encrypted stores.
+
+**Implementation Steps:**
+- Update FastAPI middleware to generate/accept correlation IDs from headers (e.g., `X-Correlation-ID`)
+- Pass correlation ID through:
+  - Pricing service calls
+  - Engine invocations
+  - Ingestion pipeline stages
+  - Trace service records
+- Add correlation ID to structured logs (structlog)
+- Verify PHI is never logged (audit log filtering)
+- Ensure correlation IDs are included in trace records
+- Document correlation ID format and usage
+
+**Acceptance Criteria:**
+- Correlation IDs generated/forwarded for all requests
+- IDs propagate through all service layers
+- IDs included in logs and trace records
+- PHI filtering verified (no sensitive data in logs)
+- Documentation covers correlation ID usage
+
+---
+
+### Task 93: Compliance: Record compliance bill-of-materials
+
+**Category:** Compliance
+**Priority:** Medium
+**Estimated Time:** 4-6 hours
+**Labels:** compliance, documentation, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+
+**Details:** Record compliance bill-of-materials (BOM) documenting systems, datasets, controls aligning to HIPAA §164.308/§164.312 requirements.
+
+**Implementation Steps:**
+- Create compliance BOM document template
+- Document systems:
+  - API servers, databases, caching layer
+  - Ingestion pipelines, data storage
+  - Monitoring and logging systems
+- Document datasets:
+  - CMS datasets (MPFS, OPPS, ASC, etc.)
+  - Data sources and update frequencies
+  - Data retention policies
+- Document controls:
+  - Access controls (RBAC, API keys)
+  - Encryption at rest and in transit
+  - Audit logging and monitoring
+  - Incident response procedures
+- Map controls to HIPAA requirements (§164.308, §164.312)
+- Create compliance attestation package
+- Review with compliance team
+
+**Acceptance Criteria:**
+- BOM document created covering all systems, datasets, controls
+- Controls mapped to HIPAA requirements
+- Attestation package prepared
+- Reviewed and approved by compliance team
+- Document versioned and maintained
+
+---
+
+### Task 94: Compliance: Define data retention & deletion policy
+
+**Category:** Compliance
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** compliance, documentation, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+
+**Details:** Define data retention and deletion policy for pricing snapshots, audit logs, and trace records to ensure compliance with data protection regulations.
+
+**Implementation Steps:**
+- Define retention periods for:
+  - Dataset snapshots (e.g., keep last 12 releases)
+  - Audit logs (e.g., 7 years for compliance)
+  - Trace records (e.g., 90 days for debugging)
+  - API request logs (e.g., 30 days)
+- Document deletion procedures:
+  - Automated deletion workflows
+  - Manual deletion processes
+  - Data archiving before deletion
+- Create data retention schedule (when/what to delete)
+- Document exceptions and hold procedures (legal holds)
+- Review with legal/compliance team
+
+**Acceptance Criteria:**
+- Retention policy document created
+- Retention periods defined for all data types
+- Deletion procedures documented
+- Schedule created for automated cleanup
+- Exceptions and holds documented
+- Reviewed by legal/compliance team
+
+---
+
+### Task 95: Security: Configure alerting on auth failures
+
+**Category:** Security
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** security, monitoring, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+
+**Details:** Configure alerts for repeated authentication failures and scope escalation attempts to detect potential security threats.
+
+**Implementation Steps:**
+- Add metrics tracking auth failures per key/IP:
+  - `api_auth_failures_total{key_id, reason}`
+  - `api_scope_denied_total{key_id, requested_scope}`
+- Configure alert rules:
+  - Alert on >5 auth failures in 5 minutes from same key
+  - Alert on >10 auth failures in 5 minutes from same IP
+  - Alert on repeated scope escalation attempts
+  - Alert on key rotation anomalies
+- Set alert severity (warning for first threshold, critical for sustained attacks)
+- Configure alert channels (PagerDuty, Slack, email)
+- Create runbook for responding to auth failure alerts
+- Test alert triggering
+
+**Acceptance Criteria:**
+- Alerts configured for auth failure scenarios
+- Alert thresholds set appropriately
+- Alert channels configured
+- Runbook created for response procedures
+- Alerts tested and working
+
+---
+
+### Task 96: Compliance: Capture audit log sampling review
+
+**Category:** Compliance
+**Priority:** Medium
+**Estimated Time:** 2-3 hours
+**Labels:** compliance, auditing, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+
+**Details:** Capture audit log sampling review process and provide compliance attestation package for HIPAA audit requirements.
+
+**Implementation Steps:**
+- Define audit log sampling methodology:
+  - Frequency (e.g., quarterly reviews)
+  - Sample size and selection criteria
+  - Review checklist
+- Create audit log review checklist:
+  - Verify correlation IDs present
+  - Verify no PHI in logs
+  - Verify scope enforcement logged
+  - Verify data access patterns normal
+- Document sampling review process
+- Create attestation package template
+- Schedule initial audit review
+- Document findings and remediation if needed
+
+**Acceptance Criteria:**
+- Audit log sampling methodology defined
+- Review checklist created
+- Attestation package template ready
+- Initial review completed
+- Findings documented
+
+---
+
+### Task 97: Compliance: Partner for pre-launch tabletop exercise
+
+**Category:** Compliance
+**Priority:** Medium
+**Estimated Time:** 3-4 hours
+**Labels:** compliance, operations, medium-priority, readiness-plan
+
+**Description:**
+**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+
+**Details:** Partner with Compliance team for pre-launch tabletop exercise covering incident response scenarios to validate readiness and procedures.
+
+**Implementation Steps:**
+- Schedule tabletop exercise with compliance team
+- Prepare incident scenarios:
+  - Data breach simulation
+  - API key compromise
+  - Unauthorized access attempt
+  - Data retention violation
+  - Audit log anomaly
+- Document expected response procedures
+- Run tabletop exercise:
+  - Present scenarios to team
+  - Walk through response procedures
+  - Identify gaps or improvements
+- Document findings and action items
+- Update procedures based on findings
+
+**Acceptance Criteria:**
+- Tabletop exercise conducted
+- Scenarios cover key incident types
+- Response procedures validated
+- Findings documented
+- Action items tracked and resolved
+
+---
 
 ---
 
@@ -2432,17 +3378,20 @@ Deploy GPCI v1.3 schema and data to production-ready Render PostgreSQL database.
 
 ## Notes
 
-- This plan includes 68 total tasks (63 original + 5 new architecture documentation tasks)
+- This plan includes **97 total tasks** (68 original + 29 new tasks from CMS Pricing API Readiness Plan)
+  - Tasks 69-88: Data Quality, Testing, Documentation, Performance, Observability, and Operations (Sections 5.1, 5.2, 5.4)
+  - Tasks 89-97: Access & Compliance tasks (Section 5.3) including Quick Win #3 (API Keys table)
 - Tasks are categorized by type and priority
 - Estimated times are based on complexity analysis
 - Dependencies are noted where applicable
-- All tasks include source information for traceability
-- Recent accomplishments and current focus updated as of 2025-10-04
+- All tasks include source information for traceability (referenced to `CMS_Pricing_API_Readiness_Plan_for_Cle.md`)
+- Recent accomplishments and current focus updated as of 2025-01-15
 - Architecture documentation tasks added as new high-priority items
+- Readiness plan tasks fully mapped (Sections 5.1, 5.2, 5.3, 5.4)
 
 ---
 *Generated by GitHub Tasks Setup Tool*  
-*Last Updated: 2025-10-04*
+*Last Updated: 2025-01-15*
 
 ---
 

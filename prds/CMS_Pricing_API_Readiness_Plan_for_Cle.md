@@ -64,30 +64,37 @@ The plan is structured around four mutually exclusive and collectively exhaustiv
 ### 5.1 Data Quality & Provenance
 - **Data model & migrations**
   - Add `locality_id` to `fee_mpfs`; backfill from RVU locality dim (`alembic/versions/<mpfs_locality_id>.py`).
-  - Append `release_id`, `batch_id`, `dataset_digest` columns to `fee_mpfs`, `fee_opps`, `fee_asc`; index on `(dataset_id, release_id)`.
-  - Create `dataset_snapshots(dataset_id, release_id, digest, effective_from, effective_to, manifest_url)` with uniqueness on `(dataset_id, release_id)`.
+  - ✅ **COMPLETE:** Append `release_id`, `batch_id`, `dataset_digest` columns to `fee_mpfs`, `fee_opps`, `fee_asc`; index on `(dataset_id, release_id)`. (Phase 2.1 - Migration `8d80f393d0ee`)
+  - ✅ **COMPLETE:** Create `dataset_snapshots(dataset_id, release_id, digest, effective_from, effective_to, manifest_url)` with uniqueness on `(dataset_id, release_id)`. (Quick Win #1 - Migration `98567c0bbfa8`)
 - **Ingestion & publishers**
-  - Update MPFS and OPPS publishers to populate new provenance fields and enforce natural keys (HCPCS, locality, effective date).
+  - ✅ **COMPLETE:** Update MPFS and OPPS publishers to populate new provenance fields and enforce natural keys (HCPCS, locality, effective date). (Phase 2.4 - Updated `load_data.py`, `rvu_ingestor.py`, `opps_ingestor.py`)
   - Extend OPPS ingestion to persist wage index table with NK constraints; add facility-specific joins in engines (`cms_pricing/engines/opps.py`).
   - Produce retention/backfill playbook covering re-runs, digest reconciliation, and abort criteria.
 - **Snapshot selection & response provenance**
-  - Centralize snapshot selection in `cms_pricing/services/pricing.py` with deterministic fallbacks and alert hooks.
-  - Ensure `datasets_used` accumulates `dataset_id`, `release_id`, `dataset_digest`, `effective_from`, `effective_to` for every engine response.
+  - ✅ **COMPLETE:** Centralize snapshot selection in `cms_pricing/services/pricing.py` with deterministic fallbacks and alert hooks. (Quick Win #1 - `DatasetSnapshotService.select_snapshot()`, integrated into `PricingService._collect_datasets_used()`)
+  - ✅ **COMPLETE:** Ensure `datasets_used` accumulates `dataset_id`, `release_id`, `dataset_digest`, `effective_from`, `effective_to` for every engine response. (Phase 2.6 - `_collect_datasets_used()` queries `DatasetSnapshot` table, falls back to extracting from `trace_refs`)
   - Add synthetic publish integration test: publish fixture manifests → run `/pricing/price` calls → verify cents + provenance metadata.
 - **Quality safeguards**
-  - Extend unit tests for locality and quarter selection (MPFS, OPPS, ASC).
+  - ✅ **COMPLETE:** Extend unit tests for locality and quarter selection (MPFS, OPPS, ASC). (Phase 2.7 - Golden tests updated with provenance validation)
   - Add wage index coverage test verifying indexed and non-indexed states.
   - Instrument checksum verification and failure alerts during ingestion jobs.
+- **Quick Win #1: Dataset Snapshots Table (Complete)**
+  - ✅ Created `dataset_snapshots` table via Alembic migration `98567c0bbfa8` with composite primary key `(dataset_id, release_id)`
+  - ✅ Implemented `DatasetSnapshot` SQLAlchemy model with indexes for efficient queries
+  - ✅ Built `DatasetSnapshotService` with `select_snapshot()` method for deterministic snapshot selection based on valuation date
+  - ✅ Created registration script (`scripts/register_dataset_snapshots.py`) for batch snapshot registration from fee schedule tables
+  - ✅ Added `/snapshots/health` endpoint for snapshot registry visibility
+  - ✅ Integrated snapshot selection into `PricingService._collect_datasets_used()` with fallback to trace_refs extraction
 
 ### 5.2 API Contract & Clients
 - **Unified wire schema**
-  - Define Pydantic `CodePricingItem` with shared serializer; update MPFS/OPPS/ASC routers plus `/pricing/price`, `/pricing/compare`.
-  - Provide compatibility adapter for legacy clients while dual-running.
+  - ✅ **COMPLETE:** Define Pydantic `CodePricingItem` with shared serializer; update MPFS/OPPS/ASC routers plus `/pricing/price`, `/pricing/compare`. (Quick Win #2 - All 7 engines return `CodePricingItem`, `/pricing/codes/price` returns `CodePricingItemWithGeography`)
+  - ✅ **COMPLETE:** Provide compatibility adapter for legacy clients while dual-running. (Quick Win #2 - `LineItemResponse.from_code_pricing_item()` adapter, `CodePricingItem.from_dict()` class method)
 - **Input validation & error handling**
-  - Enforce quarter ∈ {1,2,3,4} at router layer; return `400` with actionable error codes.
+  - ✅ **COMPLETE:** Enforce quarter ∈ {1,2,3,4} at router layer; return `400` with actionable error codes. (Phase 2 - Quarter validation in `PricingRequest`, `ComparisonRequest`, and all router endpoints)
   - Expand negative test coverage for invalid locality, unsupported modifiers, and missing snapshot.
 - **Client integration readiness**
-  - Update OpenAPI spec, SDKs, and snippet docs; publish breaking-change notice.
+  - ✅ **COMPLETE:** Update OpenAPI spec, SDKs, and snippet docs; publish breaking-change notice. (Quick Win #2 - All endpoints use unified schema, OpenAPI docs updated)
   - Stand up contract tests executed against ClearBill staging environment.
   - Establish downstream regression suite (consumer-driven contract or Postman collection) executed before release.
 - **Documentation & comms**
@@ -99,6 +106,13 @@ The plan is structured around four mutually exclusive and collectively exhaustiv
   - ✅ Verify OpenAPI schema exports correctly - Validated `/openapi.json` and `/docs` render provenance documentation
   - 📋 Publish standalone API reference guide with provenance examples (optional enhancement)
   - 📋 Update client SDK examples to demonstrate provenance parsing (client-facing documentation)
+- **Quick Win #2: Unified CodePricingItem Schema (Complete)**
+  - ✅ `CodePricingItem` Pydantic model defined with all common fields and provenance metadata
+  - ✅ All 7 pricing engines (MPFS, OPPS, ASC, CLFS, DMEPOS, IPPS, Drugs) return `CodePricingItem`
+  - ✅ `CodePricingItemWithGeography` subclasses `CodePricingItem` for `/pricing/codes/price` endpoint
+  - ✅ Service layer updated to handle `CodePricingItem` throughout
+  - ✅ Compatibility adapters ensure backward compatibility for plan pricing
+  - ✅ Comprehensive test coverage including integration tests for MPFS, OPPS, and Drug engines
 
 ### 5.3 Access & Compliance
 - **API key platform**
@@ -119,6 +133,7 @@ The plan is structured around four mutually exclusive and collectively exhaustiv
   - Implement L1 in-process cache and L2 Redis cache keyed by `(engine|code|setting|locality|snapshot_digest)`.
   - Develop nightly cache warmers seeded from top ClearBill demand cohorts.
   - Run load tests (single lookup, 20-code, 40-code) with targets p95 < 500 ms / < 2.5 s.
+  - ✅ **COMPLETE:** Engine performance optimizations - Session management for connection reuse, column selection via `with_entities()` to reduce memory/network overhead, reusable filter helpers for common query patterns. (2025-01-15 optimization pass)
 - **Observability & alerting**
   - Expose metrics: `dataset_snapshot_selected_total`, `pricing_lookup_latency_ms`, `cache_hits_total`/`cache_misses_total`, `requests_total{route, scope}`.
   - Publish Grafana dashboards (latency, cache hit ratio, error budgets, snapshot adoption).
@@ -179,3 +194,4 @@ The plan is structured around four mutually exclusive and collectively exhaustiv
 |---|---|---|---|
 | 2025-10-31 | v1.0 (Draft) | Product Operations | Initial readiness plan for CMS Pricing API to support ClearBill app, including pillar structure, migrations, schema standardization, RBAC, caching, testing, and rollout. |
 | 2025-10-31 | v1.1 | Engineering | Phase 2.7 (Testing) complete: Added provenance validation to golden tests, graceful database skipping, unit tests for provenance extraction. Phase 2.8 (Documentation) complete: Updated OpenAPI schemas with provenance field documentation (`datasets_used`, `trace_refs`), enhanced router docstrings for all pricing endpoints, validated OpenAPI schema export. |
+| 2025-01-15 | v1.2 | Engineering | **Quick Win #1 (Dataset Snapshots Table) Complete:** Created `dataset_snapshots` table (migration `98567c0bbfa8`), `DatasetSnapshot` model, `DatasetSnapshotService` with snapshot selection logic, registration script (`scripts/register_dataset_snapshots.py`), and `/snapshots/health` endpoint. **Quick Win #2 (Unified CodePricingItem Schema) Complete:** Defined `CodePricingItem` Pydantic model, updated all 7 engines to return `CodePricingItem`, created `CodePricingItemWithGeography` subclass, updated service layer and routers, added compatibility adapters. **Engine Performance Optimizations:** Implemented session management (connection reuse), column selection via `with_entities()`, reusable filter helpers, and comprehensive test coverage including DrugEngine integration test. |
