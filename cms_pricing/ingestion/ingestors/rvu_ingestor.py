@@ -523,40 +523,132 @@ class RVUIngestor(BaseDISIngestor):
         Returns:
             Enrichment results with reference data usage
         """
+        import os
+        from ..contracts.ingestor_spec import StageFrame, RefData
+        
+        # Feature flag following REF_MODE pattern (per STD-data-architecture-impl-v1.0.md §4.2.1)
+        ENABLE_ENRICHMENT = os.getenv("ENABLE_ENRICHMENT", "true").lower() == "true"
+        
         # Handle both AdaptedBatch objects and dicts
         if hasattr(adapted_batch, 'metadata'):
             batch_id = adapted_batch.metadata.get("batch_id", "unknown")
             release_id = adapted_batch.metadata.get("release_id", "unknown")
             dataframes = adapted_batch.dataframes if hasattr(adapted_batch, 'dataframes') else {}
+            schema_bundle = adapted_batch.schema_contract if hasattr(adapted_batch, 'schema_contract') else {}
+            metadata_block = adapted_batch.metadata if hasattr(adapted_batch, 'metadata') else {}
         else:
             batch_id = adapted_batch.get("metadata", {}).get("batch_id", "unknown")
             release_id = adapted_batch.get("metadata", {}).get("release_id", "unknown")
             dataframes = adapted_batch.get("dataframes", {})
+            schema_bundle = adapted_batch.get("schema_contract", {})
+            metadata_block = adapted_batch.get("metadata", {})
         
-        logger.info("Starting enrich stage", batch_id=batch_id)
+        logger.info("Starting enrich stage", batch_id=batch_id, enable_enrichment=ENABLE_ENRICHMENT)
+        
+        # Log feature flag state in observability (per feedback)
+        try:
+            self.observability_collector.record_metric(
+                "enrichment_feature_flag",
+                1 if ENABLE_ENRICHMENT else 0,
+                tags={"batch_id": batch_id, "release_id": release_id}
+            )
+        except Exception as metric_err:
+            logger.debug("enrichment_flag_metric_failed", error=str(metric_err))
         
         try:
-            # Enrichment would normally:
-            # 1. Load reference data (geography, codes, etc.)
-            # 2. Join enriched data with reference tables
-            # 3. Compute derived fields
-            # 4. Validate enriched data
+            # Check feature flag
+            if not ENABLE_ENRICHMENT:
+                logger.warning("Enrichment disabled via ENABLE_ENRICHMENT=false, returning stub data")
+                enriched_data = dataframes.copy() if isinstance(dataframes, dict) else {}
+                return {
+                    "status": "success",
+                    "batch_id": batch_id,
+                    "release_id": release_id,
+                    "enriched_data": enriched_data,
+                    "reference_data_used": [],
+                    "mapping_confidence": 0.0,
+                    "record_count": 0,
+                    "enrichment_disabled": True
+                }
             
-            # For now, return a success response with stub data
-            enriched_data = dataframes.copy() if isinstance(dataframes, dict) else {}
+            if not dataframes:
+                logger.warning("No dataframes in adapted_batch, returning empty result")
+                return {
+                    "status": "success",
+                    "batch_id": batch_id,
+                    "release_id": release_id,
+                    "enriched_data": {},
+                    "reference_data_used": [],
+                    "mapping_confidence": 0.0,
+                    "record_count": 0
+                }
+            
+            enriched_dataframes: Dict[str, pd.DataFrame] = {}
+            enrichment_metrics: Dict[str, Dict[str, Any]] = {}
+            reference_data_sources: Dict[str, List[str]] = {}
+            total_records = 0
+            confidence_scores: List[float] = []
+            
+            for dataset_key, df in dataframes.items():
+                if df is None:
+                    continue
+                if hasattr(df, "empty") and df.empty:
+                    enriched_dataframes[dataset_key] = df
+                    enrichment_metrics[dataset_key] = {"enrichment_skipped": True}
+                    continue
+                
+                dataset_schema = {}
+                if isinstance(schema_bundle, dict):
+                    dataset_schema = schema_bundle.get(dataset_key, schema_bundle.get("default", {}))
+                else:
+                    dataset_schema = schema_bundle or {}
+                
+                stage_metadata = {
+                    "batch_id": batch_id,
+                    "release_id": release_id,
+                    "dataset": dataset_key,
+                    **(metadata_block if isinstance(metadata_block, dict) else {})
+                }
+                stage_frame = StageFrame(
+                    data=df,
+                    schema=dataset_schema,
+                    metadata=stage_metadata,
+                    quality_metrics={}
+                )
+                
+                ref_data = RefData(tables={}, metadata={})
+                enriched_stage_frame = self._enrich_data(stage_frame, ref_data)
+                enriched_df = enriched_stage_frame.data
+                
+                enriched_dataframes[dataset_key] = enriched_df
+                enrichment_metrics[dataset_key] = enriched_stage_frame.quality_metrics or {}
+                sources = enrichment_metrics[dataset_key].get("reference_data_sources", [])
+                if sources:
+                    reference_data_sources[dataset_key] = sources
+                
+                row_count = len(enriched_df) if hasattr(enriched_df, "__len__") else 0
+                total_records += row_count
+                if "enrichment_rate" in enrichment_metrics[dataset_key]:
+                    confidence_scores.append(enrichment_metrics[dataset_key]["enrichment_rate"])
+            
+            average_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.0
+            flattened_sources: List[str] = sorted({
+                source for sources in reference_data_sources.values() for source in sources
+            })
             
             return {
                 "status": "success",
                 "batch_id": batch_id,
                 "release_id": release_id,
-                "enriched_data": enriched_data,
-                "reference_data_used": ["geography", "codes"],
-                "mapping_confidence": 0.95,
-                "record_count": 0
+                "enriched_data": enriched_dataframes,
+                "reference_data_used": flattened_sources,
+                "mapping_confidence": average_confidence,
+                "record_count": total_records,
+                "enrichment_metrics": enrichment_metrics
             }
             
         except Exception as e:
-            logger.error("Enrich stage failed", error=str(e), batch_id=batch_id)
+            logger.error("Enrich stage failed", error=str(e), batch_id=batch_id, exc_info=True)
             return {
                 "status": "failed",
                 "batch_id": batch_id,
@@ -2609,10 +2701,9 @@ class RVUIngestor(BaseDISIngestor):
         )
     
     def _enrich_data_sync(self, stage_frame: StageFrame, ref_data: RefData) -> Any:
-        """Synchronous version of data enrichment"""
-        # This is a simplified synchronous version
-        # In practice, this would join with reference data
-        return stage_frame.data
+        """Synchronous version used by DIS pipeline helpers."""
+        enriched_frame = self._enrich_data(stage_frame, ref_data)
+        return enriched_frame.data
 
     async def _discover_source_files(self) -> List[SourceFile]:
         """Discover source files from CMS RVU releases"""
@@ -2955,41 +3046,90 @@ class RVUIngestor(BaseDISIngestor):
             ValidationRule("locality_codes", "Locality codes must be 2 digits", ValidationSeverity.CRITICAL, validate_locality_codes)
         ]
     
-    async def _enrich_data(self, stage_frame: StageFrame, ref_data: RefData) -> StageFrame:
-        """Enrich data with reference information using DIS-compliant enricher"""
-        
+    def _enrich_data(self, stage_frame: StageFrame, ref_data: RefData) -> StageFrame:
+        """Enrich data with reference information using DIS-compliant enricher."""
         try:
-            # Load reference data into the reference data manager and capture summary
-            ref_load_summary = self._load_reference_data_for_enrichment(ref_data)
+            ref_tables = getattr(ref_data, "tables", {}) if ref_data else {}
+            ref_load_summary = None
+            if ref_tables:
+                nonempty_tables = {k: v for k, v in ref_tables.items() if v is not None}
+                if nonempty_tables:
+                    ref_data.tables = nonempty_tables  # type: ignore[attr-defined]
+                    ref_load_summary = self._load_reference_data_for_enrichment(ref_data)
             
-            # Get enrichment rules for RVU data
+            # Only skip enrichment if we explicitly tried to load reference data but got none
+            # This prevents false positives from the empty dict initialization
+            # Check if reference_data_manager has been populated (not just initialized)
+            has_loaded_reference_data = (
+                self.reference_data_manager.reference_data and
+                len(self.reference_data_manager.reference_data) > 0
+            )
+            
+            # Also check if we tried to load via ref_data but got empty results
+            tried_to_load_but_empty = (
+                ref_load_summary is not None and
+                ref_load_summary.get("nonempty_count", 0) == 0
+            )
+            
+            # Only skip if we explicitly attempted to load but got nothing
+            if tried_to_load_but_empty and not has_loaded_reference_data:
+                logger.info(
+                    "Skipping enrichment - reference data load attempted but no data available",
+                    dataset=stage_frame.metadata.get("dataset"),
+                    release_id=self.current_release_id or stage_frame.metadata.get("release_id", "unknown"),
+                    ref_load_summary=ref_load_summary
+                )
+                passthrough_metrics = stage_frame.quality_metrics.copy()
+                passthrough_metrics["enrichment_skipped"] = True
+                passthrough_metrics["enrichment_skip_reason"] = "no_reference_data_available"
+                return StageFrame(
+                    data=stage_frame.data,
+                    schema=stage_frame.schema,
+                    metadata=stage_frame.metadata,
+                    quality_metrics=passthrough_metrics
+                )
+            
             geography_rules = get_rvu_geography_enrichment_rules()
             code_rules = get_rvu_code_enrichment_rules()
             all_rules = geography_rules + code_rules
             
-            # Apply enrichment using DIS-compliant enricher
+            if not all_rules:
+                passthrough_metrics = stage_frame.quality_metrics.copy()
+                passthrough_metrics["enrichment_rules_applied"] = 0
+                return StageFrame(
+                    data=stage_frame.data,
+                    schema=stage_frame.schema,
+                    metadata=stage_frame.metadata,
+                    quality_metrics=passthrough_metrics
+                )
+            
             enriched_df, enrichment_results = self.reference_enricher.enrich_data(
                 source_df=stage_frame.data,
                 enrichment_rules=all_rules,
                 effective_date=stage_frame.metadata.get("effective_date")
             )
             
-            # Update quality metrics with enrichment results
-            enrichment_quality_score = sum(r.quality_score for r in enrichment_results) / len(enrichment_results) if enrichment_results else 1.0
-            enrichment_rate = sum(r.enrichment_rate for r in enrichment_results) / len(enrichment_results) if enrichment_results else 1.0
+            enrichment_quality_score = (
+                sum(r.quality_score for r in enrichment_results) / len(enrichment_results)
+                if enrichment_results else 1.0
+            )
+            enrichment_rate = (
+                sum(r.enrichment_rate for r in enrichment_results) / len(enrichment_results)
+                if enrichment_results else 1.0
+            )
             
             updated_quality_metrics = stage_frame.quality_metrics.copy()
             updated_quality_metrics.update({
                 "enrichment_quality_score": enrichment_quality_score,
                 "enrichment_rate": enrichment_rate,
                 "enrichment_rules_applied": len(enrichment_results),
-                "enrichment_successful": len([r for r in enrichment_results if r.success])
+                "enrichment_successful": len([r for r in enrichment_results if r.success]),
+                "reference_data_sources": sorted({rule.reference_source for rule in all_rules})
             })
-
-            # Optional guardrail: flag if all reference datasets were missing/empty
+            
             try:
                 nonempty_ref = (ref_load_summary or {}).get("nonempty_count", 0)
-                if nonempty_ref == 0:
+                if ref_load_summary is not None and nonempty_ref == 0:
                     updated_quality_metrics["reference_data_missing"] = True
                     logger.warning(
                         "reference_data_all_missing",
@@ -2997,7 +3137,8 @@ class RVUIngestor(BaseDISIngestor):
                     )
                     try:
                         self.observability_collector.record_metric(
-                            "reference_data_all_missing", 1,
+                            "reference_data_all_missing",
+                            1,
                             tags={"release_id": self.current_release_id or stage_frame.metadata.get("release_id", "unknown")}
                         )
                     except Exception as metric_err:
@@ -3005,11 +3146,13 @@ class RVUIngestor(BaseDISIngestor):
             except Exception as guard_err:
                 logger.debug("reference_missing_guard_failed", error=str(guard_err))
             
-            # Log enrichment results
-            logger.info("Data enrichment completed",
-                       rules_applied=len(enrichment_results),
-                       enrichment_rate=enrichment_rate,
-                       quality_score=enrichment_quality_score)
+            logger.info(
+                "Data enrichment completed",
+                dataset=stage_frame.metadata.get("dataset"),
+                rules_applied=len(enrichment_results),
+                enrichment_rate=enrichment_rate,
+                quality_score=enrichment_quality_score
+            )
             
             return StageFrame(
                 data=enriched_df,
@@ -3017,11 +3160,15 @@ class RVUIngestor(BaseDISIngestor):
                 metadata=stage_frame.metadata,
                 quality_metrics=updated_quality_metrics
             )
-            
+        
         except Exception as e:
-            logger.error(f"Data enrichment failed: {e}")
-            # Return original data if enrichment fails
-            return stage_frame
+            logger.error("Data enrichment failed", error=str(e))
+            return StageFrame(
+                data=stage_frame.data,
+                schema=stage_frame.schema,
+                metadata=stage_frame.metadata,
+                quality_metrics={**stage_frame.quality_metrics, "enrichment_error": str(e)}
+            )
     
     def _load_reference_data_for_enrichment(self, ref_data: RefData):
         """Load and verify reference data for enrichment with structured logging and metrics.
@@ -4217,11 +4364,22 @@ class RVUIngestor(BaseDISIngestor):
         if df is None or df.empty:
             return 0
 
+        # Normalize parser aliases to legacy loader expectations
+        alias_pairs = [
+            ("hcpcs", "hcpcs_code"),
+            ("status", "status_code"),
+        ]
+        for source_col, target_col in alias_pairs:
+            if source_col in df.columns and target_col not in df.columns:
+                df[target_col] = df[source_col]
+
         df = self._prepare_base_dataframe(df, release_uuid, batch_id)
         df['hcpcs_code'] = self._string_column(df, 'hcpcs_code', max_len=5)
 
         df['modifier_key'] = self._string_column(df, 'modifier', max_len=10)
-        df['modifiers'] = df['modifier_key'].map(lambda value: [value] if value else None)
+        df['modifiers'] = df['modifier_key'].apply(
+            lambda value: [value] if (pd.notna(value) and str(value).strip() != "") else None
+        )
 
         df['description'] = self._string_column(df, 'description')
         df['status_code'] = self._string_column(df, 'status_code', max_len=2)
@@ -4367,6 +4525,17 @@ class RVUIngestor(BaseDISIngestor):
         """Load OPPSCap data into opps_caps table."""
         if df is None or df.empty:
             return 0
+
+        # Align parser column names with loader expectations
+        alias_pairs = [
+            ("hcpcs", "hcpcs_code"),
+            ("status", "proc_status"),
+            ("facility_price", "price_fac"),
+            ("nonfacility_price", "price_nonfac"),
+        ]
+        for source_col, target_col in alias_pairs:
+            if source_col in df.columns and target_col not in df.columns:
+                df[target_col] = df[source_col]
 
         df = self._prepare_base_dataframe(df, release_uuid, batch_id)
 
