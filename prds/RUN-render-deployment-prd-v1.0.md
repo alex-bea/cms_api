@@ -248,6 +248,42 @@ git status | grep -q ".env" && echo "❌ DANGER: .env is staged!" || echo "✅ S
 # 5. Revoke old password
 ```
 
+### Step 5: Reset an RVU Ingestion Release (when needed)
+
+Render short-circuits the RVU pipeline if the target release already exists in the `releases` table.  
+If you need to rerun an ingestion (e.g., after a loader fix), clear the existing release and child rows first.
+
+```bash
+# Run this inside the Render shell
+python - <<'PY'
+from sqlalchemy import text
+from cms_pricing.database import SessionLocal
+
+db = SessionLocal()
+release_ids = [
+    row[0]
+    for row in db.execute(
+        text("select id from releases where type='RVU_FULL' and source_version='rvu_2025_p'")
+    )
+]
+print("Releases purged:", release_ids)
+for rid in release_ids:
+    for table in ("gpci_indices", "rvu_items", "opps_caps", "anes_cfs", "locality_counties"):
+        db.execute(text(f"delete from {table} where release_id = :rid"), {"rid": rid})
+    db.execute(text("delete from releases where id = :rid"), {"rid": rid})
+db.commit()
+db.close()
+PY
+```
+
+After clearing the release, rerun:
+
+```bash
+python scripts/load_rvu_to_production.py --release-id rvu_2025_prod_YYYYMMDD
+```
+
+Finally, run the verification queries from `docs/ingestion_verification.md` to confirm results.
+
 ---
 
 ## Part 3: Run Database Migrations (10 minutes)

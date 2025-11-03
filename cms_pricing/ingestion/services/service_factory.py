@@ -39,6 +39,10 @@ class ServiceFactory:
         self.config = config
         self._services: Dict[str, Any] = {}
         self._initialized = False
+        
+        # If lazy_init=False, eagerly initialize all services
+        if not config.lazy_init:
+            self.initialize_all()
     
     @property
     def validation_engine(self) -> Any:

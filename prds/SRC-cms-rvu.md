@@ -114,6 +114,23 @@ NATURAL_KEYS = ['hcpcs', 'modifier', 'status_code', 'effective_from']
 
 Additional columns preserved from source: `multiple_proc_ind`, `assistant_surg_ind`, `physician_supervision`, `total_nonfac`, etc. (nullable, excluded from hash but loaded for downstream analytics).
 
+### 3.3 Loader Alignment
+
+The publish loader (`_load_pprrvu_data`) retains legacy warehouse column names. Before insert we now copy
+parser outputs into the expected fields and normalise modifier handling:
+
+| Parser column | Loader column  | Notes |
+|---------------|----------------|-------|
+| `hcpcs`       | `hcpcs_code`   | Zero-padded uppercase; BLOCK if missing |
+| `modifier`    | `modifier_key` | Also used to derive `modifiers` list (`None` when blank) |
+| `status_code` | `status_code`  | Passed through unchanged |
+| `work_rvu`    | `rvu_work`     | Numeric canonicalisation |
+| `pe_rvu_nonfac` | `pe_rvu_nonfac` | Same |
+| `pe_rvu_fac`  | `pe_rvu_fac`   | Same |
+| `mp_rvu`      | `rvu_malp`     | Same |
+
+**Safety check:** loader now converts pandas `NA` modifiers to `None` so NK evaluation is deterministic (`boolean value of NA` errors are gone).
+
 ---
 
 ## 4. Business Rules & Validations

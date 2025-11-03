@@ -6,6 +6,12 @@ and caching patterns across ingestors.
 
 Per guardrail #3: Ensures schema registration happens exactly once and maintains
 existing schema-contract caching semantics.
+
+NOTE: These adapters are currently placeholders for future standardization.
+They provide helper methods for common schema operations, but the
+ServiceFactory directly exposes SchemaRegistry instances for now.
+These adapters can be used when we standardize service interfaces across
+multiple ingestors (MPFS, OPPS, ZIP9) in Phase 3 Step 4.
 """
 
 from typing import Any, Dict, Optional

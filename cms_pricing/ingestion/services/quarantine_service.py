@@ -3,6 +3,12 @@ Quarantine Service Adapter
 
 Thin wrapper around QuarantineManager for consistent initialization
 and usage patterns across ingestors.
+
+NOTE: These adapters are currently placeholders for future standardization.
+They provide helper methods for common quarantine operations, but the
+ServiceFactory directly exposes QuarantineManager instances for now.
+These adapters can be used when we standardize service interfaces across
+multiple ingestors (MPFS, OPPS, ZIP9) in Phase 3 Step 4.
 """
 
 from typing import Any, Dict, List, Optional

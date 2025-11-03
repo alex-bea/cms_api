@@ -34,7 +34,7 @@ from ..contracts.ingestor_spec import (
 )
 from ..scrapers.cms_rvu_scraper import CMSRVUScraper
 from ..managers.historical_data_manager import HistoricalDataManager
-from ..contracts.schema_registry import schema_registry, SchemaContract
+from ..contracts.schema_registry import SchemaContract
 from ..adapters.data_adapters import AdapterFactory, AdapterConfig
 from ..validators.validation_engine import ValidationEngine
 from ..enrichers.data_enrichers import EnricherFactory
@@ -56,7 +56,6 @@ from ..enrichers.dis_reference_data_integration import (
     DISReferenceDataEnricher, ReferenceDataManager, ReferenceDataSource,
     get_rvu_geography_enrichment_rules, get_rvu_code_enrichment_rules
 )
-from ..contracts.schema_registry import SchemaRegistry
 from ..parsers.pprrvu_parser import parse_pprrvu, SCHEMA_ID as PPRRVU_SCHEMA_ID, NATURAL_KEYS as PPRRVU_NK
 from ..parsers.gpci_parser import parse_gpci, SCHEMA_ID as GPCI_SCHEMA_ID, NATURAL_KEYS as GPCI_NK
 from ..parsers.oppscap_parser import parse_oppscap, SCHEMA_ID as OPPSCAP_SCHEMA_ID, NATURAL_KEYS as OPPSCAP_NK
