@@ -75,6 +75,9 @@ from ..stages import (
     execute_publish, PublishConfig
 )
 
+# Import shared services factory
+from ..services import ServiceFactory, ServiceConfig
+
 # Import models for database loading
 from cms_pricing.models.rvu import Release, RVUItem, GPCIIndex, OPPSCap, AnesCF, LocalityCounty
 from cms_pricing.database import SessionLocal
@@ -158,20 +161,31 @@ class RVUIngestor(BaseDISIngestor):
     
     def __init__(self, output_dir: str, db_session: Any = None):
         super().__init__(output_dir, db_session)
-        self.validation_engine = ValidationEngine()
-        self.observability_collector = DISObservabilityCollector(output_dir)
-        self.quarantine_manager = QuarantineManager(output_dir)
-        self.reference_data_manager = ReferenceDataManager(output_dir)
-        self.reference_enricher = DISReferenceDataEnricher(self.reference_data_manager)
-        self.schema_registry = SchemaRegistry()
+        
+        # Initialize shared services via factory (lazy initialization)
+        service_config = ServiceConfig(
+            output_dir=output_dir,
+            dataset_name=self.dataset_name,
+            enable_observability=True,
+            enable_quarantine=True,
+            enable_reference_data=True,
+            enable_validation=True,
+            enable_schema_registry=True,
+            lazy_init=True,
+            db_session=db_session
+        )
+        self.services = ServiceFactory(service_config)
+        
         # Ensure parser registry exists for normalize stage
         self._dataset_parsers = {}
         
-        # Register schemas first
+        # Register schemas first (before lazy access to schema_registry)
+        # Schema registration happens once here to avoid double-registration (guardrail #3)
         self._register_schema_contracts()
         
         # Pre-cache schema contracts for validation performance (Optimization #1)
         # This eliminates repeated schema lookups during validation - saves 5-10% on validation time
+        # Access schema_registry via factory to ensure it's initialized
         self._cached_schemas = {}
         dataset_to_schema = {
             "pprrvu": "cms_pprrvu",
@@ -181,7 +195,7 @@ class RVUIngestor(BaseDISIngestor):
             "localitycounty": "cms_localitycounty"
         }
         for dataset_name, schema_name in dataset_to_schema.items():
-            schema = self.schema_registry.get_contract(schema_name)
+            schema = self.services.schema_registry.get_contract(schema_name)
             if schema:
                 self._cached_schemas[dataset_name] = schema
         
@@ -332,8 +346,8 @@ class RVUIngestor(BaseDISIngestor):
                 )
         
         # Register rules
-        self.validation_engine.register_business_rule("pprrvu", validate_pprrvu_uniqueness)
-        self.validation_engine.register_business_rule("gpci", validate_gpci_ranges_wrapper)
+        self.services.validation_engine.register_business_rule("pprrvu", validate_pprrvu_uniqueness)
+        self.services.validation_engine.register_business_rule("gpci", validate_gpci_ranges_wrapper)
 
     # ------------------------------------------------------------------
     # Compatibility helpers
@@ -558,7 +572,7 @@ class RVUIngestor(BaseDISIngestor):
         
         # Log feature flag state in observability (per feedback)
         try:
-            self.observability_collector.record_metric(
+            self.services.observability_collector.record_metric(
                 "enrichment_feature_flag",
                 1 if ENABLE_ENRICHMENT else 0,
                 tags={"batch_id": batch_id, "release_id": release_id}
@@ -643,9 +657,9 @@ class RVUIngestor(BaseDISIngestor):
                     stage_frame=stage_frame,
                     ref_data=ref_data,
                     config=config,
-                    reference_enricher=self.reference_enricher,
-                    reference_data_manager=self.reference_data_manager,
-                    observability_collector=self.observability_collector,
+                    reference_enricher=self.services.reference_enricher,
+                    reference_data_manager=self.services.reference_data_manager,
+                    observability_collector=self.services.observability_collector,
                     release_id=release_id
                 )
                 
@@ -1049,18 +1063,20 @@ class RVUIngestor(BaseDISIngestor):
             }
         )
         
-        # Register all schemas
-        schema_registry.register_schema(pprrvu_schema)
-        schema_registry.register_schema(gpci_schema)
-        schema_registry.register_schema(oppscap_schema)
-        schema_registry.register_schema(anescf_schema)
-        schema_registry.register_schema(localitycounty_schema)
+        # Register all schemas via factory (ensure schema_registry is initialized)
+        # Per guardrail #3: Schema registration happens exactly once here
+        registry = self.services.schema_registry
+        registry.register_schema(pprrvu_schema)
+        registry.register_schema(gpci_schema)
+        registry.register_schema(oppscap_schema)
+        registry.register_schema(anescf_schema)
+        registry.register_schema(localitycounty_schema)
     
     def _initialize_reference_data(self):
         """Initialize reference data sources for enrichment"""
         try:
             # Register CMS ZIP locality data
-            self.reference_data_manager.register_reference_source(
+            self.services.reference_data_manager.register_reference_source(
                 source_name="cms_zip_locality",
                 source_type=ReferenceDataSource.CMS_OFFICIAL,
                 version="1.0",
@@ -1076,7 +1092,7 @@ class RVUIngestor(BaseDISIngestor):
             )
             
             # Register GPCI data
-            self.reference_data_manager.register_reference_source(
+            self.services.reference_data_manager.register_reference_source(
                 source_name="cms_gpci",
                 source_type=ReferenceDataSource.CMS_OFFICIAL,
                 version="1.0",
@@ -1092,7 +1108,7 @@ class RVUIngestor(BaseDISIngestor):
             )
             
             # Register HCPCS codes
-            self.reference_data_manager.register_reference_source(
+            self.services.reference_data_manager.register_reference_source(
                 source_name="cms_hcpcs_codes",
                 source_type=ReferenceDataSource.CMS_OFFICIAL,
                 version="1.0",
@@ -1141,7 +1157,7 @@ class RVUIngestor(BaseDISIngestor):
                 return {"drift_detected": False, "drift_score": 0.0}
             
             # Get expected schema from registry (schemas registered without _v1 suffix)
-            expected_schema = self.schema_registry.get_contract(f"cms_{dataset_name.lower()}")
+            expected_schema = self.services.schema_registry.get_contract(f"cms_{dataset_name.lower()}")
             if not expected_schema:
                 logger.warning(f"No expected schema found for {dataset_name}")
                 return {"drift_detected": False, "drift_score": 0.0}
@@ -1215,7 +1231,7 @@ class RVUIngestor(BaseDISIngestor):
                 continue
             
             # Validate dataframe against schema
-            validation_result = self.schema_registry.validate_dataframe(df, schema_name)
+            validation_result = self.services.schema_registry.validate_dataframe(df, schema_name)
             
             total_records += len(df)
             
@@ -2681,7 +2697,7 @@ class RVUIngestor(BaseDISIngestor):
                         )
                     if unexpected_files:
                         try:
-                            self.observability_collector.record_metric(
+                            self.services.observability_collector.record_metric(
                                 "inner_file_unexpected_count",
                                 len(unexpected_files),
                                 tags={"archive": filename, "release_id": release_id}
@@ -2692,7 +2708,7 @@ class RVUIngestor(BaseDISIngestor):
             final_dataframes[dataset_key] = combined
 
             schema_name = self._dataset_parsers[dataset_key]["schema_name"]
-            schema_contract = schema_registry.get_schema(schema_name)
+            schema_contract = self.services.schema_registry.get_contract(schema_name)
             if schema_contract:
                 schema_contracts[dataset_key] = schema_contract
         
@@ -3091,8 +3107,8 @@ class RVUIngestor(BaseDISIngestor):
             # This prevents false positives from the empty dict initialization
             # Check if reference_data_manager has been populated (not just initialized)
             has_loaded_reference_data = (
-                self.reference_data_manager.reference_data and
-                len(self.reference_data_manager.reference_data) > 0
+                self.services.reference_data_manager.reference_data and
+                len(self.services.reference_data_manager.reference_data) > 0
             )
             
             # Also check if we tried to load via ref_data but got empty results
@@ -3133,7 +3149,7 @@ class RVUIngestor(BaseDISIngestor):
                     quality_metrics=passthrough_metrics
                 )
             
-            enriched_df, enrichment_results = self.reference_enricher.enrich_data(
+            enriched_df, enrichment_results = self.services.reference_enricher.enrich_data(
                 source_df=stage_frame.data,
                 enrichment_rules=all_rules,
                 effective_date=stage_frame.metadata.get("effective_date")
@@ -3166,7 +3182,7 @@ class RVUIngestor(BaseDISIngestor):
                         release_id=self.current_release_id or stage_frame.metadata.get("release_id", "unknown")
                     )
                     try:
-                        self.observability_collector.record_metric(
+                        self.services.observability_collector.record_metric(
                             "reference_data_all_missing",
                             1,
                             tags={"release_id": self.current_release_id or stage_frame.metadata.get("release_id", "unknown")}
@@ -3216,7 +3232,7 @@ class RVUIngestor(BaseDISIngestor):
             if table is None:
                 continue
             try:
-                self.reference_data_manager.load_reference_data(name, table)
+                self.services.reference_data_manager.load_reference_data(name, table)
                 row_count = len(table) if hasattr(table, "__len__") else None
                 if row_count is None or row_count == 0:
                     logger.warning(
@@ -3241,15 +3257,15 @@ class RVUIngestor(BaseDISIngestor):
                 )
         # Emit observability metrics (best-effort)
         try:
-            self.observability_collector.record_metric(
+            self.services.observability_collector.record_metric(
                 "reference_data_load_success_count", success_count,
                 tags={"release_id": self.current_release_id or "unknown"}
             )
-            self.observability_collector.record_metric(
+            self.services.observability_collector.record_metric(
                 "reference_data_load_failure_count", failure_count,
                 tags={"release_id": self.current_release_id or "unknown"}
             )
-            self.observability_collector.record_metric(
+            self.services.observability_collector.record_metric(
                 "reference_data_load_empty_count", empty_count,
                 tags={"release_id": self.current_release_id or "unknown"}
             )
@@ -3500,9 +3516,9 @@ class RVUIngestor(BaseDISIngestor):
             result = await execute_validate(
                 raw_batch=raw_batch,
                 config=config,
-                validation_engine=self.validation_engine,
-                schema_registry=self.schema_registry,
-                quarantine_manager=self.quarantine_manager if hasattr(self, 'quarantine_manager') else None
+                validation_engine=self.services.validation_engine,
+                schema_registry=self.services.schema_registry,
+                quarantine_manager=self.services.quarantine_manager
             )
             
             return result
@@ -3553,8 +3569,8 @@ class RVUIngestor(BaseDISIngestor):
                 raw_batch=raw_batch,
                 config=config,
                 adapter_func=self._adapt_raw_data_sync,
-                schema_registry=self.schema_registry,
-                validation_engine=self.validation_engine
+                schema_registry=self.services.schema_registry,
+                validation_engine=self.services.validation_engine
             )
             
             return result
@@ -3746,14 +3762,14 @@ class RVUIngestor(BaseDISIngestor):
         """Collect 5-pillar observability metrics for the ingestion run"""
         
         # Get previous report for comparison
-        previous_report = self.observability_collector.get_latest_report(self.dataset_name)
+        previous_report = self.services.observability_collector.get_latest_report(self.dataset_name)
         
         # 1. Freshness Metrics
         last_updated = datetime.utcnow()
         expected_frequency_hours = 24 * 90  # Quarterly = ~90 days
         previous_update = previous_report.freshness.last_updated if previous_report else None
         
-        freshness = self.observability_collector.collect_freshness_metrics(
+        freshness = self.services.observability_collector.collect_freshness_metrics(
             dataset_name=self.dataset_name,
             last_updated=last_updated,
             expected_frequency_hours=expected_frequency_hours,
@@ -3767,7 +3783,7 @@ class RVUIngestor(BaseDISIngestor):
         expected_size_bytes = pipeline_result.get("expected_size_bytes")
         previous_volume = previous_report.volume if previous_report else None
         
-        volume = self.observability_collector.collect_volume_metrics(
+        volume = self.services.observability_collector.collect_volume_metrics(
             total_records=total_records,
             total_size_bytes=total_size_bytes,
             expected_records=expected_records,
@@ -3784,7 +3800,7 @@ class RVUIngestor(BaseDISIngestor):
         }
         previous_schema_version = previous_report.schema.schema_version if previous_report else None
         
-        schema = self.observability_collector.collect_schema_metrics(
+        schema = self.services.observability_collector.collect_schema_metrics(
             schema_version=schema_version,
             validation_results=validation_results,
             previous_schema_version=previous_schema_version
@@ -3802,7 +3818,7 @@ class RVUIngestor(BaseDISIngestor):
             }
         }
         
-        quality = self.observability_collector.collect_quality_metrics(
+        quality = self.services.observability_collector.collect_quality_metrics(
             validation_results=quality_validation_results,
             quality_threshold=quality_threshold
         )
@@ -3812,7 +3828,7 @@ class RVUIngestor(BaseDISIngestor):
         transformation_steps = ["Land", "Validate", "Normalize", "Enrich", "Publish"]
         processing_timestamp = datetime.utcnow()
         
-        lineage = self.observability_collector.collect_lineage_metrics(
+        lineage = self.services.observability_collector.collect_lineage_metrics(
             source_files=source_files,
             transformation_steps=transformation_steps,
             processing_timestamp=processing_timestamp,
@@ -3822,7 +3838,7 @@ class RVUIngestor(BaseDISIngestor):
         )
         
         # Generate complete observability report
-        observability_report = self.observability_collector.generate_observability_report(
+        observability_report = self.services.observability_collector.generate_observability_report(
             dataset_name=self.dataset_name,
             freshness=freshness,
             volume=volume,
