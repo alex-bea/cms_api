@@ -11,7 +11,17 @@ Each stage module implements a single DIS pipeline stage:
 Stage modules are reusable across ingestors and can be tested independently.
 """
 
+from .land import execute_land, LandConfig, infer_file_type_from_name, is_guidance_file
+from .validate import execute_validate, ValidateConfig
+from .normalize import execute_normalize, NormalizeConfig
 from .enrich import execute_enrich, EnrichConfig
+from .publish import execute_publish, PublishConfig
 
-__all__ = ["execute_enrich", "EnrichConfig"]
+__all__ = [
+    "execute_land", "LandConfig", "infer_file_type_from_name", "is_guidance_file",
+    "execute_validate", "ValidateConfig",
+    "execute_normalize", "NormalizeConfig",
+    "execute_enrich", "EnrichConfig",
+    "execute_publish", "PublishConfig",
+]
 
