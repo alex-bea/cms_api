@@ -14,7 +14,15 @@ Per DIS standards and PRD alignment:
 """
 
 from typing import Dict
+
 from .spec import DatasetSpec, EnrichmentRule
+from .rvu_loaders import (
+    load_pprrvu_data,
+    load_gpci_data,
+    load_oppscap_data,
+    load_anes_data,
+    load_locality_data,
+)
 from ..contracts.ingestor_spec import ValidationRule, ValidationSeverity
 from ..parsers.pprrvu_parser import parse_pprrvu, SCHEMA_ID as PPRRVU_SCHEMA_ID, NATURAL_KEYS as PPRRVU_NK
 from ..parsers.gpci_parser import parse_gpci, SCHEMA_ID as GPCI_SCHEMA_ID, NATURAL_KEYS as GPCI_NK
@@ -120,38 +128,6 @@ def _create_enrichment_rules() -> list[EnrichmentRule]:
     ]
 
 
-# Placeholder loader functions - these will be extracted from RVUIngestor
-# For now, they're stubs that will be replaced when we extract the loaders
-def _load_pprrvu_data(df, release_uuid, batch_id):
-    """Load PPRRVU data into database - placeholder"""
-    # TODO: Extract from RVUIngestor._load_pprrvu_data
-    pass
-
-
-def _load_gpci_data(df, release_uuid, batch_id):
-    """Load GPCI data into database - placeholder"""
-    # TODO: Extract from RVUIngestor._load_gpci_data
-    pass
-
-
-def _load_oppscap_data(df, release_uuid, batch_id):
-    """Load OPPSCap data into database - placeholder"""
-    # TODO: Extract from RVUIngestor._load_oppscap_data
-    pass
-
-
-def _load_anes_data(df, release_uuid, batch_id):
-    """Load AnesCF data into database - placeholder"""
-    # TODO: Extract from RVUIngestor._load_anes_data
-    pass
-
-
-def _load_locality_data(df, release_uuid, batch_id):
-    """Load LocalityCounty data into database - placeholder"""
-    # TODO: Extract from RVUIngestor._load_locality_data
-    pass
-
-
 # RVU Dataset Specifications
 RVU_DATASETS: Dict[str, DatasetSpec] = {
     "pprrvu": DatasetSpec(
@@ -159,7 +135,7 @@ RVU_DATASETS: Dict[str, DatasetSpec] = {
         parser=parse_pprrvu,
         schema_id=PPRRVU_SCHEMA_ID,  # "cms_pprrvu_v1.0"
         natural_keys=PPRRVU_NK,  # ["hcpcs", "modifier"]
-        loader=_load_pprrvu_data,
+        loader=load_pprrvu_data,
         validation_rules=_create_pprrvu_validation_rules(),
         enrichment_rules=_create_enrichment_rules(),
         filename_patterns=[
@@ -172,7 +148,7 @@ RVU_DATASETS: Dict[str, DatasetSpec] = {
         parser=parse_gpci,
         schema_id=GPCI_SCHEMA_ID,  # "cms_gpci_v1.3"
         natural_keys=GPCI_NK,  # ["mac", "locality_id", "effective_start"]
-        loader=_load_gpci_data,
+        loader=load_gpci_data,
         validation_rules=_create_gpci_validation_rules(),
         enrichment_rules=_create_enrichment_rules(),
         filename_patterns=[
@@ -184,7 +160,7 @@ RVU_DATASETS: Dict[str, DatasetSpec] = {
         parser=parse_oppscap,
         schema_id=OPPSCAP_SCHEMA_ID,  # "cms_oppscap_v1.1"
         natural_keys=OPPSCAP_NK,
-        loader=_load_oppscap_data,
+        loader=load_oppscap_data,
         validation_rules=[],  # Add if needed
         enrichment_rules=_create_enrichment_rules(),
         filename_patterns=[
@@ -197,7 +173,7 @@ RVU_DATASETS: Dict[str, DatasetSpec] = {
         parser=parse_anes,
         schema_id=ANES_SCHEMA_ID,  # "cms_anescf_v1.1"
         natural_keys=ANES_NK,
-        loader=_load_anes_data,
+        loader=load_anes_data,
         validation_rules=[],  # Add if needed
         enrichment_rules=_create_enrichment_rules(),
         filename_patterns=[
@@ -210,7 +186,7 @@ RVU_DATASETS: Dict[str, DatasetSpec] = {
         parser=parse_locality_raw,
         schema_id=LOCALITY_SCHEMA_ID,  # "cms_localitycounty_v1.0"
         natural_keys=LOCALITY_NK,
-        loader=_load_locality_data,
+        loader=load_locality_data,
         validation_rules=_create_locality_validation_rules(),
         enrichment_rules=[],
         filename_patterns=[
@@ -256,4 +232,3 @@ def route_file_to_rvu_spec(filename: str, file_head: bytes = None) -> DatasetSpe
         if spec.route_file(filename, file_head):
             return spec
     return None
-
