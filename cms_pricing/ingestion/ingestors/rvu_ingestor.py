@@ -66,6 +66,15 @@ from ..parsers._parser_kit import check_natural_key_uniqueness
 from ..parsers.gpci_parser import _validate_gpci_ranges
 from ..validators.validation_engine import ValidationResult, ValidationSeverity
 
+# Import stage modules for orchestration
+from ..stages import (
+    execute_land, LandConfig,
+    execute_validate, ValidateConfig,
+    execute_normalize, NormalizeConfig,
+    execute_enrich, EnrichConfig,
+    execute_publish, PublishConfig
+)
+
 # Import models for database loading
 from cms_pricing.models.rvu import Release, RVUItem, GPCIIndex, OPPSCap, AnesCF, LocalityCounty
 from cms_pricing.database import SessionLocal
@@ -517,6 +526,8 @@ class RVUIngestor(BaseDISIngestor):
         """
         Enrich Stage: Add reference data and compute derived fields per DIS §3.5
         
+        Delegates to stages.enrich.execute_enrich() for each dataset, orchestrating multi-dataset processing.
+        
         Args:
             adapted_batch: Adapted data from normalize stage
             
@@ -583,12 +594,21 @@ class RVUIngestor(BaseDISIngestor):
                     "record_count": 0
                 }
             
+            # Configure enrichment stage
+            config = EnrichConfig(
+                enable_enrichment=ENABLE_ENRICHMENT,
+                geography_rules_enabled=True,
+                code_rules_enabled=True,
+                log_feature_flag_state=True
+            )
+            
             enriched_dataframes: Dict[str, pd.DataFrame] = {}
             enrichment_metrics: Dict[str, Dict[str, Any]] = {}
             reference_data_sources: Dict[str, List[str]] = {}
             total_records = 0
             confidence_scores: List[float] = []
             
+            # Process each dataset using the extracted stage module
             for dataset_key, df in dataframes.items():
                 if df is None:
                     continue
@@ -617,9 +637,19 @@ class RVUIngestor(BaseDISIngestor):
                 )
                 
                 ref_data = RefData(tables={}, metadata={})
-                enriched_stage_frame = self._enrich_data(stage_frame, ref_data)
-                enriched_df = enriched_stage_frame.data
                 
+                # Use extracted enrichment stage module
+                enriched_stage_frame = await execute_enrich(
+                    stage_frame=stage_frame,
+                    ref_data=ref_data,
+                    config=config,
+                    reference_enricher=self.reference_enricher,
+                    reference_data_manager=self.reference_data_manager,
+                    observability_collector=self.observability_collector,
+                    release_id=release_id
+                )
+                
+                enriched_df = enriched_stage_frame.data
                 enriched_dataframes[dataset_key] = enriched_df
                 enrichment_metrics[dataset_key] = enriched_stage_frame.quality_metrics or {}
                 sources = enrichment_metrics[dataset_key].get("reference_data_sources", [])
@@ -3231,6 +3261,8 @@ class RVUIngestor(BaseDISIngestor):
         """
         Land Stage: Download and store raw files per DIS §3.2
         
+        Delegates to stages.land.execute_land() for reusable implementation.
+        
         Args:
             release_id: Unique identifier for this release
             
@@ -3241,194 +3273,34 @@ class RVUIngestor(BaseDISIngestor):
         self.current_release_id = release_id
         
         try:
-            # Create raw directory structure per DIS §4
-            raw_dir = Path(self.output_dir) / "raw" / "cms_rvu" / release_id / "files"
-            raw_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Discover source files
+            # Discover source files (ingestor-specific logic)
             source_files = await self._discover_source_files_async()
             
-            # Download and store files
-            downloaded_files = []
-            manifest_data = {
-                "release_id": release_id,
-                "batch_id": str(uuid.uuid4()),
-                "source": "cms_rvu",
-                "files": [],
-                "fetched_at": datetime.now().isoformat(),
-                "discovered_from": "https://www.cms.gov/medicare/payment/fee-schedules",
-                "source_url": "https://www.cms.gov/medicare/payment/fee-schedules",
-                "license": {
-                    "name": "CMS Public Domain",
-                    "url": "https://www.cms.gov/About-CMS/Agency-Information/Aboutwebsite/Privacy-Policy",
-                    "attribution_required": False
-                },
-                "notes_url": "https://www.cms.gov/medicare/payment/fee-schedules"
-            }
+            # Use extracted land stage module
+            config = LandConfig(
+                output_dir=self.output_dir,
+                dataset_name=self.dataset_name,
+                enable_guidance_extraction=True,
+                enable_pdf_page_count=True
+            )
             
-            raw_contents: Dict[str, bytes] = {}
-            guidance_entries: List[Dict[str, Any]] = []
-            data_file_entries: List[Dict[str, Any]] = []
-            total_bytes = 0
-            docs_dir = Path(self.output_dir) / "docs" / "cms_rvu" / release_id
-            docs_raw_dir = docs_dir / "raw"
-            docs_raw_created = False
-            docs_manifest_path: Optional[Path] = None
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                for source_file in source_files:
-                    try:
-                        logger.info("Downloading file", url=source_file.url, filename=source_file.filename)
-                        
-                        response = await client.get(source_file.url)
-                        content = response.content
-                        total_bytes += len(content)
-
-                        # Calculate file hash
-                        file_hash = hashlib.sha256(content).hexdigest()
-                        file_type = (source_file.file_type or self._infer_file_type_from_name(
-                            source_file.filename, source_file.content_type
-                        ) or "binary")
-                        source_file.file_type = file_type
-
-                        # Task A: Use explicit helper method instead of hardcoded comparison
-                        is_guidance_doc = self._is_guidance_file(file_type)
-                        target_dir = raw_dir if not is_guidance_doc else docs_raw_dir
-                        if is_guidance_doc and not docs_raw_created:
-                            docs_raw_dir.mkdir(parents=True, exist_ok=True)
-                            docs_raw_created = True
-                        file_path = target_dir / source_file.filename
-                        # Ensure raw_dir exists (already created earlier)
-                        with open(file_path, 'wb') as f:
-                            f.write(content)
-
-                        # Update source file metadata
-                        source_file.checksum = file_hash
-                        source_file.expected_size_bytes = len(content)
-                        source_file.last_modified = datetime.utcnow()
-                        last_modified_header = response.headers.get('last-modified')
-                        etag_header = response.headers.get('etag')
-
-                        if is_guidance_doc:
-                            # Extract PDF page count (quick win #3)
-                            pdf_page_count = None
-                            try:
-                                from cms_pricing.ingestion.docs.guidance_summary import extract_pdf_page_count
-                                pdf_page_count = extract_pdf_page_count(file_path)
-                            except Exception as e:
-                                logger.debug("Failed to extract PDF page count", 
-                                           filename=source_file.filename, 
-                                           error=str(e))
-                            
-                            metadata_entry = {
-                                "path": str(file_path.relative_to(docs_dir)),
-                                "filename": source_file.filename,
-                                "file_type": file_type,
-                                "sha256": file_hash,
-                                "size_bytes": len(content),
-                                "content_type": source_file.content_type,
-                                "url": source_file.url,
-                                "last_modified": last_modified_header or (source_file.last_modified.isoformat() if source_file.last_modified else None),
-                                "etag": etag_header
-                            }
-                            
-                            # Add PDF page count if available
-                            if pdf_page_count is not None:
-                                metadata_entry["pdf_page_count"] = pdf_page_count
-                            
-                            # Add lineage metadata (quick wins #1 & #2)
-                            lineage_metadata = {}
-                            
-                            # Quick win #1: Discovery manifest path
-                            # Check if scraper has manifest path available
-                            if hasattr(self.scraper, 'last_manifest_path') and self.scraper.last_manifest_path:
-                                lineage_metadata["discovery_manifest_path"] = str(self.scraper.last_manifest_path)
-                            
-                            # Quick win #2: Ingestion run ID (using batch_id from manifest)
-                            if manifest_data.get("batch_id"):
-                                lineage_metadata["ingestion_batch_id"] = manifest_data["batch_id"]
-                            
-                            # Add lineage if we have any lineage data
-                            if lineage_metadata:
-                                metadata_entry["lineage"] = lineage_metadata
-                            
-                            if source_file.metadata:
-                                metadata_entry["metadata"] = source_file.metadata
-                            posted_at = source_file.metadata.get("posted_at") if source_file.metadata else None
-                            if posted_at:
-                                metadata_entry["posted_at"] = posted_at
-                            guidance_entries.append(metadata_entry)
-                        else:
-                            raw_contents[source_file.filename] = content
-                            file_info = {
-                                "path": str(file_path.relative_to(raw_dir.parent)),
-                                "sha256": file_hash,
-                                "size_bytes": len(content),
-                                "content_type": source_file.content_type,
-                                "file_type": file_type,
-                                "url": source_file.url,
-                                "last_modified": last_modified_header,
-                                "etag": etag_header
-                            }
-                            if source_file.metadata:
-                                file_info["metadata"] = source_file.metadata
-                            data_file_entries.append(file_info)
-                            downloaded_files.append(file_info)
-                        
-                        logger.info("File downloaded successfully", 
-                                  filename=source_file.filename, 
-                                  size=len(content),
-                                  hash=file_hash)
-                        
-                    except Exception as e:
-                        logger.error("Failed to download file", 
-                                   url=source_file.url, 
-                                   error=str(e))
-                        raise
+            result = await execute_land(
+                release_id=release_id,
+                source_files=source_files,
+                config=config,
+                scraper=self.scraper
+            )
             
-            manifest_data["files"] = data_file_entries
-            # Task #3: Link reject output directory for this release (written during normalize)
-            manifest_data["rejects_directory"] = str(Path(self.output_dir) / "stage" / "cms_rvu" / release_id / "reject")
-            if guidance_entries:
-                manifest_data["guidance_docs"] = guidance_entries
-                docs_dir.mkdir(parents=True, exist_ok=True)
-                docs_manifest = {
-                    "release_id": release_id,
-                    "batch_id": manifest_data["batch_id"],
-                    "dataset": "cms_rvu",
-                    "generated_at": datetime.now().isoformat(),
-                    "documents": guidance_entries
-                }
-                
-                # Quick win #1: Add discovery manifest path to docs_manifest if available
-                if hasattr(self.scraper, 'last_manifest_path') and self.scraper.last_manifest_path:
-                    docs_manifest["discovery_manifest_path"] = str(self.scraper.last_manifest_path)
-                docs_manifest_path = docs_dir / "docs_manifest.json"
-                with open(docs_manifest_path, 'w') as f:
-                    json.dump(docs_manifest, f, indent=2)
-
-            # Write manifest.json
-            manifest_path = raw_dir.parent / "manifest.json"
-            with open(manifest_path, 'w') as f:
-                json.dump(manifest_data, f, indent=2)
+            # Extract RawBatch for backward compatibility
+            if "raw_batch" in result:
+                raw_batch = result["raw_batch"]
+                # Update manifest with rejects directory link
+                if raw_batch.metadata and result.get("manifest"):
+                    result["manifest"]["rejects_directory"] = str(
+                        Path(self.output_dir) / "stage" / self.dataset_name / release_id / "reject"
+                    )
             
-            logger.info("Land stage completed", 
-                       release_id=release_id, 
-                       files_downloaded=len(data_file_entries) + len(guidance_entries))
-            
-            return {
-                "status": "success",
-                "release_id": release_id,
-                "files_downloaded": len(data_file_entries) + len(guidance_entries),
-                "raw_directory": str(raw_dir),
-                "manifest_path": str(manifest_path),
-                "docs_directory": str(docs_dir) if guidance_entries else None,
-                "docs_manifest_path": str(docs_manifest_path) if docs_manifest_path else None,
-                "guidance_documents": guidance_entries,
-                "total_size_bytes": total_bytes,
-                "source_files": source_files,
-                "raw_content": raw_contents,
-                "manifest": manifest_data
-            }
+            return result
             
         except Exception as e:
             logger.error("Land stage failed", error=str(e), release_id=release_id)
@@ -3607,6 +3479,8 @@ class RVUIngestor(BaseDISIngestor):
         """
         Validate Stage: Structural, typing, domain, and statistical validation per DIS §3.3
         
+        Delegates to stages.validate.execute_validate() for reusable implementation.
+        
         Args:
             raw_batch: Raw data batch from land stage
             
@@ -3616,119 +3490,22 @@ class RVUIngestor(BaseDISIngestor):
         logger.info("Starting validate stage", batch_id=raw_batch.metadata.get("batch_id", "unknown"))
         
         try:
-            # Create stage directory for rejects per DIS §4
-            stage_dir = Path(self.output_dir) / "stage" / "cms_rvu" / raw_batch.metadata.get("release_id", "unknown")
-            reject_dir = stage_dir / "reject"
-            reject_dir.mkdir(parents=True, exist_ok=True)
+            config = ValidateConfig(
+                output_dir=self.output_dir,
+                dataset_name=self.dataset_name,
+                enable_quarantine=True,
+                quality_threshold=self.slas.quality_threshold if hasattr(self, 'slas') else 0.8
+            )
             
-            validation_results = {
-                "batch_id": raw_batch.metadata.get("batch_id", "unknown"),
-                "release_id": raw_batch.metadata.get("release_id", "unknown"),
-                "validation_rules": [],
-                "quality_score": 1.0,
-                "rejects": [],
-                "total_records": 0,
-                "valid_records": 0,
-                "rejected_records": 0
-            }
+            result = await execute_validate(
+                raw_batch=raw_batch,
+                config=config,
+                validation_engine=self.validation_engine,
+                schema_registry=self.schema_registry,
+                quarantine_manager=self.quarantine_manager if hasattr(self, 'quarantine_manager') else None
+            )
             
-            # Track internal validation state
-            internal_validation = {
-                "quality_score": 1.0,  # 0-1 scale
-                "total_records": 0,
-                "valid_records": 0,
-                "rejected_records": 0,
-                "quarantine_summary": ""
-            }
-            
-            # Run DIS validation system
-            try:
-                # Basic structural dataset for validation metrics (counts per file)
-                filenames = list((raw_batch.raw_content or {}).keys())
-                df = pd.DataFrame({"filename": filenames})
-                
-                # Schema validation happens AFTER normalization when we know which dataset each file belongs to.
-                # Here in validate stage, we do structural validation (file counts, sizes, etc.).
-                # For now, try to get any RVU-related schema as a fallback for basic validation.
-                # Individual dataset schemas (cms_pprrvu, cms_gpci, etc.) are registered, but validation
-                # at this stage works on raw files, not parsed dataframes, so detailed schema validation
-                # should happen in normalize stage after parsing.
-                schema_contract = None
-                # Try individual schemas - validation will use appropriate one after parsing
-                for schema_name in ["cms_pprrvu", "cms_gpci", "cms_oppscap"]:
-                    candidate = self.schema_registry.get_contract(schema_name)
-                    if candidate:
-                        schema_contract = candidate
-                        break
-                
-                # TODO: Schema-driven validation needs to translate SchemaContract into engine config.
-                #       Tracking task: github_tasks_plan.md → "Schema-driven validation flow scoped for RVU pipeline"
-                #       (https://github.com/alex-bea/cms_api/blob/main/github_tasks_plan.md)
-                if not df.empty:
-                    validation_report = self.validation_engine.validate_dataframe(df, "cms_rvu")
-                    internal_validation["validation_rules"] = [
-                        {
-                            "rule_name": r.rule_name,
-                            "passed": r.passed,
-                            "severity": r.severity.value if hasattr(r.severity, 'value') else str(r.severity),
-                            "message": r.message
-                        }
-                        for r in validation_report.results
-                    ]
-                    internal_validation["quality_score"] = validation_report.quality_score
-                    internal_validation["total_records"] = validation_report.total_checks
-                    internal_validation["valid_records"] = validation_report.passed_checks
-                    internal_validation["rejected_records"] = validation_report.failed_checks
-                    
-                    # Check for quarantined records from validation report
-                    # Note: Quarantine handling is typically done at the normalize stage after parsing
-                    # If validation report has critical failures, they should be handled here
-                    if validation_report.failed_checks > 0:
-                        # Log critical validation failures for quarantine consideration
-                        from ..validators.validation_engine import ValidationSeverity
-                        failed_rules = [r for r in validation_report.results if not r.passed and r.severity == ValidationSeverity.ERROR]
-                        if failed_rules:
-                            logger.warning(
-                                "Validation failures detected that may require quarantine",
-                                failed_rules_count=len(failed_rules),
-                                dataset="cms_rvu",
-                                batch_id=raw_batch.metadata.get("batch_id", "unknown")
-                            )
-                            # Quarantine will be handled in normalize stage when we have actual parsed data
-                else:
-                    logger.warning("No detailed schema available for cms_rvu validation; recording file counts only")
-                    internal_validation["total_records"] = len(df)
-                    internal_validation["valid_records"] = len(df)
-                    internal_validation["rejected_records"] = 0
-                    internal_validation["validation_rules"] = []
-            except Exception as e:
-                logger.error("DIS validation failed", error=str(e))
-                file_count = len(raw_batch.raw_content or {})
-                internal_validation["quality_score"] = 0.0
-                internal_validation["total_records"] = file_count
-                internal_validation["valid_records"] = 0
-                internal_validation["rejected_records"] = file_count
-            
-            # Wrap validation results for test compatibility
-            wrapped_result = {
-                "status": "success",
-                "batch_id": raw_batch.metadata.get("batch_id", "unknown"),
-                "release_id": raw_batch.metadata.get("release_id", "unknown"),
-                "validation_results": internal_validation,
-                "quality_score": internal_validation["quality_score"] * 100,  # Scale 0-1 to 0-100 for tests
-                "total_records": internal_validation["total_records"],
-                "valid_records": internal_validation["valid_records"],
-                "rejected_records": internal_validation["rejected_records"],
-                "quarantine_summary": internal_validation.get("quarantine_summary", ""),
-                "validation_rules": internal_validation.get("validation_rules", [])
-            }
-            
-            logger.info("Validate stage completed", 
-                       batch_id=raw_batch.metadata.get("batch_id", "unknown"),
-                       quality_score=wrapped_result["quality_score"],
-                       rejects=wrapped_result["rejected_records"])
-            
-            return wrapped_result
+            return result
             
         except Exception as e:
             logger.error("Validate stage failed", error=str(e), batch_id=raw_batch.metadata.get("batch_id", "unknown"))
@@ -3742,8 +3519,11 @@ class RVUIngestor(BaseDISIngestor):
         """
         Normalize Stage: Canonicalize data and emit schema contract per DIS §3.4
         
+        Delegates to stages.normalize.execute_normalize() for reusable implementation.
+        
         Args:
             validated_batch: Validated data from validate stage (can be dict or RawBatch)
+            raw_batch: Optional raw batch (extracted from validated_batch if not provided)
             
         Returns:
             Normalization results with schema contract and parsed dataframes
@@ -3759,163 +3539,40 @@ class RVUIngestor(BaseDISIngestor):
 
         # Coerce dict-like raw_batch to object with .metadata
         raw_batch = self._coerce_raw_batch_like(raw_batch) or raw_batch
-
-        if raw_batch:
-            batch_id = raw_batch.metadata.get("batch_id", "unknown")
-            release_id = raw_batch.metadata.get("release_id", "unknown")
-        elif hasattr(validated_batch, 'get') and callable(validated_batch.get):
-            # It's a dict-like object
-            batch_id = validated_batch.get("batch_id", "unknown")
-            release_id = validated_batch.get("release_id", "unknown")
-        else:
-            # Fallback
-            batch_id = getattr(validated_batch, 'metadata', {}).get("batch_id", "unknown")
-            release_id = getattr(validated_batch, 'metadata', {}).get("release_id", "unknown")
-        
-        logger.info("Starting normalize stage", batch_id=batch_id)
         
         try:
-            # Create stage directory for normalized data
-            stage_dir = Path(self.output_dir) / "stage" / "cms_rvu" / release_id
-            stage_dir.mkdir(parents=True, exist_ok=True)
+            config = NormalizeConfig(
+                output_dir=self.output_dir,
+                dataset_name=self.dataset_name,
+                enable_schema_validation=True,
+                enable_column_dictionary=True
+            )
             
-            # Generate schema contract per DIS §3.4
-            schema_contract = {
-                "dataset_name": self.dataset_name,
-                "version": "1.0",
-                "generated_at": datetime.now().isoformat(),
-                "release_id": release_id,
-                "batch_id": batch_id,
-                "columns": {},
-                "constraints": [],
-                "business_rules": []
-            }
-            
-            # Add column definitions (this would be populated from actual data)
-            rvu_columns = {
-                "hcpcs_code": {"type": "string", "description": "HCPCS procedure code", "nullable": False},
-                "description": {"type": "string", "description": "Procedure description", "nullable": False},
-                "work_rvu": {"type": "decimal", "description": "Work RVU value", "nullable": True},
-                "practice_expense_rvu": {"type": "decimal", "description": "Practice expense RVU", "nullable": True},
-                "malpractice_rvu": {"type": "decimal", "description": "Malpractice RVU", "nullable": True},
-                "total_rvu": {"type": "decimal", "description": "Total RVU value", "nullable": False},
-                "effective_from": {"type": "date", "description": "Effective start date", "nullable": False},
-                "effective_to": {"type": "date", "description": "Effective end date", "nullable": True},
-                "vintage_date": {"type": "date", "description": "Data vintage date", "nullable": False},
-                "release_id": {"type": "string", "description": "Release identifier", "nullable": False},
-                "batch_id": {"type": "string", "description": "Batch identifier", "nullable": False}
-            }
-            
-            schema_contract["columns"] = rvu_columns
-            
-            # Write schema contract
-            schema_path = stage_dir / "schema_contract.json"
-            with open(schema_path, 'w') as f:
-                import json
-                json.dump(schema_contract, f, indent=2)
-            
-            # Parse raw data if we have a RawBatch
-            adapted_batch = None
-            if raw_batch:
-                logger.info("Parsing raw ZIP files to extract datasets")
-                try:
-                    # Use the existing adapter to parse ZIP files
-                    adapted_batch = self._adapt_raw_data_sync(raw_batch)
-                    
-                    # Log parsing results
-                    logger.info("ZIP parsing completed",
-                               datasets=list(adapted_batch.dataframes.keys()),
-                               total_rows=sum(len(df) for df in adapted_batch.dataframes.values()))
-                    
-                    # Validate parsed dataframes against their schemas
-                    schema_validation_results = await self._validate_parsed_dataframes(adapted_batch.dataframes, batch_id)
-                    # Store validation results in adapted_batch metadata for downstream stages
-                    if adapted_batch.metadata:
-                        adapted_batch.metadata["schema_validation"] = schema_validation_results
-                    
-                except (KeyError, AttributeError) as e:
-                    # If parser registry is not populated or parsing fails, return empty dataframes
-                    logger.warning("ZIP parsing failed or parsers not registered, returning empty dataframes",
-                                 error=str(e))
-                    adapted_batch = None
-            else:
-                logger.warning("No raw batch provided - skipping ZIP parsing")
-            
-            # Write column dictionary per DIS §3.4
-            column_dict = {
-                "dataset_name": self.dataset_name,
-                "version": "1.0",
-                "generated_at": datetime.now().isoformat(),
-                "columns": []
-            }
-            
-            for col_name, col_info in rvu_columns.items():
-                column_dict["columns"].append({
-                    "name": col_name,
-                    "type": col_info["type"],
-                    "unit": None,
-                    "description": col_info["description"],
-                    "domain": None,
-                    "nullable": col_info["nullable"]
-                })
-            
-            column_dict_path = stage_dir / "column_dictionary.json"
-            with open(column_dict_path, 'w') as f:
-                import json
-                json.dump(column_dict, f, indent=2)
-            
-            logger.info("Normalize stage completed", 
-                       batch_id=batch_id,
-                       schema_path=str(schema_path))
-            
-            # Prepare return value
-            parsed_data = adapted_batch.dataframes if adapted_batch else {}
-            dataset_row_counts = {name: len(df) for name, df in parsed_data.items()}
-            normalized_records = sum(dataset_row_counts.values())
-            schema_bundle = adapted_batch.schema_contract if adapted_batch else {}
-            
-            # Extract schema validation results if available
-            schema_validation = None
-            if adapted_batch and adapted_batch.metadata:
-                schema_validation = adapted_batch.metadata.get("schema_validation")
-
-            result = {
-                "status": "success",
-                "batch_id": batch_id,
-                "release_id": release_id,
-                "schema_contract_path": str(schema_path),
-                "column_dictionary_path": str(column_dict_path),
-                "schema_contract": schema_contract,
-                "column_dictionary": column_dict,
-                "normalized_records": normalized_records,
-                "dataset_row_counts": dataset_row_counts,
-                "normalized_data": parsed_data,  # Test expects this key
-                "metadata": {
-                    "batch_id": batch_id,
-                    "release_id": release_id,
-                    **(adapted_batch.metadata if adapted_batch else {})
-                },
-                "schema": schema_bundle if schema_bundle else schema_contract,
-                "data": parsed_data,
-                "dataframes": parsed_data,
-                "schema_validation": schema_validation  # Include validation results for observability
-            }
+            result = await execute_normalize(
+                validated_batch=validated_batch,
+                raw_batch=raw_batch,
+                config=config,
+                adapter_func=self._adapt_raw_data_sync,
+                schema_registry=self.schema_registry,
+                validation_engine=self.validation_engine
+            )
             
             return result
             
         except Exception as e:
-            # Re-extract IDs in case they weren't set before the exception
-            error_batch_id = batch_id if 'batch_id' in locals() else "unknown"
-            error_release_id = release_id if 'release_id' in locals() else "unknown"
+            error_batch_id = "unknown"
+            error_release_id = "unknown"
+            if raw_batch and raw_batch.metadata:
+                error_batch_id = raw_batch.metadata.get("batch_id", "unknown")
+                error_release_id = raw_batch.metadata.get("release_id", "unknown")
             logger.error("Normalize stage failed", error=str(e), batch_id=error_batch_id)
-            # Return structure with expected keys even on failure for test compatibility
             return {
                 "status": "failed",
                 "batch_id": error_batch_id,
                 "release_id": error_release_id,
                 "error": str(e),
                 "schema_contract": {},
-                "normalized_data": {},  # Test expects this key
+                "normalized_data": {},
                 "dataframes": {},
                 "data": {}
             }
@@ -3923,6 +3580,9 @@ class RVUIngestor(BaseDISIngestor):
     async def publish(self, enriched_batch: Any) -> Dict[str, Any]:
         """
         Publish Stage: Create snapshot tables and latest-effective views per DIS §3.6
+        
+        Delegates to stages.publish.execute_publish() for reusable implementation,
+        with RVU-specific database loading logic.
         
         Args:
             enriched_batch: Enriched data from enrich stage (can be dict or StageFrame)
@@ -3932,7 +3592,6 @@ class RVUIngestor(BaseDISIngestor):
         """
         # Handle both StageFrame objects and dicts
         if hasattr(enriched_batch, 'metadata'):
-            # It's a StageFrame or similar object
             batch_id = enriched_batch.metadata.get("batch_id", "unknown")
             release_id = enriched_batch.metadata.get("release_id", "unknown")
             vintage_date = enriched_batch.metadata.get("vintage_date", datetime.now().strftime("%Y-%m-%d"))
@@ -3941,7 +3600,6 @@ class RVUIngestor(BaseDISIngestor):
                 enriched_data = getattr(enriched_batch, 'dataframes', {})
             quality_metrics = getattr(enriched_batch, 'quality_metrics', {})
         else:
-            # It's a dict
             batch_id = enriched_batch.get("batch_id", self.current_release_id or "unknown")
             release_id = enriched_batch.get("release_id", self.current_release_id or "unknown")
             vintage_date = enriched_batch.get("vintage_date", datetime.now().strftime("%Y-%m-%d"))
@@ -3977,166 +3635,69 @@ class RVUIngestor(BaseDISIngestor):
             else:
                 schema = {}
             
-            # Detect schema drift before publishing
+            # Create drift detector wrapper
+            def drift_detector(schema_dict: Dict[str, Any], dataset_name: str) -> Dict[str, Any]:
+                return self._detect_schema_drift(schema_dict, dataset_name)
+            
+            # Create loader function wrapper for RVU-specific database loading
+            def rvu_loader_func(enriched_data_dict: Dict[str, Any], release_id: str, batch_id: str, vintage_date: str) -> Dict[str, Any]:
+                if self.db_session:
+                    try:
+                        return self._load_dataframes_to_database(
+                            enriched_data_dict, 
+                            release_id, 
+                            batch_id, 
+                            vintage_date
+                        )
+                    except Exception as e:
+                        logger.error("Database loading failed", error=str(e), batch_id=batch_id)
+                        return {"error": str(e)}
+                return {}
+            
+            config = PublishConfig(
+                output_dir=self.output_dir,
+                dataset_name=self.dataset_name,
+                enable_database_load=True,
+                enable_schema_drift_detection=True,
+                enable_latest_effective_view=True
+            )
+            
+            # Prepare enriched_batch dict for execute_publish
+            # execute_publish expects enriched_data or dataframes key
+            enriched_batch_dict = enriched_batch if isinstance(enriched_batch, dict) else {}
+            if not enriched_batch_dict.get("enriched_data") and not enriched_batch_dict.get("dataframes"):
+                enriched_batch_dict["enriched_data"] = enriched_data
+                enriched_batch_dict["dataframes"] = enriched_data
+            enriched_batch_dict["batch_id"] = batch_id
+            enriched_batch_dict["release_id"] = release_id
+            enriched_batch_dict["vintage_date"] = vintage_date
+            enriched_batch_dict["quality_metrics"] = quality_metrics
             if schema:
-                drift_result = self._detect_schema_drift(schema, "rvu")
-                if drift_result.get("drift_detected", False):
-                    logger.warning("Schema drift detected during publish", 
-                                 drift_score=drift_result.get("drift_score", 0.0))
-                    # Continue with warning - could be configured to fail here
+                enriched_batch_dict["schema"] = schema
             
-            # Create curated directory structure per DIS §4
-            curated_dir = Path(self.output_dir) / "curated" / "cms_rvu" / vintage_date
-            curated_dir.mkdir(parents=True, exist_ok=True)
+            # Use extracted publish stage module
+            result = await execute_publish(
+                enriched_batch=enriched_batch_dict,
+                config=config,
+                db_session=self.db_session,
+                loader_func=rvu_loader_func,
+                drift_detector=drift_detector
+            )
             
-            # Create data directory
-            data_dir = curated_dir / "data"
-            data_dir.mkdir(parents=True, exist_ok=True)
+            # Add RVU-specific curated_tables mapping for backward compatibility
+            if "curated_tables" in result and isinstance(result["curated_tables"], dict):
+                result["curated_tables"].update({
+                    "rvu_items": result["curated_tables"].get("pprrvu"),
+                    "gpci_indices": result["curated_tables"].get("gpci"),
+                    "opps_caps": result["curated_tables"].get("oppscap"),
+                    "anes_cfs": result["curated_tables"].get("anescf"),
+                    "locality_counties": result["curated_tables"].get("localitycounty")
+                })
             
-            # Create docs directory
-            docs_dir = curated_dir / "docs"
-            docs_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Generate data documentation per DIS §3.6
-            if isinstance(enriched_data, dict):
-                dataset_counts = {name: len(df) for name, df in enriched_data.items()}
-            else:
-                dataset_counts = {}
-            total_records = sum(dataset_counts.values())
-
-            data_docs = {
-                "dataset_name": self.dataset_name,
-                "vintage_date": vintage_date,
-                "release_id": release_id,
-                "batch_id": batch_id,
-                "generated_at": datetime.now().isoformat(),
-                "description": "CMS RVU data with all RVU-related datasets",
-                "datasets": [
-                    "PPRRVU: Physician Fee Schedule RVU Items",
-                    "GPCI: Geographic Practice Cost Index", 
-                    "OPPSCap: OPPS-based Payment Caps",
-                    "AnesCF: Anesthesia Conversion Factors",
-                    "LocalityCounty: Locality to County mapping"
-                ],
-                "quality_score": quality_metrics.get("quality_score", 1.0) if isinstance(quality_metrics, dict) else 1.0,
-                "record_count": total_records,
-                "schema_version": "1.0",
-                "attribution_note": "Data sourced from CMS.gov - Public Domain"
-            }
-            
-            docs_path = docs_dir / "dataset_documentation.json"
-            with open(docs_path, 'w') as f:
-                import json
-                json.dump(data_docs, f, indent=2)
-            
-            # Save data with idempotent upserts per DIS §3.6
-            saved_paths: Dict[str, Path] = {}
-            if enriched_data:
-                saved_paths = self._save_data_with_upserts(enriched_data, data_dir, vintage_date)
-            
-            # Load data into Postgres database
-            load_results = {}
-            if enriched_data and self.db_session:
-                try:
-                    load_results = self._load_dataframes_to_database(
-                        enriched_data, 
-                        release_id, 
-                        batch_id, 
-                        vintage_date
-                    )
-                    logger.info("Database loading completed",
-                               batch_id=batch_id,
-                               records_inserted=load_results.get("total_records", 0))
-                except Exception as e:
-                    logger.error("Database loading failed", 
-                               error=str(e), 
-                               batch_id=batch_id)
-                    # Continue with publish even if DB load fails
-                    load_results = {"error": str(e)}
-            
-            # Create latest-effective view definition per DIS §3.6
-            view_sql = f"""
-            CREATE OR REPLACE VIEW v_latest_cms_rvu AS
-            SELECT *
-            FROM (
-                SELECT *,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY hcpcs_code 
-                           ORDER BY effective_from DESC, vintage_date DESC
-                       ) as rn
-                FROM cms_rvu
-                WHERE effective_from <= CURRENT_DATE
-            ) ranked
-            WHERE rn = 1;
-            """
-            
-            view_path = curated_dir / "latest_effective_view.sql"
-            with open(view_path, 'w') as f:
-                f.write(view_sql)
-            
-            # Write publish manifest summarizing datasets
-            manifest_payload = {
-                "dataset_name": self.dataset_name,
-                "release_id": release_id,
-                "batch_id": batch_id,
-                "vintage_date": vintage_date,
-                "generated_at": datetime.now().isoformat(),
-                "datasets": [
-                    {
-                        "name": name,
-                        "records": dataset_counts.get(name, 0),
-                        "parquet_path": str(saved_paths.get(name)) if saved_paths.get(name) else None,
-                    }
-                    for name in sorted(enriched_data.keys()) if isinstance(enriched_data, dict)
-                ]
-            }
-            manifest_path = curated_dir / "manifest.json"
-            with open(manifest_path, 'w') as f:
-                json.dump(manifest_payload, f, indent=2)
-
-            logger.info("Publish stage completed", 
-                       batch_id=batch_id,
-                       curated_dir=str(curated_dir))
-            
-            # Return structure that matches test expectations
-            return {
-                "status": "success",
-                "batch_id": batch_id,
-                "release_id": release_id,
-                "vintage_date": vintage_date,
-                "curated_directory": str(curated_dir),
-                "data_directory": str(data_dir),
-                "docs_directory": str(docs_dir),
-                "latest_effective_view": str(view_path),
-                "record_count": total_records,
-                # Additional fields expected by tests
-                "curated_tables": {
-                    "rvu_items": str(saved_paths.get("pprrvu")) if saved_paths.get("pprrvu") else None,
-                    "gpci_indices": str(saved_paths.get("gpci")) if saved_paths.get("gpci") else None,
-                    "opps_caps": str(saved_paths.get("oppscap")) if saved_paths.get("oppscap") else None,
-                    "anes_cfs": str(saved_paths.get("anescf")) if saved_paths.get("anescf") else None,
-                    "locality_counties": str(saved_paths.get("localitycounty")) if saved_paths.get("localitycounty") else None
-                },
-                "latest_effective_views": [str(view_path)],
-                "export_artifacts": {
-                    "schema_contract": str(docs_dir / "schema_contract.json"),
-                    "column_dictionary": str(docs_dir / "column_dictionary.json"),
-                    "manifest": str(manifest_path)
-                }
-            }
+            return result
             
         except Exception as e:
-            # Try to get batch_id for error logging
-            try:
-                if hasattr(enriched_batch, 'metadata'):
-                    error_batch_id = enriched_batch.metadata.get("batch_id", "unknown")
-                elif isinstance(enriched_batch, dict):
-                    error_batch_id = enriched_batch.get("batch_id", "unknown")
-                else:
-                    error_batch_id = "unknown"
-            except:
-                error_batch_id = "unknown"
-            
+            error_batch_id = batch_id if 'batch_id' in locals() else "unknown"
             logger.error("Publish stage failed", error=str(e), batch_id=error_batch_id)
             return {
                 "status": "failed",
