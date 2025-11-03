@@ -36,7 +36,6 @@ from ..scrapers.cms_rvu_scraper import CMSRVUScraper
 from ..managers.historical_data_manager import HistoricalDataManager
 from ..contracts.schema_registry import SchemaContract
 from ..adapters.data_adapters import AdapterFactory, AdapterConfig
-from ..validators.validation_engine import ValidationEngine
 from ..enrichers.data_enrichers import EnricherFactory
 from ..publishers.data_publishers import PublisherFactory
 from ..docs.guidance_summary import (
@@ -47,13 +46,8 @@ from ..docs.guidance_summary import (
     SUPPORT_CONTACTS,
     write_summary_files
 )
-from ..observability.dis_observability import (
-    DISObservabilityCollector, FreshnessMetrics, VolumeMetrics, 
-    SchemaMetrics, QualityMetrics, LineageMetrics, DISObservabilityReport
-)
-from ..quarantine.dis_quarantine import QuarantineManager, QuarantineStatus, QuarantineSeverity
 from ..enrichers.dis_reference_data_integration import (
-    DISReferenceDataEnricher, ReferenceDataManager, ReferenceDataSource,
+    ReferenceDataSource,
     get_rvu_geography_enrichment_rules, get_rvu_code_enrichment_rules
 )
 from ..parsers.pprrvu_parser import parse_pprrvu, SCHEMA_ID as PPRRVU_SCHEMA_ID, NATURAL_KEYS as PPRRVU_NK
