@@ -2194,8 +2194,9 @@ class RVUIngestor(BaseDISIngestor):
         schema_contracts: Dict[str, Any] = {}
         parser_metrics: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         rejects_summary: Dict[str, int] = defaultdict(int)
-        release_id = raw_batch.metadata.get("release_id", self.current_release_id or "unknown")
-        batch_id = raw_batch.metadata.get("batch_id", raw_batch.batch_id)
+        metadata = raw_batch.metadata or {}
+        release_id = metadata.get("release_id", self.current_release_id or "unknown")
+        batch_id = metadata.get("batch_id") or getattr(raw_batch, "batch_id", None) or "unknown"
         
         for filename, content in raw_content.items():
             if content is None:
