@@ -4287,6 +4287,16 @@ class RVUIngestor(BaseDISIngestor):
         if df is None or df.empty:
             return 0
         
+        # Normalize parser aliases so downstream logic always finds expected columns
+        alias_pairs = [
+            ("gpci_work", "work_gpci"),
+            ("gpci_pe", "pe_gpci"),
+            ("gpci_mp", "mp_gpci"),
+        ]
+        for source_col, target_col in alias_pairs:
+            if source_col in df.columns and target_col not in df.columns:
+                df[target_col] = df[source_col]
+        
         # Debug: Log available columns
         logger.info("Loading GPCI data", 
                    df_columns=list(df.columns),

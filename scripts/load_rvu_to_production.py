@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
 Load RVU data to Render production database.
-Usage: python scripts/load_rvu_to_production.py
+Usage: 
+    python scripts/load_rvu_to_production.py
+    python scripts/load_rvu_to_production.py --release-id rvu_2025_prod --output-dir data/ingestion/production
 
 This script runs the complete RVU ingestion pipeline and loads data to production.
 """
 
+import argparse
 import sys
 import logging
 import time
@@ -23,11 +26,17 @@ from cms_pricing.models.rvu import Release
 logger = logging.getLogger(__name__)
 
 
-def main():
-    """Run RVU ingestion on production database."""
+def main(release_id: str = None, output_dir: str = None):
+    """Run RVU ingestion on production database.
     
-    # Output directory for parquet files
-    output_dir = "data/ingestion/production"
+    Args:
+        release_id: Release ID to ingest (default: "rvu_2025_prod")
+        output_dir: Output directory for parquet files (default: "data/ingestion/production")
+    """
+    
+    # Use defaults if not provided
+    release_id = release_id or "rvu_2025_prod"
+    output_dir = output_dir or "data/ingestion/production"
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     # Create database session
@@ -35,13 +44,24 @@ def main():
     
     try:
         logger.info("Starting RVU ingestion on production database")
+        logger.info(f"Release ID: {release_id}")
         logger.info(f"Output directory: {output_dir}")
+        
+        # Optimization 1: Check if release already exists (short-circuit)
+        source_version = release_id[:10]  # Truncate to match DB constraint (VARCHAR(10))
+        existing_release = db_session.query(Release).filter_by(
+            type="RVU_FULL",
+            source_version=source_version
+        ).first()
+        
+        if existing_release:
+            logger.info(f"✅ Release {release_id} (source_version={source_version}) already exists in database. Skipping ingestion.")
+            return 0
         
         # Initialize ingestor with production database session
         ingestor = RVUIngestor(output_dir=output_dir, db_session=db_session)
         
-        # Generate IDs for this ingestion run
-        release_id = "rvu_2025_prod"
+        # Generate batch ID for this ingestion run
         batch_id = f"batch_prod_{int(time.time())}"
         
         # Run ingestion (will use sample_data/rvu25a/ by default for testing)
@@ -50,18 +70,22 @@ def main():
         import asyncio
         result = asyncio.run(ingestor.ingest(release_id=release_id, batch_id=batch_id))
         
-        # Verify results
-        logger.info(f"Ingestion completed: {result}")
+        # Verify results (log summary instead of full dict)
+        status = result.get("status", "unknown")
+        total_records = result.get("total_records", 0)
+        logger.info(f"Ingestion completed: status={status}, total_records={total_records}")
         
-        # Check database
-        release_count = db_session.query(Release).count()
-        logger.info(f"Total releases in database: {release_count}")
+        # Optimization 2: O(1) verification query (indexed lookup instead of full table scan)
+        release_exists = db_session.query(Release).filter_by(
+            type="RVU_FULL",
+            source_version=source_version
+        ).first() is not None
         
-        if release_count > 0:
+        if release_exists:
             logger.info("✅ Data successfully loaded to production database!")
             return 0
         else:
-            logger.warning("⚠️  No releases found in database. Ingestion may have failed.")
+            logger.warning("⚠️  Release not found in database after ingestion. Ingestion may have failed.")
             return 1
             
     except Exception as e:
@@ -80,5 +104,33 @@ if __name__ == "__main__":
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
-    sys.exit(main())
+    # Optimization 3: CLI flags for --release-id and --output-dir
+    parser = argparse.ArgumentParser(
+        description="Load RVU data to Render production database",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Use defaults
+  python scripts/load_rvu_to_production.py
+  
+  # Specify release ID
+  python scripts/load_rvu_to_production.py --release-id rvu_2025_prod
+  
+  # Specify both release ID and output directory
+  python scripts/load_rvu_to_production.py --release-id rvu_2025_prod --output-dir data/ingestion/production
+        """
+    )
+    parser.add_argument(
+        "--release-id",
+        type=str,
+        help="Release ID to ingest (default: rvu_2025_prod)"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        help="Output directory for parquet files (default: data/ingestion/production)"
+    )
+    
+    args = parser.parse_args()
+    sys.exit(main(release_id=args.release_id, output_dir=args.output_dir))
 
