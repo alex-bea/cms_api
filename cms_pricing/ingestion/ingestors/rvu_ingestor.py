@@ -4617,6 +4617,17 @@ class RVUIngestor(BaseDISIngestor):
         if df is None or df.empty:
             return 0
 
+        # Align parser output columns with loader expectations
+        alias_pairs = [
+            ("locality_code", "locality_id"),
+            ("state_name", "state"),
+            ("fee_area", "fee_schedule_area"),
+            ("county_names", "county_name"),
+        ]
+        for source_col, target_col in alias_pairs:
+            if source_col in df.columns and target_col not in df.columns:
+                df[target_col] = df[source_col]
+
         df = self._prepare_base_dataframe(df, release_uuid, batch_id)
 
         df['mac'] = self._string_column(df, 'mac', max_len=10)
@@ -4626,9 +4637,13 @@ class RVUIngestor(BaseDISIngestor):
         df['locality_id'] = locality_series
         df['locality_id'] = self._string_column(df, 'locality_id', max_len=10)
 
-        df['state'] = self._string_column(df, 'state', max_len=2, uppercase=True)
-        df['fee_schedule_area'] = self._string_column(df, 'fee_schedule_area', max_len=10)
-        df['county_name'] = self._string_column(df, 'county_name', max_len=100)
+        df['state'] = self._string_column(df, 'state', max_len=32, uppercase=True)
+        df['fee_schedule_area'] = self._string_column(df, 'fee_schedule_area', max_len=128)
+        df['county_name'] = self._string_column(df, 'county_name', max_len=128)
+
+        # Drop rows missing mandatory fields to honor NOT NULL constraints
+        df = df[df['state'].notna() & (df['state'].str.len() > 0)]
+        df = df[df['county_name'].notna() & (df['county_name'].str.len() > 0)]
 
         df['effective_start'] = self._date_column(df, 'effective_start', fallback='vintage_date')
         df['effective_end'] = self._date_column(df, 'effective_end')

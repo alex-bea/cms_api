@@ -110,7 +110,7 @@ async def execute_enrich(
             "enrichment_quality_score": enrichment_quality_score,
             "enrichment_rate": enrichment_rate,
             "enrichment_rules_applied": len(enrichment_results),
-            "enrichment_successful": len([r for r in enrichment_results if r.success])
+            "enrichment_successful": sum(1 for r in enrichment_results if r.success)  # Vectorized count, avoids intermediate list
         })
         
         # Optional guardrail: flag if all reference datasets were missing/empty
