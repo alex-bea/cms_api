@@ -189,7 +189,7 @@ class LocalityCounty(Base):
     mac = Column(String(10), nullable=False, index=True)
     locality_id = Column(String(10), nullable=False, index=True)
     state = Column(String(2), nullable=False, index=True)
-    fee_schedule_area = Column(String(10), nullable=True)
+    fee_schedule_area = Column(String(128), nullable=True)
     county_name = Column(String(100), nullable=True)
     effective_start = Column(Date, nullable=True)
     effective_end = Column(Date, nullable=True)
