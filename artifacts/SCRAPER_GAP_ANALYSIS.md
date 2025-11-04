@@ -9,7 +9,7 @@
 |---------|--------|----------|
 | `cms_rvu_scraper.py` | ✅ Complete | PPRRVU, GPCI, ANES, OPPSCap, LocalityCounty |
 | `cms_opps_scraper.py` | ✅ Complete | OPPS Addendum A/B, APC rates, HCPCS mapping |
-| `cms_mpfs_scraper.py` | ✅ Complete | MPFS conversion factors, abstracts |
+| `cms_mpfs_scraper.py` | ⚠️ **DEPRECATED** (2025-01-15) | MPFS now uses snapshot reuse + `ConversionFactorFetcher`; scraper to be removed |
 
 ## Missing Scrapers ❌
 

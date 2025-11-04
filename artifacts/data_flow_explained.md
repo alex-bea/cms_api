@@ -85,7 +85,7 @@ cms-api/
 ├── cms_pricing/
 │   ├── ingestion/
 │   │   ├── scrapers/              # 🎯 Stage 1: Discovery
-│   │   │   ├── cms_mpfs_scraper.py
+│   │   │   ├── cms_mpfs_scraper.py *(deprecated - MPFS uses snapshot reuse)*
 │   │   │   ├── cms_opps_scraper.py
 │   │   │   └── cms_rvu_scraper.py
 │   │   ├── parsers/               # 🎯 Stage 3: Normalize

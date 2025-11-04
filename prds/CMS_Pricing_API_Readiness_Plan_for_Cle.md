@@ -44,7 +44,7 @@ The plan is structured around four mutually exclusive and collectively exhaustiv
 
 ## 3. Dependencies & Consumers
 **Primary consumers:** ClearBill App backend, Advocate Dashboard, Provider validation tools, external developer integrations.  
-**Internal dependencies:** MPFS/OPPS/ASC ingestion pipelines, parquet publishers, relational loaders, Redis, Postgres, Prometheus/Grafana, API Gateway, authentication middleware, compliance review board.
+**Internal dependencies:** MPFS/OPPS ingestion pipelines (ASC/CLFS/DMEPOS/IPPS/ASP/NADAC pipelines scheduled post-launch), parquet publishers, relational loaders, Redis, Postgres, Prometheus/Grafana, API Gateway, authentication middleware, compliance review board.
 
 ---
 
@@ -108,7 +108,7 @@ The plan is structured around four mutually exclusive and collectively exhaustiv
   - 📋 Update client SDK examples to demonstrate provenance parsing (client-facing documentation)
 - **Quick Win #2: Unified CodePricingItem Schema (Complete)**
   - ✅ `CodePricingItem` Pydantic model defined with all common fields and provenance metadata
-  - ✅ All 7 pricing engines (MPFS, OPPS, ASC, CLFS, DMEPOS, IPPS, Drugs) return `CodePricingItem`
+  - ✅ All 7 pricing engines (MPFS, OPPS, ASC, CLFS, DMEPOS, IPPS, Drugs) return `CodePricingItem` *(ASC/CLFS/DMEPOS/IPPS/Drug datasets continue to source from post-launch ingestion backlog)*
   - ✅ `CodePricingItemWithGeography` subclasses `CodePricingItem` for `/pricing/codes/price` endpoint
   - ✅ Service layer updated to handle `CodePricingItem` throughout
   - ✅ Compatibility adapters ensure backward compatibility for plan pricing
