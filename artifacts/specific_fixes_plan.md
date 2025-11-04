@@ -6,31 +6,31 @@
 
 ## Fix 1: Land Output Layout (test_dis_land_stage failure)
 
-**Problem:** Test expects `raw_dir / "files"` to exist, but `raw_dir` already includes `/files/`
+**Problem:** Tests (and legacy callers) expect `raw_directory` to point at the release root
+while the shared land stage now returns the concrete files directory.
 
-**File:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py`  
-**Location:** Line 1976, 2041
+**File:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py`
 
-**Current Code:**
+**Current Code (Phase 2 refactor baseline):**
 ```python
-raw_dir = Path(self.output_dir) / "raw" / "cms_rvu" / release_id / "files"
-# ...
-return {
-    "raw_directory": str(raw_dir),  # Points to <release_id>/files/
-}
+result = await execute_land(...)
+return result
 ```
 
 **Fix:**
 ```python
-raw_dir = Path(self.output_dir) / "raw" / "cms_rvu" / release_id / "files"
-raw_dir.mkdir(parents=True, exist_ok=True)
-# ...
-return {
-    "raw_directory": str(raw_dir.parent),  # Return <release_id>/ instead
-}
+raw_dir = Path(result.get("raw_directory", ""))
+if raw_dir.name == "files":
+    raw_files_dir = str(raw_dir)
+    result.setdefault("raw_files_directory", raw_files_dir)
+    result["raw_directory"] = str(raw_dir.parent)
+    raw_batch_obj = result.get("raw_batch")
+    if raw_batch_obj:
+        raw_batch_obj.raw_data_path = raw_files_dir
 ```
 
-**Change:** Return `raw_dir.parent` so path is `<release_id>/` and test can check for `files/` subdirectory
+**Change:** Preserve the new executor output while adding a `raw_files_directory`
+field and restoring `raw_directory` to the release root for backward compatibility.
 
 ---
 
@@ -217,4 +217,3 @@ def get_contract(self, schema_id: str) -> Optional[SchemaContract]:
 - Fix 5: 5 minutes (add method or update callers)
 
 **Total:** ~50 minutes
-

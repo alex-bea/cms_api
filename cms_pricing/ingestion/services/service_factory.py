@@ -69,6 +69,27 @@ class ServiceFactory:
         return self._services["validation_engine"]
     
     @property
+    def validation_service(self) -> Any:
+        """
+        Get or create validation service (lazy).
+        
+        Returns:
+            ValidationService instance wrapping the validation engine
+        """
+        if not self.config.enable_validation:
+            raise NotImplementedError(
+                "Validation service is disabled in ServiceConfig. "
+                "Set enable_validation=True to use this service."
+            )
+        
+        if "validation_service" not in self._services:
+            from .validation_service import ValidationService
+            self._services["validation_service"] = ValidationService(self.validation_engine)
+            logger.debug("Validation service initialized", dataset=self.config.dataset_name)
+        
+        return self._services["validation_service"]
+    
+    @property
     def observability_collector(self) -> Any:
         """
         Get or create observability collector (lazy).
@@ -214,8 +235,34 @@ class ServiceFactory:
             _ = self.reference_data_manager
             _ = self.reference_enricher
         if self.config.enable_schema_registry:
-            _ = self.schema_registry
-        
+            registry = self.schema_registry
+            service = self.schema_service
+            # Service method is idempotent; safe to call during eager init
+            service.bootstrap_rvu_schemas(registry)
+
         self._initialized = True
         logger.info("All services initialized", dataset=self.config.dataset_name)
 
+    @property
+    def schema_service(self) -> Any:
+        """
+        Get or create schema service (lazy).
+
+        Returns:
+            SchemaService instance
+
+        Raises:
+            NotImplementedError: If schema registry is disabled in config
+        """
+        if not self.config.enable_schema_registry:
+            raise NotImplementedError(
+                "Schema service is disabled in ServiceConfig. "
+                "Set enable_schema_registry=True to use this service."
+            )
+
+        if "schema_service" not in self._services:
+            from ..services.schema_service import SchemaService
+            self._services["schema_service"] = SchemaService(self.config.dataset_name)
+            logger.debug("Schema service initialized", dataset=self.config.dataset_name)
+
+        return self._services["schema_service"]

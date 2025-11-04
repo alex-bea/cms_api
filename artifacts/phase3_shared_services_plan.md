@@ -38,15 +38,15 @@ cms_pricing/ingestion/services/
 ```
 
 ### Implementation Steps
-1. **Scaffold Services Package**  
+1. **Scaffold Services Package** — ✅ Completed (services directory, config, factory landed in repo)  
    - Create config + factory classes.  
    - Implement lazy properties that respect the guardrails above.
 
-2. **Adapter Modules**  
+2. **Adapter Modules** — ✅ Completed (observability/quarantine/reference/schema/validation services extracted)  
    - Move existing helper logic (observability, quarantine, reference data, schema registry) into the dedicated modules.  
    - Provide utilities for registering dataset-specific hooks (e.g., schema contracts, validation rules).
 
-3. **Refactor RVUIngestor**  
+3. **Refactor RVUIngestor** — ✅ Completed (RVU uses `ServiceFactory`, direct instantiations removed)  
    - Replace direct instantiations with the service factory.  
    - Update references throughout the file (e.g., `self.services.validation_engine`).
 
@@ -54,7 +54,7 @@ cms_pricing/ingestion/services/
    - Update MPFS, OPPS, ZIP9, and any additional ingestors to use the same factory.  
    - Capture any dataset-specific overrides in their own modules or service extensions.
 
-5. **Testing & Documentation**  
+5. **Testing & Documentation** — ⏳ Pending  
    - Add unit tests for lazy-init paths and failure modes.  
    - Update the ingestion playbook / PRDs to describe the new service layer and guardrails.
 
@@ -63,3 +63,27 @@ cms_pricing/ingestion/services/
 - Schema registration happens in a single, well-documented place without duplicate side-effects.
 - Lazy initialization is covered by tests and verified in at least one ingestion run.
 - Documentation reflects the new architecture, including the guardrails listed above.
+
+---
+
+## Detailed Completion Plan (Phase 3 Remaining Work)
+
+### Step 4 — Extend ServiceFactory to Remaining Ingestors
+- **Targets:** `cms_pricing/ingestion/ingestors/{mpfs_ingestor.py, opps_ingestor.py, cms_zip9_ingester.py}` (plus any others still hand-wiring services).
+- **Tasks:**
+  1. Audit each ingestor’s `__init__` for duplicated service construction (validation engines, quarantine managers, observability collectors, schema bootstrap).
+  2. Replace inline setups with `ServiceFactory(service_config)` usage mirroring RVU; ensure dataset-specific flags (e.g., disable reference data for ZIP9) are honoured via `ServiceConfig`.
+  3. Update stage calls (`self.land`, `self.validate`, etc.) to reference `self.services.*` instead of local attributes.
+  4. Run lightweight compile check (`python -m compileall cms_pricing/ingestion/ingestors/mpfs_ingestor.py` etc.) to catch missing references.
+- **Deliverable:** All ingestors rely on the shared factory; plan updated with completion notes.
+- **Estimated Time:** 1.5–2 hours (per ingestor updates + sanity passes).
+
+### Step 5 — Test Coverage & Documentation
+- **Unit Tests:** Add tests covering lazy initialization, repeated access, and failure paths inside `cms_pricing/ingestion/services/tests/` (or existing ingestion test suite). Mock config permutations to ensure toggles behave.
+- **Integration Check:** Execute at least one DIS pipeline run per ingestor to confirm services are wired correctly; capture any sandbox restrictions (Signal 11) in verification notes.
+- **Documentation Updates:** Refresh
+  - `artifacts/phase2_documentation_refresh_plan.md` follow-up items,
+  - relevant PRDs/runbooks (data architecture implementation guide, ingestion playbook) to describe ServiceFactory usage and guardrails,
+  - change log entry summarising the shared-services migration.
+- **Estimated Time:** ~2 hours (tests + docs + validation).
+- **Deliverable:** Tests committed/passing locally, documentation references updated, plan marked complete.

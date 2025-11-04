@@ -1,6 +1,11 @@
 """
 Normalize stage module for DIS pipeline.
 
+Phase 2 Refactoring Context:
+    - Step 5: Stage integration
+      • Plan: artifacts/phase2_step5_detailed_plan.md
+      • Verification: artifacts/phase2_step5_verification_report.md
+
 Per DIS §3.4: Canonicalize data, emit schema contract, parse raw files.
 This module extracts normalization logic from ingestors for reuse across datasets.
 """
@@ -9,7 +14,9 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
+
+import pandas as pd
 import structlog
 
 from ..contracts.ingestor_spec import RawBatch, AdaptedBatch
@@ -26,13 +33,17 @@ class NormalizeConfig:
     enable_column_dictionary: bool = True
 
 
+# Phase 2 Step 5: Stage integration extraction
+# See: artifacts/phase2_step5_detailed_plan.md
 async def execute_normalize(
     validated_batch: Any,
     raw_batch: Optional[RawBatch],
     config: NormalizeConfig,
-    adapter_func: callable,
+    adapter_func: Optional[callable] = None,
     schema_registry: Optional[Any] = None,
-    validation_engine: Optional[Any] = None
+    validation_engine: Optional[Any] = None,
+    dataset_schema_map: Optional[Dict[str, str]] = None,
+    cached_schemas: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Execute normalize stage with shared services per DIS §3.4.
@@ -88,6 +99,10 @@ async def execute_normalize(
             logger.info("Parsing raw files to extract datasets")
             try:
                 # Use the adapter function to parse raw data
+                if adapter_func is None:
+                    from ..datasets.rvu_adapter import adapt_rvu_raw_data
+                    adapter_func = lambda batch: adapt_rvu_raw_data(batch)
+
                 adapted_batch = adapter_func(raw_batch)
                 
                 # Log parsing results
@@ -97,13 +112,13 @@ async def execute_normalize(
                 
                 # Validate parsed dataframes against their schemas if enabled
                 schema_validation_results = None
-                if config.enable_schema_validation and validation_engine and schema_registry:
+                if config.enable_schema_validation and schema_registry:
                     schema_validation_results = await _validate_parsed_dataframes(
                         adapted_batch.dataframes,
                         batch_id,
-                        validation_engine,
                         schema_registry,
-                        config.dataset_name
+                        dataset_to_schema=dataset_schema_map,
+                        cached_schemas=cached_schemas
                     )
                     if adapted_batch.metadata:
                         adapted_batch.metadata["schema_validation"] = schema_validation_results
@@ -207,32 +222,99 @@ async def execute_normalize(
 
 
 async def _validate_parsed_dataframes(
-    dataframes: Dict[str, Any],
+    dataframes: Dict[str, pd.DataFrame],
     batch_id: str,
-    validation_engine: Any,
     schema_registry: Any,
-    dataset_name: str
+    dataset_to_schema: Optional[Dict[str, str]] = None,
+    cached_schemas: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """Validate parsed dataframes against their schemas."""
-    # This is a placeholder - actual implementation would validate each dataframe
-    # against its corresponding schema contract from the registry
-    validation_results = {}
-    for dataset_key, df in dataframes.items():
-        try:
-            # Get schema for this dataset
-            schema_name = f"cms_{dataset_key}" if not dataset_key.startswith("cms_") else dataset_key
-            schema = schema_registry.get_contract(schema_name)
-            if schema:
-                # Validate dataframe against schema
-                validation_report = validation_engine.validate_dataframe(df, dataset_name)
-                validation_results[dataset_key] = {
-                    "quality_score": validation_report.quality_score,
-                    "passed_checks": validation_report.passed_checks,
-                    "failed_checks": validation_report.failed_checks
-                }
-        except Exception as e:
-            logger.warning(f"Schema validation failed for {dataset_key}", error=str(e))
-            validation_results[dataset_key] = {"error": str(e)}
-    
-    return validation_results
+    """Validate parsed dataframes against schema contracts."""
+    logger.info("Starting schema validation for parsed dataframes", batch_id=batch_id, datasets=list(dataframes.keys()))
 
+    default_mapping = {
+        "pprrvu": "cms_pprrvu",
+        "gpci": "cms_gpci",
+        "oppscap": "cms_oppscap",
+        "anescf": "cms_anescf",
+        "localitycounty": "cms_localitycounty",
+    }
+    dataset_to_schema = dataset_to_schema or default_mapping
+
+    validation_results: Dict[str, Any] = {}
+    total_records = 0
+    valid_records = 0
+    rejected_records = 0
+    quarantine_records: List[Dict[str, Any]] = []
+    all_errors: List[str] = []
+    all_warnings: List[str] = []
+
+    for dataset_name, df in dataframes.items():
+        if df.empty:
+            logger.debug("Skipping validation for empty dataframe", dataset=dataset_name)
+            continue
+
+        schema_name = dataset_to_schema.get(dataset_name)
+        if not schema_name:
+            logger.warning("No schema mapping found for dataset", dataset=dataset_name)
+            continue
+
+        schema_contract = None
+        if cached_schemas:
+            schema_contract = cached_schemas.get(dataset_name)
+        if not schema_contract:
+            schema_contract = schema_registry.get_contract(schema_name)
+            if not schema_contract:
+                logger.warning("No schema contract found for dataset", schema=schema_name)
+                continue
+
+        validation_result = schema_registry.validate_dataframe(df, schema_name)
+        records = len(df)
+        total_records += records
+
+        if validation_result.get("valid", False):
+            valid_records += records
+        else:
+            errors = validation_result.get("errors", [])
+            if errors:
+                rejected_count = len([e for e in errors if e])
+                rejected_records += rejected_count
+                for error in errors:
+                    quarantine_records.append({
+                        "dataset": dataset_name,
+                        "error": error,
+                        "batch_id": batch_id,
+                    })
+
+        all_errors.extend(validation_result.get("errors", []))
+        all_warnings.extend(validation_result.get("warnings", []))
+
+        validation_results[dataset_name] = {
+            "schema_name": schema_name,
+            "valid": validation_result.get("valid", False),
+            "record_count": records,
+            "errors": validation_result.get("errors", []),
+            "warnings": validation_result.get("warnings", []),
+            "metrics": validation_result.get("metrics", {}),
+        }
+
+        logger.info("Schema validation completed", dataset=dataset_name, valid=validation_result.get("valid", False), errors=len(validation_result.get("errors", [])), warnings=len(validation_result.get("warnings", [])))
+
+    quarantine_summary = ""
+    if quarantine_records:
+        quarantine_summary = f"{len(quarantine_records)} records failed validation across {len(validation_results)} datasets"
+
+    quality_score = (valid_records / total_records) if total_records else 1.0
+
+    result = {
+        "validation_results": validation_results,
+        "total_records": total_records,
+        "valid_records": valid_records,
+        "rejected_records": rejected_records,
+        "quarantine_summary": quarantine_summary,
+        "quality_score": quality_score,
+        "errors": all_errors,
+        "warnings": all_warnings,
+    }
+
+    logger.info("Schema validation completed for all dataframes", batch_id=batch_id, total_records=total_records, valid_records=valid_records, rejected_records=rejected_records, quality_score=quality_score)
+    return result

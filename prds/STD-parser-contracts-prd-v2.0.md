@@ -251,6 +251,17 @@ def route_to_parser(
 
 **Implementation:** See REF-parser-routing-detection-v1.0.md for detailed routing architecture
 
+#### 6.2.1 DatasetSpec Registry (Phase 2)
+
+**Purpose:** Centralise dataset-specific parser metadata and routing logic while preserving the contract above.
+
+- **Definition:** `cms_pricing/ingestion/datasets/spec.py` introduces a `DatasetSpec` dataclass that binds parser callable, `schema_id`, natural keys, loader function, validation/business rules, enrichment rules, and filename patterns.
+- **RVU Example:** `cms_pricing/ingestion/datasets/rvu_spec.py` defines `RVU_DATASETS` and `route_file_to_rvu_spec(filename)` which the ingestor uses to choose parsers before calling `route_to_parser`.
+- **Routing Flow:** The ingestor resolves a `DatasetSpec` via filename pattern (`DatasetSpec.route_file`) and then passes the spec's parser into the normalize stage; this keeps the router contract pure while giving each dataset a single source of truth.
+- **Documentation Impact:** Future parser PRDs MUST register a DatasetSpec entry (parser, schema SemVer, natural keys, loader, routing patterns) rather than stitching metadata directly in ingestors. Update project docs referencing RVU parser wiring to point at `rvu_spec.py`.
+
+**Why it matters:** The registry eliminates switch statements in ingestors, improves schema registration and validation reuse, and enables other datasets to follow the same plug-in pattern without bespoke router code.
+
 ### 6.3 Schema Contract Format
 
 Schema contracts use JSON format defined in `cms_pricing/ingestion/contracts/`:
@@ -283,6 +294,13 @@ Schema contracts use JSON format defined in `cms_pricing/ingestion/contracts/`:
 **Schema Registry:** `cms_pricing/ingestion/contracts/schema_registry.py`
 
 **Validation:** Schema validation runs AFTER parsing, BEFORE enrichment
+
+#### 6.3.1 Schema Registry Bootstrap & Caching (Phase 2)
+
+- **Service:** `cms_pricing/ingestion/services/schema_service.py` now owns registration of RVU schema contracts via `SchemaService.bootstrap_rvu_schemas(registry)` to enforce "register once" guardrails.
+- **Caching:** `SchemaService.cache_schemas(registry, dataset_to_schema)` materialises a per-ingestor cache (e.g., `{"pprrvu": "cms_pprrvu"}`) so validation does not repeatedly query the registry.
+- **Ingestor Behaviour:** `RVUIngestor.__init__` calls the service to bootstrap schemas and retain the cache before normalize/validate run (`cms_pricing/ingestion/ingestors/rvu_ingestor.py:160-185`).
+- **Documentation Requirement:** Parser onboarding checklists should reference the schema service when adding new datasets to ensure contracts are registered and cached consistently.
 
 ### 6.4 Metadata Injection Contract
 

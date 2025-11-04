@@ -94,6 +94,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - 2025-02-14
+
+- **Phase 2 Documentation Refresh Complete** - Comprehensive documentation updates for RVUIngestor refactoring
+  - **Task 1: Catalog Phase 2 Deltas** - Complete code delta catalog in `artifacts/phase2_documentation_refresh_plan.md` (lines 24-49)
+    - New modules/patterns documented: DatasetSpec registry (`spec.py`, `rvu_spec.py`), stage helpers (`stages/{land,validate,normalize,enrich,publish}.py`), schema service (`services/schema_service.py`), adapter/loader modules (`rvu_adapter.py`, `rvu_loaders.py`)
+    - Runtime behavior changes cataloged: partition updates (`vintage_date`, `effective_from`), property aliases, schema drift defaults, enrichment toggle (`ENABLE_ENRICHMENT`), validation rule aggregation from DatasetSpecs
+    - Verification anchors recorded: compileall success, pytest E2E blocker (Signal 11) documented
+  - **Task 2: Standards/Runbooks Updated** - All PRD documentation refreshed with Phase 2 architecture patterns
+    - **STD-parser-contracts-prd-v2.0.md** (lines 254-304, 51 lines): Added DatasetSpec Registry section (§6.2.1)
+      - DatasetSpec pattern and routing flow documented
+      - Schema bootstrap guidance (`SchemaService.bootstrap_rvu_schemas`) added
+      - Schema caching notes (`SchemaService.cache_schemas`) documented
+      - Future parser PRD requirements specified
+    - **STD-data-architecture-prd-v1.0.md** (lines 83-108, 26 lines): Phase 2 architecture updates
+      - Enrichment feature flag (`ENABLE_ENRICHMENT`) documented
+      - Mandatory partition columns (`vintage_date`, `effective_from`) specified
+      - Shared Stage Modules & Services section (§3.7) added
+      - ServiceFactory integration patterns documented
+      - Schema drift defaults explained
+    - **STD-data-architecture-impl-v1.0.md** (lines 88-100, 13 lines): Implementation guidance updated
+      - Modular stage helpers section (§1.3) added
+      - `execute_*` functions documented
+      - DatasetSpec onboarding checklist provided
+      - ServiceFactory integration patterns documented
+
+### Changed - 2025-11-04
+
+- **Land stage compatibility guard** – RVU ingestor now returns `raw_directory` at the release root and surfaces a new `raw_files_directory` pointer for the actual files directory, keeping Phase 2 stage executors untouched while restoring legacy expectations (`cms_pricing/ingestion/ingestors/rvu_ingestor.py:457-470`, `tests/ingestors/test_rvu_ingestor_e2e.py`, `tests/ingestors/test_rvu_ingestor_simple_e2e.py`).
+  - **Task 3: Verification & Next Actions** - Documentation refresh status tracked
+    - Verification: `python -m compileall cms_pricing/ingestion/ingestors/rvu_ingestor.py` ✅ PASSED
+    - Pytest E2E blocker: `pytest tests/ingestors/test_rvu_ingestor_e2e.py::TestRVUIngestorE2E::test_dis_validate_stage` blocked by sandbox Signal 11 issue (documented)
+    - Future work: DatasetSpec pattern propagation to MPFS/OPPS PRDs, architecture diagram refresh
+  - **Deliverable:** `artifacts/phase2_documentation_refresh_plan.md` updated with Task 3 summary, completion status, and TODO list for follow-ups
+  - **Impact:** All Phase 2 refactoring patterns now documented in standards, providing clear guidance for future ingestor development
+
 ### Added - 2025-10-29
 - Captured Render ingestion guardrails in `prds/RUN-render-deployment-prd-v1.0.md` and `prds/RUN-openapi-docs-maintenance-v1.0.md`, and tightened scraper/data architecture PRDs following the RVU production dry-run that surfaced HTML downloads masquerading as ZIPs and missing reference metadata serialization.
 

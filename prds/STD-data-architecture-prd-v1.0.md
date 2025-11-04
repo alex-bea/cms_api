@@ -83,19 +83,28 @@ summary: "Normalize stage must tolerate state bleed, perform two-pass REST OF ST
 ### 3.5 Enrich
 - Join to `/ref/` reference tables (e.g., Census crosswalks, Gazetteer centroids, FIPS codes).
 - Apply tie‑breaker logic where mappings are one‑to‑many; compute `mapping_confidence`.
+- Honour operational feature flags (e.g., `ENABLE_ENRICHMENT`) so enrichment can be temporarily disabled without altering normalize/publish contracts; when disabled, emit pass-through frames and surface a metric explaining the bypass.
+- Use the shared enrichment stage module (`cms_pricing/ingestion/stages/enrich.py`) backed by the Reference Data Service to keep lookup logic consistent across ingestors.
 
 **Transformation Boundary:** Enrich stage handles all reference lookups and derivations (FIPS from names, ZIP→locality). See **STD-data-architecture-impl §1.3** for decision tree and examples.
 
 **Reference Data Modes:** See **STD-data-architecture-impl §4.2** for dual-mode reference access (inline vs curated) and publish gates.
 
 ### 3.6 Publish (Curated)
-- Snapshot tables partitioned by `vintage_date` and optionally `effective_from`.
+- Snapshot tables partitioned by `vintage_date` and `effective_from` (Phase 2 RVU change) unless a dataset explicitly documents a different temporal key.
 - Publish **Latest‑Effective Views** using window functions over `effective_from DESC`.
 - Generate export artifacts (Parquet/CSV) and **API caches** as needed.
 - **API Readiness**: Support both header and query param for digest pins; header takes precedence
   - Header: `X-Dataset-Digest: sha256:…`
   - Query: `?digest=sha256:…`
   - Selection rule: if no digest provided, choose Latest ≤ valuation_date (per dataset)
+
+### 3.7 Shared Stage Modules & Services (Phase 2)
+- **Stage Executors:** Land/Validate/Normalize/Enrich/Publish stages are implemented in reusable modules (`cms_pricing/ingestion/stages/*.py`). Ingestors call `execute_land`, `execute_validate`, etc., reducing bespoke stage logic.
+- **DatasetSpec Registry:** Ing resters resolve dataset behaviour (parser, schema, natural keys, loader, validation/business rules, filename patterns) via DatasetSpec objects (`cms_pricing/ingestion/datasets/spec.py`, RVU registry at `cms_pricing/ingestion/datasets/rvu_spec.py`).
+- **Service Factory:** Shared services (`ServiceFactory`) initialise observability, quarantine, reference data, schema registry, and validation components on demand, keeping orchestration thin.
+- **Schema Drift Defaults:** Ingestors seed `schema_drift_config` during `__init__` with safe defaults; publish stage injects drift detection callbacks instead of ad-hoc helpers.
+- **Documentation Impact:** Dataset PRDs should link to their DatasetSpec definitions; architecture diagrams should reflect stage-module boundaries and shared service interactions.
 
 ## 4. Storage Layout
 ```

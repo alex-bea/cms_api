@@ -10,7 +10,10 @@ Per DIS standards and PRD alignment:
 import re
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Any, Dict
+from pandas import DataFrame
+
 from ..contracts.ingestor_spec import ValidationRule
+from ..validators.validation_engine import ValidationResult
 
 
 @dataclass
@@ -34,7 +37,8 @@ class DatasetSpec:
     - Schema contract ID (SemVer per §12.2)
     - Natural keys (per DIS §2)
     - Database loader function (idempotent upserts per DIS §7.2)
-    - Validation and enrichment rules
+    - Validation rules (boolean/structural checks) and enrichment rules
+    - Business rules (ValidationResult-based validators per dataset)
     - File routing patterns
     
     Specs are pure data structures (no business logic) to enable
@@ -48,6 +52,7 @@ class DatasetSpec:
     validation_rules: List[ValidationRule] = field(default_factory=list)
     enrichment_rules: List[EnrichmentRule] = field(default_factory=list)
     filename_patterns: List[str] = field(default_factory=list)  # For file discovery
+    business_rules: List[Callable[[DataFrame], ValidationResult]] = field(default_factory=list)
     
     def route_file(self, filename: str, file_head: Optional[bytes] = None) -> bool:
         """
@@ -91,4 +96,3 @@ class DatasetSpec:
         if match:
             return match.group(1)
         return "unknown"
-

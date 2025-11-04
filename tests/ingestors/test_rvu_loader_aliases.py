@@ -1,23 +1,25 @@
 import uuid
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pandas as pd
-import pytest
 
-from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor
+from cms_pricing.ingestion.datasets.rvu_loaders import (
+    load_gpci_data,
+    load_locality_data,
+    load_oppscap_data,
+    load_pprrvu_data,
+)
 
 
-def _make_ingestor(tmp_path: Path) -> tuple[RVUIngestor, MagicMock]:
-    """Create an RVUIngestor with a mocked DB session so loader helpers can be exercised in isolation."""
+def _make_session() -> MagicMock:
+    """Return a DB session mock with the interfaces used by loader helpers."""
     session = MagicMock()
     nested = MagicMock()
     nested.__enter__.return_value = None
     nested.__exit__.return_value = False
     session.begin_nested.return_value = nested
-
-    ingestor = RVUIngestor(output_dir=str(tmp_path), db_session=session)
-    return ingestor, session
+    session.execute.return_value = None
+    return session
 
 
 def _extract_records(session: MagicMock) -> list[dict]:
@@ -26,8 +28,8 @@ def _extract_records(session: MagicMock) -> list[dict]:
     return session.bulk_insert_mappings.call_args[0][1]
 
 
-def test_gpci_loader_aliases(tmp_path):
-    ingestor, session = _make_ingestor(tmp_path)
+def test_gpci_loader_aliases():
+    session = _make_session()
     df = pd.DataFrame(
         [
             {
@@ -42,7 +44,7 @@ def test_gpci_loader_aliases(tmp_path):
         ]
     )
 
-    inserted = ingestor._load_gpci_data(df, uuid.uuid4(), batch_id="test")
+    inserted = load_gpci_data(df, uuid.uuid4(), batch_id="test", db_session=session)
     assert inserted == 1
     records = _extract_records(session)
     assert records[0]["work_gpci"] == 1.088
@@ -50,8 +52,8 @@ def test_gpci_loader_aliases(tmp_path):
     assert records[0]["mp_gpci"] == 0.445
 
 
-def test_oppscap_loader_aliases(tmp_path):
-    ingestor, session = _make_ingestor(tmp_path)
+def test_oppscap_loader_aliases():
+    session = _make_session()
     df = pd.DataFrame(
         [
             {
@@ -66,7 +68,7 @@ def test_oppscap_loader_aliases(tmp_path):
         ]
     )
 
-    inserted = ingestor._load_oppscap_data(df, uuid.uuid4(), batch_id="test")
+    inserted = load_oppscap_data(df, uuid.uuid4(), batch_id="test", db_session=session)
     assert inserted == 1
     records = _extract_records(session)
     assert records[0]["hcpcs_code"] == "99213"
@@ -75,8 +77,8 @@ def test_oppscap_loader_aliases(tmp_path):
     assert records[0]["price_nonfac"] == 67.80
 
 
-def test_locality_loader_aliases(tmp_path):
-    ingestor, session = _make_ingestor(tmp_path)
+def test_locality_loader_aliases():
+    session = _make_session()
     df = pd.DataFrame(
         [
             {
@@ -89,7 +91,7 @@ def test_locality_loader_aliases(tmp_path):
         ]
     )
 
-    inserted = ingestor._load_locality_data(df, uuid.uuid4(), batch_id="test")
+    inserted = load_locality_data(df, uuid.uuid4(), batch_id="test", db_session=session)
     assert inserted == 1
     records = _extract_records(session)
     assert records[0]["state"] == "CALIFORNIA"
@@ -97,8 +99,8 @@ def test_locality_loader_aliases(tmp_path):
     assert records[0]["county_name"] == "SAN FRANCISCO"
 
 
-def test_pprrvu_loader_normalises_modifier(tmp_path):
-    ingestor, session = _make_ingestor(tmp_path)
+def test_pprrvu_loader_normalises_modifier():
+    session = _make_session()
     df = pd.DataFrame(
         [
             {
@@ -114,7 +116,7 @@ def test_pprrvu_loader_normalises_modifier(tmp_path):
         ]
     )
 
-    inserted = ingestor._load_pprrvu_data(df, uuid.uuid4(), batch_id="test")
+    inserted = load_pprrvu_data(df, uuid.uuid4(), batch_id="test", db_session=session)
     assert inserted == 1
     records = _extract_records(session)
     assert records[0]["hcpcs_code"] == "99213"

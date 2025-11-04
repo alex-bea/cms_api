@@ -1,6 +1,11 @@
 """
 Land stage module for DIS pipeline.
 
+Phase 2 Refactoring Context:
+    - Step 5: Stage integration
+      • Plan: artifacts/phase2_step5_detailed_plan.md
+      • Verification: artifacts/phase2_step5_verification_report.md
+
 Per DIS §3.2: Download and store raw files, create manifests, handle guidance documents.
 This module extracts landing logic from ingestors for reuse across datasets.
 """
@@ -67,6 +72,8 @@ def is_guidance_file(file_type: str) -> bool:
     return file_type in GUIDANCE_FILE_TYPES
 
 
+# Phase 2 Step 5: Stage integration extraction
+# See: artifacts/phase2_step5_detailed_plan.md
 async def execute_land(
     release_id: str,
     source_files: List[SourceFile],
@@ -304,4 +311,3 @@ async def execute_land(
             "release_id": release_id,
             "error": str(e)
         }
-
