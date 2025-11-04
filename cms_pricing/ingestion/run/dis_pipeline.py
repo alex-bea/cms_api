@@ -237,6 +237,24 @@ class DISPipeline:
         
         logger.info("Enriching data", dataset=self.ingestor.dataset_name)
         
+        # Use ingestor's enrich method if available (preferred pattern)
+        if hasattr(self.ingestor, 'enrich'):
+            try:
+                enrich_result = await self.ingestor.enrich(adapted_batch)
+                # Extract enriched_data from result dict
+                if isinstance(enrich_result, dict):
+                    enriched_data = enrich_result.get("enriched_data", {})
+                    # Record enrichment results
+                    if self.config.enable_observability:
+                        total_records = enrich_result.get("record_count", sum(len(df) for df in enriched_data.values()) if enriched_data else 0)
+                        self.observability_collector.record_enrichment_results({
+                            "enrichment_count": total_records
+                        })
+                    return enriched_data
+            except Exception as e:
+                logger.error("Ingestor enrich method failed, falling back to legacy pattern", error=str(e))
+        
+        # Fallback to legacy pattern if enrich() method not available or failed
         # Load reference data (this would be implemented based on dataset needs)
         ref_data = await self._load_reference_data()
         
@@ -251,11 +269,14 @@ class DISPipeline:
                 quality_metrics={}
             )
             
-            # Apply enrichment rules
-            enricher_func = self.ingestor.enricher
-            enriched_df = enricher_func(stage_frame, ref_data)
-            
-            enriched_data[table_name] = enriched_df
+            # Apply enrichment rules (if enricher property exists and is callable)
+            enricher_func = getattr(self.ingestor, 'enricher', None)
+            if enricher_func and callable(enricher_func):
+                enriched_df = enricher_func(stage_frame, ref_data)
+                enriched_data[table_name] = enriched_df
+            else:
+                # No enricher available, pass through data unchanged
+                enriched_data[table_name] = df
         
         # Record enrichment results
         if self.config.enable_observability:
