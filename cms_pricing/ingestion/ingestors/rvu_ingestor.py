@@ -458,7 +458,11 @@ class RVUIngestor(BaseDISIngestor):
 
     @property
     def enricher(self):
-        return self._enrich_data_sync
+        """Enricher function for use by DISPipeline - returns None as enrichment is handled by execute_enrich"""
+        # Enrichment is handled by the shared execute_enrich stage function
+        # This property exists for BaseDISIngestor interface compliance
+        # but the actual enrichment happens in the enrich() method
+        return None
 
     @property
     def outputs(self) -> OutputSpec:
