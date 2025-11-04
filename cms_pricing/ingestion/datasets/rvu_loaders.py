@@ -511,7 +511,8 @@ def load_locality_data(
     # Ensure state is exactly 2 characters (enforce DB constraint)
     df["state"] = df["state"].str[:2].str.upper()
     
-    df["fee_schedule_area"] = _string_column(df, "fee_schedule_area", max_len=128)
+    # fee_schedule_area has a String(10) constraint in the database
+    df["fee_schedule_area"] = _string_column(df, "fee_schedule_area", max_len=10)
     df["county_name"] = _string_column(df, "county_name", max_len=128)
 
     df = df[
