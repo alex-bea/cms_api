@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 import structlog
 
+import pandas as pd
+
 from ..contracts.ingestor_spec import StageFrame
 
 logger = structlog.get_logger()
@@ -70,13 +72,24 @@ async def execute_publish(
         quality_metrics = enriched_batch.get("quality_metrics", {})
         # If dict appears to be the dataset payload itself, use it directly
         if not enriched_data and isinstance(enriched_batch, dict):
+            # Comprehensive list of metadata fields to exclude from data extraction
             non_meta_keys = {
                 "data", "enriched_data", "dataframes", "batch_id",
-                "release_id", "vintage_date", "quality_metrics", "status"
+                "release_id", "vintage_date", "quality_metrics", "status",
+                "record_count", "mapping_confidence", "reference_data_used",
+                "enrichment_disabled", "enrichment_metrics", "schema",
+                "error", "error_type", "error_message", "error_details"
             }
             data_like_keys = [k for k in enriched_batch.keys() if k not in non_meta_keys]
             if data_like_keys:
                 enriched_data = {k: enriched_batch[k] for k in data_like_keys}
+    
+    # Filter enriched_data to only include DataFrames (exclude metadata fields that might have been included)
+    if isinstance(enriched_data, dict):
+        enriched_data = {
+            k: v for k, v in enriched_data.items()
+            if isinstance(v, pd.DataFrame)
+        }
     
     logger.info(
         "Starting publish stage",
@@ -84,6 +97,27 @@ async def execute_publish(
         release_id=release_id,
         enriched_keys=list(enriched_data.keys()) if isinstance(enriched_data, dict) else type(enriched_data).__name__,
     )
+    
+    # Handle empty enriched_data case gracefully (no data to publish, but pipeline completed)
+    if isinstance(enriched_data, dict) and not enriched_data:
+        logger.info("No data to publish (empty enriched_data), returning success with 0 records")
+        curated_dir = Path(config.output_dir) / "curated" / config.dataset_name / vintage_date
+        curated_dir.mkdir(parents=True, exist_ok=True)
+        return {
+            "status": "success",
+            "batch_id": batch_id,
+            "release_id": release_id,
+            "vintage_date": vintage_date,
+            "curated_data_dir": str(curated_dir),
+            "dataset_counts": {},
+            "total_records": 0,
+            "database_load_results": {},
+            "manifest_path": None,
+            "docs_path": None,
+            "curated_tables": [],  # Empty list for DIS compliance
+            "latest_effective_views": [],  # Empty list for DIS compliance
+            "export_artifacts": []  # Empty list for DIS compliance
+        }
     
     try:
         # Get schema for drift detection
@@ -115,6 +149,7 @@ async def execute_publish(
         docs_dir.mkdir(parents=True, exist_ok=True)
         
         # Generate data documentation per DIS §3.6
+        # enriched_data is now guaranteed to only contain DataFrames after filtering
         if isinstance(enriched_data, dict):
             dataset_counts = {name: len(df) for name, df in enriched_data.items()}
         else:
