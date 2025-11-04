@@ -320,6 +320,43 @@ class RVUIngestor(BaseDISIngestor):
             )
         return files
 
+    def _manifest_entry_to_source_file(self, entry: dict) -> Optional[SourceFile]:
+        """Convert a manifest entry to a SourceFile object."""
+        try:
+            filename = entry.get("filename")
+            url = entry.get("url")
+            if not filename or not url:
+                return None
+            content_type = entry.get("content_type") or "application/octet-stream"
+            expected_size = entry.get("size_bytes")
+            checksum = entry.get("sha256")
+            last_modified_raw = entry.get("last_modified")
+            last_modified_dt = None
+            if isinstance(last_modified_raw, str):
+                try:
+                    last_modified_dt = datetime.fromisoformat(last_modified_raw)
+                except ValueError:
+                    last_modified_dt = None
+            metadata = entry.get("metadata") or {}
+
+            source_file = SourceFile(
+                url=url,
+                filename=filename,
+                content_type=content_type,
+                expected_size_bytes=expected_size,
+                last_modified=last_modified_dt,
+                checksum=checksum,
+                metadata=metadata,
+            )
+            # Derive file type for downstream logic
+            source_file.file_type = metadata.get("file_type") or infer_file_type_from_name(
+                filename, content_type
+            )
+            return source_file
+        except Exception as e:
+            logger.debug("Failed to convert manifest entry to SourceFile", error=str(e), entry=entry)
+            return None
+
     async def _discover_source_files_async(self) -> List[SourceFile]:
         """Async source file discovery using scraper as primary method"""
         logger.info("Starting source file discovery using scraper")
