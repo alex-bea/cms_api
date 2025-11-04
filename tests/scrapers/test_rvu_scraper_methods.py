@@ -92,16 +92,20 @@ def test_extract_downloads_from_detail_builds_metadata(scraper):
 @pytest.mark.asyncio
 async def test_validate_download_url_accepts_zip(scraper):
     """Validation should accept ZIP payloads and surface metadata."""
-    mock_client = AsyncMock()
+    # Use size >= 1MB to pass validation (real RVU ZIP files are typically 10-100MB)
     mock_response = Mock(
         status_code=200,
         headers={
             "content-type": "application/zip",
-            "content-length": "2048",
+            "content-length": "2097152",  # 2MB - above 1MB threshold
             "content-disposition": 'attachment; filename="rvu25a.zip"',
         },
     )
-    mock_client.head.return_value = mock_response
+    # Create AsyncMock client with head() and get() methods properly mocked
+    # (get() is used as fallback if head() is inconclusive)
+    mock_client = AsyncMock()
+    mock_client.head = AsyncMock(return_value=mock_response)
+    mock_client.get = AsyncMock(return_value=mock_response)
 
     is_valid, content_type, size_bytes = await scraper._validate_download_url(
         "https://example.com/rvu25a.zip",
@@ -110,7 +114,7 @@ async def test_validate_download_url_accepts_zip(scraper):
 
     assert is_valid is True
     assert content_type == "application/zip"
-    assert size_bytes == 2048
+    assert size_bytes == 2097152  # 2MB
     mock_client.head.assert_awaited_once()
 
 
