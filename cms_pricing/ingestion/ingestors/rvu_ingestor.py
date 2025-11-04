@@ -336,13 +336,11 @@ class RVUIngestor(BaseDISIngestor):
             current_year = datetime.now().year
             scraped_files = await self.scraper.scrape_rvu_files(current_year, current_year)
             
-            # Filter to latest files only
+            # Note: scraper already returns files for specified year range
+            # No additional filtering needed since we're querying current year only
             if scraped_files:
-                latest_files = self._filter_latest_files(scraped_files)
-                scraped_files = latest_files
-                logger.info("Filtered to latest files", 
-                           original_count=len(scraped_files), 
-                           latest_count=len(latest_files))
+                logger.info("Found scraped files", 
+                           count=len(scraped_files))
             
             # Convert scraped files to SourceFile objects
             source_files = []
