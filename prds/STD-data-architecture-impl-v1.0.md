@@ -986,6 +986,18 @@ def __init__(self, output_dir: str = "./data/ingestion/mpfs", db_session: Any = 
 
 ## 3. Schema Contracts & Validation
 
+> **Phase 2 at a glance**
+
+| Pattern | Primary Modules | Doc Reference |
+|---------|-----------------|---------------|
+| SchemaService bootstrap & caching | `services/schema_service.py`, `ingestors/rvu_ingestor.py` | §3.2.1 |
+| DatasetSpec loaders & dispatcher | `datasets/rvu_loaders.py`, `datasets/rvu_spec.py`, `stages/publish.py` | §3.2.2 |
+| Adapter extraction via DatasetSpec | `datasets/rvu_adapter.py`, `datasets/rvu_spec.py`, `stages/normalize.py` | §3.2.3 |
+| ValidationService + business rules | `datasets/rvu_spec.py`, `services/validation_service.py` | §3.3 |
+| Stage executors & thin orchestrator | `stages/*.py`, `ingestors/rvu_ingestor.py` | §1.3, §1.6 |
+
+For the full change log see `docs/release_notes/phase2_refactor.md`.
+
 ### 3.1 Schema Contract Storage
 
 **Location:** `cms_pricing/ingestion/contracts/`
@@ -1062,295 +1074,65 @@ schema_registry.register_contract("cms.newdataset", "1.0", contract_json)
 
 **Location:** `cms_pricing/ingestion/services/schema_service.py`
 
-SchemaService provides centralized, idempotent schema registration. This pattern was introduced in Phase 2 refactoring to extract schema registration logic from individual ingestors into a reusable service.
-
-**Basic Usage:**
+SchemaService centralises schema registration and caching. Typical RVU usage:
 
 ```python
-from cms_pricing.ingestion.services import ServiceFactory, ServiceConfig
-
-# In ingestor __init__:
-service_config = ServiceConfig(
-    output_dir=output_dir,
-    dataset_name=self.dataset_name,
-    enable_schema_registry=True,
-    lazy_init=True,
-    db_session=db_session
-)
+service_config = ServiceConfig(dataset_name=self.dataset_name, output_dir=output_dir, enable_schema_registry=True, lazy_init=True)
 self.services = ServiceFactory(service_config)
-
-# Bootstrap schemas (idempotent - safe to call multiple times)
 self.services.schema_service.bootstrap_rvu_schemas(self.services.schema_registry)
-```
-
-**Schema Caching for Performance:**
-
-SchemaService provides a static method to cache schemas, improving validation performance by 5-10%:
-
-```python
-# After bootstrap, cache schemas for performance
-dataset_to_schema = {
-    "pprrvu": "cms_pprrvu",
-    "gpci": "cms_gpci",
-    "oppscap": "cms_oppscap",
-    "anescf": "cms_anescf",
-    "localitycounty": "cms_localitycounty"
-}
 self._cached_schemas = SchemaService.cache_schemas(
     self.services.schema_registry,
-    dataset_to_schema
+    {"pprrvu": "cms_pprrvu", "gpci": "cms_gpci", "oppscap": "cms_oppscap", "anescf": "cms_anescf", "localitycounty": "cms_localitycounty"}
 )
-
-# Use cached schemas in validation (e.g., in normalize stage)
-# Pass cached_schemas parameter to stage modules for optimal performance
 ```
 
-**Benefits:**
-- **Idempotent registration:** Safe to call `bootstrap_rvu_schemas()` multiple times; subsequent calls are no-ops
-- **Centralized schema definitions:** All RVU schema contracts defined in one place (reusable across ingestors)
-- **Performance optimization:** Schema caching eliminates repeated registry lookups (5-10% validation speedup)
-- **Single source of truth:** Schema contracts managed consistently across all ingestors
+**Benefits**
+- Idempotent registration (safe re-entry, no double-register errors)
+- One place to maintain schema contracts, reusable across ingestors
+- Cached schemas remove repeat registry lookups (≈5‑10 % validation gain)
 
-**Migration Path:**
-- **Old ingestors:** Replace `_register_schema_contracts()` method (typically 300+ lines) with `SchemaService.bootstrap_*_schemas()` call
-- **New ingestors:** Use SchemaService from start; no need to inline schema registration logic
+**Migration path**
+1. Delete legacy `_register_schema_contracts()` helpers.
+2. Instantiate `ServiceFactory` and call `schema_service.bootstrap_*()` in `__init__`.
+3. Cache schema IDs and pass `cached_schemas` into normalize/validate stages.
 
-**Reference Implementation:**
-- See `cms_pricing/ingestion/ingestors/rvu_ingestor.py:160-185` for complete example
-- See `cms_pricing/ingestion/services/schema_service.py` for SchemaService implementation
-- See `artifacts/phase2_completion_plan.md` §Step 1 for refactoring details
+**References:** `rvu_ingestor.py:160-185`, `services/schema_service.py`.
 
 ### 3.2.2 DatasetSpec.loader Pattern (Phase 2)
 
 **Location:** `cms_pricing/ingestion/datasets/{dataset}_loaders.py`
 
-Database loaders are extracted from ingestors into dedicated modules. This pattern was introduced in Phase 2 refactoring to separate database persistence logic from orchestration logic.
+Database loaders now live in `{dataset}_loaders.py` modules. Each DatasetSpec points to its loader, and publish stages call a dispatcher (e.g., `load_rvu_dataframes`) that creates the `Release` record and executes the dataset loaders in chunks.
 
-**Loader Function Signature:**
+**Benefits**
+- Shared bulk-insert / natural-key dedupe logic across datasets.
+- Loader functions are easy to unit test in isolation.
+- Ingestors focus on orchestration only; persistence lives in one place.
 
-Each dataset has a dedicated loader function with the following signature:
+**Migration path**
+1. Move `_load_*_data()` helpers into `{dataset}_loaders.py` and expose a dispatcher.
+2. Set `DatasetSpec.loader` to the extracted functions.
+3. Update publish stage to call the dispatcher rather than inline SQL.
 
-```python
-def load_pprrvu_data(
-    df: pd.DataFrame,
-    release_uuid: uuid.UUID,
-    batch_id: str,
-    db_session: Session
-) -> int:
-    """
-    Load PPRRVU DataFrame to database with natural key deduplication.
-    
-    Args:
-        df: Parsed DataFrame with canonical schema
-        release_uuid: UUID for the Release record
-        batch_id: Batch identifier for tracking
-        db_session: SQLAlchemy database session
-    
-    Returns:
-        Number of rows successfully loaded
-    """
-    # 1. Natural key deduplication (remove duplicates based on natural keys)
-    # 2. Prepare data for bulk insert (type coercion, null handling)
-    # 3. Bulk insert with chunking (BULK_INSERT_CHUNK_SIZE = 5000)
-    # 4. Return row count
-```
-
-**Dispatcher Function:**
-
-A dispatcher function coordinates loading multiple datasets:
-
-```python
-def load_rvu_dataframes(
-    dataframes: Dict[str, pd.DataFrame],
-    release_id: str,
-    batch_id: str,
-    vintage_date: str,
-    db_session: Session
-) -> Dict[str, Any]:
-    """
-    Persist all RVU dataset DataFrames to the database using dataset-specific loaders.
-    
-    Creates a Release record and routes to DatasetSpec.loader for each dataset.
-    """
-    # 1. Create Release record
-    # 2. Iterate datasets and call spec.loader() for each
-    # 3. Handle transaction rollback on failure
-    # 4. Return summary statistics
-```
-
-**DatasetSpec Integration:**
-
-Loaders are referenced via DatasetSpec, enabling declarative composition:
-
-```python
-# In datasets/rvu_spec.py:
-from .rvu_loaders import load_pprrvu_data, load_gpci_data, load_oppscap_data, ...
-
-RVU_DATASETS = {
-    "pprrvu": DatasetSpec(
-        dataset_id="pprrvu",
-        parser=parse_pprrvu,
-        schema_id="cms_pprrvu",
-        natural_keys=["hcpcs", "modifier"],
-        loader=load_pprrvu_data,  # Function reference
-        # ... other fields
-    ),
-    "gpci": DatasetSpec(
-        dataset_id="gpci",
-        loader=load_gpci_data,  # Function reference
-        # ...
-    )
-}
-
-# In publish stage (or rvu_loaders.py):
-from ..datasets.rvu_loaders import load_rvu_dataframes
-
-load_results = load_rvu_dataframes(
-    dataframes=enriched_data,
-    release_id=release_id,
-    batch_id=batch_id,
-    vintage_date=vintage_date,
-    db_session=db_session
-)
-```
-
-**Benefits:**
-- **Reusable across ingestors:** MPFS, OPPS can use the same loader pattern
-- **Testable in isolation:** Loader functions can be unit tested independently
-- **Clear separation of concerns:** Ingestor handles orchestration; loaders handle persistence
-- **Consistent bulk insert patterns:** All loaders use the same chunking and transaction handling
-
-**Migration Path:**
-- Extract `_load_*_data()` methods (typically 80+ lines each) to `{dataset}_loaders.py`
-- Create dispatcher function `load_{dataset}_dataframes()` that routes via DatasetSpec
-- Update DatasetSpec.loader to reference extracted functions
-- Update publish stage to use DatasetSpec.loader pattern instead of inline logic
-
-**Reference Implementation:**
-- See `cms_pricing/ingestion/datasets/rvu_loaders.py` for complete loader implementations
-- See `cms_pricing/ingestion/datasets/rvu_spec.py` for DatasetSpec loader wiring
-- See `cms_pricing/ingestion/stages/publish.py` for publish stage integration
-- See `artifacts/phase2_completion_plan.md` §Step 2 for refactoring details
+**References:** `datasets/rvu_loaders.py`, `datasets/rvu_spec.py`, `stages/publish.py`.
 
 ### 3.2.3 Adapter Extraction Pattern (Phase 2)
 
 **Location:** `cms_pricing/ingestion/datasets/{dataset}_adapter.py`
 
-Adapters (parsing logic) are extracted from ingestors into dedicated modules. This pattern was introduced in Phase 2 refactoring to separate parsing/routing logic from orchestration logic.
+Adapters handle file routing + parsing in `{dataset}_adapter.py`. DatasetSpec decides which parser to run, and normalize stages default to the shared adapter when none is passed.
 
-**Adapter Function Signature:**
+**Benefits**
+- Eliminates hand-written `_classify_inner_file()` logic; routing is declarative via DatasetSpec.
+- Normalise stage simply calls `adapter_func(raw_batch)`; ingestors keep a 10‑line delegate.
+- Easy to write unit tests for adapters without touching ingestors.
 
-```python
-def adapt_rvu_raw_data(
-    raw_batch: RawBatch,
-    dataset_specs: Dict[str, DatasetSpec] = None,
-    schema_registry: Any = None,
-    release_id_override: Optional[str] = None,
-    batch_id_override: Optional[str] = None,
-    catchall_pattern: str = DEFAULT_CATCHALL_PATTERN,
-    observability_collector: Optional[Any] = None,
-    output_dir: Optional[str] = None,
-    dataset_name: str = "cms_rvu",
-    derive_release_context: Optional[Callable] = None,
-) -> AdaptedBatch:
-    """
-    Parse raw RVU ZIP files into canonical DataFrames using DatasetSpec routing.
-    
-    Uses DatasetSpec.route_file() for file classification instead of hardcoded logic.
-    Uses DatasetSpec.parser() for parser invocation instead of dict lookup.
-    Generates schema contracts using DatasetSpec.schema_id.
-    """
-    # 1. Route files using spec.route_file() (replaces _classify_inner_file())
-    # 2. Extract ZIP contents
-    # 3. Invoke parsers using spec.parser() (replaces hardcoded dict lookup)
-    # 4. Generate schema contracts using spec.schema_id
-    # 5. Return AdaptedBatch with parsed dataframes
-```
+**Migration path**
+1. Move `_adapt_raw_data_sync()` into `{dataset}_adapter.py`.
+2. Use `DatasetSpec.route_file()` + `DatasetSpec.parser` instead of hardcoded mappings.
+3. Update normalize stage to accept an `adapter_func` (defaulting to the shared adapter).
 
-**DatasetSpec Integration:**
-
-Adapters use DatasetSpec for routing and parser selection:
-
-```python
-# In datasets/rvu_adapter.py:
-from .rvu_spec import RVU_DATASETS, route_file_to_rvu_spec
-
-def adapt_rvu_raw_data(raw_batch, dataset_specs=RVU_DATASETS, ...):
-    for file_info in raw_batch.files:
-        # Route file using DatasetSpec (replaces hardcoded classification)
-        spec = route_file_to_rvu_spec(file_info.filename)
-        if spec:
-            # Invoke parser using DatasetSpec (replaces dict lookup)
-            parse_result = spec.parser(file_obj, filename, metadata)
-            # Generate schema contract using DatasetSpec
-            schema_id = spec.schema_id
-            # ...
-```
-
-**Normalize Stage Integration:**
-
-Stage modules accept adapter functions as parameters, defaulting to shared adapters:
-
-```python
-# In stages/normalize.py:
-from ..datasets.rvu_adapter import adapt_rvu_raw_data
-
-async def execute_normalize(
-    validated_batch: Any,
-    raw_batch: Optional[RawBatch],
-    config: NormalizeConfig,
-    adapter_func: Optional[Callable] = None,  # Optional adapter function
-    # ...
-):
-    if raw_batch:
-        # Use provided adapter or default to rvu_adapter
-        if adapter_func is None:
-            adapter_func = adapt_rvu_raw_data  # Default adapter
-        
-        adapted_batch = adapter_func(raw_batch, ...)
-```
-
-**Ingestor Integration:**
-
-Ingestors delegate to adapter modules via thin delegate methods:
-
-```python
-# In RVUIngestor:
-def _adapt_raw_data_sync(self, raw_batch: RawBatch) -> AdaptedBatch:
-    """Thin delegate (12 lines, down from 429 lines)"""
-    from ..datasets.rvu_adapter import adapt_rvu_raw_data
-    
-    return adapt_rvu_raw_data(
-        raw_batch,
-        dataset_specs=RVU_DATASETS,
-        schema_registry=self.services.schema_registry,
-        release_id_override=self.current_release_id,
-        catchall_pattern=self.CATCHALL_RVU_PATTERN,
-        observability_collector=self.services.observability_collector,
-        output_dir=self.output_dir,
-        dataset_name=self.dataset_name,
-        derive_release_context=self._derive_release_context,
-    )
-```
-
-**Benefits:**
-- **Reusable across ingestors:** MPFS, OPPS can use the same adapter pattern
-- **DatasetSpec-based routing:** No hardcoded classification logic (filename patterns in DatasetSpec)
-- **Testable in isolation:** Adapter functions can be unit tested independently
-- **Consistent parsing patterns:** All adapters follow the same structure and conventions
-
-**Migration Path:**
-- Extract `_adapt_raw_data_sync()` method (typically 400+ lines) to `{dataset}_adapter.py`
-- Replace hardcoded routing (`_classify_inner_file()`) with `DatasetSpec.route_file()`
-- Replace parser dict lookup (`self._dataset_parsers[dataset_key]`) with `DatasetSpec.parser()`
-- Update normalize stage to use adapter module (with default parameter for backward compatibility)
-
-**Reference Implementation:**
-- See `cms_pricing/ingestion/datasets/rvu_adapter.py` for complete adapter implementation
-- See `cms_pricing/ingestion/datasets/rvu_spec.py` for DatasetSpec routing logic
-- See `cms_pricing/ingestion/stages/normalize.py` for normalize stage integration
-- See `cms_pricing/ingestion/ingestors/rvu_ingestor.py` for thin delegate pattern
-- See `artifacts/phase2_completion_plan.md` §Step 3 for refactoring details
+**References:** `datasets/rvu_adapter.py`, `datasets/rvu_spec.py`, `stages/normalize.py`, `rvu_ingestor.py` thin delegate.
 
 ### 3.3 Validation Rules & Business Rules (Phase 2)
 
