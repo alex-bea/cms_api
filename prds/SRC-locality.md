@@ -130,6 +130,19 @@ The **CMS Locality-County Crosswalk** (file `25LOCCO.txt`) maps Medicare Adminis
 - CSV may have UTF-8 BOM (EF BB BF)
 - Parser auto-detects and handles both
 
+### 2.5 Loader Alignment
+
+The publish loader (`_load_locality_data`) writes to legacy columns expected by the `locality_counties` table. Before insert we now copy the raw parser fields into those legacy names:
+
+| Parser column   | Loader column        | Notes |
+|-----------------|----------------------|-------|
+| `locality_code` | `locality_id`        | Copied prior to zero-padding |
+| `state_name`    | `state`              | Uppercased; rows lacking state are dropped |
+| `fee_area`      | `fee_schedule_area`  | String truncated to 128 chars if necessary |
+| `county_names`  | `county_name`        | Combined county list retained |
+
+Rows missing `state` or `county_name` are filtered out so database NOT NULL constraints remain satisfied.
+
 ---
 
 ## 3. Parser Implementation

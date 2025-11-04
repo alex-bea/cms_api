@@ -1,7 +1,10 @@
 # Phase 2.8: Documentation & Rollout Plan
 
+> **Status:** ✅ Completed 2024-12-12  
+> All deliverables in this plan have already shipped and are reflected in code and readiness docs.
+
 ## Overview
-This plan covers documenting the provenance fields added in Phase 2 across OpenAPI schemas, endpoint documentation, and readiness tracking.
+This plan covered documenting the provenance fields added in Phase 2 across OpenAPI schemas, endpoint documentation, and readiness tracking.
 
 ## 1. OpenAPI Schema Documentation
 
@@ -193,4 +196,3 @@ async def price_plan(...):
 - Phase 2.1-2.7 must be complete (migration, models, ingestion, engines, service layer, tests)
 - FastAPI application running for `/docs` and `/openapi.json` validation
 - Documentation standards from `prds/STD-api-docs-prd-v1.0.md`
-

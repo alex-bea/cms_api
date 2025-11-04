@@ -196,6 +196,21 @@ ALIAS_MAP = {
 
 **Critical CMS Typo:** "NON-FACILTY" (not "NON-FACILITY") - See §5.1
 
+### 3.4 Loader Alignment
+
+During publish, `_load_oppscap_data` still writes to `hcpcs_code`, `proc_status`, `price_fac`, `price_nonfac`.  
+The loader now copies the parser columns below before numeric coercion to preserve compatibility with legacy schemas.
+
+| Parser column       | Loader column  | Notes                                  |
+|---------------------|----------------|----------------------------------------|
+| `hcpcs`             | `hcpcs_code`   | Present in CSV/TXT exports             |
+| `status`            | `proc_status`  | Alias handles both `procstat`/`status` |
+| `facility_price`    | `price_fac`    | Standardized spelling before insert    |
+| `nonfacility_price` | `price_nonfac` | Handles CMS typo “non-facilty”         |
+
+**Post-ingestion check:**  
+`select count(*) filter (where hcpcs_code is null) from opps_caps;` should return `0`.
+
 ---
 
 ## 4. Validation Rules
@@ -777,4 +792,3 @@ Before implementing OPPSCAP parser:
 ---
 
 **End of SRC-oppscap.md v1.0**
-

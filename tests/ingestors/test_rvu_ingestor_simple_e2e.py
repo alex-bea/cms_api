@@ -49,9 +49,9 @@ class TestRVUIngestorSimpleE2E:
         return data_dir
     
     @pytest.fixture
-    def rvu_ingestor(self, test_data_dir):
+    def rvu_ingestor(self, test_data_dir, scraper):
         """Create RVU ingestor for testing"""
-        return RVUIngestor(str(test_data_dir / "ingested_data"))
+        return RVUIngestor(str(test_data_dir / "ingested_data"), scraper=scraper)
     
     @pytest.fixture
     def scraper(self, test_data_dir):
@@ -131,7 +131,8 @@ class TestRVUIngestorSimpleE2E:
         )
 
         # Raw ZIP should land in raw directory.
-        raw_dir = Path(result["raw_directory"]) / "files"
+        raw_files_dir = result.get("raw_files_directory") or str(Path(result["raw_directory"]) / "files")
+        raw_dir = Path(raw_files_dir)
         assert (raw_dir / zip_sf.filename).exists()
 
         # Guidance docs should be copied under docs/cms_rvu/<release_id>/raw.

@@ -19,6 +19,7 @@ import structlog
 
 from .cms_rvu_scraper import CMSRVUScraper
 from ..ingestors.rvu_ingestor import RVUIngestor
+from ..managers.historical_data_manager import HistoricalDataManager
 from ..quarantine.dis_quarantine import QuarantineManager
 from ..metadata.discovery_manifest import DiscoveryManifest, DiscoveryManifestStore
 
@@ -54,8 +55,15 @@ class ScraperCLI:
         self.manifest_store = DiscoveryManifestStore(Path(manifest_dir), prefix="cms_rvu_manifest")
         
         # Initialize components
-        self.scraper = CMSRVUScraper(str(self.output_dir / "scraped_data"))
-        self.ingestor = RVUIngestor(str(self.output_dir / "ingested_data"))
+        scraped_root = self.output_dir / "scraped_data"
+        historical_root = self.output_dir / "historical_data"
+        self.scraper = CMSRVUScraper(str(scraped_root))
+        self.historical_manager = HistoricalDataManager(str(historical_root))
+        self.ingestor = RVUIngestor(
+            str(self.output_dir / "ingested_data"),
+            scraper=self.scraper,
+            historical_manager=self.historical_manager,
+        )
         
         # Initialize compliance components
         self.quarantine_manager = QuarantineManager(str(self.output_dir / "quarantine"))

@@ -85,6 +85,85 @@ All ingestors MUST extend `BaseDISIngestor` and implement the required methods a
 | **Enrich** | `enrich_stage(adapted_batch) -> StageFrame` | Adapted batch | Enriched stage frame | `ingestor_spec.py:260` |
 | **Publish** | `publish_stage(stage_frame) -> Dict[str, Any]` | Stage frame | Publish result metadata | `ingestor_spec.py:270` |
 
+### 1.3 Modular Stage Helpers (Phase 2)
+
+**Shared Executors:** Each stage has a reusable helper (`cms_pricing/ingestion/stages/{land,validate,normalize,enrich,publish}.py`) exposing `execute_*` functions. Ingestors call these helpers instead of duplicating stage logic.
+
+**Service Factory Integration:** Use `cms_pricing/ingestion/services/__init__.py:ServiceFactory` to lazily initialise observability, quarantine, reference data, schema, and validation services for the dataset.
+
+**Stage Module Pattern:**
+
+Stage modules are the authoritative source of truth for stage logic. Ingestors delegate to these modules rather than implementing inline logic:
+
+```python
+# In ingestor:
+from ..stages import execute_normalize, NormalizeConfig
+
+async def normalize(self, validated_batch, raw_batch):
+    config = NormalizeConfig(
+        output_dir=self.output_dir,
+        dataset_name=self.dataset_name,
+        enable_schema_validation=True
+    )
+    
+    result = await execute_normalize(
+        validated_batch=validated_batch,
+        raw_batch=raw_batch,
+        config=config,
+        adapter_func=None,  # Defaults to rvu_adapter when None
+        schema_registry=self.services.schema_registry,
+        validation_engine=self.services.validation_service.engine,
+        cached_schemas=self._cached_schemas,  # Performance optimization (5-10% speedup)
+        dataset_schema_map=self._dataset_schema_map
+    )
+    return result
+```
+
+**Performance Optimizations:**
+
+Stage modules accept cached schemas and dataset mappings to improve validation performance:
+
+```python
+# Pre-cache schemas in ingestor __init__:
+self._cached_schemas = SchemaService.cache_schemas(
+    self.services.schema_registry,
+    self._dataset_schema_map
+)
+
+# Pass to stage modules for optimal performance:
+result = await execute_normalize(
+    # ... other params ...
+    cached_schemas=self._cached_schemas,  # Eliminates repeated registry lookups
+    dataset_schema_map=self._dataset_schema_map  # Maps dataset names to schema IDs
+)
+```
+
+**Benefits:**
+- **Stage modules are authoritative:** All stage logic lives in reusable modules, not in ingestors
+- **Reusable across ingestors:** MPFS, OPPS, and other ingestors can use the same stage modules
+- **Consistent stage behavior:** Uniform stage execution across all datasets
+- **Performance optimizations:** Schema caching and vectorized operations improve speed by 5-10%
+- **Testable in isolation:** Stage modules can be unit tested independently of ingestors
+
+**Feature Flags:** Honour pipeline toggles (e.g., `ENABLE_ENRICHMENT`) when wiring stages; shared helpers accept config flags to support dry runs.
+
+**Schema Drift Callbacks:** Provide a drift-detector callable (see `cms_pricing/ingestion/ingestors/rvu_ingestor.py:705-707`) so publish stage can emit drift metrics without inlining drift logic.
+
+**Testing Guidance:** When adding a new dataset, unit-test stage modules directly and wire them through the ingestor to ensure compatibility with base contracts.
+
+**Migration Path:**
+- Replace inline stage logic with `execute_*` calls from stage modules
+- Pass adapter/loader functions as parameters (defaults provided for backward compatibility)
+- Remove duplicate stage helpers from ingestors
+- Use module-level functions from stage modules instead of instance methods
+
+### 1.4 DatasetSpec Registry (Phase 2 update)
+- **Definition:** `cms_pricing/ingestion/datasets/spec.py` defines `DatasetSpec` and `EnrichmentRule` dataclasses capturing parser reference, schema ID, natural keys, loader, validation/business rules, enrichment rules, and filename patterns.
+- **RVU example:** `cms_pricing/ingestion/datasets/rvu_spec.py` registers specs for PPRRVU, GPCI, OPPS Cap, ANES CF, and Locality. `route_file_to_rvu_spec(filename)` returns the matching spec for adapter/loader orchestration.
+- **Usage pattern:** Ingestors build stage configs by iterating `RVU_DATASETS.values()` (see `cms_pricing/ingestion/ingestors/rvu_ingestor.py:372-378`) instead of hardcoding per-dataset switches.
+- **Onboarding checklist:** New datasets MUST add a DatasetSpec entry (parser, schema SemVer, natural keys, loader, validation rules, enrichment rules, routing patterns) and register schemas via `SchemaService.bootstrap_*`.
+- **Documentation impact:** Dataset PRDs should reference their DatasetSpec modules; implementation guides should illustrate spec extension rather than direct parser lookups.
+
 ### 1.2.3 Quarter Vintage Encoding (Added 2025-10-20)
 
 **Standard:** CMS Letter Format (A, B, C, D)
@@ -907,6 +986,18 @@ def __init__(self, output_dir: str = "./data/ingestion/mpfs", db_session: Any = 
 
 ## 3. Schema Contracts & Validation
 
+> **Phase 2 at a glance**
+
+| Pattern | Primary Modules | Doc Reference |
+|---------|-----------------|---------------|
+| SchemaService bootstrap & caching | `services/schema_service.py`, `ingestors/rvu_ingestor.py` | §3.2.1 |
+| DatasetSpec loaders & dispatcher | `datasets/rvu_loaders.py`, `datasets/rvu_spec.py`, `stages/publish.py` | §3.2.2 |
+| Adapter extraction via DatasetSpec | `datasets/rvu_adapter.py`, `datasets/rvu_spec.py`, `stages/normalize.py` | §3.2.3 |
+| ValidationService + business rules | `datasets/rvu_spec.py`, `services/validation_service.py` | §3.3 |
+| Stage executors & thin orchestrator | `stages/*.py`, `ingestors/rvu_ingestor.py` | §1.3, §1.6 |
+
+For the full change log see `docs/release_notes/phase2_refactor.md`.
+
 ### 3.1 Schema Contract Storage
 
 **Location:** `cms_pricing/ingestion/contracts/`
@@ -979,60 +1070,91 @@ schema_registry.register_contract("cms.newdataset", "1.0", contract_json)
 - **Use vectorized pandas operations** for domain validation (`.isin()` instead of set operations)
 - For datasets with 10k+ rows, vectorized validation is 10-50x faster than row-by-row or set-based approaches
 
-### 3.3 Validation Rule Declaration
+### 3.2.1 SchemaService Pattern (Phase 2)
 
-**Pattern from `mpfs_ingestor.py:152-185`:**
+**Location:** `cms_pricing/ingestion/services/schema_service.py`
+
+SchemaService centralises schema registration and caching. Typical RVU usage:
 
 ```python
-def _create_validation_rules(self) -> List[ValidationRule]:
-    """Create validation rules for dataset"""
-    return [
-        ValidationRule(
-            name="Required columns present",
-            description="All required columns must be present",
-            validator_func=self._validate_required_columns,
-            severity=ValidationSeverity.CRITICAL
-        ),
-        ValidationRule(
-            name="HCPCS code format",
-            description="HCPCS codes must be 5 characters",
-            validator_func=self._validate_hcpcs_format,
-            severity=ValidationSeverity.ERROR
-        ),
-        ValidationRule(
-            name="Status code valid",
-            description="Status codes must be valid CMS codes",
-            validator_func=self._validate_status_codes,
-            severity=ValidationSeverity.ERROR
-        ),
-        ValidationRule(
-            name="Row count drift",
-            description="Row count within ±15% of previous vintage",
-            validator_func=self._validate_row_count_drift,
-            severity=ValidationSeverity.WARNING
-        ),
-        ValidationRule(
-            name="RVU sum validation",
-            description="RVU components sum correctly for payable items",
-            validator_func=self._validate_rvu_sums,
-            severity=ValidationSeverity.ERROR
-        )
-    ]
-
-def _validate_required_columns(self, df: pd.DataFrame) -> List[ValidationResult]:
-    """Validate required columns are present"""
-    required = ["hcpcs", "rvu_work", "rvu_pe_nonfac", "rvu_pe_fac", "rvu_malp"]
-    missing = [col for col in required if col not in df.columns]
-    
-    if missing:
-        return [ValidationResult(
-            rule_id="required_columns",
-            severity=ValidationSeverity.CRITICAL,
-            message=f"Missing required columns: {', '.join(missing)}",
-            failed_count=len(missing)
-        )]
-    return []
+service_config = ServiceConfig(dataset_name=self.dataset_name, output_dir=output_dir, enable_schema_registry=True, lazy_init=True)
+self.services = ServiceFactory(service_config)
+self.services.schema_service.bootstrap_rvu_schemas(self.services.schema_registry)
+self._cached_schemas = SchemaService.cache_schemas(
+    self.services.schema_registry,
+    {"pprrvu": "cms_pprrvu", "gpci": "cms_gpci", "oppscap": "cms_oppscap", "anescf": "cms_anescf", "localitycounty": "cms_localitycounty"}
+)
 ```
+
+**Benefits**
+- Idempotent registration (safe re-entry, no double-register errors)
+- One place to maintain schema contracts, reusable across ingestors
+- Cached schemas remove repeat registry lookups (≈5‑10 % validation gain)
+
+**Migration path**
+1. Delete legacy `_register_schema_contracts()` helpers.
+2. Instantiate `ServiceFactory` and call `schema_service.bootstrap_*()` in `__init__`.
+3. Cache schema IDs and pass `cached_schemas` into normalize/validate stages.
+
+**References:** `rvu_ingestor.py:160-185`, `services/schema_service.py`.
+
+### 3.2.2 DatasetSpec.loader Pattern (Phase 2)
+
+**Location:** `cms_pricing/ingestion/datasets/{dataset}_loaders.py`
+
+Database loaders now live in `{dataset}_loaders.py` modules. Each DatasetSpec points to its loader, and publish stages call a dispatcher (e.g., `load_rvu_dataframes`) that creates the `Release` record and executes the dataset loaders in chunks.
+
+**Benefits**
+- Shared bulk-insert / natural-key dedupe logic across datasets.
+- Loader functions are easy to unit test in isolation.
+- Ingestors focus on orchestration only; persistence lives in one place.
+
+**Migration path**
+1. Move `_load_*_data()` helpers into `{dataset}_loaders.py` and expose a dispatcher.
+2. Set `DatasetSpec.loader` to the extracted functions.
+3. Update publish stage to call the dispatcher rather than inline SQL.
+
+**References:** `datasets/rvu_loaders.py`, `datasets/rvu_spec.py`, `stages/publish.py`.
+
+### 3.2.3 Adapter Extraction Pattern (Phase 2)
+
+**Location:** `cms_pricing/ingestion/datasets/{dataset}_adapter.py`
+
+Adapters handle file routing + parsing in `{dataset}_adapter.py`. DatasetSpec decides which parser to run, and normalize stages default to the shared adapter when none is passed.
+
+**Benefits**
+- Eliminates hand-written `_classify_inner_file()` logic; routing is declarative via DatasetSpec.
+- Normalise stage simply calls `adapter_func(raw_batch)`; ingestors keep a 10‑line delegate.
+- Easy to write unit tests for adapters without touching ingestors.
+
+**Migration path**
+1. Move `_adapt_raw_data_sync()` into `{dataset}_adapter.py`.
+2. Use `DatasetSpec.route_file()` + `DatasetSpec.parser` instead of hardcoded mappings.
+3. Update normalize stage to accept an `adapter_func` (defaulting to the shared adapter).
+
+**References:** `datasets/rvu_adapter.py`, `datasets/rvu_spec.py`, `stages/normalize.py`, `rvu_ingestor.py` thin delegate.
+
+### 3.3 Validation Rules & Business Rules (Phase 2)
+
+**Location:** `cms_pricing/ingestion/datasets/{dataset}_spec.py` + `cms_pricing/ingestion/services/validation_service.py`
+
+DatasetSpec now owns all validation logic:
+
+- `validation_rules`: simple boolean validators for format/structure checks (e.g., `validate_hcpcs_format`).
+- `business_rules`: functions returning `ValidationResult` for rich reporting (e.g., natural-key uniqueness).
+- `ValidationService.register_dataset_business_rules(spec)` wires business rules automatically during ingestor init.
+
+**Benefits:**
+- Single source of truth for dataset validation.
+- Declarative registration via ValidationService (no manual wiring).
+- Works across ingestors; detailed `ValidationResult` output when needed.
+
+**Migration Path:**
+1. Move existing `_register_validation_rules()` helpers into DatasetSpec (`validation_rules` / `business_rules`).
+2. Remove inline ValidationEngine wiring; use `self.services.validation_service` instead.
+3. Trim obsolete ingestor methods once specs carry the logic (~100 lines saved in RVU).
+
+**Reference Implementation:** `cms_pricing/ingestion/datasets/rvu_spec.py`, `cms_pricing/ingestion/services/validation_service.py`, `cms_pricing/ingestion/ingestors/rvu_ingestor.py:190-193`.
 
 ### 3.4 Reference Data Dependencies
 
@@ -1444,51 +1566,83 @@ Before starting:
 -  Sample data files available for testing
 -  Database schema designed (if new tables needed)
 
-### 6.2 Step 1: Create Ingestor Class
+### 6.2 Step 1: Create Ingestor Class (Thin Orchestrator Pattern - Phase 2)
+
+**Target:** Ingestors should be <1,000 lines (RVU achieved 990 lines, 76.7% reduction from 4,247)
 
 Create file: `cms_pricing/ingestion/ingestors/{dataset}_ingestor.py`
 
 ```python
 #!/usr/bin/env python3
 """
-{DATASET} DIS-Compliant Ingestor
+{DATASET} DIS-Compliant Ingestor - Thin Orchestrator Pattern
 Following STD-data-architecture-prd-v1.0
+
+Phase 2 Pattern: Ingestors delegate all logic to stage modules and shared services.
+Target: <1,000 lines (pure orchestration, no inline business logic).
 """
 
 import asyncio
-import hashlib
-import uuid
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 
-import pandas as pd
 import structlog
 
 from ..contracts.ingestor_spec import (
     BaseDISIngestor, SourceFile, RawBatch, AdaptedBatch, 
-    StageFrame, ValidationRule, OutputSpec, SlaSpec,
-    ReleaseCadence, DataClass, ValidationSeverity
+    StageFrame, OutputSpec, SlaSpec,
+    ReleaseCadence, DataClass
 )
 from ..scrapers.cms_{dataset}_scraper import CMS{Dataset}Scraper
-from ..validators.validation_engine import ValidationEngine
-from ..quarantine.dis_quarantine import QuarantineManager
-from ..observability.dis_observability import DISObservabilityCollector
+from ..services import ServiceFactory, ServiceConfig
+from ..stages import (
+    execute_land, LandConfig,
+    execute_validate, ValidateConfig,
+    execute_normalize, NormalizeConfig,
+    execute_enrich, EnrichConfig,
+    execute_publish, PublishConfig,
+)
+from ..datasets.{dataset}_spec import {DATASET}_DATASETS  # If using DatasetSpec pattern
 
 logger = structlog.get_logger()
 
 
 class {Dataset}Ingestor(BaseDISIngestor):
-    """DIS-compliant ingestor for {DATASET}"""
+    """DIS-compliant ingestor for {DATASET} - Thin orchestrator pattern"""
     
     def __init__(self, output_dir: str = "./data/ingestion/{dataset}", db_session: Any = None):
         super().__init__(output_dir, db_session)
         
-        # Initialize components
+        # Initialize shared services via factory (lazy initialization)
+        service_config = ServiceConfig(
+            output_dir=output_dir,
+            dataset_name=self.dataset_name,
+            enable_observability=True,
+            enable_quarantine=True,
+            enable_reference_data=True,
+            enable_validation=True,
+            enable_schema_registry=True,
+            lazy_init=True,
+            db_session=db_session
+        )
+        self.services = ServiceFactory(service_config)
+        
+        # Bootstrap schemas (if using SchemaService pattern)
+        # self.services.schema_service.bootstrap_{dataset}_schemas(self.services.schema_registry)
+        
+        # Cache schemas for performance (5-10% validation speedup)
+        # self._dataset_schema_map = {"dataset_name": "schema_id", ...}
+        # self._cached_schemas = self.services.schema_service.cache_schemas(
+        #     self.services.schema_registry, self._dataset_schema_map
+        # )
+        
+        # Register business rules from DatasetSpecs (if using DatasetSpec pattern)
+        # validation_service = self.services.validation_service
+        # for dataset_spec in {DATASET}_DATASETS.values():
+        #     validation_service.register_dataset_business_rules(dataset_spec)
+        
+        # Initialize scraper
         self.scraper = CMS{Dataset}Scraper(str(Path(self.output_dir) / "scraped"))
-        self.validation_engine = ValidationEngine()
-        self.quarantine_manager = QuarantineManager(str(Path(self.output_dir) / "quarantine"))
-        self.observability_collector = DISObservabilityCollector()
         
         # Configuration
         self._dataset_name = "{DATASET}"
@@ -1512,18 +1666,54 @@ class {Dataset}Ingestor(BaseDISIngestor):
             schema_evolution=True
         )
         
-        # Validation rules
-        self.validation_rules = self._create_validation_rules()
+        # Metadata tracking
+        self.current_release_id: Optional[str] = None
+        self.current_batch_id: Optional[str] = None
+    
+    # Stage methods delegate to stage modules (Phase 2 pattern)
+    async def land(self, release_id: str, source_files: Optional[List[SourceFile]] = None):
+        """Land stage - delegate to stage module"""
+        from ..stages import execute_land, LandConfig
         
-        # Pre-cache schema contracts for validation performance (optional but recommended)
-        # This eliminates repeated schema lookups during validation - saves 5-10% on validation time
-        self._cached_schemas = {}
-        if hasattr(self, 'schema_registry'):
-            dataset_to_schema = self._get_dataset_schema_mapping()  # Implement per ingestor
-            for dataset_name, schema_name in dataset_to_schema.items():
-                schema = self.schema_registry.get_contract(schema_name)
-                if schema:
-                    self._cached_schemas[dataset_name] = schema
+        config = LandConfig(
+            output_dir=self.output_dir,
+            dataset_name=self.dataset_name,
+            enable_guidance_extraction=True
+        )
+        
+        result = await execute_land(
+            release_id=release_id,
+            source_files=source_files or [],
+            config=config,
+            scraper=self.scraper,
+            observability_collector=self.services.observability_collector,
+            quarantine_manager=self.services.quarantine_manager
+        )
+        return result
+    
+    async def normalize(self, validated_batch, raw_batch):
+        """Normalize stage - delegate to stage module"""
+        from ..stages import execute_normalize, NormalizeConfig
+        
+        config = NormalizeConfig(
+            output_dir=self.output_dir,
+            dataset_name=self.dataset_name,
+            enable_schema_validation=True
+        )
+        
+        result = await execute_normalize(
+            validated_batch=validated_batch,
+            raw_batch=raw_batch,
+            config=config,
+            adapter_func=None,  # Defaults to shared adapter if None
+            schema_registry=self.services.schema_registry,
+            validation_engine=self.services.validation_service.engine,
+            cached_schemas=getattr(self, '_cached_schemas', None),
+            dataset_schema_map=getattr(self, '_dataset_schema_map', None)
+        )
+        return result
+    
+    # ... other stage methods follow same pattern
     
     @property
     def dataset_name(self) -> str:
@@ -2217,9 +2407,169 @@ pytest tests/ingestors/test_{dataset}_ingestor_e2e.py --cov=cms_pricing.ingestio
 
 ---
 
-## 10. Troubleshooting & Common Issues
+## 10. Migration Guide for Existing Ingestors (Phase 2)
 
-### 10.1 Discovery Issues
+**Purpose:** Guide for migrating monolithic ingestors (MPFS, OPPS) to thin orchestrator pattern.
+
+**Reference Implementation:** RVU ingester refactoring (Phase 2, Steps 1-7)
+- **Before:** 4,247 lines
+- **After:** 990 lines (76.7% reduction)
+- **Extracted:** ~1,585 lines to reusable modules
+
+### 10.1 Migration Steps (In Order)
+
+**Step 1: Create DatasetSpecs**
+- [ ] Define DatasetSpec for each dataset
+- [ ] Add parser references
+- [ ] Add schema IDs
+- [ ] Add natural keys
+- [ ] Add filename patterns
+- [ ] Add loader function references (will be extracted in Step 3)
+
+**Step 2: Extract Schema Registration**
+- [ ] Create `SchemaService` with `bootstrap_{dataset}_schemas()` method
+- [ ] Move schema contract definitions from ingestor to SchemaService
+- [ ] Update ingestor to call `self.services.schema_service.bootstrap_{dataset}_schemas()`
+- [ ] Remove `_register_schema_contracts()` method from ingestor (~300-400 lines)
+- [ ] Cache schemas for performance: `self._cached_schemas = SchemaService.cache_schemas(...)`
+
+**Step 3: Extract Database Loaders**
+- [ ] Move `_load_*_data()` methods to `{dataset}_loaders.py`
+- [ ] Create dispatcher function `load_{dataset}_dataframes()`
+- [ ] Update DatasetSpec.loader to reference extracted functions
+- [ ] Update publish stage to use `load_{dataset}_dataframes()` (or DatasetSpec.loader pattern)
+- [ ] Remove loader methods from ingestor (~400+ lines)
+
+**Step 4: Extract Adapter Logic**
+- [ ] Move `_adapt_raw_data_sync()` to `{dataset}_adapter.py`
+- [ ] Replace hardcoded routing (`_classify_inner_file()`) with `DatasetSpec.route_file()`
+- [ ] Replace parser dict lookup with `DatasetSpec.parser()`
+- [ ] Update normalize stage to use adapter module (default parameter for backward compatibility)
+- [ ] Remove adapter method from ingestor (~400-500 lines)
+
+**Step 5: Extract Business Rules**
+- [ ] Move business rule functions to DatasetSpec (create `_create_{dataset}_business_rules()` functions)
+- [ ] Distinguish between `validation_rules` (boolean) and `business_rules` (ValidationResult)
+- [ ] Use ValidationService for registration
+- [ ] Remove `_register_validation_rules()` method from ingestor (~100 lines)
+
+**Step 6: Integrate Stage Modules**
+- [ ] Replace inline stage logic with `execute_*` calls from stage modules
+- [ ] Remove duplicate stage helpers (e.g., `_land_with_provided_files()`, `_validate_parsed_dataframes()`)
+- [ ] Use module-level functions from stage modules instead of instance methods
+- [ ] Pass adapter/loader functions as parameters (defaults provided for backward compatibility)
+- [ ] Pass cached schemas to stage modules for performance (~290 lines removed)
+
+**Step 7: Final Cleanup**
+- [ ] Remove unused imports
+- [ ] Remove unused instance variables
+- [ ] Remove unused helper methods
+- [ ] Verify line count <1,000
+- [ ] Update docstrings with Phase 2 references
+
+### 10.2 Migration Checklist
+
+- [ ] DatasetSpecs created and tested
+- [ ] Schema registration extracted to SchemaService
+- [ ] Database loaders extracted to `{dataset}_loaders.py`
+- [ ] Adapter logic extracted to `{dataset}_adapter.py`
+- [ ] Business rules extracted to DatasetSpec
+- [ ] Stage modules integrated (all stages delegate to `execute_*` functions)
+- [ ] Line count <1,000 (target achieved)
+- [ ] All tests passing
+- [ ] PRD updated with new architecture
+- [ ] Performance verified (no regression, schema caching provides 5-10% speedup)
+
+### 10.3 Estimated Time
+
+- **MPFS:** 6-8 hours (similar complexity to RVU, multiple datasets)
+- **OPPS:** 6-8 hours (similar complexity to RVU, quarterly navigation)
+- **Other ingestors:** 4-6 hours (simpler, fewer datasets or single dataset)
+
+**Time Breakdown (per ingestor):**
+- Step 1 (DatasetSpecs): 1-1.5 hours
+- Step 2 (Schema Registration): 45 minutes
+- Step 3 (Database Loaders): 1.5-2 hours
+- Step 4 (Adapter Logic): 2 hours
+- Step 5 (Business Rules): 30 minutes
+- Step 6 (Stage Integration): 1 hour
+- Step 7 (Cleanup): 30 minutes
+- Testing & Verification: 1-2 hours
+
+### 10.4 Benefits of Migration
+
+**Maintainability:**
+- **Easier to understand:** Ingestors are pure orchestration (<1,000 lines)
+- **Easier to modify:** Logic lives in focused modules (single responsibility)
+- **Clearer separation:** Ingestor vs. stage modules vs. dataset-specific modules
+
+**Reusability:**
+- **Components shared:** Stage modules, adapters, loaders reusable across ingestors
+- **Consistent patterns:** Uniform architecture across all ingestors
+- **Faster development:** New ingestors can reuse existing components
+
+**Testability:**
+- **Isolated components:** Modules can be unit tested independently
+- **Easier mocking:** Thin dependencies (services, configs) easier to mock
+- **Faster tests:** Isolated tests run faster than full integration tests
+
+**Performance:**
+- **Schema caching:** 5-10% validation speedup (eliminates repeated registry lookups)
+- **Vectorized operations:** Stage modules use pandas vectorized operations
+- **Bulk operations:** Database loaders use bulk insert with chunking
+
+**Consistency:**
+- **Uniform patterns:** All ingestors follow same architecture
+- **Predictable structure:** Easy to find where logic lives
+- **Better onboarding:** New developers can understand any ingestor quickly
+
+### 10.5 Common Pitfalls & Solutions
+
+**Pitfall 1: Breaking Tests During Migration**
+- **Solution:** Keep thin delegate methods for backward compatibility
+- **Solution:** Test after each extraction step
+- **Solution:** Use feature flags if needed to toggle old/new behavior
+
+**Pitfall 2: Import Cycles**
+- **Solution:** ServiceFactory lazy initialization prevents circular imports
+- **Solution:** Use module-level functions instead of instance methods where possible
+- **Solution:** Import services at method level, not module level if needed
+
+**Pitfall 3: Performance Regression**
+- **Solution:** Pre-cache schemas in `__init__` (eliminates repeated lookups)
+- **Solution:** Use vectorized pandas operations instead of row iteration
+- **Solution:** Profile before/after to verify improvements
+
+**Pitfall 4: Missing Dependencies**
+- **Solution:** Pass all dependencies as parameters to extracted functions
+- **Solution:** Use ServiceFactory for shared services (consistent initialization)
+- **Solution:** Document all function signatures clearly
+
+**Pitfall 5: Incomplete Extraction**
+- **Solution:** Verify line count <1,000 after all steps
+- **Solution:** Remove all unused imports and methods
+- **Solution:** Check that all stage logic lives in stage modules
+
+### 10.6 Reference Resources
+
+- **Phase 2 Completion Plan:** `artifacts/phase2_completion_plan.md` (detailed step-by-step guide)
+- **RVU Reference Implementation:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py` (990 lines, completed migration)
+- **Step-by-Step Plans:**
+  - Step 1: `artifacts/phase2_completion_plan.md` §Step 1
+  - Step 2: `artifacts/phase2_completion_plan.md` §Step 2
+  - Step 3: `artifacts/phase2_step3_detailed_plan.md`
+  - Step 4: `artifacts/phase2_step4_detailed_plan.md`
+  - Step 5: `artifacts/phase2_step5_detailed_plan.md`
+  - Step 6: `artifacts/phase2_step6_detailed_plan.md`
+- **Verification Reports:**
+  - Step 4: `artifacts/phase2_step4_verification_report.md`
+  - Step 5: `artifacts/phase2_step5_verification_report.md`
+
+---
+
+## 11. Troubleshooting & Common Issues
+
+### 11.1 Discovery Issues
 
 **Problem:** Scraper not finding files
 
@@ -2237,7 +2587,7 @@ pytest tests/ingestors/test_{dataset}_ingestor_e2e.py --cov=cms_pricing.ingestio
 - Check output directory permissions
 - Verify manifest format matches schema
 
-### 10.2 Validation Failures
+### 11.2 Validation Failures
 
 **Problem:** All files failing validation
 
@@ -2322,4 +2672,3 @@ pytest tests/ingestors/test_{dataset}_ingestor_e2e.py --cov=cms_pricing.ingestio
 |------|---------|--------|---------|
 | 2025-10-15 | v1.0.1 | Data Engineering | Updated normalize stage example to show ParseResult return type per STD-parser-contracts v1.1. Parsers now return ParseResult(data, rejects, metrics); ingestor handles all file writes. Updated cross-reference to parser contracts v1.1 (64-char hashing, schema-driven precision, content sniffing). |
 | 2025-10-15 | v1.0 | Data Engineering | Initial implementation guide for DIS pipeline: interface reference, centralized components, schema contracts, operational patterns, implementation reference table, step-by-step guide, working examples, code templates, compliance checklist, and troubleshooting. |
-

@@ -157,6 +157,22 @@ ALIAS_MAP = {
 - Parentheses in headers (e.g., "(with 1.0 floor)") are preserved then mapped via aliases
 - Year prefix varies by release (2025, 2024, etc.)
 
+### 3.4 Loader Alignment
+
+The database loader (`cms_pricing/ingestion/ingestors/rvu_ingestor.py::_load_gpci_data`) still writes to legacy column
+names (`work_gpci`, `pe_gpci`, `mp_gpci`). To keep that path resilient to CMS header changes we copy the canonical
+parser columns over before coercing to float.
+
+| Parser column | Loader column | Notes |
+|---------------|---------------|-------|
+| `gpci_work`   | `work_gpci`   | Added explicitly in loader alias block (2025 CSV/XLSX naming) |
+| `gpci_pe`     | `pe_gpci`     | Same |
+| `gpci_mp`     | `mp_gpci`     | Same |
+
+**Operational check:** after an ingestion run, verify  
+`select count(*) filter (where work_gpci is null or pe_gpci is null or mp_gpci is null) from gpci_indices;`  
+should return `0`.
+
 ---
 
 ## 4. Business Rules & Validations
