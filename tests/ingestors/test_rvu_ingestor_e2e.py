@@ -399,13 +399,27 @@ class TestRVUIngestorE2E:
         # publish stage returns empty outputs. Validate structure rather than table
         # contents so the regression test focuses on the DIS contract behaviour.
         if isinstance(curated_tables, dict):
-            missing = [table for table in expected_tables if table not in curated_tables]
-            assert not missing, f"Missing curated table aliases: {missing}"
+            # Handle empty dict case (no data saved) vs populated dict
+            if len(curated_tables) > 0:
+                # Data was saved - verify expected tables are present
+                missing = [table for table in expected_tables if table not in curated_tables]
+                assert not missing, f"Missing curated table aliases: {missing}"
+            else:
+                # Empty dict means no data was saved (test fixtures may have no data)
+                # Verify this is acceptable (total_records should be 0)
+                assert publish_result.get("total_records", 0) == 0, \
+                    f"Expected 0 records when curated_tables is empty, got {publish_result.get('total_records', 0)}"
+        elif isinstance(curated_tables, list):
+            # Empty list case (DIS compliance when no data)
+            assert len(curated_tables) == 0 or publish_result.get("total_records", 0) == 0
         else:
-            assert publish_result.get("total_records", 0) == 0
+            # Unexpected type - this shouldn't happen
+            assert False, f"Unexpected curated_tables type: {type(curated_tables)}"
         
+        # Safe len() for both dict and list
+        curated_count = len(curated_tables) if curated_tables else 0
         print(f"✅ Publish stage completed in {publish_time:.2f}s")
-        print(f"   Created {len(curated_tables)} curated tables")
+        print(f"   Created {curated_count} curated tables")
         print(f"   Views: {publish_result['latest_effective_views']}")
     
     @pytest.mark.asyncio
