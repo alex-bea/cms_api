@@ -48,9 +48,12 @@ _STATE_NAME_TO_ABBR = {
     'SOUTH CAROLINA': 'SC', 'SOUTH DAKOTA': 'SD', 'TENNESSEE': 'TN', 'TEXAS': 'TX', 'UTAH': 'UT',
     'VERMONT': 'VT', 'VIRGINIA': 'VA', 'WASHINGTON': 'WA', 'WEST VIRGINIA': 'WV', 'WISCONSIN': 'WI',
     'WYOMING': 'WY', 'DISTRICT OF COLUMBIA': 'DC',
+    # US Territories
+    'PUERTO RICO': 'PR', 'AMERICAN SAMOA': 'AS', 'NORTHERN MARIANA ISLANDS': 'MP',
+    'NORTHERN MARIANAS': 'MP',  # Alternative name
+    'U.S. VIRGIN ISLANDS': 'VI', 'VIRGIN ISLANDS': 'VI', 'US VIRGIN ISLANDS': 'VI',
     # Handle compound names
     'HAWAII/GUAM': 'HI',  # Default to first state for compound names
-    'ALASKA': 'AK',
 }
 
 def _state_name_to_abbr(state_name: str) -> str:
