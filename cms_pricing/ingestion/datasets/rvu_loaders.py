@@ -35,6 +35,51 @@ logger = structlog.get_logger()
 
 BULK_INSERT_CHUNK_SIZE = 5000
 
+# State name to USPS 2-character abbreviation mapping
+_STATE_NAME_TO_ABBR = {
+    'ALABAMA': 'AL', 'ALASKA': 'AK', 'ARIZONA': 'AZ', 'ARKANSAS': 'AR', 'CALIFORNIA': 'CA',
+    'COLORADO': 'CO', 'CONNECTICUT': 'CT', 'DELAWARE': 'DE', 'FLORIDA': 'FL', 'GEORGIA': 'GA',
+    'HAWAII': 'HI', 'GUAM': 'GU', 'IDAHO': 'ID', 'ILLINOIS': 'IL', 'INDIANA': 'IN',
+    'IOWA': 'IA', 'KANSAS': 'KS', 'KENTUCKY': 'KY', 'LOUISIANA': 'LA', 'MAINE': 'ME',
+    'MARYLAND': 'MD', 'MASSACHUSETTS': 'MA', 'MICHIGAN': 'MI', 'MINNESOTA': 'MN', 'MISSISSIPPI': 'MS',
+    'MISSOURI': 'MO', 'MONTANA': 'MT', 'NEBRASKA': 'NE', 'NEVADA': 'NV', 'NEW HAMPSHIRE': 'NH',
+    'NEW JERSEY': 'NJ', 'NEW MEXICO': 'NM', 'NEW YORK': 'NY', 'NORTH CAROLINA': 'NC', 'NORTH DAKOTA': 'ND',
+    'OHIO': 'OH', 'OKLAHOMA': 'OK', 'OREGON': 'OR', 'PENNSYLVANIA': 'PA', 'RHODE ISLAND': 'RI',
+    'SOUTH CAROLINA': 'SC', 'SOUTH DAKOTA': 'SD', 'TENNESSEE': 'TN', 'TEXAS': 'TX', 'UTAH': 'UT',
+    'VERMONT': 'VT', 'VIRGINIA': 'VA', 'WASHINGTON': 'WA', 'WEST VIRGINIA': 'WV', 'WISCONSIN': 'WI',
+    'WYOMING': 'WY', 'DISTRICT OF COLUMBIA': 'DC',
+    # Handle compound names
+    'HAWAII/GUAM': 'HI',  # Default to first state for compound names
+    'ALASKA': 'AK',
+}
+
+def _state_name_to_abbr(state_name: str) -> str:
+    """Convert full state name to 2-character USPS abbreviation."""
+    if not state_name or pd.isna(state_name):
+        return ''
+    
+    # Normalize: uppercase, strip whitespace
+    state_upper = str(state_name).strip().upper()
+    
+    # Direct lookup
+    if state_upper in _STATE_NAME_TO_ABBR:
+        return _STATE_NAME_TO_ABBR[state_upper]
+    
+    # Handle compound names (e.g., "HAWAII/GUAM") - use first part
+    if '/' in state_upper:
+        first_part = state_upper.split('/')[0].strip()
+        if first_part in _STATE_NAME_TO_ABBR:
+            return _STATE_NAME_TO_ABBR[first_part]
+    
+    # Fallback: try to match by starting with state name
+    for state, abbr in _STATE_NAME_TO_ABBR.items():
+        if state_upper.startswith(state) or state.startswith(state_upper):
+            return abbr
+    
+    # Last resort: truncate to 2 characters (might be invalid, but prevents DB error)
+    logger.warning("Could not map state name to abbreviation", state_name=state_name, truncated=state_upper[:2])
+    return state_upper[:2] if len(state_upper) >= 2 else state_upper
+
 
 # Phase 2 Step 2: Database loader extraction
 # See: artifacts/phase2_completion_plan.md (§Step 2)
@@ -453,7 +498,16 @@ def load_locality_data(
     df["locality_id"] = locality_series
     df["locality_id"] = _string_column(df, "locality_id", max_len=10)
 
-    df["state"] = _string_column(df, "state", max_len=32, uppercase=True)
+    # Convert state_name to 2-character USPS abbreviation (required by DB schema)
+    if "state_name" in df.columns and "state" not in df.columns:
+        df["state"] = df["state_name"].apply(_state_name_to_abbr)
+    elif "state" in df.columns:
+        # If state already exists but contains full names, convert them
+        df["state"] = df["state"].apply(_state_name_to_abbr)
+    
+    # Ensure state is exactly 2 characters (enforce DB constraint)
+    df["state"] = df["state"].str[:2].str.upper()
+    
     df["fee_schedule_area"] = _string_column(df, "fee_schedule_area", max_len=128)
     df["county_name"] = _string_column(df, "county_name", max_len=128)
 
