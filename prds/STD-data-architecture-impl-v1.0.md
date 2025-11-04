@@ -802,7 +802,7 @@ Study these working examples:
 
 | Dataset | File | Pattern | Key Features |
 |---------|------|---------|--------------|
-| **MPFS** | `cms_pricing/ingestion/ingestors/mpfs_ingestor.py:55` | Composition | Reuses RVU scraper, creates curated views |
+| **MPFS** | `cms_pricing/ingestion/ingestors/mpfs_ingestor.py` | Snapshot Reuse | Reuses RVU/GPCI snapshots via `DatasetSnapshotService`, fetches CF via `ConversionFactorFetcher`, creates curated views |
 | **RVU** | `cms_pricing/ingestion/ingestors/rvu_ingestor.py:97` | Direct Links | Quarterly releases, fixed-width parsing |
 | **OPPS** | `cms_pricing/ingestion/ingestors/opps_ingestor.py:52` | Quarterly Navigation | AMA license handling, addenda |
 
@@ -944,10 +944,9 @@ enriched_data = enricher.enrich(data, reference_sources)
 def __init__(self, output_dir: str = "./data/ingestion/mpfs", db_session: Any = None):
     super().__init__(output_dir, db_session)
     
-    # Initialize scraper
-    self.scraper = CMSMPFSScraper(str(Path(self.output_dir) / "scraped"))
-    
-    # Initialize managers
+    # Initialize services
+    self.snapshot_service = DatasetSnapshotService()
+    self.cf_fetcher = ConversionFactorFetcher(str(Path(self.output_dir) / "raw"))
     self.historical_manager = HistoricalDataManager(str(Path(self.output_dir) / "historical"))
     self.schema_registry = schema_registry
     self.validation_engine = ValidationEngine()
@@ -1514,7 +1513,7 @@ Pipeline automatically monitors and alerts on SLA breaches.
 
 | Pattern | Dataset | File | Key Methods | Notes |
 |---------|---------|------|-------------|-------|
-| **Composition** | MPFS | `mpfs_ingestor.py:55` | `scrape_mpfs_files()` composes with RVU scraper | Reuses RVU discovery, adds CF/abstracts |
+| **Snapshot Reuse** | MPFS | `mpfs_ingestor.py` | `discover_source_files()` uses `DatasetSnapshotService` + `ConversionFactorFetcher` | Reuses RVU/GPCI snapshots, fetches CF artifacts |
 | **Direct Links** | RVU | `rvu_ingestor.py:97` | `discover_source_files()`, `land()` | Quarterly releases A/B/C/D |
 | **Quarterly Navigation** | OPPS | `opps_ingestor.py:52` | `discover_files()`, `_land_stage()` | Handles AMA license interstitial |
 | **Reference Data Join** | Geography | `cms_zip_locality_ingestor.py` | `_enrich_data()` | Census crosswalk joins |
@@ -1523,7 +1522,7 @@ Pipeline automatically monitors and alerts on SLA breaches.
 
 | Stage | Reference Implementation | Line | Key Pattern |
 |-------|-------------------------|------|-------------|
-| **Discovery** | `mpfs_ingestor.py` | 237-262 | Use scraper, return `List[SourceFile]` |
+| **Discovery** | `mpfs_ingestor.py` | TBD | Use `DatasetSnapshotService.get_latest_snapshot()` + `ConversionFactorFetcher.ensure_conversion_factor()`, return `List[SourceFile]` |
 | **Land** | `mpfs_ingestor.py` | 264-319 | Download files, calculate checksums, create `RawBatch` |
 | **Validate** | `mpfs_ingestor.py` | 321-365 | Structural + domain + statistical validation |
 | **Normalize** | `mpfs_ingestor.py` | 429-468 | Parse ZIP/CSV/Excel to DataFrames |

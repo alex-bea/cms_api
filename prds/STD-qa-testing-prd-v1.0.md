@@ -6,7 +6,8 @@ This document defines the **QA & Testing Standard (QTS)** that governs validatio
 **Status:** Draft v1.6 (proposed)  
 **Owners:** Quality Engineering & Platform Reliability  
 **Consumers:** Product, Engineering, Data, Ops  
-**Change control:** ADR + QA guild review + PR sign-off
+**Change control:** ADR + QA guild review + PR sign-off  
+**Last Reviewed:** 2025-11-04
 
 **Cross-References:**
 - **STD-parser-contracts-prd-v2.0.md:** Parser core contracts
@@ -218,6 +219,130 @@ git push
 ### 7.4 CI Gates
 - Block merge unless `tools/verify_source_map.py` exits with 0 for affected datasets.
 - Enforce JSON schema validation (or helper validation) for the latest manifests during CI.
+
+### 7.5 Validation Patterns (Phase 2)
+
+This section documents validation patterns established during Phase 2 RVU ingester refactoring, focusing on the distinction between simple validation rules and complex business rules, and how they are registered and executed.
+
+#### 7.5.1 Validation Rules vs Business Rules
+
+**Two Types of Validation Rules:**
+
+1. **`validation_rules`** (Simple Boolean Validators):
+   - **Type:** `List[ValidationRule]` where `ValidationRule` is a callable `(DataFrame) -> bool`
+   - **Purpose:** Structural and format validation (e.g., required columns present, data types correct)
+   - **Return:** Simple `True` (pass) or `False` (fail)
+   - **Example:**
+     ```python
+     def validate_hcpcs_format(df: pd.DataFrame) -> bool:
+         """Validate HCPCS codes are 5 characters."""
+         return df['hcpcs_code'].str.len().eq(5).all()
+     ```
+
+2. **`business_rules`** (Complex Validators):
+   - **Type:** `List[Callable[[DataFrame], ValidationResult]]`
+   - **Purpose:** Business logic validation that requires detailed feedback (e.g., natural key uniqueness, range checks)
+   - **Return:** `ValidationResult` object with `passed`, `message`, `details`, `severity`
+   - **Example:**
+     ```python
+     def validate_pprrvu_uniqueness(df: pd.DataFrame) -> ValidationResult:
+         """Validate PPRRVU natural key (hcpcs, modifier) uniqueness."""
+         duplicates = df.groupby(['hcpcs_code', 'modifier']).size()
+         duplicates = duplicates[duplicates > 1]
+         if len(duplicates) > 0:
+             return ValidationResult(
+                 passed=False,
+                 message=f"Found {len(duplicates)} duplicate natural keys",
+                 details={"duplicate_keys": duplicates.index.tolist()},
+                 severity=ValidationSeverity.ERROR
+             )
+         return ValidationResult(passed=True, message="Natural keys are unique")
+     ```
+
+**Comparison Table:**
+
+| Aspect | `validation_rules` | `business_rules` |
+|--------|-------------------|------------------|
+| **Return Type** | `bool` | `ValidationResult` |
+| **Complexity** | Simple checks | Complex business logic |
+| **Feedback** | Pass/fail only | Detailed messages and details |
+| **Use Case** | Format, structure, type checks | Uniqueness, ranges, cross-field validation |
+| **Registration** | Via `DatasetSpec.validation_rules` | Via `DatasetSpec.business_rules` |
+| **Execution** | ValidationEngine (structural validation) | ValidationEngine (business rule validation) |
+
+#### 7.5.2 ValidationService Registration Pattern
+
+**Pattern:** Business rules are registered via `ValidationService` during ingestor initialization, not manually in stage methods.
+
+**Implementation:**
+```python
+# In DatasetSpec (rvu_spec.py)
+def _create_pprrvu_business_rules() -> List[Callable[[pd.DataFrame], ValidationResult]]:
+    def validate_pprrvu_uniqueness(df: pd.DataFrame) -> ValidationResult:
+        # ... implementation ...
+    return [validate_pprrvu_uniqueness]
+
+RVU_DATASETS["pprrvu"] = DatasetSpec(
+    dataset_id="pprrvu",
+    # ... other fields ...
+    business_rules=_create_pprrvu_business_rules(),
+)
+
+# In Ingestor.__init__ (rvu_ingestor.py)
+validation_service = self.services.validation_service
+for dataset_spec in RVU_DATASETS.values():
+    validation_service.register_dataset_business_rules(dataset_spec)
+```
+
+**Benefits:**
+- **Single Source of Truth:** All validation rules defined in `DatasetSpec`
+- **Declarative Registration:** No manual wiring needed
+- **Auto-Registration:** Rules available before validation stage runs
+- **Reusable:** Same pattern works across all ingestors
+
+**Testing Pattern:**
+```python
+def test_business_rules_registered():
+    """Verify business rules are auto-registered during initialization."""
+    ingestor = RVUIngestor(output_dir="/tmp", db_session=mock_session)
+    # Rules should be registered via ValidationService
+    assert ingestor.services.validation_service.engine.has_business_rule("pprrvu", validate_pprrvu_uniqueness)
+```
+
+#### 7.5.3 Stage-Based Validation
+
+**Pattern:** Validation logic is owned by stage modules, not ingestors. The ingestor delegates to `execute_validate()`.
+
+**Architecture:**
+- **Validation Stage:** `stages/validate.py` contains all validation logic
+- **Ingestor Role:** Thin orchestrator that delegates via `stages.execute_validate()`
+- **Service Integration:** ValidationEngine accessed via `ServiceFactory`
+
+**Example:**
+```python
+# In RVUIngestor
+async def validate(self, validated_batch: Any = None) -> Dict[str, Any]:
+    """Delegate to shared validation stage."""
+    return await stages.execute_validate(
+        landed_batch=self.landed_batch,
+        config=ValidateConfig(...),
+        validation_engine=self.services.validation_engine,
+        schema_registry=self.services.schema_registry,
+    )
+```
+
+**Benefits:**
+- **Reusability:** Stage modules can be used by any ingestor
+- **Testability:** Stage logic can be tested independently
+- **Consistency:** Same validation logic across all ingestors
+- **Maintainability:** Single place to update validation logic
+
+**Reference Documentation:**
+- `STD-data-architecture-impl-v1.0.md` §1.4 - ValidationService & Business Rules Pattern
+- `STD-data-architecture-impl-v1.0.md` §1.5 - Stage Module Pattern
+- `DOC-master-catalog-prd-v1.0.md` §10 - Key Architectural Patterns
+
+---
 
 ## 8. Observability & Monitoring
 - **References:** STD-observability-monitoring-prd-v1.0 for comprehensive monitoring standards
@@ -1774,6 +1899,7 @@ Before shipping a normalization/enrichment pipeline, verify:
 
 | Version | Date | Summary | PR |
 |---------|------|---------|-----|
+| **1.7** | **2025-11-04** | **Validation patterns documentation (Phase 2 RVU refactoring).** Type: Non-breaking (guidance). **Added:** §7.5 "Validation Patterns (Phase 2)" with 3 subsections: 7.5.1 Validation Rules vs Business Rules (distinction between simple boolean validators and complex ValidationResult validators), 7.5.2 ValidationService Registration Pattern (auto-registration from DatasetSpec.business_rules), 7.5.3 Stage-Based Validation (validation logic owned by stage modules, not ingestors). **Includes:** Comparison table, code examples, testing patterns, and reference documentation links. **Motivation:** Phase 2 refactoring established new validation patterns that should be documented for consistency across ingestors. **Cross-Reference:** `STD-data-architecture-impl-v1.0.md` §1.4, `DOC-master-catalog-prd-v1.0.md` §10. | TBD |
 | **1.6** | **2025-10-18** | **Normalization & enrichment testing patterns (Locality Stage 2 learnings).** Type: Non-breaking (guidance). **Added:** Appendix H "Normalization & Enrichment Testing Patterns" with 6 subsections: H.1 Set-Logic Expansion Testing (ALL/EXCEPT/REST OF cardinality validation), H.2 Entity Disambiguation Testing (LSAD tie-breaking, hint-based preference), H.3 Reference Data Authority & Drift Detection (fingerprinting, checksum tracking), H.4 Quarantine SLO Enforcement (threshold ≤0.5%, artifact emission), H.5 Join Validation Patterns (E2E join rate ≥99.5%, duplicate NK checks), H.6 Canonical vs Matching Key Testing (dual-key pattern for normalized matching + canonical output). **Implementation Checklist:** H.8 with 8 validation points for normalization pipelines. **Practical Example:** H.9 documenting Locality Stage 2 (100% test pass rate, 2.3h implementation). **Cross-Reference:** STD-data-architecture-impl §1.3 (Two-Stage Transformation). **Motivation:** Stage 2 normalization introduced new testing challenges (set operations, disambiguation, reference data drift) not covered in parser-only patterns. **Impact:** Prevents 2-3h debugging per normalization pipeline; standardizes enrichment testing across all datasets. **Reference Implementation:** `tests/integration/test_locality_e2e.py` (6 E2E tests), `normalize_locality_fips.py` (authority fingerprint, quarantine SLO). | TBD |
 | **1.5** | **2025-10-17** | **Authentic source variance testing (Locality Phase 2 learnings).** Type: Non-breaking (new testing category). **Added:** §5.1.3 "Authentic Source Variance Testing" (threshold-based parity for real CMS files: NK overlap ≥98%, row variance ≤1% or ≤2 rows; Format Authority Matrix per vintage; Variance Report artifacts: missing/extra CSVs + summary JSON; `@pytest.mark.real_source` marker; `xfail(strict=True)` for ticketed mismatches only). **Clarified:** §5.1.2 applies to curated fixtures only. **Prohibited:** Blanket `skip` of parity tests. **Motivation:** Locality parser revealed real CMS files violate strict equality (XLSX ≠ TXT); previous approach weakened §5.1.2; new approach maintains curated fixture rigor while adding auditable real-source lane. **Impact:** Prevents silent data drift in real CMS files; diff artifacts enable root cause analysis; 98% threshold catches significant variance; future parsers have clear guidance. **Cross-Reference:** STD-parser-contracts §21.4 Step 2c. **Reference Implementation:** `tests/parsers/test_locality_parser.py::test_locality_parity_real_source`. | TBD |
 | **1.2** | **2025-10-16** | **Parser testing patterns (CF parser learnings).** Type: Non-breaking (guidance). **Added:** Appendix G "Parser Testing Patterns" with 5 subsections: G.1 Error Message Testing (rich messages with examples), G.2 Metrics Structure Testing (guardrail warnings structure), G.3 Rejects Structure Testing (validation context requirements), G.4 String/Numeric Validation Pattern (canonicalize_numeric_col handling), G.5 Test Development Workflow (implementation-first approach). **Cross-Reference:** STD-parser-contracts v1.7 §21.2. **Motivation:** CF parser debug session revealed critical test expectation patterns that weren't documented. **Impact:** Prevents 1-2 hours debugging per parser from test-implementation mismatch; standardizes test quality across all parsers. **Source:** CF parser debug session 2025-10-16. | TBD |

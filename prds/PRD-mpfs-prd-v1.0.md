@@ -1,6 +1,6 @@
 # PRD: MPFS Ingest (RVU / GPCI / CF / Indicators)
 
-**Status:** Draft v1.0  
+**Status:** Draft v1.0 (Reviewed 2025-11-04)
 **Owners:** Pricing Platform Product & Engineering  
 **Consumers:** Data Engineering, Pricing API, Analytics, Ops  
 **Change control:** ADR + PR review
@@ -34,7 +34,7 @@ Every MPFS ingester or schema change **must** trace back to **REF-cms-pricing-so
 - **Outputs:** `/curated/mpfs/{vintage}/mpfs_rvu.parquet`, `mpfs_indicators_all.parquet`, `mpfs_locality.parquet`, `mpfs_gpci.parquet`, `mpfs_cf_vintage.parquet`, plus latest-effective views for API usage  
 - **SLAs:** Land + publish ≤7 business days from CMS posting; manifest digests recorded; backfills re-run through identical validations  
 - **Deviations:** None; any exceptions require ADR and update to this summary
-- **Discovery Manifest & Governance:** MPFS scraper emits manifests via `cms_pricing.ingestion.metadata.discovery_manifest` (`data/scraped/mpfs/manifests/`). CI runs `tools/verify_source_map.py` so `REF-cms-pricing-source-map-prd-v1.0.md` stays synchronized with discovered artifacts.
+- **Discovery Manifest & Governance:** MPFS ingestor uses snapshot-based discovery (reuses RVU/GPCI snapshots via `DatasetSnapshotService`) and `ConversionFactorFetcher` for CF artifacts. No dedicated MPFS scraper; discovery generates manifests recording snapshot reuse vs download entries. CI runs `tools/verify_source_map.py` so `REF-cms-pricing-source-map-prd-v1.0.md` stays synchronized with discovered artifacts.
 
 ## API Readiness & Distribution
 - **Curated Views:** `mpfs_rvu_latest`, `mpfs_gpci_latest`, and `mpfs_cf_current` provide Latest-Effective semantics for pricing services  
@@ -276,7 +276,45 @@ Persist all Medicare Physician Fee Schedule (MPFS) inputs — RVUs, policy/statu
 
 ## Design Decisions
 - Ingestor is **storage + light QC** only; all pricing/sequestration/site-neutral logic lives later.
-- Single source of truth per CMS artifact; MPFS views **reference** RVU tables.
+
+---
+
+---
+## Architecture & Migration (Phase 2)
+
+### Current State
+The MPFS ingestor currently uses a monolithic structure. Future migration to the modular architecture pattern is planned.
+
+### Migration to DatasetSpec Pattern (Planned)
+
+The MPFS ingestor will follow the same modular architecture pattern as the RVU ingestor refactoring:
+
+**Reference Implementation:** See `cms_pricing/ingestion/ingestors/rvu_ingestor.py` (990 lines, down from 4,247) as the template for migration.
+
+**Migration Checklist:**
+1. **Create DatasetSpecs** - Define `DatasetSpec` instances for each MPFS dataset (RVU, conversion factors, abstracts, locality, GPCI)
+2. **Extract Loaders** - Move database loading logic to `datasets/mpfs_loaders.py`
+3. **Extract Adapters** - Move parsing logic to `datasets/mpfs_adapter.py`
+4. **Extract Business Rules** - Move complex validation to `DatasetSpec.business_rules`
+5. **Use ServiceFactory** - Initialize shared services (SchemaService, ValidationService) via `ServiceFactory`
+6. **Delegate to Stage Modules** - Replace inline stage logic with calls to `stages/execute_*` functions
+7. **Target Line Count** - Achieve <1,000 lines (thin orchestrator pattern)
+
+**Patterns to Adopt:**
+- **DatasetSpec Pattern:** Plugin model for dataset-specific behavior
+- **SchemaService Pattern:** Centralized schema registry bootstrap
+- **ValidationService Pattern:** Business rules auto-registration
+- **Stage Module Pattern:** Shared stage logic in `stages/` modules
+- **Thin Orchestrator Pattern:** Ingestors <1,000 lines, delegate to modules
+
+**Reference Documentation:**
+- `STD-data-architecture-impl-v1.0.md` §1.7 - Migration guide for existing ingestors
+- `DOC-master-catalog-prd-v1.0.md` §10 - Key architectural patterns catalog
+- `STD-database-platform-prd-v1.0.md` §6.1 - Loader pattern documentation
+
+**Estimated Effort:** 2-3 days for full migration following RVU refactoring template.
+
+**Note:** Single source of truth per CMS artifact; MPFS views **reference** RVU tables.
 
 ## Runbook Hooks (see `prds/Runbook.md`)
 - Spot-check 10–20 HCPCS+modifier per quarter against RVU pages.  [oai_citation:20‡Centers for Medicare & Medicaid Services](https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu25a?utm_source=chatgpt.com)
@@ -285,3 +323,4 @@ Persist all Medicare Physician Fee Schedule (MPFS) inputs — RVUs, policy/statu
 
 ## Licensing / ToS
 CMS public program data; record attribution + robots/ToS in manifests.
+

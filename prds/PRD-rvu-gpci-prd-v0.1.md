@@ -1,6 +1,6 @@
 # Product Requirements — RVU Ingestor (PPRRVU, GPCI, OPPSCAP, ANES, Locality) — Draft v0.2
 
-**Status:** Draft v0.2  
+**Status:** Draft v0.2 (Reviewed 2025-11-04)
 **Owners:** Pricing Platform Product & Engineering  
 **Consumers:** Data Engineering, Pricing API, Compliance, Ops  
 **Change control:** ADR + PR review
@@ -50,7 +50,7 @@ Reference **REF-cms-pricing-source-map-prd-v1.0.md** before any RVU/GPCI ingesti
 - **Digest Pinning:** APIs consume `X-Dataset-Digest` / `?digest` aligned to curated manifests  
 - **Security:** Follow **STD-api-security-and-auth-prd-v1.0.md** for token-based access; suppress CPT descriptors if license not finalized
 
-> Owner: TBD  •  Approver(s): TBD  •  Stakeholders: Eng, Data, Ops, Compliance, QA  •  Last updated: {{today}}
+> Owner: TBD  •  Approver(s): TBD  •  Stakeholders: Eng, Data, Ops, Compliance, QA  •  Last updated: 2025-11-04
 
 ---
 
@@ -243,6 +243,31 @@ We ingest these artifacts each cycle (A/B/C/D + potential AR corrections). This 
 ---
 
 ## 6) Pipelines & Orchestration
+
+### 6.1 Modular Architecture (Phase 2)
+
+The RVU ingestor follows the **thin orchestrator pattern** (<1,000 lines), delegating stage logic to shared modules and dataset-specific logic to dedicated modules:
+
+**Implementation:**
+- **Ingestor:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py` (990 lines, down from 4,247) - Thin orchestrator that delegates to stage modules
+- **Stage Modules:** `cms_pricing/ingestion/stages/` - Shared stage logic (land, validate, normalize, enrich, publish)
+- **Database Loaders:** `cms_pricing/ingestion/datasets/rvu_loaders.py` - Extracted database loading logic
+- **Data Adapter:** `cms_pricing/ingestion/datasets/rvu_adapter.py` - Extracted parsing logic
+- **Dataset Specs:** `cms_pricing/ingestion/datasets/rvu_spec.py` - DatasetSpec definitions with loader references
+
+**Patterns Used:**
+- **DatasetSpec Pattern:** Plugin model for dataset-specific behavior (parser, schema ID, natural keys, loader, validation/enrichment rules, business rules)
+- **SchemaService Pattern:** Centralized schema registry bootstrap via `SchemaService.bootstrap_rvu_schemas()`
+- **ValidationService Pattern:** Business rules auto-registered from `DatasetSpec.business_rules` during initialization
+- **Stage Module Pattern:** All stage logic owned by shared modules; ingestor delegates via `execute_*` functions
+
+**Reference Documentation:**
+- `STD-data-architecture-impl-v1.0.md` - Implementation guide with all patterns
+- `STD-database-platform-prd-v1.0.md` §6.1 - Loader pattern documentation
+- `DOC-master-catalog-prd-v1.0.md` §10 - Key architectural patterns catalog
+
+### 6.2 Pipeline Flow
+
 1) **Acquire** raw files (download or upload) → store to `raw/` with checksums and manifest.
 2) **Detect** file types; route to appropriate parser (TXT/CSV) with `source_version` layout.
 3) **Normalize** to staging tables with canonical schemas + metadata.
@@ -251,6 +276,8 @@ We ingest these artifacts each cycle (A/B/C/D + potential AR corrections). This 
 6) **Notify** Slack/Email with run summary and links.
 
 **Scheduling**: cron on release weeks; manual trigger anytime. **Retry** with exponential backoff; partial-run resume supported.
+
+**Note:** Validation logic is owned by `stages/validate.py` and `stages/normalize.py` modules, not the ingestor. Business rules are registered via `ValidationService` during ingestor initialization.
 
 ---
 

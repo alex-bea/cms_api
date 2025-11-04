@@ -11,6 +11,18 @@ Scraper Platform PRD (MVP → v1.1)
 - **STD-observability-monitoring-prd-v1.0:** Scraper monitoring and alerting
 - **REF-cms-pricing-source-map-prd-v1.0.md:** Authoritative source map for all CMS datasets
 
+## Quick Navigation
+
+| I want to… | Go to |
+| --- | --- |
+| Understand goals, scope, orchestration | §1–§3 |
+| Review storage layout & manifests | §4 |
+| Check freshness/cost/legal policies | §6–§9 |
+| See schema/validation requirements | §10 |
+| Follow roadmap & templates | §14–§26 |
+
+> **Callout — Phase 2 Traceability:** Update `docs/release_notes/phase2_refactor.md` whenever scraper governance, manifests, or schema contracts change; this standard is the authority for automation hygiene.
+
 0) Summary
 
 Build a cheap, reliable, and auditable scraper/orchestration layer that discovers and fetches latest files monthly across CMS/HRSA (and future sources), snapshots raw artifacts, normalizes to typed tables (Parquet-first), and exposes dataset digests for downstream pricing and comparisons. Freshness is defined, costs are guarded, and observability + alerts route to Page Alex.
@@ -25,7 +37,7 @@ Goals
 	•	Immutable snapshots (bronze), normalized Parquet (silver/gold), 6‑year retention in S3 with lifecycle.
 	•	Freshness SLOs aligned to monthly checks; run‑now button for ad‑hoc fetch.
 	•	Idempotent ingestion keyed by digest (hash of artifacts + manifests).
-	•	Basic observability: success rates, row deltas, freshness, schema drift; alerts → Alex.
+	•	Basic observability: success rates, row deltas, freshness, contract drift; alerts → Alex.
 
 Non‑Goals (MVP)
 	•	Full Payer TiC/MRF high‑volume crawling (defer; design stubs allowed).
@@ -60,6 +72,8 @@ Validation Contract (applies to every discovery run)
 	•	Log rejected URLs with enough context (discovery page, anchor text) to unblock manual follow-up; runs with missing required artifacts must raise a source-specific alert label (e.g., `rvu.scraper.missing_quarter`) and remain in discovery-only state.
 	•	For sources that ship guidance PDFs (e.g., CMS RVU), persist those artifacts alongside data files with a `file_type` attribute (pdf vs zip/csv/txt/xlsx), copy them into the ingestion docs folder, and emit a companion `docs_manifest.json` capturing filename, checksum, posted date, and source URL.
 	•	Fail discovery when downloaded archives contain no recognizable inner members after classification; log the archive name and retain it only for manual inspection.
+
+> **Callout — Contract Drift Blocker:** Treat schema or layout changes detected here as production blockers. Update the schema registry + DatasetSpecs and record the change in `docs/release_notes/phase2_refactor.md` before approving downloads.
 
 Example GHA skeleton
 
@@ -183,10 +197,12 @@ primary_key: [hcpcs, effective_date]
 Trigger alerts on:
 	•	Freshness SLO breach.
 	•	HTTP 429/5xx storms or repeated retries exhaustion.
-	•	Schema drift vs. registry.
+	•	Contract drift vs. registry.
 	•	Huge row deltas outside expected bounds.
 
 Routing: Slack/PagerDuty/email (configurable). Payload includes source, run id, link to logs, and the manifest key.
+
+> **Callout — Drift Incident Response:** When alerts flag contract drift, pause ingestion, capture the manifest snapshot, update schemas/PRDs, and log remediation steps in `docs/release_notes/phase2_refactor.md` before restarting automation.
 
 ⸻
 
@@ -273,7 +289,7 @@ Milestone I — Ops polish
 ⸻
 
 17) Runbook (High Level)
-	•	Incident types: SLO breach; 429 storm; schema drift; parse failure.
+	•	Incident types: SLO breach; 429 storm; contract drift; parse failure.
 	•	First response: check last manifest; validate publisher change; pause source via kill switch if needed; file issue with label incident.
 	•	Rollback: re‑pin previous digest in dataset registry; republish.
 
@@ -381,9 +397,9 @@ All CMS scrapers follow the same **Discovery → Metadata → Manifest** pattern
 
 ## 23.2 Scraper Pattern Matrix
 
-| Data Type | Scraper Class | Base URL | Discovery Pattern | File Types | Cadence | Status |
-|-----------|---------------|----------|-------------------|------------|---------|--------|
-| **MPFS** | `CMSMPFSScraper` | `/physicianfeesched` | Composes RVU + MPFS patterns | ZIP (RVU bundle + CF) | Annual | ✅ Implemented |
+| Data Type | Scraper Class / Source | Base URL | Discovery Pattern | File Types | Cadence | Status |
+|-----------|------------------------|----------|-------------------|------------|---------|--------|
+| **MPFS** | Snapshot reuse (`DatasetSnapshotService`) + `ConversionFactorFetcher` | `/physicianfeesched` | Snapshot lookup + targeted download | Parquet (RVU/GPCI), ZIP/XLSX (CF) | Annual | ✅ Implemented (no dedicated scraper) |
 | **RVU** | `CMSRVUScraper` | `/pfs-relative-value-files` | Two-hop detail navigation | ZIP/TXT/CSV/XLSX | Quarterly | ✅ Implemented v2.0 |
 | **OPPS** | `CMSOPPSScraper` | `/hospital-outpatient-pps` | Quarterly addenda navigation | ZIP/CSV/XLSX | Quarterly | ✅ Implemented |
 | **ASC** | `CMSASCScraper` | `/ambulatory-surgical-centers` | Quarterly payment page | ZIP/CSV/XLSX | Quarterly | 🔄 **TO CREATE** |
@@ -395,12 +411,6 @@ All CMS scrapers follow the same **Discovery → Metadata → Manifest** pattern
 | **Geography** | `CMSGeographyScraper` | `/payment/fee-schedules` | ZIP locality files | ZIP/TXT/XLSX | Quarterly | 🟡 Partial |
 
 ## 23.3 Implemented Scrapers (Detailed)
-
-### 23.3.1 MPFS (Medicare Physician Fee Schedule)
-
-**Implementation:** `cms_pricing/ingestion/scrapers/cms_mpfs_scraper.py`
-
-**Source URL:** https://www.cms.gov/medicare/medicare-fee-for-service-payment/physicianfeesched/downloads
 
 **Discovery Strategy:**
 - Composition pattern: Reuses RVU scraper for shared files
@@ -571,7 +581,7 @@ For each new scraper, follow this 4-phase checklist:
 
 25) Scraper Code Template
 
-The following template provides a standard structure for new CMS scrapers:
+The following template provides a standard structure for new CMS scrapers. The authoritative, full-length version lives at `tools/templates/cms_scraper_template.py`; excerpts below highlight the key sections.
 
 ```python
 #!/usr/bin/env python3
@@ -587,6 +597,7 @@ Version: 1.0.0
 """
 
 import asyncio
+import uuid
 import hashlib
 import re
 from datetime import datetime
@@ -601,19 +612,12 @@ from structlog import get_logger
 from ..metadata.discovery_manifest import DiscoveryManifest, DiscoveryManifestStore
 
 logger = get_logger()
-
 SCRAPER_VERSION = "1.0.0"
+```
 
-
+```python
 class CMS{DataType}Scraper:
-    """
-    CMS {DATA_TYPE} Scraper for {cadence} file discovery.
-    
-    Discovers {DATA_TYPE} files from the CMS {page description},
-    extracts metadata, and generates discovery manifests.
-    """
-    
-    def __init__(self, output_dir: Path = None):
+    def __init__(self, output_dir: Path | None = None):
         self.base_url = "https://www.cms.gov/{path}"
         self.output_dir = output_dir or Path("data/scraped/{data_type}")
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -621,121 +625,59 @@ class CMS{DataType}Scraper:
             self.output_dir / "manifests",
             prefix="cms_{data_type}_manifest"
         )
-        
-        # File patterns
         self.file_patterns = {
-            'main_file': re.compile(r'pattern.*\.(csv|xlsx|zip)', re.IGNORECASE),
+            "main_file": re.compile(r"pattern.*\\.(csv|xlsx|zip)", re.IGNORECASE),
             # Add more patterns
         }
-        
-        # Quarterly/annual patterns
         self.cadence_patterns = {
-            'q1': re.compile(r'january|jan|q1', re.IGNORECASE),
+            "q1": re.compile(r"january|jan|q1", re.IGNORECASE),
             # Add more patterns
         }
-    
-    async def discover_files(
-        self, 
-        start_period: int, 
-        end_period: int
-    ) -> List[ScrapedFileInfo]:
-        """
-        Discover {DATA_TYPE} files for the given period range.
-        
-        Args:
-            start_period: Starting year/quarter/month
-            end_period: Ending year/quarter/month
-            
-        Returns:
-            List of discovered file information
-        """
+
+    async def discover_files(self, start_period: int, end_period: int) -> List[ScrapedFileInfo]:
+        """Discover files for the given period range."""
         logger.info("Starting {DATA_TYPE} file discovery")
-        
-        all_files = []
-        
-        # 1. Navigate to main page
+        all_files: List[ScrapedFileInfo] = []
         main_page = await self._fetch_page(self.base_url)
-        
-        # 2. Extract period-specific links
         period_links = self._extract_period_links(main_page)
-        
-        # 3. For each period, extract file links
         for period_link in period_links:
             if start_period <= period_link.period <= end_period:
                 period_files = await self._discover_period_files(period_link)
                 all_files.extend(period_files)
-        
-        # 4. Generate manifest
         await self.manifest_store.save_manifest(all_files)
-        
-        logger.info("{DATA_TYPE} file discovery completed", 
-                   total_files=len(all_files))
-        
+        logger.info("{DATA_TYPE} file discovery completed", total_files=len(all_files))
         return all_files
-    
-    async def _fetch_page(self, url: str) -> str:
-        """Fetch and return page HTML"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            return response.text
-    
-    def _extract_period_links(self, page_html: str) -> List[PeriodLink]:
-        """Extract period-specific links from main page"""
-        soup = BeautifulSoup(page_html, 'html.parser')
-        period_links = []
-        
-        for link in soup.find_all('a', href=True):
-            # Extract period info from link text/href
-            period_info = self._parse_period_info(link)
-            if period_info:
-                period_links.append(period_info)
-        
-        return period_links
-    
-    async def _discover_period_files(
-        self, 
-        period_link: PeriodLink
-    ) -> List[ScrapedFileInfo]:
-        """Discover files for a specific period"""
-        files = []
-        
-        # Navigate to period page
+```
+
+```python
+    async def _discover_period_files(self, period_link: PeriodLink) -> List[ScrapedFileInfo]:
+        """Discover files for a specific period."""
+        files: List[ScrapedFileInfo] = []
         period_page = await self._fetch_page(period_link.url)
-        
-        # Extract file links
-        soup = BeautifulSoup(period_page, 'html.parser')
-        for link in soup.find_all('a', href=True):
-            href = link['href']
+        soup = BeautifulSoup(period_page, "html.parser")
+        for link in soup.find_all("a", href=True):
+            href = link["href"]
             text = link.get_text(strip=True)
-            
-            # Match against file patterns
             for pattern_name, pattern in self.file_patterns.items():
                 if pattern.search(text) or pattern.search(href):
-                    file_info = ScrapedFileInfo(
-                        url=urljoin(self.base_url, href),
-                        filename=Path(href).name,
-                        file_type=pattern_name,
-                        batch_id=str(uuid.uuid4()),
-                        discovered_at=datetime.utcnow(),
-                        source_page=period_link.url,
-                        metadata={
-                            'period': period_link.period,
-                            'file_type': pattern_name,
-                            # Add more metadata
-                        }
+                    files.append(
+                        ScrapedFileInfo(
+                            url=urljoin(self.base_url, href),
+                            filename=Path(href).name,
+                            file_type=pattern_name,
+                            batch_id=str(uuid.uuid4()),
+                            discovered_at=datetime.utcnow(),
+                            source_page=period_link.url,
+                            metadata={"period": period_link.period, "file_type": pattern_name},
+                        )
                     )
-                    files.append(file_info)
-        
         return files
+```
 
-
-# CLI for testing
+```python
 async def main():
-    """Test the scraper"""
     scraper = CMS{DataType}Scraper()
     files = await scraper.discover_files(2024, 2025)
-    
     print(f"Discovered {len(files)} files:")
     for f in files:
         print(f"  - {f.filename} ({f.file_type})")

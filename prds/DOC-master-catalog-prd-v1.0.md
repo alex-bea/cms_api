@@ -1,10 +1,10 @@
 # Master System Catalog & Architectural Map
 
-**Status:** Adopted v1.0.6  
+**Status:** Adopted v1.0.7  
 **Owners:** Platform Architecture  
 **Consumers:** Engineering, Product, Data, QA, Ops, Compliance  
 **Change control:** ADR + Architecture Owner approval  
-**Review cadence:** Monthly (first business Monday) — **Last reviewed:** 2025-10-21  
+**Review cadence:** Monthly (first business Monday) — **Last reviewed:** 2025-11-04  
 
 > Core governance (`STD-doc-governance-prd-v1.0.md`) defines naming and metadata rules. This catalog is a navigational index and dependency map only.
 
@@ -16,7 +16,7 @@
 |---|---|---|---|---|
 | `STD-doc-governance-prd-v1.0.md` | Draft v1.0.1 | Platform | 2025-10-15 | Added companion doc conventions |
 | `STD-data-architecture-prd-v1.0.md` | Adopted 1.0 | Data Engineering | 2025-10-15 | Main standard |
-| `STD-data-architecture-impl-v1.0.md` | Draft v1.0 | Data Engineering | 2025-10-15 | Implementation guide (companion) |
+| `STD-data-architecture-impl-v1.0.md` | Draft v1.0 | Data Engineering | 2025-10-15 | Implementation guide (companion). Documents: DatasetSpec pattern, SchemaService, ValidationService, business rules registration, adapter/loader extraction, stage modules, thin orchestrator pattern (<1,000 lines) |
 | `STD-parser-contracts-prd-v2.0.md` | Draft v2.0 | Data Platform Engineering | 2025-10-17 | Core parser contracts: ParseResult, router API, metadata injection, versioning (modularized from v1.11) |
 | `STD-parser-contracts-prd-v1.11-ARCHIVED.md` | Archived v1.11 | Data Platform Engineering | 2025-09-30 | Legacy monolithic parser contracts (superseded by modular v2.0 suite) |
 | `STD-parser-contracts-impl-v2.0.md` | Draft v2.0 | Data Platform Engineering | 2025-10-17 | Parser implementation companion: 11-step template, alias maps, type handling, validation phases |
@@ -273,8 +273,9 @@ graph TD
 
 | Version | Date | Summary | PR |
 |---|---|---|---|
-| 1.0.5 | 2025-10-16 | Added CHANGELOG.md to §5 Documentation & Meta (project release notes following Keep a Changelog format); Updated STD-doc-governance to v1.0.2 with CHANGELOG.md requirement (§5.1); Added automated validation via tools/audit_changelog.py. Supports Phase 0 lockdown milestone (v0.1.0-phase0). | #TBD |
+| 1.0.7 | 2025-02-14 | **Phase 2 Architectural Patterns.** Added §10 "Key Architectural Patterns" documenting 8 core patterns: DatasetSpec, SchemaService, ValidationService, business rules registration, adapter/loader extraction, stage modules, thin orchestrator. Updated `STD-data-architecture-impl-v1.0.md` entry with pattern references. **Reference:** RVU ingester refactoring (4,247 → 990 lines). | #TBD |
 | 1.0.6 | 2025-10-17 | **Modularized STD-parser-contracts v1.11 → v2.0.** Split 4,477-line monolith into 6 focused documents: (1) STD-parser-contracts-prd-v2.0 (737 lines - core policy), (2) STD-parser-contracts-impl-v2.0 (809 lines - implementation companion), (3) REF-parser-routing-detection-v1.0 (735 lines - router architecture), (4) REF-parser-quality-guardrails-v1.0 (611 lines - validation/metrics), (5) RUN-parser-qa-runbook-prd-v1.0 (437 lines - QA procedures), (6) REF-parser-reference-appendix-v1.0 (350 lines - reference tables). **Benefits:** 3-4x faster AI context loading, governance compliance (companion doc pattern), independent versioning, clearer separation of concerns. Updated dependency graph with 5 new relationships. Archived v1.11 for 2-week transition. | #TBD |
+| 1.0.5 | 2025-10-16 | Added CHANGELOG.md to §5 Documentation & Meta (project release notes following Keep a Changelog format); Updated STD-doc-governance to v1.0.2 with CHANGELOG.md requirement (§5.1); Added automated validation via tools/audit_changelog.py. Supports Phase 0 lockdown milestone (v0.1.0-phase0). | #TBD |
 | 1.0.4 | 2025-10-15 | Added STD-parser-contracts-prd-v1.0.md (shared parser infrastructure standard for CMS data ingestion); updated dependency graph showing parser contracts as foundation for MPFS, RVU, OPPS ingestors; establishes public contract requirements, metadata injection pattern, and tiered validation standards. | #TBD |
 | 1.0.3 | 2025-10-15 | Added REF-scraper-ingestor-integration-v1.0.md (scraper→ingestor handoff reference); updated STD-doc-governance to allow REF docs without `-prd` suffix; updated dependency graph with new REF document and integration relationships. | #TBD |
 | 1.0.2 | 2025-10-15 | Added STD-data-architecture-impl-v1.0.md (companion implementation guide); updated STD-doc-governance to v1.0.1 with companion document conventions; updated STD-scraper to v1.1; added companion relationships to dependency graph. | #TBD |
@@ -283,7 +284,28 @@ graph TD
 
 ---
 
-## 10. Deprecation Policy
+## 10. Key Architectural Patterns (Phase 2)
+
+This section catalogs key implementation patterns established during Phase 2 RVU ingester refactoring. For detailed documentation, see `STD-data-architecture-impl-v1.0.md`.
+
+| Pattern | Purpose | Reference | Status |
+|---|---|---|---|
+| **DatasetSpec Pattern** | Plugin model for dataset-specific behavior (parser, schema ID, natural keys, loader, validation/enrichment rules, filename patterns, business rules) | `STD-data-architecture-impl-v1.0.md` §1.2, `STD-parser-contracts-prd-v2.0.md` §6.4.2 | ✅ Adopted |
+| **SchemaService Pattern** | Centralized schema registry bootstrap and caching. Idempotent registration, performance optimization via pre-caching | `STD-data-architecture-impl-v1.0.md` §1.1, `STD-parser-contracts-prd-v2.0.md` §6.4.1 | ✅ Adopted |
+| **ValidationService Pattern** | Thin adapter around ValidationEngine for consistent business rule registration. Auto-registers from DatasetSpec.business_rules | `STD-data-architecture-impl-v1.0.md` §3.3.1, `STD-qa-testing-prd-v1.0.md` §7.5.2 | ✅ Adopted |
+| **Business Rules Pattern** | Complex validators returning `ValidationResult` (distinct from simple boolean `validation_rules`). Registered via ValidationService | `STD-data-architecture-impl-v1.0.md` §3.3.1, `STD-qa-testing-prd-v1.0.md` §7.5.1 | ✅ Adopted |
+| **Adapter Extraction Pattern** | Extract parsing logic to dedicated modules (`datasets/<dataset>_adapter.py`). Uses DatasetSpec for file routing instead of hardcoded logic | `STD-data-architecture-impl-v1.0.md` §1.3, `STD-data-architecture-prd-v1.0.md` §3.4 | ✅ Adopted |
+| **Loader Extraction Pattern** | Extract database loading to dedicated modules (`datasets/<dataset>_loaders.py`). Referenced via DatasetSpec.loader | `STD-data-architecture-impl-v1.0.md` §1.2, `STD-database-platform-prd-v1.0.md` §6.1, `STD-data-architecture-prd-v1.0.md` §3.6 | ✅ Adopted |
+| **Stage Module Pattern** | Shared stage modules (`stages/land.py`, `validate.py`, `normalize.py`, `enrich.py`, `publish.py`) own all stage logic. Ingestors delegate via `execute_*` functions | `STD-data-architecture-impl-v1.0.md` §1.5, `STD-data-architecture-prd-v1.0.md` §3.7.1 | ✅ Adopted |
+| **Thin Orchestrator Pattern** | Ingestors <1,000 lines, delegate to stage modules and dataset-specific modules. Use ServiceFactory for shared services | `STD-data-architecture-impl-v1.0.md` §1.6, `STD-data-architecture-prd-v1.0.md` §3.7.1 | ✅ Adopted |
+
+**Migration Path:** See `STD-data-architecture-impl-v1.0.md` §1.7 for a 7-step migration guide for existing monolithic ingestors.
+
+**Reference Implementation:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py` (990 lines, down from 4,247 lines).
+
+---
+
+## 11. Deprecation Policy
 
 - Mark deprecated docs with `Status: Deprecated` and record the date in the header.  
 - Provide migration path or ADR reference explaining the retirement.  

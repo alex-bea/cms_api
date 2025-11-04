@@ -11,6 +11,18 @@
 - **STD-qa-testing-prd-v1.0:** Testing requirements for ZIP resolver
 - **REF-geography-mapping-cursor-prd-v1.0.md:** Related geography mapping patterns
 
+## Quick Navigation
+
+| I want to… | Go to |
+| --- | --- |
+| Understand objectives, scope, rules | §1–§4 |
+| Review data sources & schemas | §5–§6 |
+| Follow ETL & algorithm details | §7–§9 |
+| Check QA, rollout, KPIs | §11–§22 |
+| See enhancements & appendices | §23+ |
+
+> **Callout — Phase 2 Traceability:** Align resolver updates with `docs/release_notes/phase2_refactor.md`; document any schema/ingestion change there before promotion.
+
 **Version:** 1.0  
 **Date:** 2025‑09‑29
 
@@ -91,6 +103,7 @@ All HTTP interfaces produced by this resolver must follow the **STD-api-architec
 ---
 
 ## 6) Local Data Model (Target Tables)
+
 ```sql
 -- Gazetteer centroids
 CREATE TABLE zcta_coords (
@@ -102,6 +115,10 @@ CREATE TABLE zcta_coords (
   ingest_run_id UUID
 );
 
+CREATE INDEX idx_zcta_coords_vintage ON zcta_coords(vintage);
+```
+
+```sql
 -- ZIP ↔ ZCTA crosswalk
 CREATE TABLE zip_to_zcta (
   zip5 CHAR(5) PRIMARY KEY,
@@ -115,6 +132,10 @@ CREATE TABLE zip_to_zcta (
   ingest_run_id UUID
 );
 
+CREATE INDEX idx_zip_to_zcta_zcta5 ON zip_to_zcta(zcta5);
+```
+
+```sql
 -- CMS ZIP5 → locality/state
 CREATE TABLE cms_zip_locality (
   zip5 CHAR(5) PRIMARY KEY,
@@ -129,6 +150,10 @@ CREATE TABLE cms_zip_locality (
   ingest_run_id UUID
 );
 
+CREATE INDEX idx_cms_zip_locality_state ON cms_zip_locality(state);
+```
+
+```sql
 -- CMS ZIP9 override ranges
 CREATE TABLE zip9_overrides (
   zip9_low CHAR(9) NOT NULL,
@@ -141,7 +166,9 @@ CREATE TABLE zip9_overrides (
   ingest_run_id UUID,
   PRIMARY KEY (zip9_low, zip9_high)
 );
+```
 
+```sql
 -- Optional: NBER distances (subset import by radius)
 CREATE TABLE zcta_distances (
   zcta5_a CHAR(5) NOT NULL,
@@ -153,6 +180,10 @@ CREATE TABLE zcta_distances (
   PRIMARY KEY (zcta5_a, zcta5_b)
 );
 
+CREATE INDEX idx_zcta_distances_vintage ON zcta_distances(vintage);
+```
+
+```sql
 -- SimpleMaps ZIP metadata (for PO Box flag)
 CREATE TABLE zip_metadata (
   zip5 CHAR(5) PRIMARY KEY,
@@ -168,6 +199,10 @@ CREATE TABLE zip_metadata (
   ingest_run_id UUID
 );
 
+CREATE INDEX idx_zip_metadata_is_pobox ON zip_metadata(is_pobox);
+```
+
+```sql
 -- Ingest run provenance
 CREATE TABLE ingest_runs (
   run_id UUID PRIMARY KEY,
@@ -181,77 +216,6 @@ CREATE TABLE ingest_runs (
   tool_version TEXT,
   status TEXT CHECK (status IN ('success','failed','partial')),
   notes TEXT
-);
-
--- Helpful indexes
-CREATE INDEX idx_cms_zip_locality_state ON cms_zip_locality(state);
-CREATE INDEX idx_zip_to_zcta_zcta5 ON zip_to_zcta(zcta5);
-CREATE INDEX idx_zcta_coords_vintage ON zcta_coords(vintage);
-CREATE INDEX idx_zcta_distances_vintage ON zcta_distances(vintage);
-CREATE INDEX idx_zip_metadata_is_pobox ON zip_metadata(is_pobox);
-```sql
--- Gazetteer centroids
-CREATE TABLE zcta_coords (
-  zcta5 CHAR(5) PRIMARY KEY,
-  lat DOUBLE PRECISION NOT NULL,
-  lon DOUBLE PRECISION NOT NULL,
-  vintage VARCHAR(10) NOT NULL
-);
-
--- ZIP ↔ ZCTA crosswalk
-CREATE TABLE zip_to_zcta (
-  zip5 CHAR(5) PRIMARY KEY,
-  zcta5 CHAR(5) NOT NULL,
-  relationship TEXT,
-  weight NUMERIC,
-  city TEXT,
-  state TEXT,
-  vintage VARCHAR(10) NOT NULL
-);
-
--- CMS ZIP5 → locality/state
-CREATE TABLE cms_zip_locality (
-  zip5 CHAR(5) PRIMARY KEY,
-  state CHAR(2) NOT NULL,
-  locality VARCHAR(10) NOT NULL,
-  carrier_mac VARCHAR(10),
-  rural_flag BOOLEAN,
-  effective_from DATE,
-  effective_to DATE,
-  vintage VARCHAR(10) NOT NULL
-);
-
--- CMS ZIP9 override ranges
-CREATE TABLE zip9_overrides (
-  zip9_low CHAR(9) NOT NULL,
-  zip9_high CHAR(9) NOT NULL,
-  state CHAR(2) NOT NULL,
-  locality VARCHAR(10) NOT NULL,
-  rural_flag BOOLEAN,
-  vintage VARCHAR(10) NOT NULL,
-  PRIMARY KEY (zip9_low, zip9_high)
-);
-
--- Optional: NBER distances (subset import by radius)
-CREATE TABLE zcta_distances (
-  zcta5_a CHAR(5) NOT NULL,
-  zcta5_b CHAR(5) NOT NULL,
-  miles DOUBLE PRECISION NOT NULL,
-  vintage VARCHAR(10) NOT NULL,
-  PRIMARY KEY (zcta5_a, zcta5_b)
-);
-
--- SimpleMaps ZIP metadata (for PO Box flag)
-CREATE TABLE zip_metadata (
-  zip5 CHAR(5) PRIMARY KEY,
-  zcta_bool BOOLEAN,
-  parent_zcta CHAR(5),
-  military_bool BOOLEAN,
-  population INTEGER,
-  is_pobox BOOLEAN GENERATED ALWAYS AS (
-    CASE WHEN zcta_bool = FALSE AND COALESCE(military_bool, FALSE) = FALSE THEN TRUE ELSE FALSE END
-  ) STORED,
-  vintage VARCHAR(10) NOT NULL
 );
 ```
 
@@ -338,34 +302,6 @@ nearest_same_state(start_zip):
   R = sort_by_distance_and_ties(results)
   return R[0].zip_c, trace(ctx, R)
 ```
-
-```text
-parse_input(s):
-  d = digits_only(s)
-  if len(d) == 9: return d[:5], d
-  if len(d) == 5: return d, null
-  error("invalid_zip")
-
-normalize(zip5, zip9):
-  if zip9 and in_zip9_overrides(zip9):
-    state0, locality0 = cms_zip9_lookup(zip9)
-    zip9_hit = true
-  else:
-    state0, locality0 = cms_zip5_lookup(zip5)
-    zip9_hit = false
-  zcta0, weight0 = uds_primary_zcta(zip5)
-  lat0, lon0 = zcta_coord(zcta0)  # nber fallback if null
-  return {zcta0, weight0, state0, locality0, lat0, lon0, zip9_hit}
-
-nearest_same_state(start_zip):
-  zip5, zip9 = parse_input(start_zip)
-  ctx = normalize(zip5, zip9)
-  C = cms_all_zip5_in_state(ctx.state0) \ {zip5}
-  C = filter_out_pobox(C)  # simplemaps
-  results = []
-  for zip_c in C:
-    zcta_c, wt_c = uds_primary_zcta(zip_c)
-    miles_nber = nber_lookup(ctx.zcta0, zcta_c)
     lat_c, lon_c = zcta_coord(zcta_c)
     miles_hav = haversine(ctx.lat0, ctx.lon0, lat_c, lon_c)
     miles_final = miles_nber if miles_nber is not null else miles_hav
@@ -418,26 +354,12 @@ Sample fields to emit per lookup:
 ### Operational hardening
 - **Download resilience:** retries with exponential backoff; checksum (SHA‑256) verification; idempotent ETL.
 - **Monitoring:** metrics for latency, `nber_hit_rate`, `fallback_rate`, candidate set size; **Gazetteer Fallback Rate** alert if >0.1%/day.
-- **Alerts:** schema drift, row deltas vs. previous vintage, missing required fields.
+- **Alerts:** contract drift, row deltas vs. previous vintage, missing required fields.
 - **Governance:** store raw archives + checksums; preserve record layouts; log tool versions.
 - **Security:** read‑only DB role for service; least‑privilege credentials; no PII in logs; vendor license compliance (SimpleMaps attribution).
 - **Release safety:** feature flag; canary rollout; golden tests in CI.
 
-
-- **Per‑lookup:** O(N) over same‑state ZIPs (bounded). With NBER fast‑path for most pairs, compute cost dominated by lookups, not trig.
-- **Indexes:** btree on `cms_zip_locality.state`; hash/btree on `zip_to_zcta.zip5`; btree on `zcta_coords.zcta5` & `zcta_distances(zcta5_a, zcta5_b)`.
-- **Caching:** LRU cache centroids and common `(zcta0, zcta_c)` distances.
-
-### 12.1) Background Precompute (NEW)
-- **Guideline:** During ETL, precompute a **same‑state sparse distance matrix** for all pairs `(zcta_a, zcta_b)` in each CMS state using Gazetteer centroids, and persist to a materialized table or cache. Use this as the primary at‑runtime distance source; NBER used for **validation** and backstops.
-
-### Operational hardening
-- **Download resilience:** retries with exponential backoff; checksum (SHA‑256) verification; idempotent ETL.
-- **Monitoring:** metrics for latency, `nber_hit_rate`, `fallback_rate`, candidate set size; **Gazetteer Fallback Rate** alert if >0.1%/day.
-- **Alerts:** schema drift, row deltas vs. previous vintage, missing required fields.
-- **Governance:** store raw archives + checksums; preserve record layouts; log tool versions.
-- **Security:** read‑only DB role for service; least‑privilege credentials; no PII in logs; vendor license compliance (SimpleMaps attribution).
-- **Release safety:** feature flag; canary rollout; golden tests in CI.
+> **Callout — Contract Drift Response:** When alerts flag contract drift, freeze resolver deployment, update schema contracts + DatasetSpecs, rerun parity tests, and document the change in `docs/release_notes/phase2_refactor.md` before resuming traffic.
 
 ---
 

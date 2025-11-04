@@ -4,12 +4,14 @@
 **Owners:** Data Engineering, Platform Engineering  
 **Consumers:** API Developers, Data Engineers, QA Engineers  
 **Change control:** PR review  
-**Last Updated:** 2025-10-27
+**Last Updated:** 2025-11-04
 
 **Cross-References:**
 - **Catalog:** `DOC-master-catalog-prd-v1.0.md` – Master index
 - **Models:** `cms_pricing/models/rvu.py` - SQLAlchemy model definitions
-- **Ingestion:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py` - Database loading logic
+- **Ingestion:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py` - Thin orchestrator (<1,000 lines)
+- **Database Loaders:** `cms_pricing/ingestion/datasets/rvu_loaders.py` - Database loading logic (extracted from ingestor)
+- **Data Adapter:** `cms_pricing/ingestion/datasets/rvu_adapter.py` - Raw data parsing logic (extracted from ingestor)
 - **PRD:** `prds/PRD-rvu-gpci-prd-v0.1.md` - Product requirements
 - **Standard:** `prds/STD-database-platform-prd-v1.0.md` - Database platform standard
 - **Migrations:** `alembic/versions/` - Alembic migration files
@@ -451,14 +453,16 @@ Data is loaded via the RVU ingestor's `publish()` method:
 
 ### 5.2 Loading Methods
 
-Located in `cms_pricing/ingestion/ingestors/rvu_ingestor.py`:
+Located in `cms_pricing/ingestion/datasets/rvu_loaders.py` (Phase 2 extraction):
 
-- `_load_dataframes_to_database()` - Orchestrator
-- `_load_pprrvu_data()` - Loads RVU items
-- `_load_gpci_data()` - Loads GPCI indices
-- `_load_oppscap_data()` - Loads OPPS caps
-- `_load_anes_data()` - Loads ANES conversion factors
-- `_load_locality_data()` - Loads locality mappings
+- `load_rvu_dataframes()` - Dispatcher function that routes to dataset-specific loaders
+- `load_pprrvu_data()` - Loads RVU items into `rvu_items` table
+- `load_gpci_data()` - Loads GPCI indices into `gpci_indices` table
+- `load_oppscap_data()` - Loads OPPS caps into `opps_caps` table
+- `load_anes_data()` - Loads ANES conversion factors into `anes_cfs` table
+- `load_locality_data()` - Loads locality mappings into `locality_counties` table
+
+**Note:** The RVU ingestor (`rvu_ingestor.py`) is now a thin orchestrator that delegates database loading to these functions via the `DatasetSpec.loader` pattern. See `STD-database-platform-prd-v1.0.md` §6.1 for the loader pattern documentation.
 
 ### 5.3 Column Mapping
 
@@ -578,15 +582,19 @@ All schema fields are approved for external use unless marked `x-internal: true`
 ## 8. References
 
 - **Models:** `cms_pricing/models/rvu.py`
-- **Ingestion:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py`
+- **Ingestion Orchestrator:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py` (thin orchestrator, <1,000 lines)
+- **Database Loaders:** `cms_pricing/ingestion/datasets/rvu_loaders.py` (extracted loading logic)
+- **Data Adapter:** `cms_pricing/ingestion/datasets/rvu_adapter.py` (extracted parsing logic)
+- **Dataset Specs:** `cms_pricing/ingestion/datasets/rvu_spec.py` (DatasetSpec definitions with loader references)
 - **PRD:** `prds/PRD-rvu-gpci-prd-v0.1.md`
-- **Standard:** `prds/STD-database-platform-prd-v1.0.md`
+- **Standard:** `prds/STD-database-platform-prd-v1.0.md` (loader pattern documented in §6.1)
 - **Schema Contracts:** `cms_pricing/ingestion/contracts/cms_*.json`
 
 ---
 
 ## 9. Changelog
 
+- **2025-02-14** - Updated references to reflect Phase 2 modular architecture. Database loading logic moved to `datasets/rvu_loaders.py`, parsing logic to `datasets/rvu_adapter.py`. RVU ingestor is now a thin orchestrator (<1,000 lines). See `STD-database-platform-prd-v1.0.md` §6.1 for loader pattern documentation.
 - **2025-10-28** - Added schema ownership, provenance, constraint summary, QA checks, schema evolution policy, and query tuning guidance.
 - **2025-10-27** - Initial documentation created
 - Tracks database schema for RVU ingestion pipeline

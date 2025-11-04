@@ -1,6 +1,6 @@
 # PRD: OPPS Addendum B Ingest
 
-**Status:** Draft v1.0  
+**Status:** Draft v1.0 (Reviewed 2025-11-04)
 **Owners:** Platform/Data Engineering; Medicare SME (review)  
 **Consumers:** Pricing engine, analytics, ops  
 **Change control:** ADR + Data Architecture Board sign-off
@@ -100,6 +100,8 @@ AMA CPT Licensing	Licensing terms for CPT content	Ad hoc	N/A	CPT® usage general
 
 Architecture & Ingestion Lifecycle
 
+### DIS Stages
+
 DIS Stages: Land → Validate → Normalize → Enrich → Publish
 	•	Land: Discover on OPPS Quarterly Addenda page; download A/B (and any ZIP/TXT); store with checksums & manifest (opps_YYYYqN_rNN).  ￼
 	•	Validate: Structural (presence, headers), schema (columns/types), domain (HCPCS/APC/SI patterns, ranges), cross-file checks (HCPCS existence, A↔B linkage), temporal windows. Use I/OCE notes for spot validations.  ￼
@@ -109,6 +111,40 @@ DIS Stages: Land → Validate → Normalize → Enrich → Publish
 
 Staging layout:
 /raw/opps/{opps_YYYYqN_rNN}/... → /stage/opps/{...} → /curated/opps/{...}
+
+---
+### Modular Architecture & Migration (Phase 2)
+
+**Current State:** The OPPS ingestor currently uses a monolithic structure. Future migration to the modular architecture pattern is planned.
+
+**Migration to DatasetSpec Pattern (Planned):**
+
+The OPPS ingestor will follow the same modular architecture pattern as the RVU ingestor refactoring:
+
+**Reference Implementation:** See `cms_pricing/ingestion/ingestors/rvu_ingestor.py` (990 lines, down from 4,247) as the template for migration.
+
+**Migration Checklist:**
+1. **Create DatasetSpecs** - Define `DatasetSpec` instances for each OPPS dataset (APC payment, HCPCS crosswalk, wage index)
+2. **Extract Loaders** - Move database loading logic to `datasets/opps_loaders.py`
+3. **Extract Adapters** - Move parsing logic to `datasets/opps_adapter.py`
+4. **Extract Business Rules** - Move complex validation to `DatasetSpec.business_rules`
+5. **Use ServiceFactory** - Initialize shared services (SchemaService, ValidationService) via `ServiceFactory`
+6. **Delegate to Stage Modules** - Replace inline stage logic with calls to `stages/execute_*` functions
+7. **Target Line Count** - Achieve <1,000 lines (thin orchestrator pattern)
+
+**Patterns to Adopt:**
+- **DatasetSpec Pattern:** Plugin model for dataset-specific behavior
+- **SchemaService Pattern:** Centralized schema registry bootstrap
+- **ValidationService Pattern:** Business rules auto-registration
+- **Stage Module Pattern:** Shared stage logic in `stages/` modules
+- **Thin Orchestrator Pattern:** Ingestors <1,000 lines, delegate to modules
+
+**Reference Documentation:**
+- `STD-data-architecture-impl-v1.0.md` §1.7 - Migration guide for existing ingestors
+- `DOC-master-catalog-prd-v1.0.md` §10 - Key architectural patterns catalog
+- `STD-database-platform-prd-v1.0.md` §6.1 - Loader pattern documentation
+
+**Estimated Effort:** 2-3 days for full migration following RVU refactoring template.
 
 ⸻
 
@@ -247,3 +283,4 @@ Optional API (Deferred / Derived Layer — DIS-Aligned)
 	•	GET /opps/status-indicators → SI label/description (lookup).
 	•	GET /opps/wage-index?ccn=&quarter= → CBSA + wage index.
 	•	Follow API lint/CI gates, SLOs, and versioning per Global API Program.
+

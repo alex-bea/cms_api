@@ -299,41 +299,35 @@ async def discover_source_files(self) -> List[SourceFile]:
 
 ### 4.1 Pattern Matrix
 
-| Pattern | Scraper | Ingestor | Manifest Characteristics | Files | Example |
-|---------|---------|----------|-------------------------|-------|---------|
-| **Composition** | Composes multiple scrapers | Reads unified manifest | Multiple file types, single manifest | RVU bundle + CF + abstracts | MPFS |
+| Pattern | Source mechanism | Ingestor | Manifest Characteristics | Files | Example |
+|---------|------------------|----------|-------------------------|-------|---------|
+| **Snapshot reuse + targeted fetch** | `DatasetSnapshotService` for shared data + lightweight fetcher for new artefacts | Resolves snapshots, downloads missing files | Reuse entries for snapshots, single manifest for new artefact | RVU snapshot + CF ZIP | MPFS |
 | **Direct Links** | Extracts from single page | Processes quarterly | One manifest per quarter | Quarterly releases A/B/C/D | RVU |
 | **Navigation** | Multi-page navigation | Handles redirects | Per-quarter addenda | Addendum A/B per quarter | OPPS |
 
-### 4.2 MPFS Integration (Composition Pattern)
+### 4.2 MPFS Integration (Snapshot Reuse + Targeted Fetch)
 
 **Data Flow:**
 ```
-CMSMPFSScraper
-  ├─> Calls CMSRVUScraper.scrape_rvu_files()
-  │   └─> Discovers: PPRRVU, GPCI, LocalityCounty, ANES, OPPSCAP
-  ├─> Discovers MPFS-specific files
-  │   └─> Conversion factors, abstracts, national payment
-  ├─> Merges into unified manifest
-  └─> Saves: data/scraped/mpfs/manifests/cms_mpfs_manifest_*.jsonl
-
 MPFSIngestor
-  ├─> Reads: data/scraped/mpfs/manifests/cms_mpfs_manifest_*.jsonl
-  ├─> discover_source_files() returns List[SourceFile]
-  ├─> land_stage() downloads all files
-  │   └─> Writes: data/raw/mpfs/{release_id}/files/
+  ├─> DatasetSnapshotService.get_latest_snapshot('rvu_items') / ('gpci_indices')
+  │   └─> Resolves shared RVU/GPCI artefacts (no re-download)
+  ├─> ConversionFactorFetcher.ensure_conversion_factor(year)
+  │   └─> Downloads CF ZIP/XLSX if missing, caches under data/ingestion/mpfs/raw
+  ├─> discover_source_files() returns reuse metadata + CF SourceFile
+  ├─> land_stage() records snapshot provenance and stores CF artefact
   └─> Proceeds to validate_stage()
 ```
 
 **Code references:**
-- Scraper: `cms_pricing/ingestion/scrapers/cms_mpfs_scraper.py:86-136`
-- Ingestor: `cms_pricing/ingestion/ingestors/mpfs_ingestor.py:237-262`
-- Manifest: `data/scraped/mpfs/manifests/cms_mpfs_manifest_*.jsonl`
+- Snapshot service: `cms_pricing/ingestion/services/dataset_snapshot_service.py`
+- Conversion factor fetcher: `cms_pricing/ingestion/services/conversion_factor_fetcher.py`
+- Ingestor: `cms_pricing/ingestion/ingestors/mpfs_ingestor.py`
 
 **Key characteristics:**
-- Unified manifest covering RVU + MPFS files
-- Single discovery run produces complete inventory
-- Ingestor processes all files in one batch
+- Shared datasets (RVU/GPCI) resolved from existing snapshots
+- Only conversion-factor artefact downloaded when stale/missing
+- Ingestor processes mix of snapshot references + new file in one batch
 
 ### 4.3 RVU Integration (Direct Links Pattern)
 
@@ -574,126 +568,110 @@ async def land_stage(self, source_files: List[SourceFile]) -> RawBatch:
 
 ### 6.1 Unit Testing Strategy
 
-**Test scraper independently:**
-```python
-# tests/scrapers/test_mpfs_scraper_methods.py
-@pytest.mark.asyncio
-async def test_scraper_generates_manifest():
-    scraper = CMSMPFSScraper()
-    files = await scraper.scrape_mpfs_files(2025, 2025)
-    
-    # Verify manifest exists
-    manifest_dir = Path("data/scraped/mpfs/manifests")
-    manifests = list(manifest_dir.glob("cms_mpfs_manifest_*.jsonl"))
-    assert len(manifests) > 0
-    
-    # Verify manifest schema
-    with open(manifests[-1], 'r') as f:
-        data = [json.loads(line) for line in f]
-    
-    assert all("filename" in entry for entry in data)
-    assert all("sha256" in entry for entry in data)
-```
-
-**Test ingestor with fixture manifests:**
+**Test ingestor discovery pipeline:**
 ```python
 # tests/ingestors/test_mpfs_ingestor_e2e.py
-@pytest.fixture
-def sample_manifest(tmp_path):
-    """Create sample manifest for testing"""
-    manifest_dir = tmp_path / "manifests"
-    manifest_dir.mkdir()
-    
-    manifest_file = manifest_dir / "cms_mpfs_manifest_20251015_000000.jsonl"
-    with open(manifest_file, 'w') as f:
-        json.dump({
-            "dataset": "mpfs",
-            "filename": "test_file.zip",
-            "file_url": "https://example.com/test.zip",
-            "sha256": "abc123...",
-            # ... other fields
-        }, f)
-    
-    return manifest_file
-
 @pytest.mark.asyncio
-async def test_ingestor_reads_manifest(sample_manifest):
-    ingestor = MPFSIngestor()
+async def test_ingestor_discovers_snapshots_and_cf(mocker, tmp_path):
+    snapshot_service = DatasetSnapshotService()
+    mocker.patch.object(snapshot_service, "get_latest_snapshot", side_effect=[
+        SnapshotMetadata(dataset_id="rvu_items", release_id="rvu_2025D", path="data/curated/rvu/rvu_2025D.parquet", checksum="rvu123"),
+        SnapshotMetadata(dataset_id="gpci_indices", release_id="gpci_2025", path="data/curated/gpci/gpci_2025.parquet", checksum="gpci123"),
+    ])
+    cf_fetcher = ConversionFactorFetcher(output_dir=tmp_path)
+    mocker.patch.object(cf_fetcher, "ensure_conversion_factor", return_value={
+        "year": 2025,
+        "path": str(tmp_path / "cf_2025.zip"),
+        "checksum": "cf123"
+    })
+
+    ingestor = MPFSIngestor(snapshot_service=snapshot_service, cf_fetcher=cf_fetcher)
     source_files = await ingestor.discover_source_files()
-    
-    assert len(source_files) > 0
-    assert source_files[0].filename == "test_file.zip"
+
+    dataset_ids = {sf.extra.get("dataset_id") for sf in source_files if sf.extra}
+    assert {"rvu_items", "gpci_indices"}.issubset(dataset_ids)
+    cf_files = [sf for sf in source_files if sf.content_type == "application/zip"]
+    assert len(cf_files) == 1
 ```
 
 ### 6.2 Integration Testing
 
-**End-to-end test with real scraper + ingestor:**
+**End-to-end test with snapshot reuse + CF fetcher:**
 ```python
-# tests/integration/test_scraper_ingestor_integration.py
+# tests/integration/test_mpfs_ingestion_integration.py
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_mpfs_end_to_end_integration():
-    # 1. Run scraper
-    scraper = CMSMPFSScraper()
-    await scraper.scrape_mpfs_files(2025, 2025, latest_only=True)
-    
-    # 2. Verify manifest generated
-    manifest_dir = Path("data/scraped/mpfs/manifests")
-    manifests = list(manifest_dir.glob("cms_mpfs_manifest_*.jsonl"))
-    assert len(manifests) > 0
-    
-    # 3. Run ingestor discovery
-    ingestor = MPFSIngestor()
+async def test_mpfs_end_to_end_integration(tmp_path):
+    # 1. Seed dataset snapshots (RVU, GPCI)
+    snapshot_service = DatasetSnapshotService()
+    snapshot_service.register_snapshot(
+        dataset_id="rvu_items",
+        release_id="rvu_2025D",
+        path="tests/fixtures/rvu/rvu_2025D.parquet",
+        checksum="rvu123",
+        source_url="https://www.cms.gov/...",
+        effective_from=date(2025, 10, 1),
+        effective_to=None
+    )
+    snapshot_service.register_snapshot(
+        dataset_id="gpci_indices",
+        release_id="gpci_2025",
+        path="tests/fixtures/rvu/gpci_2025.parquet",
+        checksum="gpci123",
+        source_url="https://www.cms.gov/...",
+        effective_from=date(2025, 1, 1),
+        effective_to=None
+    )
+
+    # 2. Ensure conversion factor artefact exists
+    cf_fetcher = ConversionFactorFetcher(output_dir=tmp_path)
+    await cf_fetcher.ensure_conversion_factor(year=2025)
+
+    # 3. Run ingestor discovery + land
+    ingestor = MPFSIngestor(snapshot_service=snapshot_service, cf_fetcher=cf_fetcher)
     source_files = await ingestor.discover_source_files()
-    assert len(source_files) > 0
-    
-    # 4. Run land stage
     raw_batch = await ingestor.land_stage(source_files)
+
     assert raw_batch.batch_id
-    assert len(raw_batch.raw_data) > 0
+    assert {"rvu_items", "gpci_indices", "mpfs_cf"} <= set(raw_batch.metadata["datasets"])
 ```
 
 ### 6.3 Error Injection Testing
 
-**Test partial discovery:**
+**Test missing snapshot:**
 ```python
 @pytest.mark.asyncio
-async def test_partial_discovery_handling():
-    # Create manifest with partial_discovery flag
-    manifest = create_partial_manifest(missing_files=["optional_file.csv"])
-    
-    ingestor = MPFSIngestor()
-    source_files = await ingestor.discover_source_files()
-    
-    # Should proceed with available files
-    assert len(source_files) > 0
+async def test_missing_rvu_snapshot_raises():
+    snapshot_service = DatasetSnapshotService()
+    cf_fetcher = ConversionFactorFetcher()
+    ingestor = MPFSIngestor(snapshot_service=snapshot_service, cf_fetcher=cf_fetcher)
+
+    with pytest.raises(MissingSnapshotError):
+        await ingestor.discover_source_files()
 ```
 
-**Test download failure:**
+**Test conversion factor download failure:**
 ```python
 @pytest.mark.asyncio
-async def test_download_failure_handling():
-    # Create manifest with invalid URL
-    manifest = create_manifest_with_invalid_url()
-    
-    ingestor = MPFSIngestor()
-    source_files = await ingestor.discover_source_files()
-    
-    # Should quarantine and alert
-    with pytest.raises(DownloadFailureError):
-        await ingestor.land_stage(source_files)
+async def test_cf_download_failure_triggers_quarantine(mocker):
+    snapshot_service = fake_snapshot_service_with_rvu_and_gpci()
+    cf_fetcher = ConversionFactorFetcher()
+    mocker.patch.object(cf_fetcher, "_download_cf_zip", side_effect=httpx.HTTPError("503"))
+
+    ingestor = MPFSIngestor(snapshot_service=snapshot_service, cf_fetcher=cf_fetcher)
+
+    with pytest.raises(ConversionFactorDownloadError):
+        await ingestor.discover_source_files()
 ```
 
 ### 6.4 Test Fixtures
 
 **Location:** `tests/fixtures/manifests/`
 
-**Fixture manifests:**
-- `sample_mpfs_manifest.jsonl` - Complete MPFS manifest
-- `sample_rvu_manifest.jsonl` - RVU quarterly manifest
-- `sample_opps_manifest.jsonl` - OPPS addenda manifest
-- `partial_discovery_manifest.jsonl` - Partial discovery scenario
-- `invalid_url_manifest.jsonl` - Download failure scenario
+**Fixture data:**
+- `tests/fixtures/rvu/rvu_2025D.parquet` - RVU snapshot used in tests
+- `tests/fixtures/rvu/gpci_2025.parquet` - GPCI snapshot used in tests
+- `tests/fixtures/mpfs/cf_2025.zip` - Sample conversion factor artefact (for offline tests)
 
 ---
 
@@ -784,25 +762,27 @@ async def test_download_failure_handling():
 
 ### 8.2 Scheduling & Coordination
 
-**Scraper schedule (Render Cron):**
+**MPFS Ingestion Schedule (Render Cron):**
+> **Note (2025-01-15):** MPFS no longer uses a dedicated scraper. It reuses RVU/GPCI snapshots and fetches CF artifacts via `ConversionFactorFetcher`.
+
 ```yaml
 # render.yaml
 services:
   - type: cron
-    name: cms-mpfs-scraper
-    schedule: "0 9 * * 1"  # Monday 9 AM
+    name: cms-mpfs-ingestor
+    schedule: "0 9 * * 1"  # Monday 9 AM (after RVU ingestion)
     buildCommand: pip install -r requirements.txt
-    startCommand: python -m cms_pricing.ingestion.scrapers.cli scrape mpfs
+    startCommand: python -m cms_pricing.cli.ingestion ingest-mpfs --year 2025
     disk:
-      name: scraped-data
-      mountPath: /data/scraped
+      name: ingestion-data
+      mountPath: /data/ingestion
       sizeGB: 10
 ```
 
 **Ingestor trigger:**
-- Option A: Scheduled after scraper (e.g., Monday 10 AM)
-- Option B: File watcher on manifest directory
-- Option C: Manual trigger via API endpoint
+- Option A: Scheduled after RVU ingestion completes (e.g., Monday 10 AM)
+- Option B: Manual trigger via API endpoint
+- Option C: Dependency-based (triggered when RVU snapshots update)
 
 **Coordination:**
 - Ingestor checks for manifest presence
@@ -894,10 +874,9 @@ API Responses
 ```python
 class MyIngestor(BaseDISIngestor):
     async def discover_source_files(self):
-        # Calling scraper directly
-        scraper = CMSMPFSScraper()
-        files = await scraper.scrape_mpfs_files(2025, 2025)
-        return files  # Tightly coupled!
+        # Hitting CMS endpoints directly every run (bypassing snapshot service)
+        response = httpx.get("https://www.cms.gov/.../rvu24d.zip")
+        return [SourceFile(url="https://...", content=response.content)]
 ```
 
 **✅ Correct:**
@@ -1075,4 +1054,3 @@ Update this document when:
 |------|---------|--------|---------|
 | 2025-10-15 | v1.0.1 | Data Engineering | Updated cross-references to STD-parser-contracts v1.1 (ParseResult return type, 64-char hashing). Updated STD-data-architecture-impl to v1.0.1 with ParseResult examples. Reflects ingestor-owned artifact writes per parser contracts. |
 | 2025-10-15 | v1.0 | Data Engineering | Initial scraper-ingestor integration reference: RACI matrix, state machine, manifest contract, file path conventions, integration patterns (MPFS/RVU/OPPS), handoff protocols, error handling, testing patterns, Render deployment, anti-patterns, and maintenance guidance. |
-
