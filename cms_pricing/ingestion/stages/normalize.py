@@ -132,7 +132,20 @@ async def execute_normalize(
         
         # Update schema contract with actual column definitions if available
         if adapted_batch and adapted_batch.schema_contract:
-            schema_contract.update(adapted_batch.schema_contract)
+            # Convert SchemaContract objects to dicts if needed
+            schema_contract_to_merge = adapted_batch.schema_contract
+            if isinstance(schema_contract_to_merge, dict):
+                # If it's a dict, check if values are SchemaContract objects
+                from ..contracts.schema_registry import SchemaContract
+                for key, value in schema_contract_to_merge.items():
+                    if isinstance(value, SchemaContract):
+                        schema_contract_to_merge = {k: v.to_dict() if isinstance(v, SchemaContract) else v 
+                                                   for k, v in schema_contract_to_merge.items()}
+                        break
+                schema_contract.update(schema_contract_to_merge)
+            elif hasattr(schema_contract_to_merge, 'to_dict'):
+                # If it's a SchemaContract object directly, convert it
+                schema_contract.update(schema_contract_to_merge.to_dict())
         
         # Write schema contract
         schema_path = stage_dir / "schema_contract.json"
@@ -174,6 +187,15 @@ async def execute_normalize(
         dataset_row_counts = {name: len(df) for name, df in parsed_data.items()}
         normalized_records = sum(dataset_row_counts.values())
         schema_bundle = adapted_batch.schema_contract if adapted_batch else schema_contract
+        
+        # Convert SchemaContract objects to dicts if needed
+        from ..contracts.schema_registry import SchemaContract
+        if isinstance(schema_bundle, dict):
+            # Check if values are SchemaContract objects
+            schema_bundle = {k: v.to_dict() if isinstance(v, SchemaContract) else v 
+                           for k, v in schema_bundle.items()}
+        elif hasattr(schema_bundle, 'to_dict'):
+            schema_bundle = schema_bundle.to_dict()
         
         # Extract schema validation results if available
         schema_validation = None
