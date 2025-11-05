@@ -95,21 +95,14 @@ def extract_vintage_metadata(
     year_match = re.search(r'(20\d{2})', source)
     product_year = year_match.group(1) if year_match else "2025"
     
-    # Extract quarter/revision
+    # Extract quarter/revision using enhanced extraction
+    quarter = extract_quarter_from_filename(source)
     revision = None
-    quarter = None
     
-    # Try explicit quarter notation: Q1, Q2, Q3, Q4
-    quarter_match = re.search(r'[Qq]([1-4])', source)
-    if quarter_match:
-        quarter = f"Q{quarter_match.group(1)}"
-    else:
-        # Try revision letter: A, B, C, D (map to quarters)
-        revision_match = re.search(r'([ABCD])(?:\.|_|$|\s)', source, re.I)
-        if revision_match:
-            revision = revision_match.group(1).upper()
-            quarter_map = {'A': 'Q1', 'B': 'Q2', 'C': 'Q3', 'D': 'Q4'}
-            quarter = quarter_map[revision]
+    # Map quarter back to revision letter if needed
+    if quarter:
+        quarter_to_revision = {'Q1': 'A', 'Q2': 'B', 'Q3': 'C', 'Q4': 'D'}
+        revision = quarter_to_revision.get(quarter, None)
     
     # Build quarter_vintage
     if quarter:
@@ -152,7 +145,7 @@ def extract_quarter_from_filename(filename: str) -> Optional[str]:
     """
     Extract quarter from filename.
     
-    Handles: Q1-Q4, A-D notation
+    Handles: Q1-Q4, A-D notation, month names (JAN, JANUARY, etc.)
     
     Args:
         filename: Filename to parse
@@ -170,6 +163,18 @@ def extract_quarter_from_filename(filename: str) -> Optional[str]:
     if revision_match:
         quarter_map = {'A': 'Q1', 'B': 'Q2', 'C': 'Q3', 'D': 'Q4'}
         return quarter_map[revision_match.group(1).upper()]
+    
+    # Try month names (JAN, JANUARY, APR, APRIL, JUL, JULY, OCT, OCTOBER)
+    month_map = {
+        'jan': 'Q1', 'january': 'Q1',
+        'apr': 'Q2', 'april': 'Q2',
+        'jul': 'Q3', 'july': 'Q3',
+        'oct': 'Q4', 'october': 'Q4'
+    }
+    filename_lower = filename.lower()
+    for month, quarter in month_map.items():
+        if month in filename_lower:
+            return quarter
     
     return None
 
