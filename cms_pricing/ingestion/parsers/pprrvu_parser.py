@@ -441,6 +441,8 @@ def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
         'EFFECTIVE_DATE': 'effective_from',
         'EFFECTIVE_FROM': 'effective_from',
         'EFFECTIVE': 'effective_from',
+        'FACTOR': 'conversion_factor',
+        'BASE': 'endoscopic_base',
     }
     
     df = df.copy()
@@ -448,6 +450,74 @@ def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
         COLUMN_ALIASES.get(str(c).strip().upper(), str(c).lower().strip().replace(' ', '_'))
         for c in df.columns
     ]
+    return _apply_multiheader_aliases(df)
+
+
+def _apply_multiheader_aliases(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Handle multi-row CMS headers (e.g., 2025 CSV layout) where repeated column
+    labels like 'RVU' and 'PE RVU' correspond to different schema fields.
+
+    We detect duplicates such as ['rvu', 'pe_rvu', 'pe_rvu', 'rvu', 'total', 'total']
+    and hydrate the canonical schema columns if they are missing or empty.
+    """
+    columns = list(df.columns)
+
+    def _indices(name: str) -> list[int]:
+        return [idx for idx, col in enumerate(columns) if col == name]
+
+    def _series_at(name: str, occurrence: int) -> Optional[pd.Series]:
+        matches = _indices(name)
+        if len(matches) <= occurrence:
+            return None
+        return df.iloc[:, matches[occurrence]].copy()
+
+    def _needs_backfill(col: str) -> bool:
+        if col not in df.columns:
+            return True
+        series = df[col]
+        if series.empty:
+            return True
+        # Treat empty strings and NaNs as missing
+        return series.replace({"": pd.NA}).isna().all()
+
+    # Map duplicated RVU columns → canonical schema columns
+    def _assign(target: str, source: str, occurrence: int = 0) -> None:
+        if not _needs_backfill(target):
+            return
+        src = _series_at(source, occurrence)
+        if src is None:
+            return
+        df[target] = src
+        logger.info(
+            "pprrvu_multiheader_backfill",
+            target_column=target,
+            source_column=source,
+            occurrence=occurrence,
+            non_null=int(src.replace({"": pd.NA}).dropna().shape[0]),
+            total=len(src),
+        )
+
+    _assign("rvu_work", "rvu", 0)
+    _assign("rvu_malp", "rvu", 1)
+    _assign("rvu_pe_nonfac", "pe_rvu", 0)
+    _assign("rvu_pe_fac", "pe_rvu", 1)
+    _assign("total_nonfac", "total", 0)
+    _assign("total_fac", "total", 1)
+    _assign("na_indicator", "indicator", 0)
+
+    if _needs_backfill("diag_imaging_family") and "family" in df.columns:
+        series = df["family"].copy()
+        df["diag_imaging_family"] = series
+        logger.info(
+            "pprrvu_multiheader_backfill",
+            target_column="diag_imaging_family",
+            source_column="family",
+            occurrence=0,
+            non_null=int(series.replace({"": pd.NA}).dropna().shape[0]),
+            total=len(series),
+        )
+
     return df
 
 

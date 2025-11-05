@@ -16,6 +16,7 @@ Covers:
 import pytest
 import pandas as pd
 import hashlib
+from io import BytesIO
 from pathlib import Path
 from datetime import datetime
 from cms_pricing.ingestion.parsers.pprrvu_parser import parse_pprrvu, SCHEMA_ID, NATURAL_KEYS
@@ -195,6 +196,37 @@ def test_pprrvu_layout_mismatch():
     assert len(result.data) < 10, "Should have skipped truncated row"
     
     print(f"✅ Layout test passed - skipped truncated rows")
+
+
+def test_pprrvu_multiheader_backfill():
+    """
+    New CMS 2025 CSV layout repeats labels like 'RVU'/'PE RVU'.
+    Verify parser backfills canonical schema columns from duplicated headers.
+    """
+    metadata = create_test_metadata()
+
+    csv_content = "\n".join([
+        ",,2025 National Physician Fee Schedule Relative Value File January Release,,,,,,,,,,,,,,,,,,,,,,,,,,,,",
+        ",,Dental codes are copyright 2025/26 American Dental Association.,,,,,,,,,,,,,,,,,,,,,,,,,,,,",
+        ",, , ,,,,,,,,,,,,,,,,,,,,,,,,,NON-FACILITY,FACILITY,",
+        ",,,,NOT USED,,,,,,,,,,,,,,,,,,,PHYSICIAN,,DIAGNOSTIC,PE USED,PE USED,MP USED",
+        ",,,,FOR,,,NON-FAC,,FACILITY ,,,,,,,,,,,,,,,,SUPERVISION OF,,IMAGING,FOR OPPS,FOR OPPS,FOR OPPS",
+        ",,,STATUS,MEDICARE ,WORK,NON-FAC,NA,FACILITY,NA,MP,NON-FACILITY,FACILITY,PCTC,GLOB,PRE,INTRA,POST,MULT,BILAT,ASST,CO-,TEAM,ENDO,CONV,DIAGNOSTIC,CALCULATION,FAMILY,PAYMENT,PAYMENT,PAYMENT",
+        "HCPCS,MOD,DESCRIPTION,CODE,PAYMENT,RVU,PE RVU,INDICATOR,PE RVU,INDICATOR,RVU,TOTAL,TOTAL,IND,DAYS,OP,OP,OP,PROC,SURG,SURG,SURG,SURG,BASE,FACTOR,PROCEDURES,FLAG,INDICATOR,AMOUNT,AMOUNT,AMOUNT",
+        "A1234,,Demo procedure,I,,1.23,2.34,,3.45,,0.56,4.44,5.55,9,XXX,0.11,0.22,0.33,0.44,0.55,0.66,0.77,0.88,,32.3465,09,0,99,10.00,20.00,30.00",
+    ])
+
+    result = parse_pprrvu(BytesIO(csv_content.encode("utf-8")), "PPRRVU2025_demo.csv", metadata)
+
+    assert not result.data.empty, "Parser should produce rows for multiheader input"
+    row = result.data.iloc[0]
+
+    assert row["rvu_work"] == "1.23"
+    assert row["rvu_pe_nonfac"] == "2.34"
+    assert row["rvu_pe_fac"] == "3.45"
+    assert row["rvu_malp"] == "0.56"
+    assert row["total_nonfac"] == "4.44"
+    assert row["total_fac"] == "5.55"
 
 
 def test_pprrvu_hash_metadata_exclusion():
