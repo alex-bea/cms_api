@@ -207,9 +207,32 @@ def load_pprrvu_data(
         ("rvu_pe_fac", "pe_rvu_fac"),
         ("rvu_malp", "mp_rvu"),
     ]
+    
+    # Log available columns for debugging
+    available_cols = list(df.columns)
+    logger.debug(
+        "Column mapping check",
+        available_columns=available_cols[:20],  # First 20 for brevity
+        has_rvu_work="rvu_work" in available_cols,
+        has_work_rvu="work_rvu" in available_cols,
+    )
+    
     for source_col, target_col in alias_pairs:
         if source_col in df.columns and target_col not in df.columns:
             df[target_col] = df[source_col]
+            logger.info(
+                "Column mapping applied",
+                source=source_col,
+                target=target_col,
+                rows_mapped=len(df),
+                non_null_count=df[target_col].notna().sum() if target_col in df.columns else 0,
+            )
+        elif source_col not in df.columns and target_col not in df.columns:
+            logger.warning(
+                "Column mapping skipped - both columns missing",
+                source=source_col,
+                target=target_col,
+            )
 
     df = _prepare_base_dataframe(df, release_uuid, batch_id)
     df["hcpcs_code"] = _string_column(df, "hcpcs_code", max_len=5)
@@ -236,6 +259,22 @@ def load_pprrvu_data(
     df["pe_rvu_nonfac"] = _numeric_column(df, "pe_rvu_nonfac")
     df["pe_rvu_fac"] = _numeric_column(df, "pe_rvu_fac")
     df["mp_rvu"] = _numeric_column(df, "mp_rvu")
+    
+    # Log RVU values after conversion for debugging
+    rvu_stats = {
+        "work_rvu": {
+            "non_null": df["work_rvu"].notna().sum() if "work_rvu" in df.columns else 0,
+            "total": len(df),
+        },
+        "pe_rvu_nonfac": {
+            "non_null": df["pe_rvu_nonfac"].notna().sum() if "pe_rvu_nonfac" in df.columns else 0,
+            "total": len(df),
+        },
+    }
+    logger.info(
+        "RVU values after numeric conversion",
+        **{k: f"{v['non_null']}/{v['total']}" for k, v in rvu_stats.items()},
+    )
     df["conversion_factor"] = _numeric_column(df, "conversion_factor")
     df["total_nonfac"] = _numeric_column(df, "total_nonfac")
     df["total_fac"] = _numeric_column(df, "total_fac")
