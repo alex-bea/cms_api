@@ -10,6 +10,7 @@ Phase 2 reduces `RVUIngestor` from 4,247 lines to 990 lines (−76.7%) by extrac
 - **Schema Bootstrap & Caching** – `SchemaService` bootstraps RVU schema contracts once and caches them for validation, preserving performance guardrails.
 - **Enrichment Fix** – The enrich stage now calls the shared reference-data pipeline, controlled via `ENABLE_ENRICHMENT`.
 - **Legacy Compatibility Guards** – Land helper publishes both `raw_directory` (release root) and `raw_files_directory` (files payload) so Phase 0/1 tests keep working while the shared land executor remains unchanged.
+- **Metadata Inference Guard** – `_build_parser_metadata()` falls back to `extract_vintage_metadata()`, ensuring filenames such as `PPRRVU25_JAN.txt` infer the correct quarter and avoid Render layout mismatches.
 
 ## Documentation Updates
 - `prds/STD-parser-contracts-prd-v2.0.md` – Added DatasetSpec registry guidance and schema bootstrap expectations.

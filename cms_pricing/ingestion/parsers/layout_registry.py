@@ -164,6 +164,7 @@ LAYOUT_REGISTRY = {
     ('pprrvu', '2025', 'C'): PPRRVU_2025D_LAYOUT,  # Same layout for July/Q3
     ('pprrvu', '2025', 'B'): PPRRVU_2025D_LAYOUT,  # Same layout for Apr/Q2
     ('pprrvu', '2025', 'A'): PPRRVU_2025D_LAYOUT,  # Same layout for Jan/Q1
+    ('pprrvu', '2025', None): PPRRVU_2025D_LAYOUT,
     
     # GPCI layouts (all quarters use same 2025D layout)
     ('gpci', '2025', 'A'): GPCI_2025D_LAYOUT,
@@ -367,4 +368,3 @@ def list_available_layouts() -> Dict[str, list]:
         })
     
     return layouts_by_dataset
-

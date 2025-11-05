@@ -402,10 +402,7 @@ def _build_parser_metadata(
                 filename=inner_filename,
                 error=str(err),
             )
-    if context:
-        context = dict(context)
-    else:
-        context = {}
+    context = dict(context) if context else {}
 
     year_guess = (
         Path(inner_filename).stem[:4]
@@ -413,13 +410,9 @@ def _build_parser_metadata(
         else str(datetime.utcnow().year)
     )
 
-    needs_year = not context.get("product_year")
-    needs_quarter = not context.get("quarter_vintage")
-    needs_vintage_date = not context.get("vintage_date")
-
-    if needs_year or needs_quarter or needs_vintage_date:
+    def _infer_from_filename() -> Dict[str, Any]:
         try:
-            vintage_context = extract_vintage_metadata(
+            return extract_vintage_metadata(
                 filename=inner_filename,
                 release_id=release_id
             )
@@ -430,31 +423,29 @@ def _build_parser_metadata(
                 filename=inner_filename,
                 error=str(err),
             )
-            vintage_context = {
+            return {
                 "product_year": str(year_guess),
                 "quarter_vintage": "",
                 "vintage_date": datetime.utcnow(),
                 "revision": None,
             }
 
-        context.setdefault("product_year", vintage_context.get("product_year", str(year_guess)))
-        context.setdefault("quarter_vintage", vintage_context.get("quarter_vintage", ""))
-        context.setdefault("vintage_date", vintage_context.get("vintage_date", datetime.utcnow()))
-        context.setdefault("release_letter", vintage_context.get("revision") or "D")
-        context.setdefault(
-            "source_release",
-            f"RVU{context['product_year']}{context.get('release_letter', '')}"
-        )
+    vintage_context = _infer_from_filename()
 
-    # Ensure defaults for any remaining metadata fields
-    context.setdefault("product_year", str(year_guess))
-    context.setdefault("quarter_vintage", "")
-    context.setdefault("vintage_date", datetime.utcnow())
-    context.setdefault("release_letter", "D")
-    context.setdefault(
-        "source_release",
-        f"RVU{context['product_year']}{context.get('release_letter', '')}"
-    )
+    context.setdefault("product_year", vintage_context.get("product_year", str(year_guess)))
+    context.setdefault("quarter_vintage", vintage_context.get("quarter_vintage", ""))
+    context.setdefault("vintage_date", vintage_context.get("vintage_date", datetime.utcnow()))
+
+    if context["quarter_vintage"] and "_annual" in context["quarter_vintage"]:
+        fallback_context = _infer_from_filename()
+        context["quarter_vintage"] = fallback_context.get("quarter_vintage", "2025Q4")
+        context["product_year"] = fallback_context.get("product_year", context["product_year"])
+        context["vintage_date"] = fallback_context.get("vintage_date", context.get("vintage_date", datetime.utcnow()))
+        context["release_letter"] = fallback_context.get("revision") or "D"
+    else:
+        context.setdefault("release_letter", vintage_context.get("revision") or "D")
+
+    context.setdefault("source_release", f"RVU{context['product_year']}{context.get('release_letter', '')}")
 
     metadata = {
         "release_id": release_id,

@@ -479,6 +479,7 @@ async def get_rvu(hcpcs: str):
 - Two-phase detection (extension + content sniffing)
 - ZIP handling with inner file routing
 - Layout registry API and SemVer versioning
+- Filename-based vintage inference (`extract_vintage_metadata()`) to derive year/quarter before registry lookup (prevents LayoutMismatch errors when filenames use month aliases).
 - Format detection flowcharts
 
 ---
