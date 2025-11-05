@@ -328,7 +328,7 @@ def adapt_rvu_raw_data(
                 combined = combined.drop_duplicates(subset=natural_keys, keep="first")
                 dropped = before - len(combined)
                 if dropped > 0:
-                    logger.warning(
+                    logger.info(
                         "Duplicate natural keys trimmed post-adaptation",
                         dataset=dataset_key,
                         duplicates_removed=dropped,

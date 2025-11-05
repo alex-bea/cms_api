@@ -487,14 +487,19 @@ def _apply_multiheader_aliases(df: pd.DataFrame) -> pd.DataFrame:
         src = _series_at(source, occurrence)
         if src is None:
             return
-        df[target] = src
+        cleaned = (
+            src.astype("string")
+            .str.strip()
+            .replace({"": pd.NA})
+        )
+        df[target] = cleaned
         logger.info(
             "pprrvu_multiheader_backfill",
             target_column=target,
             source_column=source,
             occurrence=occurrence,
-            non_null=int(src.replace({"": pd.NA}).dropna().shape[0]),
-            total=len(src),
+            non_null=int(cleaned.dropna().shape[0]),
+            total=len(cleaned),
         )
 
     _assign("rvu_work", "rvu", 0)
@@ -506,14 +511,19 @@ def _apply_multiheader_aliases(df: pd.DataFrame) -> pd.DataFrame:
     _assign("na_indicator", "indicator", 0)
 
     if _needs_backfill("diag_imaging_family") and "family" in df.columns:
-        series = df["family"].copy()
+        series = (
+            df["family"]
+            .astype("string")
+            .str.strip()
+            .replace({"": pd.NA})
+        )
         df["diag_imaging_family"] = series
         logger.info(
             "pprrvu_multiheader_backfill",
             target_column="diag_imaging_family",
             source_column="family",
             occurrence=0,
-            non_null=int(series.replace({"": pd.NA}).dropna().shape[0]),
+            non_null=int(series.dropna().shape[0]),
             total=len(series),
         )
 
@@ -530,7 +540,15 @@ def _apply_multiheader_aliases(df: pd.DataFrame) -> pd.DataFrame:
     ]
     for col in indicator_columns:
         if col in df.columns:
-            df[col] = df[col].replace({"": pd.NA})
+            df[col] = (
+                df[col]
+                .astype("string")
+                .str.strip()
+                .replace({"": pd.NA})
+            )
+
+    if df.columns.duplicated().any():
+        df = df.loc[:, ~df.columns.duplicated()]
 
     return df
 
@@ -581,14 +599,15 @@ def _cast_dtypes(df: pd.DataFrame, metadata: Dict) -> pd.DataFrame:
         df['na_indicator'] = df['na_indicator'].astype('string').str.strip().replace({'': pd.NA}).str.upper()
 
     if 'opps_cap_applicable' in df.columns:
-        df['opps_cap_applicable'] = (
+        opps_series = (
             df['opps_cap_applicable']
             .astype('string')
             .str.strip()
+            .str.upper()
             .replace({'': pd.NA})
-            .map({'Y': True, 'N': False})
-            .astype('boolean')
         )
+        mapped = opps_series.map({'Y': True, 'N': False})
+        df['opps_cap_applicable'] = mapped.where(mapped.notna(), pd.NA).astype('boolean')
 
     # Global days as int
     if 'global_days' in df.columns:

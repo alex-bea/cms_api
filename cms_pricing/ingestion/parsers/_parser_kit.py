@@ -792,7 +792,8 @@ def check_natural_key_uniqueness(
         
         unique_df = df[~duplicate_mask].copy()
         
-        logger.warning(
+        log_fn = logger.warning if severity == ValidationSeverity.BLOCK else logger.info
+        log_fn(
             f"Natural key duplicates found: {duplicate_mask.sum()} rows",
             natural_keys=natural_keys,
             duplicate_count=duplicate_mask.sum(),

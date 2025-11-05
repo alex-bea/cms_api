@@ -7,7 +7,7 @@ This module extracts enrichment logic from ingestors for reuse across datasets.
 
 import os
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Set
 import structlog
 
 from ..contracts.ingestor_spec import StageFrame, RefData
@@ -18,6 +18,8 @@ from ..enrichers.dis_reference_data_integration import (
 )
 
 logger = structlog.get_logger()
+
+_REFERENCE_DATA_WARNED_RELEASES: Set[str] = set()
 
 
 @dataclass
@@ -118,18 +120,21 @@ async def execute_enrich(
             nonempty_ref = (ref_load_summary or {}).get("nonempty_count", 0)
             if nonempty_ref == 0:
                 updated_quality_metrics["reference_data_missing"] = True
-                logger.warning(
-                    "reference_data_all_missing",
-                    release_id=release_id or stage_frame.metadata.get("release_id", "unknown")
-                )
-                if observability_collector:
-                    try:
-                        observability_collector.record_metric(
-                            "reference_data_all_missing", 1,
-                            tags={"release_id": release_id or stage_frame.metadata.get("release_id", "unknown")}
-                        )
-                    except Exception as metric_err:
-                        logger.debug("reference_missing_metric_emit_failed", error=str(metric_err))
+                warning_release_id = release_id or stage_frame.metadata.get("release_id", "unknown")
+                if warning_release_id not in _REFERENCE_DATA_WARNED_RELEASES:
+                    logger.warning(
+                        "reference_data_all_missing",
+                        release_id=warning_release_id
+                    )
+                    _REFERENCE_DATA_WARNED_RELEASES.add(warning_release_id)
+                    if observability_collector:
+                        try:
+                            observability_collector.record_metric(
+                                "reference_data_all_missing", 1,
+                                tags={"release_id": warning_release_id}
+                            )
+                        except Exception as metric_err:
+                            logger.debug("reference_missing_metric_emit_failed", error=str(metric_err))
         except Exception as guard_err:
             logger.debug("reference_missing_guard_failed", error=str(guard_err))
         
@@ -223,4 +228,3 @@ def _load_reference_data_for_enrichment(
         "empty_count": empty_count,
         "failure_count": failure_count
     }
-
