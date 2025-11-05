@@ -172,9 +172,12 @@ LAYOUT_REGISTRY = {
     ('gpci', '2025', 'D'): GPCI_2025D_LAYOUT,
     ('gpci', '2025', None): GPCI_2025D_LAYOUT,  # Annual fallback
     
-    # OPPSCAP layouts (D = October/Q4)
-    ('oppscap', '2025', 'D'): OPPSCAP_2025D_LAYOUT,
-    ('oppscap', '2025', 'C'): OPPSCAP_2025D_LAYOUT,
+    # OPPSCAP layouts (all quarters use same 2025D layout)
+    ('oppscap', '2025', 'A'): OPPSCAP_2025D_LAYOUT,  # Q1/January
+    ('oppscap', '2025', 'B'): OPPSCAP_2025D_LAYOUT,  # Q2/April
+    ('oppscap', '2025', 'C'): OPPSCAP_2025D_LAYOUT,  # Q3/July
+    ('oppscap', '2025', 'D'): OPPSCAP_2025D_LAYOUT,  # Q4/October
+    ('oppscap', '2025', None): OPPSCAP_2025D_LAYOUT,  # Annual fallback
     
     # ANES layouts (D = October/Q4)
     ('anes', '2025', 'D'): ANES_2025D_LAYOUT,

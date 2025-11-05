@@ -93,7 +93,7 @@ def parse_oppscap(
     metadata: Dict[str, Any],
 ) -> ParseResult:
     """
-    Parse OPPSCAP file (TXT or CSV) to canonical schema.
+    Parse OPPSCAP file (TXT, CSV, or XLSX) to canonical schema.
     
     Per STD-parser-contracts v2.0 §2.1 (11-step template).
     
@@ -149,6 +149,8 @@ def parse_oppscap(
         df = _parse_txt_fixed_width(file_obj, encoding, metadata)
     elif format_type == 'CSV':
         df = _parse_csv(file_obj, encoding, metadata)
+    elif format_type == 'XLSX':
+        df = _parse_xlsx(file_obj, metadata)
     else:
         raise ParseError(f"Unsupported format: {format_type}")
     
@@ -209,18 +211,20 @@ def parse_oppscap(
 
 def _detect_format(file_obj: IO[bytes], filename: str) -> str:
     """
-    Detect file format (TXT or CSV) from filename and content.
+    Detect file format (TXT, CSV, or XLSX) from filename and content.
     
     Args:
         file_obj: File stream (will be rewound after peek)
         filename: Source filename
         
     Returns:
-        'TXT' or 'CSV'
+        'TXT', 'CSV', or 'XLSX'
     """
-    # Filename-based detection
+    # Filename-based detection (most reliable)
     filename_lower = filename.lower()
-    if '.txt' in filename_lower:
+    if '.xlsx' in filename_lower or '.xls' in filename_lower:
+        return 'XLSX'
+    elif '.txt' in filename_lower:
         return 'TXT'
     elif '.csv' in filename_lower:
         return 'CSV'
@@ -268,7 +272,15 @@ def _parse_txt_fixed_width(
     # get_layout signature: (product_year, quarter_vintage, dataset)
     layout = get_layout(product_year, quarter_vintage, 'oppscap')
     if not layout:
-        raise ParseError(f"No layout found for OPPSCAP {product_year} Q{quarter_vintage}")
+        # Better error message with debugging context
+        available_quarters = ['A', 'B', 'C', 'D']
+        raise ParseError(
+            f"No layout found for OPPSCAP {product_year} Q{quarter_vintage or 'None'}. "
+            f"Available quarters: {', '.join(available_quarters)}. "
+            f"Filename metadata: quarter_vintage={metadata.get('quarter_vintage', 'missing')}, "
+            f"product_year={product_year}. "
+            f"Check that quarter_vintage is in format: A/B/C/D or Q1/Q2/Q3/Q4 or 2025Q1 format."
+        )
     
     # Extract column specs from layout
     columns = layout['columns']
@@ -350,6 +362,52 @@ def _parse_csv(
     for col in df.columns:
         if df[col].dtype == 'object':
             df[col] = df[col].str.strip()
+    
+    return df
+
+
+def _parse_xlsx(
+    file_obj: IO[bytes],
+    metadata: Dict[str, Any],
+) -> pd.DataFrame:
+    """
+    Parse XLSX file with header normalization.
+    
+    Args:
+        file_obj: File stream
+        metadata: Metadata dict
+        
+    Returns:
+        DataFrame with normalized column names
+    """
+    # Read XLSX (pandas handles binary stream)
+    df = pd.read_excel(file_obj, dtype=str, engine='openpyxl')
+    
+    # Normalize headers (case-insensitive alias matching)
+    lower_alias_map = {k.lower(): v for k, v in ALIAS_MAP.items()}
+    
+    new_columns = {}
+    unmapped = []
+    
+    for col in df.columns:
+        col_lower = str(col).strip().lower()
+        if col_lower in lower_alias_map:
+            new_columns[col] = lower_alias_map[col_lower]
+        else:
+            unmapped.append(col)
+            new_columns[col] = str(col).strip().lower()
+    
+    if unmapped:
+        logger.warning("unmapped_xlsx_columns", columns=unmapped, filename=metadata.get('source_filename'))
+    
+    df = df.rename(columns=new_columns)
+    
+    # Strip whitespace
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            df[col] = df[col].astype(str).str.strip()
+    
+    logger.info("xlsx_parsed", rows=len(df), columns=list(df.columns))
     
     return df
 
