@@ -1,5 +1,13 @@
 # PDF Reader Product Requirements Document (PRD) v1.0
 
+**Status:** Draft v1.0  
+**Owners:** Ingestion Engineering  
+**Consumers:** Data Platform Engineering, QA/Validation, Observability, Render DevOps  
+**Change control:** Architecture owner + Product approval  
+**Review cadence:** Monthly — **Last reviewed:** 2025-11-04  
+
+---
+
 ## 1. Background & Context
 - **Problem statement:** The RVU/MPFS ingestion pipeline lacks an authoritative, machine-readable source for CMS layout definitions. Parser authors currently maintain fixed-width specs manually (`cms_pricing/ingestion/parsers/layout_registry.py`), which makes releases brittle and delays validation whenever CMS changes a PDF layout.
 - **Why now:** Phase 2/3 ingestion milestones require automated schema validation for 2025 datasets (see `artifacts/pdf_reader.md` and `artifacts/pdf_reader_execution_plan.md`). The new Render deployment footprint also mandates on-disk guidance bundles instead of ad hoc S3 notes.

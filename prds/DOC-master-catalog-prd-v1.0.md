@@ -63,6 +63,7 @@
 | `PRD-opps-scraper-prd-v1.0.md` | Draft v1.0 | Data Engineering | `STD-scraper`, `SRC-opps` | — |
 | `PRD-rvu-scraper-prd-v1.0.md` | Draft v1.0 | Data Engineering | `STD-scraper`, `SRC-cms-rvu` | — |
 | `PRD-render-hosting-prd-v1.0.md` | Draft v1.0 | Platform Engineering, SRE | `STD-observability`, `RUN-global-operations` | Companion: `prds/RUN-render-deployment-prd-v1.0.md`; audit tooling guidance (§4.5) |
+| `PRD-pdf-reader-prd-v1.0.md` | Draft v1.0 | Ingestion Engineering | `STD-data-architecture`, `STD-parser-contracts`, `SRC-cms-rvu` | `REF-scraper-ingestor-integration-v1.0.md`, `REF-cms-pricing-source-map-prd-v1.0.md` |
 
 ---
 
@@ -86,6 +87,7 @@
 | `DOC-master-catalog-prd-v1.0.md` | Adopted v1.0 | Architecture | Master index (this document) |
 | `DOC-test-patterns-prd-v1.0.md` | Draft v1.0 (proposed) | QA Guild | Test patterns and best practices guide |
 | `DOC-parser-build-playbook-v1.0.md` | Draft v1.0 | Data Platform Engineering | Parser build playbook: layout verification, NK selection, testing workflow |
+| `DOC-cms-pricing-api-readiness-plan-v1.0.md` | Draft v1.0 | Product Operations | ClearBill go-live readiness plan across data quality, contract, access, and operability pillars |
 | `CHANGELOG.md` | Active | Platform Engineering | Project release notes (Keep a Changelog format) |
 
 ---

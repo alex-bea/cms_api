@@ -1612,7 +1612,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** database, data-quality, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.1
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.1
 
 **Details:** Add `locality_id` column to `fee_mpfs` table and backfill from RVU locality dimension table. This enables proper locality joins and improves MPFS engine queries.
 
@@ -1640,7 +1640,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** data-ingestion, opps, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.1
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.1
 
 **Details:** Extend OPPS ingestion to persist wage index table with natural key constraints and add facility-specific joins in OPPS engine.
 
@@ -1668,7 +1668,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** documentation, operations, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.1
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.1
 
 **Details:** Create operational playbook covering data retention policies, backfill procedures, digest reconciliation, and abort criteria for dataset snapshots.
 
@@ -1698,7 +1698,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** testing, integration, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.1
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.1
 
 **Details:** Create integration test that publishes fixture manifests, runs `/pricing/price` calls, and verifies both cents and provenance metadata are correctly returned.
 
@@ -1727,7 +1727,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** testing, opps, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.1
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.1
 
 **Details:** Create test verifying wage index works correctly for both indexed (facility) and non-indexed (non-facility) pricing states.
 
@@ -1755,7 +1755,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** data-ingestion, observability, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.1
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.1
 
 **Details:** Add checksum verification during ingestion jobs and configure failure alerts when checksums don't match expected values.
 
@@ -1783,7 +1783,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** testing, api-development, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.2
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.2
 
 **Details:** Expand negative test coverage for invalid locality codes, unsupported modifiers, and missing snapshot scenarios.
 
@@ -1811,7 +1811,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** testing, api-development, high-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.2
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.2
 
 **Details:** Stand up contract tests executed against ClearBill staging environment to verify API compatibility before production release.
 
@@ -1843,7 +1843,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Description:**
 **Status:** ✅ COMPLETE
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.2
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.2
 
 **Details:** Establish downstream regression suite (consumer-driven contract or Postman collection) executed before each release to catch breaking changes.
 
@@ -1874,7 +1874,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Status:** 🗑️ OUTDATED
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.2
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.2
 
 **Details:** Produce versioned API change log documenting schema changes, new endpoints, deprecations, and breaking changes with schema diffs.
 
@@ -1905,7 +1905,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** documentation, api-development, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.2
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.2
 
 **Details:** Coordinate with product marketing and developer relations to produce client enablement guide for API consumers.
 
@@ -1938,7 +1938,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** performance, caching, high-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.4
 
 **Details:** Implement L1 in-process LRU cache and L2 Redis cache keyed by `(engine|code|setting|locality|snapshot_digest)` for improved pricing performance.
 
@@ -1970,7 +1970,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** performance, caching, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.4
 
 **Details:** Develop nightly cache warmers seeded from top ClearBill demand cohorts to pre-populate cache with frequently accessed data.
 
@@ -2001,7 +2001,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Status:** ✅ COMPLETE
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.4
 
 **Details:** Run load tests (single lookup, 20-code batch, 40-code batch) with targets p95 < 500 ms / < 2.5 s to validate performance SLOs.
 
@@ -2034,7 +2034,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** monitoring, observability, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.4
 
 **Details:** Expose Prometheus metrics: `dataset_snapshot_selected_total`, `pricing_lookup_latency_ms`, `cache_hits_total`/`cache_misses_total`, `requests_total{route, scope}`.
 
@@ -2064,7 +2064,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** monitoring, observability, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.4
 
 **Details:** Publish Grafana dashboards showing latency, cache hit ratio, error budgets, and snapshot adoption metrics.
 
@@ -2095,7 +2095,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** monitoring, observability, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.4
 
 **Details:** Configure alerts for SLO burn, snapshot mismatch, cache miss spikes, and ingestion drift.
 
@@ -2126,7 +2126,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** documentation, operations, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.4
 
 **Details:** Author runbooks for snapshot activation/rollback, cache warmer failures, and RBAC issue remediation.
 
@@ -2164,7 +2164,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** operations, training, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.4
 
 **Details:** Deliver on-call training session with recordings and scenario drills, and update paging escalation list.
 
@@ -2199,7 +2199,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** operations, deployment, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.4
 
 **Details:** Prepare deployment checklist covering feature flag sequencing, dual-write window, and rollback triggers.
 
@@ -2231,7 +2231,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** security, database, high-priority, readiness-plan, quick-win-3
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3, `artifacts/quick_wins_detailed_plans.md`
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.3, `artifacts/quick_wins_detailed_plans.md`
 
 **Details:** Create `api_keys` table with salted hash storage, scopes, tenant, and attribution fields. This is Quick Win #3 and enables RBAC functionality.
 
@@ -2267,7 +2267,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** security, api-development, high-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.3
 
 **Details:** Implement middleware enforcing scope-based access control per router. Replace current env-based API key check with database-backed key lookup and scope validation.
 
@@ -2304,7 +2304,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** monitoring, observability, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.3
 **Status:** ✅ COMPLETE
 
 **Details:** Emit Prometheus metrics per API key scope: `requests_total{scope, key_id}`, `requests_4xx_total{scope}`, `requests_rate_limited_total{scope}`.
@@ -2336,7 +2336,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** observability, tracing, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.3
 
 **Status:** ✅ COMPLETE
 **Details:** Route correlation IDs through ingestion and pricing services to enable end-to-end request tracing. Ensure no PHI persists outside encrypted stores.
@@ -2370,7 +2370,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** compliance, documentation, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.3
 
 **Details:** Record compliance bill-of-materials (BOM) documenting systems, datasets, controls aligning to HIPAA §164.308/§164.312 requirements.
 
@@ -2411,7 +2411,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** compliance, documentation, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.3
 
 **Details:** Define data retention and deletion policy for pricing snapshots, audit logs, and trace records to ensure compliance with data protection regulations.
 **Status:** ✅ COMPLETE
@@ -2448,7 +2448,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** security, monitoring, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.3
 **Status:** ✅ COMPLETE
 
 **Details:** Configure alerts for repeated authentication failures and scope escalation attempts to detect potential security threats.
@@ -2484,7 +2484,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** compliance, auditing, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.3
 **Status:** ✅ COMPLETE
 
 **Details:** Capture audit log sampling review process and provide compliance attestation package for HIPAA audit requirements.
@@ -2522,7 +2522,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** compliance, operations, medium-priority, readiness-plan
 
 **Description:**
-**Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+**Source:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` §5.3
 
 **Details:** Partner with Compliance team for pre-launch tabletop exercise covering incident response scenarios to validate readiness and procedures.
 
@@ -3431,7 +3431,7 @@ Deploy GPCI v1.3 schema and data to production-ready Render PostgreSQL database.
 - Tasks are categorized by type and priority
 - Estimated times are based on complexity analysis
 - Dependencies are noted where applicable
-- All tasks include source information for traceability (referenced to `CMS_Pricing_API_Readiness_Plan_for_Cle.md`)
+- All tasks include source information for traceability (referenced to `DOC-cms-pricing-api-readiness-plan-v1.0.md`)
 - Recent accomplishments and current focus updated as of 2025-01-15
 - Architecture documentation tasks added as new high-priority items
 - Readiness plan tasks fully mapped (Sections 5.1, 5.2, 5.3, 5.4)
