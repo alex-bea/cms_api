@@ -218,16 +218,37 @@ def load_pprrvu_data(
     )
     
     for source_col, target_col in alias_pairs:
-        if source_col in df.columns and target_col not in df.columns:
+        source_present = source_col in df.columns
+        target_present = target_col in df.columns
+
+        if source_present and not target_present:
             df[target_col] = df[source_col]
             logger.info(
                 "Column mapping applied",
                 source=source_col,
                 target=target_col,
                 rows_mapped=len(df),
-                non_null_count=df[target_col].notna().sum() if target_col in df.columns else 0,
+                non_null_count=df[target_col].notna().sum(),
             )
-        elif source_col not in df.columns and target_col not in df.columns:
+            continue
+
+        if source_present and target_present:
+            # Backfill any nulls on the target column using schema-format source values.
+            source_series = df[source_col]
+            target_series = df[target_col]
+            before_fill = target_series.notna().sum()
+            df[target_col] = target_series.where(target_series.notna(), source_series)
+            after_fill = df[target_col].notna().sum()
+            if after_fill > before_fill:
+                logger.info(
+                    "Column mapping backfilled nulls",
+                    source=source_col,
+                    target=target_col,
+                    rows_backfilled=after_fill - before_fill,
+                )
+            continue
+
+        if not source_present and not target_present:
             logger.warning(
                 "Column mapping skipped - both columns missing",
                 source=source_col,
