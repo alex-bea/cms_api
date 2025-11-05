@@ -1,365 +1,228 @@
-"""
-MPFS Ingestor End-to-End Integration Tests
-
-Following QTS (QA & Testing Standard) PRD v1.0 and DIS compliance
-"""
-
-import pytest
-import pytest_asyncio
-import asyncio
-import tempfile
-import shutil
+import json
+from datetime import date
 from pathlib import Path
-from datetime import datetime, date
-from typing import Dict, Any
-import structlog
+from typing import Dict, Any, List, Optional
+
+import pandas as pd
+import pytest
 
 from cms_pricing.ingestion.ingestors.mpfs_ingestor import MPFSIngestor
-from cms_pricing.ingestion.scrapers.cms_mpfs_scraper import CMSMPFSScraper
-from tests.fixtures.mpfs.test_dataset_creator import MPFSTestDatasetCreator
-
-logger = structlog.get_logger()
+from cms_pricing.ingestion.services.conversion_factor_fetcher import ConversionFactorMetadata
+from cms_pricing.services.dataset_snapshot_service import SnapshotMetadata
 
 
-class TestMPFSIngestorE2E:
-    """End-to-end tests for MPFS ingestor"""
-    
-    @pytest_asyncio.fixture
-    async def temp_dir(self):
-        """Create temporary directory for test data"""
-        temp_dir = tempfile.mkdtemp()
-        yield Path(temp_dir)
-        shutil.rmtree(temp_dir)
-    
-    @pytest_asyncio.fixture
-    async def test_data(self, temp_dir):
-        """Create test data"""
-        creator = MPFSTestDatasetCreator(str(temp_dir / "test_data"))
-        return creator.create_all()
-    
-    @pytest_asyncio.fixture
-    async def mpfs_ingestor(self, temp_dir):
-        """Create MPFS ingestor instance"""
-        return MPFSIngestor(str(temp_dir / "ingestion"))
-    
-    @pytest_asyncio.fixture
-    async def mpfs_scraper(self, temp_dir):
-        """Create MPFS scraper instance"""
-        return CMSMPFSScraper(str(temp_dir / "scraped"))
-    
-    @pytest.mark.asyncio
-    async def test_mpfs_scraper_discovery(self, mpfs_scraper):
-        """Test MPFS scraper file discovery"""
-        logger.info("Testing MPFS scraper discovery")
-        
-        # Test discovery for 2025
-        files = await mpfs_scraper.scrape_mpfs_files(2025, 2025, latest_only=True)
-        
-        # Verify discovery results
-        assert isinstance(files, list)
-        logger.info("MPFS scraper discovery test completed", files_found=len(files))
-    
-    @pytest.mark.asyncio
-    async def test_mpfs_ingestor_full_pipeline(self, mpfs_ingestor, test_data):
-        """Test full MPFS ingestor pipeline"""
-        logger.info("Testing MPFS ingestor full pipeline")
-        
-        try:
-            # Run ingestion for 2025
-            result = await mpfs_ingestor.ingest(2025)
-            
-            # Verify result structure
-            assert "batch_id" in result
-            assert "dataset_name" in result
-            assert "release_id" in result
-            assert "curated_views" in result
-            assert "observability_report" in result
-            assert "metadata" in result
-            
-            # Verify dataset name
-            assert result["dataset_name"] == "MPFS"
-            
-            # Verify curated views
-            curated_views = result["curated_views"]
-            expected_views = [
-                "mpfs_rvu", "mpfs_indicators_all", "mpfs_locality", 
-                "mpfs_gpci", "mpfs_cf_vintage", "mpfs_link_keys"
-            ]
-            for view_name in expected_views:
-                assert view_name in curated_views
-            
-            # Verify observability report
-            obs_report = result["observability_report"]
-            assert "batch_id" in obs_report
-            assert "freshness_metrics" in obs_report
-            assert "volume_metrics" in obs_report
-            assert "schema_metrics" in obs_report
-            assert "quality_metrics" in obs_report
-            assert "lineage_metrics" in obs_report
-            
-            logger.info("MPFS ingestor full pipeline test completed successfully")
-            
-        except Exception as e:
-            logger.error("MPFS ingestor full pipeline test failed", error=str(e))
-            raise
-    
-    @pytest.mark.asyncio
-    async def test_mpfs_ingestor_dis_stages(self, mpfs_ingestor, test_data):
-        """Test individual DIS pipeline stages"""
-        logger.info("Testing MPFS ingestor DIS stages")
-        
-        try:
-            # Test discovery stage
-            source_files = await mpfs_ingestor.discover_source_files()
-            assert isinstance(source_files, list)
-            logger.info("Discovery stage test completed", files_found=len(source_files))
-            
-            # Test land stage
-            raw_batch = await mpfs_ingestor.land_stage(source_files)
-            assert raw_batch.batch_id is not None
-            assert len(raw_batch.source_files) > 0
-            logger.info("Land stage test completed", files_processed=len(raw_batch.raw_data))
-            
-            # Test validate stage
-            validated_batch, validation_results = await mpfs_ingestor.validate_stage(raw_batch)
-            assert validated_batch.batch_id == raw_batch.batch_id
-            assert isinstance(validation_results, list)
-            logger.info("Validate stage test completed", validation_results=len(validation_results))
-            
-            # Test normalize stage
-            adapted_batch = await mpfs_ingestor.normalize_stage(validated_batch)
-            assert adapted_batch.batch_id == validated_batch.batch_id
-            assert len(adapted_batch.adapted_data) > 0
-            logger.info("Normalize stage test completed", files_processed=len(adapted_batch.adapted_data))
-            
-            # Test enrich stage
-            stage_frame = await mpfs_ingestor.enrich_stage(adapted_batch)
-            assert stage_frame.batch_id == adapted_batch.batch_id
-            logger.info("Enrich stage test completed")
-            
-            # Test publish stage
-            result = await mpfs_ingestor.publish_stage(stage_frame)
-            assert "batch_id" in result
-            assert "curated_views" in result
-            logger.info("Publish stage test completed")
-            
-            logger.info("All DIS stages test completed successfully")
-            
-        except Exception as e:
-            logger.error("DIS stages test failed", error=str(e))
-            raise
-    
-    @pytest.mark.asyncio
-    async def test_mpfs_ingestor_validation_rules(self, mpfs_ingestor):
-        """Test MPFS ingestor validation rules"""
-        logger.info("Testing MPFS ingestor validation rules")
-        
-        # Get validation rules
-        validation_rules = mpfs_ingestor.validation_rules
-        
-        # Verify rules exist
-        assert len(validation_rules) > 0
-        
-        # Verify rule structure
-        for rule in validation_rules:
-            assert hasattr(rule, 'rule_id')
-            assert hasattr(rule, 'name')
-            assert hasattr(rule, 'description')
-            assert hasattr(rule, 'severity')
-            assert hasattr(rule, 'validation_type')
-        
-        # Verify specific rules exist
-        rule_ids = [rule.rule_id for rule in validation_rules]
-        expected_rules = [
-            "mpfs_structural_001",
-            "mpfs_domain_001", 
-            "mpfs_domain_002",
-            "mpfs_statistical_001",
-            "mpfs_business_001"
+class StubSnapshotService:
+    """In-memory snapshot service for tests."""
+
+    def __init__(self, snapshots: Dict[str, SnapshotMetadata]):
+        self._snapshots = snapshots
+        self.registered: List[Dict[str, Any]] = []
+
+    def get_latest_snapshot(self, dataset_id: str) -> SnapshotMetadata:
+        return self._snapshots[dataset_id]
+
+    def register_snapshot(
+        self,
+        dataset_id: str,
+        release_id: str,
+        digest: str,
+        effective_from: date,
+        effective_to: Optional[date] = None,
+        manifest_url: Optional[str] = None,
+        curated_path: Optional[str] = None,
+    ):
+        self.registered.append(
+            {
+                "dataset_id": dataset_id,
+                "release_id": release_id,
+                "digest": digest,
+                "effective_from": effective_from,
+                "effective_to": effective_to,
+                "manifest_url": manifest_url,
+                "curated_path": curated_path,
+            }
+        )
+
+    def close(self) -> None:
+        pass
+
+
+class StubConversionFactorFetcher:
+    """Return pre-seeded conversion factor metadata."""
+
+    def __init__(self, metadata: ConversionFactorMetadata):
+        self.metadata = metadata
+        self.calls: List[Dict[str, Any]] = []
+
+    async def ensure_conversion_factor(
+        self,
+        year: int,
+        source_url: Optional[str] = None,
+        manual_override_path: Optional[str] = None,
+        expected_checksum: Optional[str] = None,
+    ) -> ConversionFactorMetadata:
+        self.calls.append(
+            {
+                "year": year,
+                "source_url": source_url,
+                "manual_override_path": manual_override_path,
+                "expected_checksum": expected_checksum,
+            }
+        )
+        return self.metadata
+
+
+def _sample_rvu_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "hcpcs_code": "A1000",
+                "modifier": "",
+                "description": "Test procedure",
+                "status_code": "A",
+                "global_days": "000",
+                "work_rvu": 1.0,
+                "pe_rvu_nonfac": 0.5,
+                "pe_rvu_fac": 0.4,
+                "mp_rvu": 0.1,
+                "na_indicator": "N",
+                "opps_cap_applicable": "N",
+                "bilateral_ind": "0",
+                "multiple_proc_ind": "0",
+                "assistant_surg_ind": "0",
+                "co_surg_ind": "0",
+                "team_surg_ind": "0",
+                "total_nonfac": 1.6,
+                "total_fac": 1.5,
+                "effective_start": date(2025, 1, 1),
+                "effective_end": date(2025, 12, 31),
+            }
         ]
-        
-        for expected_rule in expected_rules:
-            assert expected_rule in rule_ids
-        
-        logger.info("Validation rules test completed", rules_count=len(validation_rules))
-    
-    @pytest.mark.asyncio
-    async def test_mpfs_ingestor_schema_contracts(self, mpfs_ingestor):
-        """Test MPFS ingestor schema contracts"""
-        logger.info("Testing MPFS ingestor schema contracts")
-        
-        # Get schema contracts
-        schema_contracts = mpfs_ingestor.schema_contracts
-        
-        # Verify contracts exist
-        assert len(schema_contracts) > 0
-        
-        # Verify contract structure
-        for contract_name, contract in schema_contracts.items():
-            assert hasattr(contract, 'schema_id')
-            assert hasattr(contract, 'schema_name')
-            assert hasattr(contract, 'version')
-            assert hasattr(contract, 'fields')
-        
-        # Verify specific contracts exist
-        expected_contracts = ["mpfs_rvu", "mpfs_cf"]
-        for expected_contract in expected_contracts:
-            assert expected_contract in schema_contracts
-        
-        logger.info("Schema contracts test completed", contracts_count=len(schema_contracts))
-    
-    @pytest.mark.asyncio
-    async def test_mpfs_ingestor_sla_compliance(self, mpfs_ingestor):
-        """Test MPFS ingestor SLA compliance"""
-        logger.info("Testing MPFS ingestor SLA compliance")
-        
-        # Get SLA spec
-        sla_spec = mpfs_ingestor.sla_spec
-        
-        # Verify SLA spec structure
-        assert hasattr(sla_spec, 'max_processing_time_hours')
-        assert hasattr(sla_spec, 'freshness_alert_days')
-        assert hasattr(sla_spec, 'quality_threshold')
-        assert hasattr(sla_spec, 'availability_target')
-        
-        # Verify SLA values are reasonable
-        assert sla_spec.max_processing_time_hours > 0
-        assert sla_spec.freshness_alert_days > 0
-        assert 0 < sla_spec.quality_threshold <= 1
-        assert 0 < sla_spec.availability_target <= 1
-        
-        logger.info("SLA compliance test completed")
-    
-    @pytest.mark.asyncio
-    async def test_mpfs_ingestor_error_handling(self, mpfs_ingestor):
-        """Test MPFS ingestor error handling"""
-        logger.info("Testing MPFS ingestor error handling")
-        
-        try:
-            # Test with invalid year (should handle gracefully)
-            result = await mpfs_ingestor.ingest(1999)  # Very old year
-            
-            # Should still return a result structure
-            assert "batch_id" in result
-            assert "dataset_name" in result
-            
-            logger.info("Error handling test completed")
-            
-        except Exception as e:
-            # Should handle errors gracefully
-            logger.info("Error handling test completed with expected error", error=str(e))
-    
-    @pytest.mark.asyncio
-    async def test_mpfs_ingestor_metadata_preservation(self, mpfs_ingestor, test_data):
-        """Test MPFS ingestor metadata preservation"""
-        logger.info("Testing MPFS ingestor metadata preservation")
-        
-        try:
-            # Run ingestion
-            result = await mpfs_ingestor.ingest(2025)
-            
-            # Verify metadata is preserved
-            metadata = result["metadata"]
-            assert "ingestion_timestamp" in metadata
-            assert "source" in metadata
-            assert "license" in metadata
-            assert "attribution_required" in metadata
-            
-            # Verify source information
-            assert metadata["source"] == "CMS Medicare Physician Fee Schedule"
-            assert metadata["license"] == "CMS Public Domain"
-            assert metadata["attribution_required"] == False
-            
-            logger.info("Metadata preservation test completed")
-            
-        except Exception as e:
-            logger.error("Metadata preservation test failed", error=str(e))
-            raise
-    
-    @pytest.mark.asyncio
-    async def test_mpfs_ingestor_observability_metrics(self, mpfs_ingestor, test_data):
-        """Test MPFS ingestor observability metrics"""
-        logger.info("Testing MPFS ingestor observability metrics")
-        
-        try:
-            # Run ingestion
-            result = await mpfs_ingestor.ingest(2025)
-            
-            # Verify observability report
-            obs_report = result["observability_report"]
-            
-            # Verify 5-pillar observability
-            assert "freshness_metrics" in obs_report
-            assert "volume_metrics" in obs_report
-            assert "schema_metrics" in obs_report
-            assert "quality_metrics" in obs_report
-            assert "lineage_metrics" in obs_report
-            
-            # Verify metrics structure
-            for pillar in ["freshness_metrics", "volume_metrics", "schema_metrics", "quality_metrics", "lineage_metrics"]:
-                pillar_data = obs_report[pillar]
-                assert "score" in pillar_data or "last_successful_run" in pillar_data
-            
-            logger.info("Observability metrics test completed")
-            
-        except Exception as e:
-            logger.error("Observability metrics test failed", error=str(e))
-            raise
+    )
 
 
-# Test configuration
-@pytest.mark.integration
-@pytest.mark.mpfs
-@pytest.mark.e2e
-class TestMPFSIngestorIntegration:
-    """Integration test class for MPFS ingestor"""
-    
-    @pytest.mark.asyncio
-    async def test_mpfs_ingestor_with_real_data(self):
-        """Test MPFS ingestor with real data (if available)"""
-        logger.info("Testing MPFS ingestor with real data")
-        
-        # This test would use real CMS data if available
-        # For now, just verify the ingestor can be instantiated
-        ingestor = MPFSIngestor()
-        assert ingestor is not None
-        assert ingestor.dataset_name == "MPFS"
-        
-        logger.info("Real data test completed")
+def _sample_gpci_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "mac": "00101",
+                "state": "CA",
+                "locality_id": "01",
+                "locality_name": "California Test Locality",
+                "work_gpci": 1.0,
+                "pe_gpci": 0.8,
+                "mp_gpci": 0.3,
+                "effective_start": date(2025, 1, 1),
+                "effective_end": date(2025, 12, 31),
+            }
+        ]
+    )
 
 
-# Performance tests
-@pytest.mark.performance
-@pytest.mark.mpfs
-class TestMPFSIngestorPerformance:
-    """Performance tests for MPFS ingestor"""
-    
-    @pytest.mark.asyncio
-    async def test_mpfs_ingestor_performance(self, temp_dir):
-        """Test MPFS ingestor performance"""
-        logger.info("Testing MPFS ingestor performance")
-        
-        ingestor = MPFSIngestor(str(temp_dir / "ingestion"))
-        
-        # Measure ingestion time
-        start_time = datetime.now()
-        
-        try:
-            result = await ingestor.ingest(2025)
-            
-            end_time = datetime.now()
-            duration = (end_time - start_time).total_seconds()
-            
-            # Verify performance is within SLA
-            assert duration < ingestor.sla_spec.max_processing_time_hours * 3600
-            
-            logger.info("Performance test completed", duration_seconds=duration)
-            
-        except Exception as e:
-            logger.error("Performance test failed", error=str(e))
-            raise
+@pytest.fixture
+def mpfs_test_environment(tmp_path) -> Dict[str, Any]:
+    """Prepare MPFS ingestor with stub snapshot service and CF fetcher."""
+    rvu_df = _sample_rvu_df()
+    gpci_df = _sample_gpci_df()
+
+    rvu_path = tmp_path / "rvu.parquet"
+    gpci_path = tmp_path / "gpci.parquet"
+    rvu_df.to_parquet(rvu_path, index=False)
+    gpci_df.to_parquet(gpci_path, index=False)
+
+    cf_path = tmp_path / "cf.txt"
+    cf_path.write_text("CY2025 MPFS Conversion Factor: 35.5000")
+
+    snapshots = {
+        "rvu_items": SnapshotMetadata(
+            dataset_id="rvu_items",
+            release_id="rvu_2025D",
+            digest="rvu_digest",
+            effective_from=date(2025, 1, 1),
+            effective_to=date(2025, 12, 31),
+            manifest_url=None,
+            path=str(rvu_path),
+        ),
+        "gpci_indices": SnapshotMetadata(
+            dataset_id="gpci_indices",
+            release_id="gpci_2025A",
+            digest="gpci_digest",
+            effective_from=date(2025, 1, 1),
+            effective_to=date(2025, 12, 31),
+            manifest_url=None,
+            path=str(gpci_path),
+        ),
+    }
+
+    snapshot_service = StubSnapshotService(snapshots)
+    cf_metadata = ConversionFactorMetadata(
+        year=2025,
+        path=str(cf_path),
+        checksum="cf_digest",
+        source_url="file://cf.txt",
+        effective_from=date(2025, 1, 1),
+        effective_to=date(2025, 12, 31),
+    )
+    cf_fetcher = StubConversionFactorFetcher(cf_metadata)
+
+    output_dir = tmp_path / "output"
+    ingestor = MPFSIngestor(
+        output_dir=str(output_dir),
+        snapshot_service=snapshot_service,
+        cf_fetcher=cf_fetcher,
+    )
+
+    return {
+        "ingestor": ingestor,
+        "snapshot_service": snapshot_service,
+        "cf_fetcher": cf_fetcher,
+        "rvu_df": rvu_df,
+        "gpci_df": gpci_df,
+        "cf_value": 35.5,
+        "output_dir": output_dir,
+    }
 
 
-if __name__ == "__main__":
-    # Run tests
-    pytest.main([__file__, "-v"])
+@pytest.mark.asyncio
+async def test_mpfs_ingestor_full_pipeline(mpfs_test_environment):
+    env = mpfs_test_environment
+    ingestor: MPFSIngestor = env["ingestor"]
+
+    result = await ingestor.ingest(2025)
+
+    # Curated view summary
+    summary = result["curated_views"]
+    assert "mpfs_payment_curated" in summary
+    assert summary["mpfs_payment_curated"]["rows"] == 1
+
+    # Manifest produced with expected entries
+    manifest_path = Path(result["manifest_path"])
+    assert manifest_path.exists()
+    manifest = json.loads(manifest_path.read_text())
+    assert set(manifest.keys()) == {
+        "mpfs_payment_curated",
+        "mpfs_rvu",
+        "mpfs_gpci",
+        "mpfs_cf_vintage",
+        "mpfs_indicators_all",
+        "mpfs_locality",
+        "mpfs_link_keys",
+    }
+
+    # Validate payment computation
+    payment_df = pd.read_parquet(manifest_path.parent / "mpfs_payment_curated.parquet")
+    expected_nonfac = (1.0 * 1.0 + 0.5 * 0.8 + 0.1 * 0.3) * env["cf_value"]
+    expected_fac = (1.0 * 1.0 + 0.4 * 0.8 + 0.1 * 0.3) * env["cf_value"]
+    assert pytest.approx(payment_df.loc[0, "payment_nonfacility"], rel=1e-6) == expected_nonfac
+    assert pytest.approx(payment_df.loc[0, "payment_facility"], rel=1e-6) == expected_fac
+
+    # Snapshot registrations recorded
+    snapshot_service: StubSnapshotService = env["snapshot_service"]
+    assert len(snapshot_service.registered) == len(manifest)
+    dataset_ids = {entry["dataset_id"] for entry in snapshot_service.registered}
+    assert dataset_ids == set(manifest.keys())
+
+    # Observability report reflects processed rows
+    report = result["observability_report"]
+    assert report.volume_metrics.rows_processed == 1 * 1
+    assert report.quality_metrics.quality_score == pytest.approx(1.0)
