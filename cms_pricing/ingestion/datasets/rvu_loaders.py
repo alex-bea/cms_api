@@ -13,6 +13,8 @@ normalize stage and persist them into the RVU schema tables.
 
 from __future__ import annotations
 
+import math
+import time
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -34,6 +36,7 @@ from cms_pricing.models.rvu import (
 logger = structlog.get_logger()
 
 BULK_INSERT_CHUNK_SIZE = 5000
+BULK_INSERT_LOG_FREQUENCY = 5
 
 # State name to USPS 2-character abbreviation mapping
 _STATE_NAME_TO_ABBR = {
@@ -198,6 +201,11 @@ def load_pprrvu_data(
     alias_pairs = [
         ("hcpcs", "hcpcs_code"),
         ("status", "status_code"),
+        # Map schema format (rvu_work) to API format (work_rvu)
+        ("rvu_work", "work_rvu"),
+        ("rvu_pe_nonfac", "pe_rvu_nonfac"),
+        ("rvu_pe_fac", "pe_rvu_fac"),
+        ("rvu_malp", "mp_rvu"),
     ]
     for source_col, target_col in alias_pairs:
         if source_col in df.columns and target_col not in df.columns:
@@ -267,8 +275,7 @@ def load_pprrvu_data(
     ]
 
     prepared = _replace_null_like(df[insert_columns])
-    records = prepared.to_dict("records")
-    return _bulk_replace_records(db_session, RVUItem, release_uuid, records, "PPRRVU")
+    return _bulk_replace_records(db_session, RVUItem, release_uuid, prepared, "PPRRVU")
 
 
 def load_gpci_data(
@@ -363,8 +370,7 @@ def load_gpci_data(
     ]
 
     prepared = _replace_null_like(df[insert_columns])
-    records = prepared.to_dict("records")
-    return _bulk_replace_records(db_session, GPCIIndex, release_uuid, records, "GPCI")
+    return _bulk_replace_records(db_session, GPCIIndex, release_uuid, prepared, "GPCI")
 
 
 def load_oppscap_data(
@@ -423,8 +429,7 @@ def load_oppscap_data(
     ]
 
     prepared = _replace_null_like(df[insert_columns])
-    records = prepared.to_dict("records")
-    return _bulk_replace_records(db_session, OPPSCap, release_uuid, records, "OPPSCap")
+    return _bulk_replace_records(db_session, OPPSCap, release_uuid, prepared, "OPPSCap")
 
 
 def load_anes_data(
@@ -467,8 +472,7 @@ def load_anes_data(
     ]
 
     prepared = _replace_null_like(df[insert_columns])
-    records = prepared.to_dict("records")
-    return _bulk_replace_records(db_session, AnesCF, release_uuid, records, "ANES")
+    return _bulk_replace_records(db_session, AnesCF, release_uuid, prepared, "ANES")
 
 
 def load_locality_data(
@@ -540,8 +544,7 @@ def load_locality_data(
     ]
 
     prepared = _replace_null_like(df[insert_columns])
-    records = prepared.to_dict("records")
-    return _bulk_replace_records(db_session, LocalityCounty, release_uuid, records, "Locality")
+    return _bulk_replace_records(db_session, LocalityCounty, release_uuid, prepared, "Locality")
 
 
 def _derive_source_version(vintage_date: str) -> str:
@@ -634,29 +637,53 @@ def _bulk_replace_records(
     db_session: Any,
     model,
     release_uuid: Any,
-    records: List[Dict[str, Any]],
+    prepared_df: pd.DataFrame,
     dataset_label: str,
 ) -> int:
-    if not records:
+    if prepared_df is None or prepared_df.empty:
         return 0
 
     try:
         with db_session.begin_nested():
             db_session.execute(delete(model).where(model.release_id == release_uuid))
-            _bulk_insert_chunked(db_session, model, records)
+            _bulk_insert_chunked(db_session, model, prepared_df, dataset_label)
     except Exception:  # pragma: no cover - logging only
         logger.exception("%s bulk load failed", dataset_label, release_id=str(release_uuid))
         raise
 
-    return len(records)
+    return len(prepared_df)
 
 
-def _bulk_insert_chunked(db_session: Any, model, records: List[Dict[str, Any]]) -> None:
-    if not records:
+def _bulk_insert_chunked(
+    db_session: Any,
+    model,
+    prepared_df: pd.DataFrame,
+    dataset_label: str,
+) -> None:
+    if prepared_df is None or prepared_df.empty:
         return
-    for start in range(0, len(records), BULK_INSERT_CHUNK_SIZE):
-        chunk = records[start : start + BULK_INSERT_CHUNK_SIZE]
-        db_session.bulk_insert_mappings(model, chunk)
+    total_rows = len(prepared_df)
+    total_chunks = math.ceil(total_rows / BULK_INSERT_CHUNK_SIZE)
+    start_time = time.perf_counter()
+
+    for chunk_index, start in enumerate(range(0, total_rows, BULK_INSERT_CHUNK_SIZE), start=1):
+        chunk_df = prepared_df.iloc[start : start + BULK_INSERT_CHUNK_SIZE]
+        db_session.bulk_insert_mappings(model, chunk_df.to_dict("records"))
+
+        if (
+            chunk_index % BULK_INSERT_LOG_FREQUENCY == 0
+            or chunk_index == total_chunks
+        ):
+            elapsed = time.perf_counter() - start_time
+            rows_inserted = min(chunk_index * BULK_INSERT_CHUNK_SIZE, total_rows)
+            logger.info(
+                "Bulk insert progress",
+                dataset=dataset_label,
+                chunk=chunk_index,
+                total_chunks=total_chunks,
+                rows_inserted=rows_inserted,
+                elapsed_sec=round(elapsed, 2),
+            )
 
 
 RVU_DATASET_LOADERS = {

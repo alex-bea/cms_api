@@ -179,7 +179,8 @@ class DISPipeline:
                 "manifest": land_result.get("manifest"),
                 "docs_directory": land_result.get("docs_directory"),
                 "docs_manifest_path": land_result.get("docs_manifest_path"),
-                "guidance_documents": land_result.get("guidance_documents", [])
+                "guidance_documents": land_result.get("guidance_documents", []),
+                "files_downloaded": land_result.get("files_downloaded", 0)
             }
         )
     
@@ -348,6 +349,7 @@ class DISPipeline:
             "record_count": record_count,
             "valid_records": valid_records,
             "quality_score": quality_score,
+            "files_downloaded": raw_batch.metadata.get("files_downloaded", len(raw_batch.raw_content) if raw_batch.raw_content else 0),
             "record_counts": {
                 table: len(df) for table, df in enriched_data.items()
             },
