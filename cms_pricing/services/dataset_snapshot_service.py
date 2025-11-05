@@ -1,10 +1,15 @@
-"""Service for selecting dataset snapshots
+"""Service for selecting and registering dataset snapshots.
 
-Part of Quick Win #1: Dataset Snapshots Table
+Part of Quick Win #1: Dataset Snapshots Table. Extended to support snapshot
+metadata reuse for MPFS implementation (snapshot reuse + targeted fetcher
+pattern).
 """
 
-from typing import Optional, Dict, Any, List
+from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
+from typing import Optional, Dict, Any, List
+
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 import structlog
@@ -14,11 +19,35 @@ from cms_pricing.models.dataset_snapshots import DatasetSnapshot
 logger = structlog.get_logger()
 
 
+@dataclass
+class SnapshotMetadata:
+    """Lightweight metadata record returned by DatasetSnapshotService."""
+
+    dataset_id: str
+    release_id: str
+    digest: str
+    effective_from: date
+    effective_to: Optional[date]
+    manifest_url: Optional[str] = None
+    path: Optional[str] = None
+
+
 class DatasetSnapshotService:
     """Service for selecting dataset snapshots by valuation date"""
-    
-    def __init__(self, db: Session):
-        self.db = db
+
+    def __init__(self, db: Optional[Session] = None):
+        if db is not None:
+            self.db = db
+            self._managed_session = False
+        else:
+            from cms_pricing.database import SessionLocal  # lazy import to avoid circular import
+
+            self.db = SessionLocal()
+            self._managed_session = True
+
+    # ------------------------------------------------------------------
+    # Snapshot selection
+    # ------------------------------------------------------------------
     
     def select_snapshot(
         self,
@@ -72,9 +101,46 @@ class DatasetSnapshotService:
                 release_id=snapshot.release_id,
                 effective_from=snapshot.effective_from,
                 valuation_date=valuation_date
-            )
+        )
         
         return snapshot
+
+    def get_latest_snapshot(
+        self,
+        dataset_id: str,
+        valuation_date: Optional[date] = None,
+        release_id: Optional[str] = None
+    ) -> Optional[SnapshotMetadata]:
+        """
+        Return latest snapshot metadata for dataset.
+
+        Args:
+            dataset_id: Dataset identifier (e.g., 'rvu_items')
+            valuation_date: Optional valuation date (defaults to today)
+            release_id: Optional specific release identifier
+
+        Returns:
+            SnapshotMetadata or None if no snapshot available.
+        """
+        snapshot = self.select_snapshot(
+            dataset_id=dataset_id,
+            valuation_date=valuation_date,
+            release_id=release_id
+        )
+
+        if not snapshot:
+            return None
+
+        resolved_path = self._resolve_curated_path(snapshot)
+        return SnapshotMetadata(
+            dataset_id=snapshot.dataset_id,
+            release_id=snapshot.release_id,
+            digest=snapshot.digest,
+            effective_from=snapshot.effective_from,
+            effective_to=snapshot.effective_to,
+            manifest_url=snapshot.manifest_url,
+            path=resolved_path
+        )
     
     def get_snapshot_by_release(
         self,
@@ -107,7 +173,8 @@ class DatasetSnapshotService:
         digest: str,
         effective_from: date,
         effective_to: Optional[date] = None,
-        manifest_url: Optional[str] = None
+        manifest_url: Optional[str] = None,
+        curated_path: Optional[str] = None
     ) -> DatasetSnapshot:
         """
         Register a new dataset snapshot.
@@ -118,11 +185,16 @@ class DatasetSnapshotService:
             digest: SHA256 digest of dataset content
             effective_from: Date when snapshot becomes effective
             effective_to: Optional expiration date
-            manifest_url: Optional URL to dataset manifest
+            manifest_url: Optional URL to dataset manifest (used for provenance)
+            curated_path: Optional local path to curated dataset output. When
+                provided it will be stored in manifest_url if manifest_url is
+                not supplied.
             
         Returns:
             Created DatasetSnapshot
         """
+        stored_manifest = manifest_url or curated_path
+
         # Check if already exists (efficient PK lookup)
         existing = self.db.get(DatasetSnapshot, (dataset_id, release_id))
         if existing:
@@ -134,7 +206,7 @@ class DatasetSnapshotService:
             existing.digest = digest
             existing.effective_from = effective_from
             existing.effective_to = effective_to
-            existing.manifest_url = manifest_url
+            existing.manifest_url = stored_manifest
             self.db.commit()
             return existing
         
@@ -144,7 +216,7 @@ class DatasetSnapshotService:
             digest=digest,
             effective_from=effective_from,
             effective_to=effective_to,
-            manifest_url=manifest_url
+            manifest_url=stored_manifest
         )
         
         self.db.add(snapshot)
@@ -160,3 +232,54 @@ class DatasetSnapshotService:
         
         return snapshot
 
+    def close(self) -> None:
+        """Close managed DB session if this service created its own."""
+        if getattr(self, "_managed_session", False) and self.db:
+            try:
+                self.db.close()
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _resolve_curated_path(self, snapshot: DatasetSnapshot) -> Optional[str]:
+        """
+        Resolve best-guess curated dataset path for snapshot.
+
+        Priority:
+            1. manifest_url if it looks like a local path
+            2. Default mapping based on dataset_id
+
+        Returns:
+            String path or None if unable to resolve.
+        """
+        manifest_url = snapshot.manifest_url or ""
+        if manifest_url.startswith("data/") or manifest_url.startswith("./data/"):
+            return manifest_url
+
+        dataset_root = self._default_curated_root(snapshot.dataset_id)
+        if not dataset_root:
+            return None
+
+        release_dir = dataset_root / snapshot.release_id
+        return str(release_dir)
+
+    @staticmethod
+    def _default_curated_root(dataset_id: str) -> Optional[Path]:
+        """Provide default curated directory for known datasets."""
+        default_roots = {
+            "rvu_items": Path("data/curated/rvu"),
+            "gpci_indices": Path("data/curated/rvu"),
+            "mpfs_payment_curated": Path("data/curated/mpfs"),
+            "mpfs_rvu": Path("data/curated/mpfs"),
+            "mpfs_gpci": Path("data/curated/mpfs"),
+            "mpfs_cf_vintage": Path("data/curated/mpfs"),
+        }
+
+        if dataset_id in default_roots:
+            return default_roots[dataset_id]
+
+        # Fallback to generic dataset-id directory
+        return Path("data/curated") / dataset_id

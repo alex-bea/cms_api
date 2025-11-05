@@ -19,21 +19,32 @@ import asyncio
 import hashlib
 import io
 import json
+import re
 import uuid
 import zipfile
 from datetime import datetime, date
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
-import httpx
+from urllib.parse import urlparse
+
 import pandas as pd
 import structlog
 
+from cms_pricing.database import SessionLocal
 from ..contracts.ingestor_spec import (
-    BaseDISIngestor, SourceFile, RawBatch, AdaptedBatch, 
-    StageFrame, RefData, ValidationRule, OutputSpec, SlaSpec,
-    ReleaseCadence, DataClass, ValidationSeverity
+    BaseDISIngestor,
+    SourceFile,
+    RawBatch,
+    AdaptedBatch,
+    StageFrame,
+    RefData,
+    ValidationRule,
+    OutputSpec,
+    SlaSpec,
+    ReleaseCadence,
+    DataClass,
+    ValidationSeverity,
 )
-from ..scrapers.cms_mpfs_scraper import CMSMPFSScraper
 from ..managers.historical_data_manager import HistoricalDataManager
 from ..contracts.schema_registry import schema_registry, SchemaContract
 from ..adapters.data_adapters import AdapterFactory, AdapterConfig
@@ -41,12 +52,26 @@ from ..validators.validation_engine import ValidationEngine
 from ..enrichers.data_enrichers import EnricherFactory
 from ..publishers.data_publishers import PublisherFactory
 from ..observability.dis_observability import (
-    DISObservabilityCollector, FreshnessMetrics, VolumeMetrics, 
-    SchemaMetrics, QualityMetrics, LineageMetrics, DISObservabilityReport
+    DISObservabilityCollector,
+    FreshnessMetrics,
+    VolumeMetrics,
+    SchemaMetrics,
+    QualityMetrics,
+    LineageMetrics,
+    DISObservabilityReport,
 )
 from ..quarantine.dis_quarantine import QuarantineManager, QuarantineStatus, QuarantineSeverity
 from ..enrichers.dis_reference_data_integration import (
-    DISReferenceDataEnricher, ReferenceDataManager, ReferenceDataSource
+    DISReferenceDataEnricher,
+    ReferenceDataManager,
+    ReferenceDataSource,
+)
+from ..services.dataset_snapshot_service import DatasetSnapshotService
+from ..services.conversion_factor_fetcher import ConversionFactorFetcher
+from ..datasets.mpfs_builder import (
+    MPFSNormalizedInputs,
+    build_curated_views,
+    normalize_conversion_factor,
 )
 
 logger = structlog.get_logger()
@@ -54,12 +79,30 @@ logger = structlog.get_logger()
 
 class MPFSIngestor(BaseDISIngestor):
     """DIS-compliant MPFS ingestor that creates curated views referencing RVU data"""
-    
-    def __init__(self, output_dir: str = "./data/ingestion/mpfs", db_session: Any = None):
+
+    def __init__(
+        self,
+        output_dir: str = "./data/ingestion/mpfs",
+        db_session: Any = None,
+        snapshot_service: Optional[DatasetSnapshotService] = None,
+        cf_fetcher: Optional[ConversionFactorFetcher] = None,
+    ):
         super().__init__(output_dir, db_session)
-        
+
         # Initialize components
-        self.scraper = CMSMPFSScraper(str(Path(self.output_dir) / "scraped"))
+        self._snapshot_service_managed_session = False
+        if snapshot_service:
+            self.snapshot_service = snapshot_service
+        else:
+            if db_session is not None:
+                self.snapshot_service = DatasetSnapshotService(db_session)
+            else:
+                self._snapshot_service_managed_session = True
+                session = SessionLocal()
+                self.snapshot_service = DatasetSnapshotService(session)
+
+        self.cf_fetcher = cf_fetcher or ConversionFactorFetcher(str(Path(self.output_dir) / "raw"))
+
         self.historical_manager = HistoricalDataManager(str(Path(self.output_dir) / "historical"))
         self.schema_registry = schema_registry
         self.validation_engine = ValidationEngine()
@@ -106,6 +149,13 @@ class MPFSIngestor(BaseDISIngestor):
         
         # Schema contracts
         self.schema_contracts = self._load_schema_contracts()
+
+    def __del__(self):
+        if getattr(self, "_snapshot_service_managed_session", False):
+            try:
+                self.snapshot_service.close()
+            except Exception:
+                pass
     
     @property
     def dataset_name(self) -> str:
@@ -233,385 +283,600 @@ class MPFSIngestor(BaseDISIngestor):
         )
         
         return contracts
+
+    # ------------------------------------------------------------------
+    # Discovery helpers
+    # ------------------------------------------------------------------
+
+    def _snapshot_source_file(self, snapshot: SnapshotMetadata) -> SourceFile:
+        """Create SourceFile metadata for a reused snapshot."""
+        if not snapshot.path:
+            raise ValueError(f"Snapshot {snapshot.dataset_id}/{snapshot.release_id} missing curated path")
+
+        filename = f"{snapshot.dataset_id}_{snapshot.release_id}.parquet"
+        metadata = {
+            "dataset_id": snapshot.dataset_id,
+            "release_id": snapshot.release_id,
+            "path": snapshot.path,
+            "digest": snapshot.digest,
+            "effective_from": snapshot.effective_from.isoformat(),
+            "effective_to": snapshot.effective_to.isoformat() if snapshot.effective_to else None,
+            "manifest_url": snapshot.manifest_url,
+            "ingestion_mode": "snapshot",
+        }
+
+        return SourceFile(
+            url=f"snapshot://{snapshot.dataset_id}/{snapshot.release_id}",
+            filename=filename,
+            content_type="application/parquet",
+            checksum=snapshot.digest,
+            metadata=metadata,
+        )
+
+    def _conversion_factor_source_file(self, year: int) -> SourceFile:
+        """Create SourceFile describing conversion factor artefact for the year."""
+        source_url = self._conversion_factor_url(year)
+        filename = Path(urlparse(source_url).path).name or f"conversion_factor_{year}.zip"
+
+        return SourceFile(
+            url=source_url,
+            filename=filename,
+            content_type=self._infer_content_type(filename),
+            metadata={
+                "dataset_id": "mpfs_cf",
+                "year": year,
+                "source_url": source_url,
+                "ingestion_mode": "conversion_factor",
+            },
+        )
+
+    @staticmethod
+    def _infer_content_type(filename: str) -> str:
+        suffix = Path(filename).suffix.lower()
+        if suffix in {".zip"}:
+            return "application/zip"
+        if suffix in {".xlsx", ".xls"}:
+            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        if suffix in {".csv"}:
+            return "text/csv"
+        return "application/octet-stream"
+
+    @staticmethod
+    def _conversion_factor_url(year: int) -> str:
+        """Return default CMS URL for the MPFS conversion factor artefact."""
+        # CMS typically publishes CF artefacts under /files/zip/cy-YYYY-mpfs-conversion-factor.zip
+        # Allow overrides via SourceFile metadata if the pattern changes.
+        return f"https://www.cms.gov/files/zip/cy-{year}-mpfs-conversion-factor.zip"
     
     async def discover_source_files(self) -> List[SourceFile]:
-        """Discover MPFS source files using the MPFS scraper"""
+        """Discover MPFS source inputs via dataset snapshots and CF fetcher"""
         logger.info("Starting MPFS source file discovery")
-        
-        try:
-            # Use MPFS scraper to discover files
-            current_year = datetime.now().year
-            scraped_files = await self.scraper.scrape_mpfs_files(current_year, current_year, latest_only=True)
-            
-            source_files = []
-            for file_info in scraped_files:
-                source_files.append(SourceFile(
-                    url=file_info.url,
-                    filename=file_info.filename,
-                    content_type=file_info.content_type,
-                    expected_size_bytes=file_info.size_bytes,
-                    last_modified=file_info.last_modified,
-                    checksum=file_info.checksum
-                ))
-            
-            logger.info("MPFS file discovery completed", files_found=len(source_files))
-            return source_files
-            
-        except Exception as e:
-            logger.error("MPFS file discovery failed", error=str(e))
-            raise
+
+        snapshot_files: List[SourceFile] = []
+
+        rvu_snapshot = self.snapshot_service.get_latest_snapshot("rvu_items")
+        if not rvu_snapshot or not rvu_snapshot.path:
+            raise ValueError("RVU snapshot not available; run RVU ingestion first")
+        snapshot_files.append(self._snapshot_source_file(rvu_snapshot))
+
+        gpci_snapshot = self.snapshot_service.get_latest_snapshot("gpci_indices")
+        if not gpci_snapshot or not gpci_snapshot.path:
+            raise ValueError("GPCI snapshot not available; run RVU ingestion first")
+        snapshot_files.append(self._snapshot_source_file(gpci_snapshot))
+
+        current_year = datetime.now().year
+        cf_source = self._conversion_factor_source_file(current_year)
+
+        source_files = snapshot_files + [cf_source]
+
+        logger.info(
+            "MPFS discovery completed",
+            snapshot_count=len(snapshot_files),
+            download_count=1,
+            files_found=len(source_files),
+        )
+        return source_files
     
     async def land_stage(self, source_files: List[SourceFile]) -> RawBatch:
-        """Land stage: Download and store raw files"""
+        """Land stage: resolve snapshots and cache conversion factor artefact."""
         logger.info("Starting MPFS land stage", file_count=len(source_files))
-        
+
+        batch_id = str(uuid.uuid4())
         raw_batch = RawBatch(
-            batch_id=str(uuid.uuid4()),
             source_files=source_files,
-            raw_data={},
             metadata={
                 "ingestion_timestamp": datetime.now().isoformat(),
                 "source": self.source_name,
                 "license": self.license,
-                "attribution_required": self.attribution_required
-            }
+                "attribution_required": self.attribution_required,
+                "datasets": [],
+                "snapshots": {},
+                "downloads": {},
+                "batch_id": batch_id,
+                "release_id": self.current_release_id,
+                "vintage_date": datetime.now().date().isoformat(),
+            },
         )
-        
-        # Download and store each file
+
         for source_file in source_files:
-            try:
-                logger.info("Downloading file", filename=source_file.filename)
-                
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    response = await client.get(source_file.url)
-                    response.raise_for_status()
-                    
-                    # Store raw file
-                    raw_path = Path(self.output_dir) / "raw" / source_file.filename
-                    raw_path.parent.mkdir(parents=True, exist_ok=True)
-                    
-                    with open(raw_path, 'wb') as f:
-                        f.write(response.content)
-                    
-                    # Calculate checksum
-                    checksum = hashlib.sha256(response.content).hexdigest()
-                    
-                    # Store file metadata
-                    raw_batch.raw_data[source_file.filename] = {
-                        "path": str(raw_path),
-                        "size_bytes": len(response.content),
-                        "checksum": checksum,
-                        "content_type": source_file.content_type,
-                        "downloaded_at": datetime.now().isoformat()
-                    }
-                    
-                    logger.info("File downloaded successfully", 
-                               filename=source_file.filename,
-                               size_bytes=len(response.content))
-                    
-            except Exception as e:
-                logger.error("Failed to download file", 
-                           filename=source_file.filename, 
-                           error=str(e))
-                raise
-        
-        logger.info("MPFS land stage completed", files_processed=len(source_files))
+            mode = source_file.metadata.get("ingestion_mode")
+            dataset_id = source_file.metadata.get("dataset_id")
+            if dataset_id:
+                raw_batch.metadata["datasets"].append(dataset_id)
+
+            if mode == "snapshot":
+                snapshot_meta = dict(source_file.metadata)
+                snapshot_meta.setdefault("resolved_at", datetime.now().isoformat())
+                raw_batch.metadata.setdefault("snapshots", {})[dataset_id] = snapshot_meta
+            elif mode == "conversion_factor":
+                cf_meta = await self.cf_fetcher.ensure_conversion_factor(
+                    year=source_file.metadata["year"],
+                    source_url=source_file.metadata["source_url"],
+                    manual_override_path=source_file.metadata.get("manual_override_path"),
+                    expected_checksum=source_file.metadata.get("expected_checksum"),
+                )
+                cf_record = cf_meta.to_dict()
+                cf_record["downloaded_at"] = datetime.now().isoformat()
+                raw_batch.metadata.setdefault("downloads", {})[dataset_id] = cf_record
+            else:
+                raise ValueError(f"Unsupported ingestion mode for source file {source_file.filename}")
+
+        logger.info(
+            "MPFS land stage completed",
+            snapshot_sources=len(raw_batch.metadata["snapshots"]),
+            downloads=len(raw_batch.metadata["downloads"]),
+        )
         return raw_batch
     
     async def validate_stage(self, raw_batch: RawBatch) -> Tuple[RawBatch, List[Dict[str, Any]]]:
-        """Validate stage: Structural, domain, and statistical validation"""
+        """Validate stage: ensure snapshot artefacts and downloads are usable."""
         logger.info("Starting MPFS validate stage")
-        
-        validation_results = []
-        validated_data = {}
-        
-        for filename, file_data in raw_batch.raw_data.items():
-            try:
-                logger.info("Validating file", filename=filename)
-                
-                # Structural validation
-                struct_result = await self._validate_structural(filename, file_data)
-                validation_results.extend(struct_result)
-                
-                # Domain validation
-                domain_result = await self._validate_domain(filename, file_data)
-                validation_results.extend(domain_result)
-                
-                # Statistical validation
-                stat_result = await self._validate_statistical(filename, file_data)
-                validation_results.extend(stat_result)
-                
-                # If validation passed, add to validated data
-                validated_data[filename] = file_data
-                
-                logger.info("File validation completed", filename=filename)
-                
-            except Exception as e:
-                logger.error("File validation failed", filename=filename, error=str(e))
-                validation_results.append({
-                    "rule_id": "mpfs_validation_error",
-                    "severity": "CRITICAL",
-                    "message": f"Validation failed: {str(e)}",
-                    "filename": filename
-                })
-        
-        # Update raw batch with validated data
-        raw_batch.raw_data = validated_data
-        
-        logger.info("MPFS validate stage completed", 
-                   files_validated=len(validated_data),
-                   validation_results=len(validation_results))
-        
+
+        validation_results: List[Dict[str, Any]] = []
+        snapshots = raw_batch.metadata.get("snapshots", {})
+        downloads = raw_batch.metadata.get("downloads", {})
+
+        for dataset_id, snapshot_meta in snapshots.items():
+            validation_results.extend(self._validate_snapshot(dataset_id, snapshot_meta))
+
+        for dataset_id, download_meta in downloads.items():
+            validation_results.extend(self._validate_download(dataset_id, download_meta))
+
+        logger.info(
+            "MPFS validate stage completed",
+            snapshot_checked=len(snapshots),
+            downloads_checked=len(downloads),
+            issues=len([r for r in validation_results if r.get("severity") == "CRITICAL"]),
+        )
+
         return raw_batch, validation_results
-    
-    async def _validate_structural(self, filename: str, file_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Perform structural validation"""
-        results = []
-        
-        # Check file exists and has content
-        file_path = Path(file_data["path"])
-        if not file_path.exists():
-            results.append({
-                "rule_id": "mpfs_structural_001",
-                "severity": "CRITICAL",
-                "message": "File does not exist",
-                "filename": filename
-            })
-            return results
-        
-        # Check file size
-        if file_data["size_bytes"] == 0:
-            results.append({
-                "rule_id": "mpfs_structural_002", 
-                "severity": "CRITICAL",
-                "message": "File is empty",
-                "filename": filename
-            })
-        
-        # Check file type and content
-        if filename.endswith('.zip'):
-            try:
-                with zipfile.ZipFile(file_path, 'r') as zf:
-                    file_list = zf.namelist()
-                    if not file_list:
-                        results.append({
-                            "rule_id": "mpfs_structural_003",
-                            "severity": "CRITICAL", 
-                            "message": "ZIP file is empty",
-                            "filename": filename
-                        })
-            except zipfile.BadZipFile:
-                results.append({
-                    "rule_id": "mpfs_structural_004",
+
+    def _validate_snapshot(self, dataset_id: str, snapshot_meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Validate snapshot metadata and underlying parquet artefact."""
+        results: List[Dict[str, Any]] = []
+        path_value = snapshot_meta.get("path")
+        release_id = snapshot_meta.get("release_id")
+        if not path_value:
+            results.append(
+                {
+                    "rule_id": "mpfs_snapshot_missing_path",
                     "severity": "CRITICAL",
-                    "message": "Invalid ZIP file",
-                    "filename": filename
-                })
-        
+                    "message": f"Snapshot {dataset_id} missing path metadata",
+                    "dataset_id": dataset_id,
+                    "release_id": release_id,
+                }
+            )
+            return results
+
+        path = Path(path_value)
+        if not path.exists():
+            results.append(
+                {
+                    "rule_id": "mpfs_snapshot_missing_file",
+                    "severity": "CRITICAL",
+                    "message": f"Snapshot path not found: {path}",
+                    "dataset_id": dataset_id,
+                    "release_id": release_id,
+                }
+            )
+            return results
+
+        size_bytes = self._path_size_bytes(path)
+        if size_bytes == 0:
+            results.append(
+                {
+                    "rule_id": "mpfs_snapshot_empty",
+                    "severity": "CRITICAL",
+                    "message": f"Snapshot artefact empty: {path}",
+                    "dataset_id": dataset_id,
+                    "release_id": release_id,
+                }
+            )
+        else:
+            results.append(
+                {
+                    "rule_id": "mpfs_snapshot_ok",
+                    "severity": "INFO",
+                    "message": f"Snapshot validated ({size_bytes} bytes)",
+                    "dataset_id": dataset_id,
+                    "release_id": release_id,
+                }
+            )
+
         return results
-    
-    async def _validate_domain(self, filename: str, file_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Perform domain validation"""
-        results = []
-        
-        # This would be implemented based on specific file types
-        # For now, return empty results
+
+    def _validate_download(self, dataset_id: str, download_meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Validate conversion factor download metadata."""
+        results: List[Dict[str, Any]] = []
+        path_value = download_meta.get("path")
+        if not path_value:
+            results.append(
+                {
+                    "rule_id": "mpfs_download_missing_path",
+                    "severity": "CRITICAL",
+                    "message": f"Conversion factor artefact missing path for {dataset_id}",
+                    "dataset_id": dataset_id,
+                }
+            )
+            return results
+
+        path = Path(path_value)
+        if not path.exists():
+            results.append(
+                {
+                    "rule_id": "mpfs_download_missing_file",
+                    "severity": "CRITICAL",
+                    "message": f"Conversion factor artefact not found: {path}",
+                    "dataset_id": dataset_id,
+                }
+            )
+            return results
+
+        size_bytes = path.stat().st_size
+        if size_bytes == 0:
+            results.append(
+                {
+                    "rule_id": "mpfs_download_empty",
+                    "severity": "CRITICAL",
+                    "message": f"Conversion factor artefact empty: {path}",
+                    "dataset_id": dataset_id,
+                }
+            )
+        else:
+            results.append(
+                {
+                    "rule_id": "mpfs_download_ok",
+                    "severity": "INFO",
+                    "message": f"Conversion factor artefact ready ({size_bytes} bytes)",
+                    "dataset_id": dataset_id,
+                }
+            )
+
         return results
-    
-    async def _validate_statistical(self, filename: str, file_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Perform statistical validation"""
-        results = []
-        
-        # This would compare against historical data
-        # For now, return empty results
-        return results
+
+    @staticmethod
+    def _path_size_bytes(path: Path) -> int:
+        if path.is_file():
+            return path.stat().st_size
+        if path.is_dir():
+            return sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
+        return 0
     
     async def normalize_stage(self, raw_batch: RawBatch) -> AdaptedBatch:
-        """Normalize stage: Parse and canonicalize data"""
+        """Normalize stage: load RVU/GPCI snapshots and conversion factor artefact."""
         logger.info("Starting MPFS normalize stage")
-        
-        adapted_data = {}
-        
-        for filename, file_data in raw_batch.raw_data.items():
-            try:
-                logger.info("Normalizing file", filename=filename)
-                
-                # Parse file based on type
-                if filename.endswith('.zip'):
-                    parsed_data = await self._parse_zip_file(file_data)
-                elif filename.endswith('.csv'):
-                    parsed_data = await self._parse_csv_file(file_data)
-                elif filename.endswith('.xlsx'):
-                    parsed_data = await self._parse_excel_file(file_data)
-                else:
-                    logger.warning("Unsupported file type", filename=filename)
-                    continue
-                
-                adapted_data[filename] = parsed_data
-                logger.info("File normalization completed", filename=filename)
-                
-            except Exception as e:
-                logger.error("File normalization failed", filename=filename, error=str(e))
-                raise
-        
+
+        snapshots = raw_batch.metadata.get("snapshots", {})
+        downloads = raw_batch.metadata.get("downloads", {})
+
+        rvu_snapshot = snapshots.get("rvu_items")
+        gpci_snapshot = snapshots.get("gpci_indices")
+        cf_meta = downloads.get("mpfs_cf") or next(iter(downloads.values()), None)
+
+        if not rvu_snapshot or not gpci_snapshot:
+            raise ValueError("Required RVU/GPCI snapshots were not available in land stage metadata")
+
+        rvu_df = self._load_snapshot_dataframe("rvu_items", rvu_snapshot)
+        gpci_df = self._load_snapshot_dataframe("gpci_indices", gpci_snapshot)
+        cf_df = self._load_conversion_factor_dataframe(cf_meta) if cf_meta else pd.DataFrame()
+
+        dataframes = {"rvu": rvu_df, "gpci": gpci_df, "cf": cf_df}
+        schema_contract = {
+            "mpfs_rvu": self.schema_contracts["mpfs_rvu"].to_dict(),
+            "mpfs_cf": self.schema_contracts["mpfs_cf"].to_dict(),
+        }
+        metadata = {
+            **raw_batch.metadata,
+            "normalized_at": datetime.now().isoformat(),
+            "snapshot_release_ids": {
+                "rvu_items": rvu_snapshot.get("release_id"),
+                "gpci_indices": gpci_snapshot.get("release_id"),
+            },
+        }
+
         adapted_batch = AdaptedBatch(
-            batch_id=raw_batch.batch_id,
-            source_files=raw_batch.source_files,
-            adapted_data=adapted_data,
-            metadata={
-                **raw_batch.metadata,
-                "normalized_at": datetime.now().isoformat()
-            }
+            dataframes=dataframes,
+            schema_contract=schema_contract,
+            metadata=metadata,
         )
-        
-        logger.info("MPFS normalize stage completed", files_processed=len(adapted_data))
+
+        logger.info(
+            "MPFS normalize stage completed",
+            rvu_rows=len(rvu_df),
+            gpci_rows=len(gpci_df),
+            cf_rows=len(cf_df),
+        )
         return adapted_batch
-    
-    async def _parse_zip_file(self, file_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse ZIP file and extract contents"""
-        file_path = Path(file_data["path"])
-        
-        with zipfile.ZipFile(file_path, 'r') as zf:
-            contents = {}
-            for file_info in zf.filelist:
-                if not file_info.is_dir():
-                    # Extract file content
-                    content = zf.read(file_info.filename)
-                    
-                    # Try to parse based on file extension
-                    if file_info.filename.endswith('.csv'):
-                        df = pd.read_csv(io.BytesIO(content))
-                        contents[file_info.filename] = df
-                    elif file_info.filename.endswith('.txt'):
-                        # Try to parse as fixed-width or CSV
-                        try:
-                            df = pd.read_csv(io.BytesIO(content))
-                            contents[file_info.filename] = df
-                        except:
-                            # Store as text
-                            contents[file_info.filename] = content.decode('utf-8')
-                    else:
-                        contents[file_info.filename] = content
-            
-            return contents
-    
-    async def _parse_csv_file(self, file_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse CSV file"""
-        file_path = Path(file_data["path"])
-        df = pd.read_csv(file_path)
-        return {"data": df}
-    
-    async def _parse_excel_file(self, file_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse Excel file"""
-        file_path = Path(file_data["path"])
-        excel_data = pd.read_excel(file_path, sheet_name=None)
-        return excel_data
-    
-    async def enrich_stage(self, adapted_batch: AdaptedBatch) -> StageFrame:
-        """Enrich stage: Join with reference data"""
-        logger.info("Starting MPFS enrich stage")
-        
-        # For now, just pass through the adapted data
-        # In the future, this would join with reference data
-        stage_frame = StageFrame(
-            batch_id=adapted_batch.batch_id,
-            source_files=adapted_batch.source_files,
-            stage_data=adapted_batch.adapted_data,
-            metadata={
-                **adapted_batch.metadata,
-                "enriched_at": datetime.now().isoformat()
-            }
+
+    def _load_snapshot_dataframe(self, dataset_id: str, snapshot_meta: Dict[str, Any]) -> pd.DataFrame:
+        """Load a parquet dataframe from snapshot metadata."""
+        path_value = snapshot_meta.get("path")
+        if not path_value:
+            raise ValueError(f"Snapshot metadata for {dataset_id} missing path")
+
+        path = Path(path_value)
+        if not path.exists():
+            raise FileNotFoundError(f"Snapshot path does not exist for {dataset_id}: {path}")
+
+        if path.is_dir():
+            file_path = self._select_parquet_candidate(path, dataset_id)
+        else:
+            file_path = path
+
+        logger.info("Loading snapshot dataframe", dataset_id=dataset_id, path=str(file_path))
+        return pd.read_parquet(file_path)
+
+    def _select_parquet_candidate(self, directory: Path, dataset_id: str) -> Path:
+        """Select a parquet file within a directory that best matches the dataset id."""
+        candidates = sorted(directory.glob("*.parquet"))
+        if not candidates:
+            raise FileNotFoundError(f"No parquet files found in snapshot directory {directory}")
+        for candidate in candidates:
+            if dataset_id in candidate.stem:
+                return candidate
+        return candidates[0]
+
+    def _load_conversion_factor_dataframe(self, cf_meta: Dict[str, Any]) -> pd.DataFrame:
+        """Load conversion factor data from downloaded artefact."""
+        if not cf_meta:
+            return pd.DataFrame()
+
+        path = Path(cf_meta.get("path"))
+        if not path.exists():
+            raise FileNotFoundError(f"Conversion factor artefact not found at {path}")
+
+        year = cf_meta.get("year") or datetime.now().year
+        content_bytes: bytes
+        source_name: str
+
+        if path.suffix.lower() == ".zip":
+            with zipfile.ZipFile(path, "r") as zf:
+                member = self._select_cf_member(zf.namelist())
+                content_bytes = zf.read(member)
+                source_name = member
+        else:
+            content_bytes = path.read_bytes()
+            source_name = path.name
+
+        cf_value = self._extract_cf_value(content_bytes)
+        df = pd.DataFrame(
+            [
+                {
+                    "cf_value": cf_value,
+                    "cf_type": "physician",
+                    "year": year,
+                    "source_file": source_name,
+                }
+            ]
         )
-        
-        logger.info("MPFS enrich stage completed")
+        return df
+
+    def _select_cf_member(self, members: List[str]) -> str:
+        """Select preferred file within conversion factor archive."""
+        if not members:
+            raise ValueError("Conversion factor archive is empty")
+        preferred_ext = [".csv", ".txt", ".xlsx"]
+        for ext in preferred_ext:
+            for member in members:
+                if member.lower().endswith(ext):
+                    return member
+        return members[0]
+
+    def _extract_cf_value(self, raw_bytes: bytes) -> float:
+        """Extract first numeric value from artefact content."""
+        text = raw_bytes.decode("utf-8", errors="ignore")
+        matches = re.findall(r"\\d+\\.\\d+", text)
+        if matches:
+            try:
+                return float(matches[0])
+            except ValueError:
+                pass
+        # Fallback: attempt to parse as excel if regex fails
+        try:
+            df = pd.read_excel(io.BytesIO(raw_bytes))
+            numeric = pd.to_numeric(df.select_dtypes(include="number").stack(), errors="coerce").dropna()
+            if not numeric.empty:
+                return float(numeric.iloc[0])
+        except Exception:
+            pass
+        return float("nan")
+
+    async def enrich_stage(self, adapted_batch: AdaptedBatch) -> StageFrame:
+        """Enrich stage: build curated datasets using MPFS builder."""
+        logger.info("Starting MPFS enrich stage")
+
+        vintage_str = adapted_batch.metadata.get("vintage_date")
+        vintage_date = (
+            date.fromisoformat(vintage_str) if isinstance(vintage_str, str) else datetime.now().date()
+        )
+
+        inputs = MPFSNormalizedInputs(
+            rvu=adapted_batch.dataframes.get("rvu", pd.DataFrame()),
+            gpci=adapted_batch.dataframes.get("gpci", pd.DataFrame()),
+            conversion_factor=adapted_batch.dataframes.get("cf", pd.DataFrame()),
+            release_id=self.current_release_id or adapted_batch.metadata.get("release_id", ""),
+            vintage_date=vintage_date,
+        )
+
+        curated_views = build_curated_views(inputs, valuation_date=vintage_date)
+        row_counts = {name: len(df) for name, df in curated_views.items()}
+
+        release_id = self.current_release_id or adapted_batch.metadata.get("release_id", "")
+
+        metadata = {
+            **adapted_batch.metadata,
+            "curated_tables": list(curated_views.keys()),
+            "enriched_at": datetime.now().isoformat(),
+        }
+        metadata.setdefault("release_id", release_id)
+        metadata.setdefault("batch_id", adapted_batch.metadata.get("batch_id"))
+
+        stage_frame = StageFrame(
+            data=curated_views,
+            schema={"datasets": list(curated_views.keys())},
+            metadata=metadata,
+            quality_metrics={"row_counts": row_counts},
+        )
+
+        logger.info("MPFS enrich stage completed", curated_tables=len(curated_views))
         return stage_frame
-    
+
     async def publish_stage(self, stage_frame: StageFrame) -> Dict[str, Any]:
-        """Publish stage: Create curated views and store in database"""
+        """Publish stage: persist curated views and register snapshots."""
         logger.info("Starting MPFS publish stage")
-        
-        # Create curated views
-        curated_views = await self._create_curated_views(stage_frame)
-        
-        # Store in database
-        await self._store_curated_data(curated_views)
-        
-        # Generate observability report
-        observability_report = await self._generate_observability_report(stage_frame)
-        
+
+        curated_views: Dict[str, pd.DataFrame] = stage_frame.data or {}
+        release_id = self.current_release_id or stage_frame.metadata.get("release_id")
+        if not release_id:
+            raise ValueError("Release ID is required before publish stage")
+
+        output_root = Path(self.output_dir) / "curated" / "mpfs" / release_id
+        output_root.mkdir(parents=True, exist_ok=True)
+
+        manifest: Dict[str, Any] = {}
+        manifest_path = output_root / "manifest.json"
+
+        for dataset_name, df in curated_views.items():
+            file_path = output_root / f"{dataset_name}.parquet"
+            df.to_parquet(file_path, compression="snappy", index=False)
+            digest = self._calculate_dataset_digest(df)
+
+            effective_from, effective_to = self._infer_effective_range(df)
+            self.snapshot_service.register_snapshot(
+                dataset_id=dataset_name,
+                release_id=release_id,
+                digest=digest,
+                effective_from=effective_from or datetime.now().date(),
+                effective_to=effective_to,
+                manifest_url=str(manifest_path),
+                curated_path=str(file_path),
+            )
+
+            manifest[dataset_name] = {
+                "path": str(file_path),
+                "rows": len(df),
+                "digest": digest,
+                "effective_from": str(effective_from) if effective_from else None,
+                "effective_to": str(effective_to) if effective_to else None,
+            }
+
+        manifest_path.write_text(json.dumps(manifest, indent=2))
+
+        observability_report = self._generate_observability_report(stage_frame, manifest)
+
+        summary = {
+            name: {"rows": info["rows"], "path": info["path"], "digest": info["digest"]}
+            for name, info in manifest.items()
+        }
+
         result = {
-            "batch_id": stage_frame.batch_id,
+            "batch_id": stage_frame.metadata.get("batch_id") or self.current_batch_id,
             "dataset_name": self.dataset_name,
-            "release_id": self.current_release_id,
-            "curated_views": curated_views,
+            "release_id": release_id,
+            "curated_views": summary,
+            "manifest_path": str(manifest_path),
             "observability_report": observability_report,
-            "metadata": stage_frame.metadata
+            "metadata": stage_frame.metadata,
         }
-        
-        logger.info("MPFS publish stage completed")
+
+        logger.info("MPFS publish stage completed", curated_tables=len(summary))
         return result
-    
-    async def _create_curated_views(self, stage_frame: StageFrame) -> Dict[str, Any]:
-        """Create MPFS curated views that reference RVU data"""
-        curated_views = {}
-        
-        # This would create the curated views:
-        # - mpfs_rvu: References PPRRVU data
-        # - mpfs_indicators_all: Exploded policy flags
-        # - mpfs_locality: References LocalityCounty data
-        # - mpfs_gpci: References GPCI data
-        # - mpfs_cf_vintage: New conversion factor data
-        # - mpfs_link_keys: Minimal key set
-        
-        # For now, return empty views
-        curated_views = {
-            "mpfs_rvu": {},
-            "mpfs_indicators_all": {},
-            "mpfs_locality": {},
-            "mpfs_gpci": {},
-            "mpfs_cf_vintage": {},
-            "mpfs_link_keys": {}
-        }
-        
-        return curated_views
-    
-    async def _store_curated_data(self, curated_views: Dict[str, Any]):
-        """Store curated data in database"""
-        # This would store the curated views in the database
-        # For now, just log
-        logger.info("Storing curated data", view_count=len(curated_views))
-    
-    async def _generate_observability_report(self, stage_frame: StageFrame) -> DISObservabilityReport:
-        """Generate observability report"""
-        # This would generate the 5-pillar observability report
-        # For now, return empty report
+
+    def _calculate_dataset_digest(self, df: pd.DataFrame) -> str:
+        """Calculate SHA256 digest for a dataframe using parquet serialization."""
+        buffer = io.BytesIO()
+        df.to_parquet(buffer, compression="snappy", index=False)
+        return hashlib.sha256(buffer.getvalue()).hexdigest()
+
+    def _infer_effective_range(self, df: pd.DataFrame) -> Tuple[Optional[date], Optional[date]]:
+        """Infer effective date range from dataframe columns."""
+        if df.empty:
+            return None, None
+
+        candidates_start = [
+            "effective_start",
+            "effective_from",
+            "rvu_effective_start",
+            "gpci_effective_start",
+        ]
+        candidates_end = [
+            "effective_end",
+            "effective_to",
+            "rvu_effective_end",
+            "gpci_effective_end",
+        ]
+
+        start_series = None
+        for column in candidates_start:
+            if column in df.columns:
+                start_series = pd.to_datetime(df[column], errors="coerce")
+                if not start_series.isna().all():
+                    break
+
+        end_series = None
+        for column in candidates_end:
+            if column in df.columns:
+                end_series = pd.to_datetime(df[column], errors="coerce")
+                if not end_series.isna().all():
+                    break
+
+        effective_from = start_series.dropna().dt.date.min() if start_series is not None else None
+        effective_to = end_series.dropna().dt.date.max() if end_series is not None else None
+        return effective_from, effective_to
+
+    def _generate_observability_report(
+        self, stage_frame: StageFrame, manifest: Dict[str, Any]
+    ) -> DISObservabilityReport:
+        """Generate DIS observability report using curated manifest metrics."""
+        row_counts = stage_frame.quality_metrics.get("row_counts", {})
+        rows_processed = sum(row_counts.values())
         return DISObservabilityReport(
-            batch_id=stage_frame.batch_id,
+            batch_id=stage_frame.metadata.get("batch_id") or self.current_batch_id,
             freshness_metrics=FreshnessMetrics(
                 last_successful_run=datetime.now(),
-                expected_cadence_hours=24,
-                freshness_score=1.0
+                expected_cadence_hours=720.0,  # monthly cadence default
+                freshness_score=1.0,
             ),
             volume_metrics=VolumeMetrics(
-                rows_processed=0,
+                rows_processed=rows_processed,
                 rows_rejected=0,
-                volume_score=1.0
+                volume_score=1.0 if rows_processed > 0 else 0.0,
             ),
             schema_metrics=SchemaMetrics(
-                schema_version="1.0",
+                schema_version=self.schema_contracts["mpfs_rvu"].version,
                 drift_detected=False,
-                schema_score=1.0
+                schema_score=1.0,
             ),
             quality_metrics=QualityMetrics(
                 validation_score=1.0,
-                completeness_score=1.0,
-                quality_score=1.0
+                completeness_score=1.0 if rows_processed > 0 else 0.0,
+                quality_score=1.0 if rows_processed > 0 else 0.0,
             ),
             lineage_metrics=LineageMetrics(
-                source_files=len(stage_frame.source_files),
-                transformations_applied=0,
-                lineage_score=1.0
-            )
+                source_files=len(stage_frame.metadata.get("datasets", [])),
+                transformations_applied=len(manifest),
+                lineage_score=1.0,
+            ),
         )
     
     async def ingest(self, year: int, quarter: Optional[str] = None) -> Dict[str, Any]:
@@ -627,6 +892,7 @@ class MPFSIngestor(BaseDISIngestor):
             source_files = await self.discover_source_files()
             raw_batch = await self.land_stage(source_files)
             validated_batch, validation_results = await self.validate_stage(raw_batch)
+            validated_batch.metadata["validation_results"] = validation_results
             adapted_batch = await self.normalize_stage(validated_batch)
             stage_frame = await self.enrich_stage(adapted_batch)
             result = await self.publish_stage(stage_frame)
