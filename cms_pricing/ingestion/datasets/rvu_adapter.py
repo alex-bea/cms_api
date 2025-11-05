@@ -285,6 +285,11 @@ def adapt_rvu_raw_data(
                 archive_filename=filename,
             )
 
+    # Row limiting for fast testing/debugging (per QA Testing Standard §3.3)
+    # Set MAX_INGESTION_ROWS env var to limit rows (e.g., "1000" for fast testing)
+    max_rows = os.getenv("MAX_INGESTION_ROWS")
+    max_rows_int = int(max_rows) if max_rows and max_rows.isdigit() else None
+    
     final_dataframes: Dict[str, pd.DataFrame] = {}
     for dataset_key, frames in dataset_frames.items():
         if not frames:
@@ -295,6 +300,19 @@ def adapt_rvu_raw_data(
             if len(frames) > 1
             else frames[0].copy()
         )
+        
+        # Apply row limiting if enabled (for fast testing/debugging)
+        if max_rows_int and len(combined) > max_rows_int:
+            original_count = len(combined)
+            combined = combined.head(max_rows_int)
+            logger.info(
+                "Row limiting applied for testing",
+                dataset=dataset_key,
+                original_rows=original_count,
+                limited_rows=len(combined),
+                max_rows=max_rows_int,
+                note="Set MAX_INGESTION_ROWS env var to enable fast testing mode"
+            )
 
         natural_keys = natural_keys_map.get(dataset_key, [])
         if natural_keys:
