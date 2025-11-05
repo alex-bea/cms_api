@@ -26,3 +26,15 @@ Phase 2 reduces `RVUIngestor` from 4,247 lines to 990 lines (−76.7%) by extrac
 - Propagate DatasetSpec/ServiceFactory patterns to MPFS/OPPS/ZIP9 ingestors.
 - Update architecture diagrams to show stage executors and shared services.
 - Monitor sandbox pytest issue; rerun E2E suite when resolved.
+
+---
+
+## Addendum (2025-11-04) – MPFS Snapshot-Based Ingestor
+- **MPFS pipeline modernization:** `MPFSIngestor` now reuses RVU/GPCI snapshots, lands conversion factor artefacts via `ConversionFactorFetcher`, and computes facility/non-facility payments with `mpfs_builder`. Curated snapshots (`mpfs_payment_curated`, `mpfs_rvu`, `mpfs_gpci`, `mpfs_cf_vintage`, etc.) register provenance metadata automatically.
+- **Documentation refresh:** Published dedicated runbook `prds/RUN-mpfs-ingestion-v1.0.md`, updated `prds/PRD-mpfs-prd-v1.0.md` with cross-join builder logic and conversion factor governance, refreshed gap analysis to mark MPFS as stable.
+- **Testing follow-up:** End-to-end payment test passes; Phase 6 unit/contract tests (ConversionFactorFetcher, `/v1/mpfs datasets_used`) queued for completion alongside readiness run evidence.
+
+## Addendum (2025-11-05) – PPRRVU 2025 Layout & Schema Alignment
+- **2025 CMS layout support:** PPRRVU parser now backfills duplicate `RVU`/`PE RVU` headers introduced in `rvu25` bundles, normalizes indicator columns (blank → null), and casts OPPS cap flags to booleans. Structured logs (`pprrvu_multiheader_backfill`) surface when the repair runs in Render.
+- **Schema contract updates:** Relaxed `status_code` domain to accept the full CMS vocabulary and realigned the locality Stage 1 schema to publish `mac`, `locality_code`, `state_name`, `fee_area`, `county_names` (FIPS remains a Stage 2 enrichment output). Contracts/reg docs updated accordingly.
+- **Observability compatibility:** Added a `record_metric` shim to `DISObservabilityCollector` so enrichment stages emit metrics without raising `AttributeError` across legacy deployments.

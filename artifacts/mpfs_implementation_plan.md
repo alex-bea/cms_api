@@ -86,7 +86,7 @@ python -c "from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor;
 
 ### Phase 0 – Prerequisites & Alignment (0.5 day)
 - [x] 1. Confirm vintage targets (e.g., CY2025 RVU D release, GPCI annual, CF 2025).  
-- [ ] 2. Document input digests in runbook (`artifacts/mpfs_opps_ingestion_runbook.md`).  
+- [ ] 2. Document input digests in runbook (`prds/RUN-mpfs-ingestion-v1.0.md`).  
 - [x] 3. Align with API team on required output schema (facility vs non-facility amounts, locality joins, provenance fields).
 
 ### Phase 1 – Retire Old Scraper Dependency (1 day) ✅ **COMPLETE**
@@ -97,7 +97,7 @@ python -c "from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor;
 - [x] Remove scraper imports from:
   - [x] `cms_pricing/ingestion/ingestors/mpfs_ingestor.py`
   - [x] `tests/ingestors/test_mpfs_ingestor_e2e.py`
-  - [ ] `artifacts/mpfs_opps_ingestion_runbook.md` (pending)
+  - [ ] `prds/RUN-mpfs-ingestion-v1.0.md` (pending)
   - [x] Any other documentation referencing MPFS scraper
 
 **1.2 Update MPFSIngestor Constructor** ✅
@@ -1015,7 +1015,7 @@ Optional: Add Locust/synthetic load test verifying:
 - Document any deviations or learnings
 
 **7.2 Update Runbook**
-Expand `artifacts/mpfs_opps_ingestion_runbook.md` with:
+Finalize `prds/RUN-mpfs-ingestion-v1.0.md` with:
 - Operational steps (trigger command, expected log lines, validation thresholds)
 - Example commands for running ingestion
 - Troubleshooting guide for common issues
@@ -1031,6 +1031,19 @@ Expand `artifacts/mpfs_opps_ingestion_runbook.md` with:
   - Scraper deprecation (removed `CMSMPFSScraper`)
   - New snapshot-based discovery model
   - New curated datasets available
+
+#### Phase 7.1 – Documentation Blitz Execution Plan (Owner: Product/Data Engineering)
+
+| Step | Action | Notes / Dependencies | Target Output |
+|------|--------|----------------------|---------------|
+| 7.1.1 | **Runbook Split & Rename** | Create `prds/RUN-mpfs-ingestion-v1.0.md` mirrored from existing runbook; relocate OPPS content to dedicated document; update navigation links (`README.md`, readiness plans); remove MPFS content from legacy combined runbook. | New MPFS-only runbook with accurate file paths and commands. |
+| 7.1.2 | **CF Fetcher Section** | In new runbook, add section covering async fetcher lifecycle: cache directory structure (`data/ingestion/mpfs/raw/{year}`), cache hit/miss behavior, override workflow (config + CLI), and retry strategy. | Step-by-step operator guide with sample commands and expected log output. |
+| 7.1.3 | **PRD Alignment** | Edit `prds/PRD-mpfs-prd-v1.0.md` to: (a) reflect cross-join builder + payment computation, (b) document physician-factor-only scope, (c) reference override governance. Coordinate with product reviewer for sign-off. | PRD diff showing updated scope, data model, and governance notes. |
+| 7.1.4 | **Gap Analysis Update** | Revise `artifacts/ingestor_gap_analysis.md` to mark MPFS status ✅ (implementation complete, stabilization underway). Include reference to contract tests and runbook refresh. | Updated gap analysis table/status bullets. |
+| 7.1.5 | **Release Notes Entry** | Append to `docs/release_notes/phase2_refactor.md` with bullet summarizing MPFS ingestor completion, documentation refresh, and provenance tests. | New release notes section dated with change. |
+| 7.1.6 | **Cross-Doc Link Audit** | Run `tools/audit_doc_metadata.py` / `tools/audit_doc_links.py` to ensure references to old runbook filename are updated (readiness plan, operations PRDs, README); fix any CI warnings. | Clean link report; list of updated references. |
+| 7.1.7 | **Master Catalog Refresh** | Update `prds/DOC-master-catalog-prd-v1.0.md` §4 to register `RUN-mpfs-ingestion-v1.0.md` (status, owner, dependencies) and document runbook split in catalog changelog. | Catalog diff showing new runbook entry and updated relationships. |
+| 7.1.8 | **Approvals & Sign-off** | Route diffs to Product + Data Engineering for review; capture approvals in plan doc with timestamp. | Plan checklist entry moved to ✅ with reviewer initials/date. |
 
 ### Phase 8 – Verification & Handoff (0.5 day) ⚠️ **NOT STARTED**
 **Objective:** Execute production run and coordinate handoff.
@@ -1113,7 +1126,7 @@ This sequence ensures:
 | Snapshot service | `cms_pricing/ingestion/services/dataset_snapshot_service.py` | ~50 lines (`get_latest_snapshot` helper) |
 | Curated view builder | *(new)* `cms_pricing/ingestion/datasets/mpfs_builder.py` | ~300 lines (full builder module) |
 | Tests | `tests/ingestors/test_mpfs_ingestor_e2e.py`, `tests/contracts/test_code_pricing_item.py`, *(new)* `tests/ingestion/services/test_conversion_factor_fetcher.py`, optional new `tests/fixtures/mpfs/` | ~200 lines (update + new) |
-| Docs/PRDs | `prds/REF-cms-pricing-source-map-prd-v1.0.md`, `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md`, `artifacts/ingestor_gap_analysis.md`, `artifacts/mpfs_opps_ingestion_runbook.md` | Various updates |
+| Docs/PRDs | `prds/REF-cms-pricing-source-map-prd-v1.0.md`, `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md`, `artifacts/ingestor_gap_analysis.md`, `prds/RUN-mpfs-ingestion-v1.0.md` | Various updates |
 | **Files to Delete** | `cms_pricing/ingestion/scrapers/cms_mpfs_scraper.py` | Remove ~380 lines |
 
 **Total New Code:** ~700 lines | **Total Modified Code:** ~550 lines | **Total Deleted Code:** ~380 lines
@@ -1150,6 +1163,15 @@ This sequence ensures:
 - [ ] Docs/PRDs updated; readiness plan references ingestion evidence - **PARTIAL** (some PRDs updated, runbook pending)
 - [ ] `/v1/mpfs` endpoint returns data with correct `datasets_used` metadata - **NOT VERIFIED**
 
+### 4.1 Phase 6/7 Close-Out Plan (Updated 2025-11-04)
+
+| Workstream | Actions | Owner | Exit Criteria |
+|------------|---------|-------|---------------|
+| **CF Override Governance** | 1. Draft design for `IngestorConfigService` that reads release-scoped YAML overrides (`cf_overrides/{release_id}.yaml`).<br>2. Add interim CLI flags `--cf-override-path` and `--cf-expected-checksum` to unblock operators.<br>3. Persist override fingerprint (path + checksum) onto the registered `mpfs_cf_vintage` snapshot metadata. | Data Engineering | Config service PR merged; CLI help updated; snapshot records show override metadata when used. |
+| **CF Parsing Scope** | 1. Update `ConversionFactorFetcher` to log `WARN` when additional CF values are present but unused.<br>2. Add TODO in builder to capture anesthesia/midyear columns once governance approves.<br>3. Amend `PRD-mpfs-prd-v1.0.md` to state physician-factor-only scope for ClearBill launch and document expansion path. | Data Engineering + Product | WARN logging visible in run; PRD updated; QA sign-off that anesthesia is deferred. |
+| **Provenance & Contract Tests** | 1. Extend `/v1/mpfs` contract test to assert `datasets_used` includes `mpfs_cf`, `mpfs_rvu`, `mpfs_gpci`.<br>2. Ensure enrich/publish pipeline surfaces input snapshot IDs in the final manifest metadata (add regression unit test around `MPFSIngestor.publish_stage`).<br>3. Backfill readiness checklist with contract-test evidence. | Platform API + QA | Contract test green; unit test proves provenance; readiness doc links to test run. |
+| **Runbook & Doc Refresh** | 1. Split `artifacts/mpfs_opps_ingestion_runbook.md` into `RUN-mpfs-ingestion-v1.0.md` (MPFS only) and separate OPPS runbook.<br>2. Document async CF fetcher flow, cache paths, and override workflow (with examples for config + CLI).<br>3. Update release notes (`docs/release_notes/phase2_refactor.md`) and gap analysis to mark MPFS as stabilized. | Ops + Technical Writing | New runbook published; release notes updated; `ingestor_gap_analysis.md` shows MPFS ✅. |
+
 ---
 
 ## 5. Risks & Mitigations
@@ -1167,7 +1189,7 @@ This sequence ensures:
 
 - **Implementation Owner:** Data Engineering (MPFS squad)  
 - **Reviewers:** Platform API, QA, Compliance  
-- **Support Docs:** `artifacts/mpfs_opps_ingestion_runbook.md`, `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md`
+- **Support Docs:** `prds/RUN-mpfs-ingestion-v1.0.md`, `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md`
 
 ---
 

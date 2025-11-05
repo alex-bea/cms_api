@@ -249,7 +249,7 @@ This document summarizes the comprehensive plans created to complete MPFS and OP
 - **OPPS Implementation Plan:** `artifacts/opps_implementation_plan.md`
 
 ### Execution Guides
-- **Ingestion Runbook:** `artifacts/mpfs_opps_ingestion_runbook.md`
+- **Ingestion Runbook:** `prds/RUN-mpfs-ingestion-v1.0.md`
 
 ### PRD References
 - **ClearBill PRD:** `prds/PRD-clearbill-prd-v1.0.md`
@@ -283,4 +283,3 @@ This planning effort provides comprehensive architecture plans, detailed impleme
 - ✅ Success criteria and verification steps
 
 **Next Action:** Begin implementation starting with MPFS validation rules, following the detailed implementation plan.
-

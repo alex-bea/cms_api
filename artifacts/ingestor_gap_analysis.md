@@ -9,7 +9,7 @@
 
 **Current State:**
 - ✅ **5 ingestors exist** (RVU, MPFS, OPPS, ZIP9, ZIP Locality)
-- ⚠️ **2 ingestors need fixes** (MPFS, OPPS - may have broken imports)
+- ⚠️ **1 ingestor needs fixes** (OPPS stabilization outstanding; MPFS upgraded to snapshot-based pipeline)
 - 🟡 **6 ingestors planned post-launch** (ASC, CLFS, DMEPOS, IPPS, ASP, NADAC align with Treatment Plan API scope)
 
 **MECE Status:** ❌ **NOT MECE** - Missing 6 critical ingestors
@@ -81,7 +81,7 @@
 
 | Dataset | Engine | Model | Ingester Status | Priority |
 |---------|--------|-------|-----------------|----------|
-| **MPFS** | `MPFSEngine` ✅ | `FeeMPFS` ✅ | ⚠️ Exists (needs fixes) | 🔴 Critical |
+| **MPFS** | `MPFSEngine` ✅ | `FeeMPFS` ✅ | ✅ Snapshot-based ingestor live (tests/docs finalizing) | 🟢 Stable |
 | **OPPS** | `OPPSEngine` ✅ | `FeeOPPS` ✅ | ⚠️ Exists (needs fixes) | 🔴 Critical |
 | **ASC** | `ASCEngine` ✅ | `FeeASC` ✅ | 🚧 Planned (post-launch) | 🟡 High |
 | **IPPS** | `IPPSEngine` ✅ | `FeeIPPS` ✅ | 🚧 Planned (post-launch) | 🟡 High |
@@ -122,15 +122,13 @@
 
 ## 4. Launch Readiness Focus (ClearBill v1)
 
-### MPFS Ingestor (build to v2 plan)
-- **Scope:** Execute steps from `artifacts/mpfs_implementation_plan.md` so MPFS ingestion reuses RVU/GPCI snapshots, lands conversion-factor artifacts, and publishes curated payment tables with provenance.
-- **Key actions:**
-  1. Implement scraper reuse so conversion-factor files are the only new download; attach RVU/GPCI digests via `DatasetSnapshotService`.
-  2. Fill normalize/enrich/publish stages to output `mpfs_rvu`, `mpfs_indicators_all`, `mpfs_locality`, `mpfs_gpci`, `mpfs_cf_vintage`, `mpfs_payment_curated`, and `mpfs_link_keys`.
-  3. Build MPFS payment calculator (facility/non-facility) per CMS formula using RVU + GPCI + CF inputs; persist curated parquet + relational tables.
-  4. Extend tests with golden comparisons against CMS PFREV data and contract checks for `/v1/mpfs` provenance.
-  5. Update readiness artifacts with run evidence (release/batch IDs, dataset digests, observability metrics).
-- **Owners:** Data Engineering + Pricing API (schema consumers).
+### MPFS Ingestor (status: ✅ Core complete, Phase 6/7 mopping up)
+- **What shipped:** Snapshot reuse, conversion-factor fetcher, cross-join payment builder, curated manifest registration, and E2E payment validation (`tests/ingestors/test_mpfs_ingestor_e2e.py`).
+- **Remaining work:** 
+  1. Unit tests for `ConversionFactorFetcher` and `/v1/mpfs` contract assertion on `datasets_used`.
+  2. Documentation blitz (new `prds/RUN-mpfs-ingestion-v1.0.md`, PRD updates, release notes).
+  3. Production readiness run + evidence logging in readiness plan.
+- **Owners:** Data Engineering + Platform API.
 
 ### OPPS Ingester (stabilize + wage index enrichment)
 - **Scope:** Complete `opps_ingestor.py` so Addenda A/B load into parquet + relational tables with wage index joins.
@@ -268,11 +266,9 @@ cms_pricing/ingestion/ingestors/
   - License acceptance automation (future enhancement)
   - Estimated time: 2-3 weeks
 
-- **Ingestion Runbook:** `artifacts/mpfs_opps_ingestion_runbook.md`
-  - Prerequisites and environment setup
-  - Step-by-step execution instructions for MPFS and OPPS
-  - Verification and troubleshooting guides
-  - Provenance evidence capture
+- **Ingestion Runbooks:** `prds/RUN-mpfs-ingestion-v1.0.md` (MPFS) and `artifacts/mpfs_opps_ingestion_runbook.md` (OPPS legacy stub)
+  - MPFS: snapshot reuse workflow, ConversionFactorFetcher guidance, override procedure, post-run verification
+  - OPPS: interim instructions pending stabilization effort
 
 - **Summary Document:** `artifacts/priority_ingestor_plans_summary.md`
   - Executive summary of all plans

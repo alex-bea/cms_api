@@ -77,6 +77,7 @@
 | `RUN-database-backup-dr-prd-v1.0.md` | Draft v0.1 | Platform Engineering (DBA), SRE | Automated backup validation, manual dumps, restore/PITR drills, incident response |
 | `RUN-database-sanitization-prd-v1.0.md` | Draft v0.1 | Security, Data Engineering | PHI registry, tokenization pipeline, non-prod refresh process, staging soak checklist |
 | `RUN-openapi-docs-maintenance-v1.0.md` | Draft v1.0 | Platform Engineering (API Enablement) | OpenAPI regeneration, linting, publishing, and distribution workflow tied to Render deploys |
+| `RUN-mpfs-ingestion-v1.0.md` | Draft v1.0 | Data Engineering (MPFS) + Ops | MPFS snapshot-based ingestion, ConversionFactorFetcher workflow, override governance, verification checklist |
 
 ---
 
@@ -276,6 +277,7 @@ graph TD
 | Version | Date | Summary | PR |
 |---|---|---|---|
 | 1.0.7 | 2025-02-14 | **Phase 2 Architectural Patterns.** Added §10 "Key Architectural Patterns" documenting 8 core patterns: DatasetSpec, SchemaService, ValidationService, business rules registration, adapter/loader extraction, stage modules, thin orchestrator. Updated `STD-data-architecture-impl-v1.0.md` entry with pattern references. **Reference:** RVU ingester refactoring (4,247 → 990 lines). | #TBD |
+| 1.0.8 | 2025-11-04 | Added dedicated MPFS ingestion runbook (`prds/RUN-mpfs-ingestion-v1.0.md`) to operational catalog and recorded documentation split from legacy MPFS/OPPS combined guide. | #TBD |
 | 1.0.6 | 2025-10-17 | **Modularized STD-parser-contracts v1.11 → v2.0.** Split 4,477-line monolith into 6 focused documents: (1) STD-parser-contracts-prd-v2.0 (737 lines - core policy), (2) STD-parser-contracts-impl-v2.0 (809 lines - implementation companion), (3) REF-parser-routing-detection-v1.0 (735 lines - router architecture), (4) REF-parser-quality-guardrails-v1.0 (611 lines - validation/metrics), (5) RUN-parser-qa-runbook-prd-v1.0 (437 lines - QA procedures), (6) REF-parser-reference-appendix-v1.0 (350 lines - reference tables). **Benefits:** 3-4x faster AI context loading, governance compliance (companion doc pattern), independent versioning, clearer separation of concerns. Updated dependency graph with 5 new relationships. Archived v1.11 for 2-week transition. | #TBD |
 | 1.0.5 | 2025-10-16 | Added CHANGELOG.md to §5 Documentation & Meta (project release notes following Keep a Changelog format); Updated STD-doc-governance to v1.0.2 with CHANGELOG.md requirement (§5.1); Added automated validation via tools/audit_changelog.py. Supports Phase 0 lockdown milestone (v0.1.0-phase0). | #TBD |
 | 1.0.4 | 2025-10-15 | Added STD-parser-contracts-prd-v1.0.md (shared parser infrastructure standard for CMS data ingestion); updated dependency graph showing parser contracts as foundation for MPFS, RVU, OPPS ingestors; establishes public contract requirements, metadata injection pattern, and tiered validation standards. | #TBD |

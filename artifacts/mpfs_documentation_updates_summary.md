@@ -45,9 +45,9 @@
 **Status:** Already updated  
 **Line 118:** Notes "Discovery still references deprecated `CMSMPFSScraper`; must switch to snapshot reuse + CF fetcher"
 
-### 3. **artifacts/mpfs_opps_ingestion_runbook.md**
-**Status:** Already updated  
-**User made changes:** References snapshot service and CF fetcher instead of scraper
+### 3. **prds/RUN-mpfs-ingestion-v1.0.md**
+**Status:** Newly created  
+**Highlights:** Documents snapshot reuse, ConversionFactorFetcher behaviour, override workflow, and post-run verification checklist.
 
 ### 4. **artifacts/mpfs_implementation_plan.md**
 **Status:** Complete  
@@ -93,4 +93,3 @@ All critical PRDs and architecture documents now reflect the snapshot-based disc
 - [x] Implementation plan complete
 
 **All documentation is now aligned with the snapshot-based MPFS discovery approach.**
-

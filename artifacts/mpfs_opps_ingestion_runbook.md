@@ -1,8 +1,8 @@
-# MPFS & OPPS Ingestion Runbook
+# OPPS Ingestion Runbook (Legacy Stub)
 
 **Date:** 2025-01-15  
-**Status:** Draft v1.0  
-**Purpose:** Step-by-step guide for executing MPFS and OPPS ingestion pipelines
+**Status:** Draft v0.2 (MPFS content relocated 2025-11-04)  
+**Purpose:** Step-by-step guide for executing OPPS ingestion pipeline. MPFS runbook moved to `prds/RUN-mpfs-ingestion-v1.0.md`.
 
 ---
 
@@ -36,13 +36,6 @@ alembic current
 
 ### 2. Test Data Preparation
 
-**MPFS Test Data:**
-```bash
-# Verify sample data exists
-ls -la sample_data/rvu25d_0/
-# Should see: PPRRVU2025_Oct.txt, GPCI2025.txt, RVU25D.pdf, etc.
-```
-
 **OPPS Test Data:**
 ```bash
 # Create OPPS test data directory
@@ -63,32 +56,32 @@ df -h data/
 
 ---
 
-## MPFS Ingestion Runbook
+# OPPS Ingestion Playbook
 
 ### Step 1: Confirm Current Vintages
 
-**Target Release:** RVU/MPFS 2025D (October 2025)
+**Target Release:** OPPS 2025Q1 (example)
 
 **Check Source URLs:**
-- Reference: `prds/REF-cms-pricing-source-map-prd-v1.0.md#direct-artifact-links-2024-2026`
-- RVU Bundle: `https://www.cms.gov/files/zip/rvu25d.zip`
-- Expected file: `RVU25D.zip` containing `PPRRVU2025_Oct.txt`, `GPCI2025.txt`, etc.
+- Reference: `prds/REF-cms-pricing-source-map-prd-v1.0.md#opps`
+- CMS OPPS Addenda bundle (A/B, D1) for target quarter
+- Wage index file source (if separate)
 
 **Snapshot Expected File Hashes:**
 ```bash
 # Calculate expected hashes (if available)
-sha256sum sample_data/rvu25d_0/PPRRVU2025_Oct.txt
-sha256sum sample_data/rvu25d_0/GPCI2025.txt
+sha256sum sample_data/opps25q1/AddendumA.txt
+sha256sum sample_data/opps25q1/AddendumB.txt
 ```
 
 **Document in staging note:**
 ```markdown
-# MPFS 2025D Ingestion Plan
-- Release: RVU25D
+# OPPS 2025Q1 Ingestion Plan
+- Release: OPPS25Q1
 - Expected Files:
-  - PPRRVU2025_Oct.txt (SHA256: ...)
-  - GPCI2025.txt (SHA256: ...)
-  - Conversion Factor files (if available)
+  - Addendum A/B (SHA256: ...)
+  - Wage index CSV (SHA256: ...)
+  - Packaging rules (if published)
 ```
 
 ---
@@ -107,81 +100,34 @@ sha256sum sample_data/rvu25d_0/GPCI2025.txt
 
 **Clear Prior Run Directories (Optional):**
 ```bash
-# Tag previous runs
-mv data/ingestion/mpfs/raw data/ingestion/mpfs/raw_$(date +%Y%m%d_%H%M%S)_backup
-
-# Create fresh directories
-mkdir -p data/ingestion/mpfs/{raw,stage,curated,quarantine}
+mv data/ingestion/opps/raw data/ingestion/opps/raw_$(date +%Y%m%d_%H%M%S)_backup
+mkdir -p data/ingestion/opps/{raw,stage,curated,quarantine}
 ```
 
-**Verify MPFS Config:**
+**Verify OPPS Config:**
 ```python
-# Confirm RVU/GPCI snapshots exist and conversion-factor fetcher is configured
-python -c "
+python - <<'PY'
 from cms_pricing.ingestion.services.dataset_snapshot_service import DatasetSnapshotService
-from cms_pricing.ingestion.services.conversion_factor_fetcher import ConversionFactorFetcher
-
 service = DatasetSnapshotService()
-rvu_snapshot = service.get_latest_snapshot('rvu_items')
-gpci_snapshot = service.get_latest_snapshot('gpci_indices')
-print('RVU snapshot:', rvu_snapshot.release_id)
-print('GPCI snapshot:', gpci_snapshot.release_id)
-
-fetcher = ConversionFactorFetcher()
-cf_meta = fetcher.ensure_conversion_factor(year=2025)
-print('CF artifact ready:', cf_meta['path'])
-"
+opps_snapshot = service.get_latest_snapshot('opps_payment')
+print('OPPS snapshot (if exists):', getattr(opps_snapshot, 'release_id', None))
+service.close()
+PY
 ```
 
 ---
 
-### Step 3: Run MPFS Ingestion
+### Step 3: Run OPPS Ingestion
 
-**Option A: Using CLI (if available)**
+Use the dedicated OPPS helper script (placeholder):
 ```bash
-python -m cms_pricing.cli.ingestion ingest-mpfs \
-    --year 2025 \
-    --quarter D \
-    --output-dir data/ingestion/mpfs
+python scripts/run_opps_ingestion.py \
+  --quarter 2025Q1 \
+  --output-dir data/ingestion/opps \
+  [--wage-index-path sample_data/opps25q1/WageIndex2025Q1.csv]
 ```
 
-**Option B: Using Python Script**
-```python
-#!/usr/bin/env python3
-"""Run MPFS ingestion"""
-import asyncio
-from cms_pricing.ingestion.ingestors.mpfs_ingestor import MPFSIngestor
-from cms_pricing.database import SessionLocal
-
-async def main():
-    db = SessionLocal()
-    try:
-        ingestor = MPFSIngestor(
-            output_dir="./data/ingestion/mpfs",
-            db_session=db
-        )
-        
-        result = await ingestor.ingest(year=2025, quarter="D")
-        
-        print("✅ MPFS ingestion completed")
-        print(f"Release ID: {result.get('release_id')}")
-        print(f"Batch ID: {result.get('batch_id')}")
-        print(f"Tables published: {result.get('tables_published', [])}")
-        print(f"Records published: {result.get('records_published', 0)}")
-        
-    finally:
-        db.close()
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-**Save as:** `scripts/run_mpfs_ingestion.py`
-
-**Execute:**
-```bash
-python scripts/run_mpfs_ingestion.py
-```
+> **TODO:** Update once OPPS ingestor is fully refactored. Track progress in `artifacts/opps_implementation_plan.md`.
 
 ---
 
@@ -189,15 +135,30 @@ python scripts/run_mpfs_ingestion.py
 
 **Check Logs:**
 ```bash
-# Check ingestion logs
-tail -f logs/ingestion_mpfs_*.log
-
-# Or check console output for:
-# - Files downloaded count
-# - Validation warnings
-# - Record totals
+tail -f logs/ingestion_opps_*.log
 ```
 
+Confirm:
+- Files discovered/downloaded count.
+- Validation warnings and severity.
+- Published tables (Addendum A/B, wage index joins).
+
+---
+
+### Step 5: Post-Run Validation
+
+- Query curated parquet for expected HCPCS counts.
+- Run `/v1/opps` API contract test to ensure `datasets_used` includes OPPS datasets.
+- Document run evidence in operational ticket.
+
+---
+
+## Change Log
+
+| Version | Date | Summary |
+|---------|------|---------|
+| v0.2 | 2025-11-04 | Removed MPFS content after split into dedicated runbook. |
+| v0.1 | 2025-01-15 | Initial combined MPFS/OPPS draft. |
 **Expected Output:**
 ```
 Starting MPFS ingestion year=2025 quarter=D
