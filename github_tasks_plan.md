@@ -269,7 +269,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** High  
 **Estimated Time:** 0.5 day  
 **Labels:** database, performance, high-priority  
-**Status:** ⏳ TODO  
+**Status:** ✅ COMPLETE
 
 **Context:** `cms_pricing/database.py:12` uses `StaticPool`, forcing all FastAPI requests to share a single connection. Under concurrency this creates lock contention and request pileups. Swapping to SQLAlchemy’s default QueuePool with tuned limits satisfies the pooling standard in `prds/STD-database-platform-prd-v1.0.md`.
 
@@ -286,7 +286,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Medium  
 **Estimated Time:** 0.25 day  
 **Labels:** database, devops, medium-priority  
-**Status:** ⏳ TODO  
+**Status:** ✅ COMPLETE
 
 **Context:** `cms_pricing/database.py:35` rewrites the Postgres DSN to `postgresql+asyncpg://`, which `asyncpg.connect` cannot parse. Background tasks therefore fail to connect. Aligning the DSN with asyncpg expectations restores the asynchronous dependency path.
 
@@ -303,7 +303,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Medium  
 **Estimated Time:** 0.25 day  
 **Labels:** security, api, medium-priority  
-**Status:** ⏳ TODO  
+**Status:** ✅ COMPLETE
 
 **Context:** Both `cms_pricing/auth.py:12` and `cms_pricing/middleware.py:68` split the comma-separated API key string on every request. Caching the parsed set at startup reduces overhead and aligns with the RBAC readiness plan.
 
@@ -320,7 +320,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Medium  
 **Estimated Time:** 0.25 day  
 **Labels:** api, backend, medium-priority  
-**Status:** ⏳ TODO  
+**Status:** ✅ COMPLETE
 
 **Context:** `_calculate_beneficiary_cost_sharing` (`cms_pricing/engines/base.py:39`) requires `deductible_remaining`, yet engine callers omit it. The helper raises `TypeError`, preventing correct pricing. Supplying a default unblocks engine usage and matches the pricing PRD.
 
@@ -337,7 +337,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Medium  
 **Estimated Time:** 0.5 day  
 **Labels:** performance, database, medium-priority  
-**Status:** ⏳ TODO  
+**Status:** ✅ COMPLETE
 
 **Context:** `cms_pricing/engines/mpfs.py:47`, `cms_pricing/engines/opps.py:64`, and `cms_pricing/engines/asc.py:53` compare dates as strings (`"2025-12-31"`). Casting forces table scans and breaks index usage. Switching to `date()` comparisons restores planner optimizations.
 
@@ -354,7 +354,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** High  
 **Estimated Time:** 1 day  
 **Labels:** performance, api, database, high-priority  
-**Status:** ⏳ TODO  
+**Status:** ✅ COMPLETE
 
 **Context:** `PricingService`, `GeographyService`, `TraceService`, and each engine instantiate `SessionLocal()` independently. Requests therefore hold multiple connections, complicating transaction boundaries and leaking sessions. Injecting the FastAPI-scoped session fixes lifecycle control.
 
@@ -371,7 +371,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Medium  
 **Estimated Time:** 0.5 day  
 **Labels:** performance, geography, medium-priority  
-**Status:** ⏳ TODO  
+**Status:** ✅ COMPLETE
 
 **Context:** `_find_zip_candidates_in_radius` (`cms_pricing/services/geography.py:358`) re-queries the entire state for each radius increment and ignores effective-date filters. This slows ZIP resolution. A single, filtered fetch reused across iterations reduces DB load.
 
@@ -388,7 +388,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Medium  
 **Estimated Time:** 0.5 day  
 **Labels:** performance, caching, geography, medium-priority  
-**Status:** ⏳ TODO  
+**Status:** ✅ COMPLETE
 
 **Context:** Popular ZIP codes trigger repeated DB lookups in `GeographyService.resolve_zip`. A small in-memory LRU/TTL cache (respecting HIPAA constraints) alleviates hot path latency and aligns with readiness caching goals.
 
@@ -405,7 +405,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Medium  
 **Estimated Time:** 0.5 day  
 **Labels:** monitoring, performance, medium-priority  
-**Status:** ⏳ TODO  
+**Status:** ✅ COMPLETE
 
 **Context:** `TraceService.store_run` (`cms_pricing/services/trace.py:89`) calls `self.db.add` in loops, generating many round-trips. Batched inserts or `bulk_save_objects` bring latency in line with observability SLOs.
 
@@ -422,7 +422,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Medium  
 **Estimated Time:** 1 day  
 **Labels:** performance, api, async, medium-priority  
-**Status:** ⏳ TODO  
+**Status:** ✅ COMPLETE
 
 **Context:** Async endpoints call synchronous ORM code (`pricing_service.price_plan`, geography lookups), blocking the event loop. Wrapping database work in `asyncio.to_thread` (short term) or switching to `AsyncSession` preserves responsiveness.
 
@@ -521,7 +521,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 ### Task 6: Streaming Data Pipeline
 
 **Category:** General
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 **Priority:** High
 **Estimated Time:** TBD
 **Labels:** general, high-priority, from-todos
@@ -993,6 +993,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Description:**
 **Phase:** Phase 2: Supporting CMS Ingestors
 
+**Status:** ✅ COMPLETE
 **Task:** IPPS Ingester**
 
 **Priority:** High
@@ -1289,7 +1290,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 ---
 
 ### Task 47: General: Extract from traces
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 
 **Category:** General
 **Priority:** Low
@@ -1304,7 +1305,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Status:** ✅ COMPLETE
 ---
 
-**Status:** ❓ UNKNOWN
+**Status:** ✅ COMPLETE
 ### Task 48: General: Extract from traces
 
 **Category:** General
@@ -1315,6 +1316,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Description:**
 **File:** `cms_pricing/services/trace.py:171`
 
+**Status:** ✅ COMPLETE
 **Details:** Extract from traces
 **Status:** ✅ COMPLETE
 
@@ -1330,6 +1332,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Description:**
 **File:** `cms_pricing/services/trace.py:172`
+**Status:** ✅ COMPLETE
 
 **Status:** ✅ COMPLETE
 **Details:** Extract from traces
@@ -1345,6 +1348,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** general, low-priority
 
 **Description:**
+**Status:** ✅ COMPLETE
 **File:** `cms_pricing/services/trace.py:199`
 **Status:** ✅ COMPLETE
 
@@ -1360,6 +1364,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Estimated Time:** TBD
 **Labels:** general, low-priority
 
+**Status:** ✅ COMPLETE
 **Description:**
 **Status:** ✅ COMPLETE
 **File:** `cms_pricing/services/geography_trace.py:25`
@@ -1375,6 +1380,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** Low
 **Estimated Time:** TBD
 **Labels:** general, low-priority
+**Status:** ✅ COMPLETE
 
 **Status:** ✅ COMPLETE
 **Description:**
@@ -1390,6 +1396,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Category:** Performance
 **Priority:** Medium
 **Estimated Time:** TBD
+**Status:** ✅ COMPLETE
 **Labels:** performance, medium-priority
 **Status:** ✅ COMPLETE
 
@@ -1515,7 +1522,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Description:**
 **File:** `cms_pricing/services/pricing.py:434`
 
-**Status:** 🗑️ OUTDATED (Outdated: Placeholder replaced with actual code)
+**Status:** ✅ COMPLETE
 **Details:** Implement database loading
 
 ---
@@ -1529,6 +1536,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Description:**
 **File:** `cms_pricing/services/pricing.py:439`
+**Status:** ✅ COMPLETE
 
 **Details:** Implement database loading
 
@@ -1538,6 +1546,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Category:** API Development
 **Priority:** High
+**Status:** 🗑️ OUTDATED (Outdated: Placeholder replaced with actual code)
 **Estimated Time:** TBD
 **Status:** ✅ COMPLETE (2025-01-15)
 **Labels:** api-development, high-priority
@@ -1567,6 +1576,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 ### Task 62: Data Ingestion: Replace placeholder validation/adaptation logic
 
 **Category:** Data Ingestion
+**Status:** 🗑️ OUTDATED
 **Priority:** High
 **Estimated Time:** TBD
 **Labels:** data-ingestion, high-priority
@@ -1580,6 +1590,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 ### Task 63: General: Execute automation and cache-warming backlog
 
+**Status:** ✅ COMPLETE
 **Category:** General
 **Priority:** Medium
 **Estimated Time:** TBD
@@ -1593,6 +1604,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 ---
 
 ### Task 69: Data Quality: Add locality_id to fee_mpfs table
+**Status:** ✅ COMPLETE
 
 **Category:** Database
 **Priority:** Medium
@@ -1619,6 +1631,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 ---
 
+**Status:** ✅ COMPLETE
 ### Task 70: Data Quality: Extend OPPS ingestion to persist wage index table
 
 **Category:** Data Ingestion
@@ -1645,6 +1658,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 - Tests verify wage index integration end-to-end
 
 ---
+**Status:** ✅ COMPLETE
 
 ### Task 71: Data Quality: Produce retention/backfill playbook
 
@@ -1673,6 +1687,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 - Abort criteria defined for various failure scenarios
 - Examples and troubleshooting guides included
 
+**Status:** ✅ COMPLETE
 ---
 
 ### Task 72: Testing: Add synthetic publish integration test
@@ -1700,6 +1715,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 - `/pricing/price` calls return correct pricing amounts
 - Provenance metadata verified in response
 - Test runs in CI pipeline
+**Status:** ✅ COMPLETE
 
 ---
 
@@ -1726,6 +1742,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 - Test covers facility (wage index applied) scenarios
 - Test covers non-facility (no wage index) scenarios
 - Verifies correct wage index values used
+**Status:** ✅ COMPLETE
 - Verifies pricing calculations accurate
 
 ---
@@ -1752,6 +1769,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Acceptance Criteria:**
 - Checksums calculated for all ingested datasets
 - Verification compares against expected values
+**Status:** ✅ COMPLETE
 - Alerts triggered on checksum mismatches
 - Logs include checksum verification results
 
@@ -1778,6 +1796,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Acceptance Criteria:**
 - Tests cover invalid locality scenarios
+**Status:** ✅ COMPLETE
 - Tests cover unsupported modifier scenarios
 - Tests cover missing snapshot scenarios
 - Error messages are actionable with error codes
@@ -1807,6 +1826,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Acceptance Criteria:**
 - Contract tests execute against ClearBill staging
+**Status:** ✅ COMPLETE
 - All pricing endpoints validated
 - Schema compatibility verified
 - Provenance fields validated
@@ -1822,6 +1842,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Labels:** testing, api-development, medium-priority, readiness-plan
 
 **Description:**
+**Status:** ✅ COMPLETE
 **Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.2
 
 **Details:** Establish downstream regression suite (consumer-driven contract or Postman collection) executed before each release to catch breaking changes.
@@ -1835,6 +1856,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 - Document how to update collection when API changes
 
 **Acceptance Criteria:**
+**Status:** 🗑️ OUTDATED
 - Regression suite covers critical API scenarios
 - Schema validation included
 - Backward compatibility tested
@@ -1850,6 +1872,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Estimated Time:** 2-3 hours
 **Labels:** documentation, api-development, medium-priority, readiness-plan
 
+**Status:** 🗑️ OUTDATED
 **Description:**
 **Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.2
 
@@ -1864,6 +1887,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 - Version the change log (e.g., v1.0, v1.1)
 - Keep change log updated with each release
 
+**Status:** ✅ COMPLETE
 **Acceptance Criteria:**
 - Change log documents all schema changes
 - Schema diffs included for major changes
@@ -1895,6 +1919,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 - Coordinate review with developer relations
 - Publish guide in accessible location
 
+**Status:** ✅ COMPLETE
 **Acceptance Criteria:**
 - Enablement guide covers API overview
 - Authentication documented
@@ -1925,6 +1950,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 - Implement cache invalidation strategy
 - Add cache warming for top cohorts
 - Test cache behavior and performance improvements
+**Status:** ✅ COMPLETE
 
 **Acceptance Criteria:**
 - L1 cache implemented with LRU eviction
@@ -1953,6 +1979,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 - Create cache warmer script/service
 - Schedule nightly execution (cron or scheduled job)
 - Pre-populate cache with top cohorts
+**Status:** ✅ COMPLETE
 - Monitor cache hit rates after warming
 - Adjust cohorts based on usage patterns
 
@@ -1971,6 +1998,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Priority:** High
 **Estimated Time:** 4-6 hours
 **Labels:** performance, testing, high-priority, readiness-plan
+**Status:** ✅ COMPLETE
 
 **Description:**
 **Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.4
@@ -1984,6 +2012,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
   - 20-code batch (target: p95 < 2.5s)
   - 40-code batch (target: p95 < 2.5s)
 - Run load tests against staging environment
+**Status:** ⚠️ PARTIAL
 - Measure and report p50, p95, p99 latencies
 - Identify bottlenecks if SLOs not met
 - Document results and recommendations
@@ -2011,6 +2040,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Implementation Steps:**
 - Add `dataset_snapshot_selected_total` counter metric
+**Status:** ✅ COMPLETE
 - Add `pricing_lookup_latency_ms` histogram metric
 - Add `cache_hits_total` and `cache_misses_total` counter metrics
 - Add `requests_total{route, scope}` counter with labels
@@ -2030,6 +2060,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Category:** Monitoring
 **Priority:** Medium
 **Estimated Time:** 3-4 hours
+**Status:** ✅ COMPLETE
 **Labels:** monitoring, observability, medium-priority, readiness-plan
 
 **Description:**
@@ -2040,6 +2071,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Implementation Steps:**
 - Set up Grafana instance (or use existing)
 - Create dashboard for latency metrics (p50, p95, p99)
+**Status:** ⚠️ PARTIAL
 - Create dashboard for cache hit ratio
 - Create dashboard for error budgets (4xx, 5xx rates)
 - Create dashboard for snapshot adoption (which snapshots active)
@@ -2069,6 +2101,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Implementation Steps:**
 - Configure alert for SLO burn (latency exceeding targets)
+**Status:** ✅ COMPLETE
 - Configure alert for snapshot mismatch (wrong snapshot selected)
 - Configure alert for cache miss spikes (unusual cache miss rate)
 - Configure alert for ingestion drift (data freshness issues)
@@ -2105,6 +2138,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 - Create runbook for cache warmer failures:
   - How to identify cache warmer failures
   - How to restart cache warmer
+**Status:** ✅ COMPLETE
   - How to verify cache population
 - Create runbook for RBAC issue remediation:
   - How to identify RBAC failures
@@ -2138,6 +2172,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 - Schedule on-call training session
 - Create training materials covering:
   - Common incidents and resolution
+**Status:** ✅ COMPLETE
   - Alert interpretation
   - Runbook usage
   - Escalation procedures
@@ -2168,6 +2203,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Details:** Prepare deployment checklist covering feature flag sequencing, dual-write window, and rollback triggers.
 
+**Status:** ✅ COMPLETE
 **Implementation Steps:**
 - Create deployment checklist template
 - Document feature flag sequencing (order of activation)
@@ -2202,6 +2238,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Implementation Steps:**
 - Create Alembic migration for `api_keys` table with columns:
   - `key_id` (UUID primary key)
+**Status:** ✅ COMPLETE
   - `key_hash` (salted SHA-256 hash, not plaintext)
   - `scopes` (array of strings: `app`, `advocate`, `developer`)
   - `tenant_id` (optional, for multi-tenant support)
@@ -2237,6 +2274,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Implementation Steps:**
 - Update `cms_pricing/auth.py` to query `api_keys` table instead of env vars
 - Create scope decorator/dependency (e.g., `require_scope("app")` or `require_scope(["app", "developer"])`)
+**Status:** ✅ COMPLETE
 - Update middleware to:
   - Extract API key from request headers
   - Look up key in database (hash comparison)
@@ -2267,6 +2305,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Description:**
 **Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+**Status:** ✅ COMPLETE
 
 **Details:** Emit Prometheus metrics per API key scope: `requests_total{scope, key_id}`, `requests_4xx_total{scope}`, `requests_rate_limited_total{scope}`.
 
@@ -2299,6 +2338,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Description:**
 **Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
 
+**Status:** ✅ COMPLETE
 **Details:** Route correlation IDs through ingestion and pricing services to enable end-to-end request tracing. Ensure no PHI persists outside encrypted stores.
 
 **Implementation Steps:**
@@ -2338,6 +2378,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 - Create compliance BOM document template
 - Document systems:
   - API servers, databases, caching layer
+**Status:** ✅ COMPLETE
   - Ingestion pipelines, data storage
   - Monitoring and logging systems
 - Document datasets:
@@ -2373,6 +2414,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 **Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
 
 **Details:** Define data retention and deletion policy for pricing snapshots, audit logs, and trace records to ensure compliance with data protection regulations.
+**Status:** ✅ COMPLETE
 
 **Implementation Steps:**
 - Define retention periods for:
@@ -2407,6 +2449,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Description:**
 **Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+**Status:** ✅ COMPLETE
 
 **Details:** Configure alerts for repeated authentication failures and scope escalation attempts to detect potential security threats.
 
@@ -2442,6 +2485,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Description:**
 **Source:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` §5.3
+**Status:** ✅ COMPLETE
 
 **Details:** Capture audit log sampling review process and provide compliance attestation package for HIPAA audit requirements.
 
@@ -2473,6 +2517,7 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 **Category:** Compliance
 **Priority:** Medium
+**Status:** ✅ COMPLETE
 **Estimated Time:** 3-4 hours
 **Labels:** compliance, operations, medium-priority, readiness-plan
 
@@ -2907,6 +2952,7 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 - ✅ Schema contracts registered for all 10 file types
 - ✅ Parser routing table maps filenames → parsers
 - ✅ 6 of 6 parsers complete (PPRRVU, CF, Locality, OPPSCAP, GPCI, ANES) - Parser module 100% ✅
+**Status:** ✅ COMPLETE
 - ✅ Tests pass for completed parsers (18/18 passing)
 - ✅ No breaking changes to existing code
 
@@ -2938,6 +2984,7 @@ Complete the MPFS (Medicare Physician Fee Schedule) ingestor to enable end-to-en
 ### Task 67: Deploy GPCI v1.3 to Render (Production Database)
 
 **Category:** Infrastructure / Production Deployment  
+**Status:** ✅ COMPLETE
 **Priority:** HIGH  
 **Status:** ✅ COMPLETE
 **Estimated Time:** 45 minutes  
