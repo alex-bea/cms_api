@@ -1,0 +1,42 @@
+#### CMS ZIP→Locality & ZIP9 (discovery manifest backlog)
+- Latest raw manifest: `data/ingestion/cms_simple/raw/cms_zip5/bfd54d14-c95f-4f33-b3f1-58808288bdf6/manifest.json`
+- Active ingesters: `CMSZipLocalityProductionIngester` (`cms_pricing/ingestion/ingestors/cms_zip_locality_production_ingester.py`) and `CMSZip9Ingester` (`cms_pricing/ingestion/ingestors/cms_zip9_ingester.py`)
+- Status: discovery manifest not yet emitted; bundle tracked via raw landing manifest only.
+
+| Filename | Landing URL | Content Type | Vintage | Notes |
+|---|---|---|---|---|
+| `zip_code_carrier_locality.zip` | https://www.cms.gov/files/zip/zip-code-carrier-locality-file-revised-08/14/2025.zip | application/zip | 2025-08-14 | Shared ZIP5 + ZIP9 package; land stage `_land_data` stores to `data/ingestion/cms_production/raw/<release>/files`. |
+
+#### CMS RVU Bundles (PPRRVU, GPCI, OPPSCAP, ANES, Locality)
+- Manifest: `data/manifests/cms_rvu/cms_rvu_manifest_20251004_002058.jsonl`
+- Discovery: `CMSRVUScraper.scrape_rvu_files` (`cms_pricing/ingestion/scrapers/cms_rvu_scraper.py`)
+- Ingester: `RVUIngestor` (`cms_pricing/ingestion/ingestors/rvu_ingestor.py`)
+
+| Filename | Direct URL | Content Type | Vintage | Notes |
+|---|---|---|---|---|
+| `RVU24A` | https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24a | text/plain | 2024 A | Core quarterly release; feeds `RVUIngestor.land` → `rvu_items`. |
+| `RVU24AR` | https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24ar | text/plain | 2024 AR | Revision package; normalize/enrich backlog. |
+| `RVU24B` | https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24b | text/plain | 2024 B | Second quarterly release. |
+| `RVU24C` | https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24c | text/plain | 2024 C | Third quarterly release. |
+| `RVU24D` | https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24d | text/plain | 2024 D | Fourth quarterly release. |
+
+#### CMS MPFS (Conversion Factors, Abstracts, National Payment)
+- Discovery: `DatasetSnapshotService` (RVU/GPCI snapshots) + `ConversionFactorFetcher.ensure_conversion_factor()`
+- Ingester: `MPFSIngestor` (`cms_pricing/ingestion/ingestors/mpfs_ingestor.py`)
+- Source URL: https://www.cms.gov/medicare/medicare-fee-for-service-payment/physicianfeesched/downloads
+- Note: MPFS ingestion reuses RVU/GPCI artefacts from snapshots; only conversion-factor ZIP/XLSX is downloaded when stale. Optional abstracts remain QA-only.
+
+| Filename | Direct URL | Content Type | Vintage | Notes |
+|---|---|---|---|---|
+| `RVU24A` | https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files/rvu24a | application/zip | 2024 A | Shared PPRRVU artifact; consumed via snapshot reuse. |
+
+#### CMS OPPS Quarterly Addenda
+- Manifest: `data/scraped/opps/manifests/cms_opps_manifest_20251004_072125.jsonl`
+- Discovery: `CMSOPPSScraper.discover_files` (`cms_pricing/ingestion/scrapers/cms_opps_scraper.py`)
+- Ingester: `OPPSIngestor` (`cms_pricing/ingestion/ingestors/opps_ingestor.py`)
+- Note: AMA license interstitial currently blocks direct ZIP downloads; scraper records the redirected license URL while headless acceptance is automated.
+
+| Filename | Direct URL | Content Type | Vintage | Notes |
+|---|---|---|---|---|
+| `license.asp` | https://www.cms.gov/license/ama?ReferURL=https%3A%2F%2Fwww.google.com%2F&Cancel=Don%27t+Accept | application/octet-stream | 2025 Q1 | Addendum A request redirected to AMA page; `disclaimer_resolved=True`. |
+| `license.asp` | https://www.cms.gov/license/ama?ReferURL=https%3A%2F%2Fwww.google.com%2F&Cancel=Don%27t+Accept | application/octet-stream | 2025 Q1 | Addendum B (updated 05/16/2025); ZIP still gated behind license acknowledgement. |

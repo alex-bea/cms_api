@@ -118,7 +118,7 @@ class RVUIngestor(BaseDISIngestor):
             r"^rvu\d+[a-z]\.(txt|csv|xlsx|xls)$"
         ],
         "gpci": [
-            r".*gpci.*\.(txt|csv|xlsx|xls)$"
+            r"(?i).*gpci.*\.(txt|csv|xlsx|xls)$"
         ],
         "oppscap": [
             r".*oppscap.*\.(txt|csv|xlsx|xls)$",

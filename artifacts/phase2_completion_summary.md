@@ -90,7 +90,7 @@ Phase 2 successfully implements provenance tracking across all pricing engines b
 - **Files:**
   - `cms_pricing/schemas/pricing.py`
   - `cms_pricing/routers/pricing.py`
-  - `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md`
+  - `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md`
 - **Status:** Complete
 - **Changes:**
   - Enhanced `PricingResponse.datasets_used` Field description
@@ -202,7 +202,7 @@ Phase 2 successfully implements provenance tracking across all pricing engines b
 - `artifacts/phase2_9_rollout_plan.md`
 - `artifacts/phase2_9_rollout_status.md`
 - `artifacts/phase2_completion_summary.md` (this file)
-- `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md`
+- `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md`
 
 ---
 

@@ -157,3 +157,55 @@
 **Related GitHub Tasks:**
 - ✅ Task 58: Collect dataset information - **COMPLETE**
 - ✅ Task 61: Wire pricing plan persistence and dataset provenance - **COMPLETE**
+
+---
+
+## Task: Fix GPCI File Discovery Pattern Case Sensitivity
+
+**Status:** ✅ COMPLETE
+
+**Priority:** MEDIUM
+
+**Issue:** GPCI files were not being discovered/loaded during RVU ingestion. Analysis revealed potential case-sensitivity issues in filename pattern matching.
+
+### Root Cause Analysis
+
+See detailed analysis in: `artifacts/gpci_pattern_analysis.md`
+
+**Findings:**
+- GPCI files (e.g., `GPCI2025.txt`) were not being matched by some routing patterns
+- Inconsistency between patterns: some used `r".*gpci.*"` (case-sensitive), parser routing used `r"GPCI.*"` (uppercase-only)
+- Parser routing pattern was missing `.xls` extension support
+
+### Fixes Applied
+
+✅ **Updated patterns in 3 files to be explicitly case-insensitive:**
+
+1. **`cms_pricing/ingestion/parsers/__init__.py`**:
+   - Changed: `r"GPCI.*\.(txt|csv|xlsx)$"` 
+   - To: `r"(?i).*gpci.*\.(txt|csv|xlsx|xls)$"`
+   - Added `.xls` extension support and made pattern case-insensitive
+
+2. **`cms_pricing/ingestion/datasets/rvu_spec.py`**:
+   - Changed: `r".*gpci.*\.(txt|csv|xlsx|xls)$"`
+   - To: `r"(?i).*gpci.*\.(txt|csv|xlsx|xls)$"`
+   - Made pattern explicitly case-insensitive with `(?i)` flag
+
+3. **`cms_pricing/ingestion/ingestors/rvu_ingestor.py`**:
+   - Changed: `r".*gpci.*\.(txt|csv|xlsx|xls)$"`
+   - To: `r"(?i).*gpci.*\.(txt|csv|xlsx|xls)$"`
+   - Made pattern explicitly case-insensitive
+
+### Testing Required
+
+- [ ] Verify GPCI files are discovered during scraping
+- [ ] Verify GPCI files are routed to correct parser
+- [ ] Verify GPCI data is loaded into database
+- [ ] Run full RVU ingestion and confirm GPCI dataset is populated
+
+### Related Files
+
+- Analysis: `artifacts/gpci_pattern_analysis.md`
+- Pattern definitions: `cms_pricing/ingestion/parsers/__init__.py`, `cms_pricing/ingestion/datasets/rvu_spec.py`, `cms_pricing/ingestion/ingestors/rvu_ingestor.py`
+
+---

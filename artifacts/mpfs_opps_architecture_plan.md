@@ -608,4 +608,4 @@ sample_data/
 - **RVU Ingestor (Reference):** `cms_pricing/ingestion/ingestors/rvu_ingestor.py`
 - **Layout Registry:** `cms_pricing/ingestion/parsers/layout_registry.py`
 - **Database Models:** `cms_pricing/models/fee_schedules.py`
-- **Readiness Plan:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md`
+- **Readiness Plan:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md`

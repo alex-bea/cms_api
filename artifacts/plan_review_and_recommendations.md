@@ -227,7 +227,7 @@ Both issues should ensure:
 
 Update these files as implementation progresses:
 - `prds/RUN-render-deployment-prd-v1.0.md` - GPCI loading steps
-- `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` - OPPS enrichment status
+- `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` - OPPS enrichment status
 - `INGESTION_GUIDE.md` - OPPS ingestion workflow
 
 ### 3. Testing Pyramid

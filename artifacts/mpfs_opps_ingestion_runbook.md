@@ -320,7 +320,7 @@ LIMIT 10
 ```
 
 **Attach Evidence to Readiness Checklist:**
-- Update `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` with run metrics
+- Update `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` with run metrics
 - Include run timestamps, batch IDs, record counts
 - Add links to manifest files and curated outputs
 
@@ -566,7 +566,7 @@ curl "http://localhost:8000/v1/opps?apc=5071&year=2025" | jq
 
 **Update Readiness Plan:**
 ```bash
-# Edit prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md
+# Edit prds/DOC-cms-pricing-api-readiness-plan-v1.0.md
 # Add section:
 # ## MPFS Ingestion Run Results
 # - Release ID: mpfs_2025_D_20250115_143022
@@ -657,4 +657,4 @@ ls -la sample_data/rvu25d_0/RVU25D.pdf
 - **MPFS Implementation Plan:** `artifacts/mpfs_implementation_plan.md`
 - **OPPS Implementation Plan:** `artifacts/opps_implementation_plan.md`
 - **Source Map:** `prds/REF-cms-pricing-source-map-prd-v1.0.md`
-- **Readiness Plan:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md`
+- **Readiness Plan:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md`

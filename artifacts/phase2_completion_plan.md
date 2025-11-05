@@ -9,6 +9,7 @@
 - ✅ Adapter pipeline + dataset loaders extracted to `datasets/rvu_adapter.py` and `datasets/rvu_loaders.py`; schema bootstrap moved to SchemaService.
 - ✅ Land/validate helpers integrated into stage modules (`_land_with_provided_files()` removed, `_validate_parsed_dataframes()` moved to `stages/normalize.py`)
 - ✅ RVUIngestor reduced to **990 lines** (down from 4,247, ~76.7% reduction)
+- ✅ Render parser regressions resolved — `_build_parser_metadata()` now calls `extract_vintage_metadata()` so filenames like `PPRRVU2025_Oct.txt` infer the correct quarter and layout.
 
 **Target State:**
 - RVUIngestor becomes thin orchestrator (~800-900 lines)

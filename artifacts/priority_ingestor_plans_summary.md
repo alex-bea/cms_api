@@ -232,7 +232,7 @@ This document summarizes the comprehensive plans created to complete MPFS and OP
    - Update readiness documentation
 
 4. **Update Documentation**
-   - Update `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md` with run metrics
+   - Update `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md` with run metrics
    - Update `artifacts/tomorrow_plan.md` with status
    - Create backlog tickets for ASC → NADAC ingestors
 
@@ -256,7 +256,7 @@ This document summarizes the comprehensive plans created to complete MPFS and OP
 - **MPFS PRD:** `prds/PRD-mpfs-prd-v1.0.md`
 - **OPPS PRD:** `prds/PRD-opps-prd-v1.0.md`
 - **Source Map:** `prds/REF-cms-pricing-source-map-prd-v1.0.md`
-- **Readiness Plan:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md`
+- **Readiness Plan:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md`
 
 ### Code References
 - **RVU Ingestor (Template):** `cms_pricing/ingestion/ingestors/rvu_ingestor.py`

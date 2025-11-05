@@ -43,31 +43,27 @@ A Python-based API that produces ZIP-level, episode-based treatment plan prices 
 
 ### Manual Setup
 
-1. **Install dependencies**:
-   ```bash
-   pip install poetry
-   poetry install
-   ```
+The stabilized host/venv bootstrap is documented in `docs/dev_setup.md` (includes the Homebrew native libraries, pinned Python packages, and validation commands). Once that baseline environment is ready:
 
-2. **Set up environment**:
+1. **Set up environment variables**:
    ```bash
    cp env.example .env
    # Edit .env with your configuration
    ```
 
-3. **Start PostgreSQL and Redis**:
+2. **Start PostgreSQL and Redis**:
    ```bash
    # Using Docker
    docker run -d --name postgres -e POSTGRES_DB=cms_pricing -e POSTGRES_USER=cms_user -e POSTGRES_PASSWORD=cms_password -p 5432:5432 postgres:15-alpine
    docker run -d --name redis -p 6379:6379 redis:7-alpine
    ```
 
-4. **Run migrations**:
+3. **Run migrations**:
    ```bash
    alembic upgrade head
    ```
 
-5. **Start the API**:
+4. **Start the API**:
    ```bash
    uvicorn cms_pricing.main:app --host 0.0.0.0 --port 8000 --reload
    ```

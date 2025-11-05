@@ -82,7 +82,7 @@ PARSER_ROUTING = {
     ),
     
     # GPCI files (geographic practice cost indices)
-    r"GPCI.*\.(txt|csv|xlsx)$": (
+    r"(?i).*gpci.*\.(txt|csv|xlsx|xls)$": (
         "gpci",
         "cms_gpci_v1.3",  # Updated to v1.3 (MAC+locality NK)
         parse_gpci if GPCI_PARSER_AVAILABLE else "uses_rvu_ingestor"

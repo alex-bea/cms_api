@@ -15,9 +15,34 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  env-smoke:
+    name: Environment Smoke Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Bootstrap Python environment
+        run: |
+          scripts/bootstrap_env.sh --force-recreate --python-bin python3.11
+
+      - name: Validate Parquet/PDF stack
+        run: |
+          source .venv/bin/activate
+          python -c "import pandas, pyarrow, fastparquet"
+          python -c "import pdfplumber, pdfminer"
+          python -c "import pytesseract; print(pytesseract.get_tesseract_version())"
+
+      - name: Run MPFS ingestion test
+        run: |
+          source .venv/bin/activate
+          python -m pytest tests/ingestors/test_mpfs_ingestor_e2e.py
+
   build-and-push:
     name: Build Docker Image
     runs-on: ubuntu-latest
+    needs: env-smoke
     permissions:
       contents: read
       packages: write

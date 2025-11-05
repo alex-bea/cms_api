@@ -152,7 +152,7 @@ RVU_DATASETS: Dict[str, DatasetSpec] = {
         validation_rules=_create_gpci_validation_rules(),
         enrichment_rules=_create_enrichment_rules(),
         filename_patterns=[
-            r".*gpci.*\.(txt|csv|xlsx|xls)$"
+            r"(?i).*gpci.*\.(txt|csv|xlsx|xls)$"
         ]
     ),
     "oppscap": DatasetSpec(

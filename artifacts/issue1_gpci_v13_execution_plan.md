@@ -242,7 +242,7 @@ After successful load:
    - Document any environment fixes if needed
 
 2. **Update Readiness Plan:**
-   - File: `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md`
+   - File: `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md`
    - Mark GPCI v1.3 data loading complete
    - Add verification steps
 

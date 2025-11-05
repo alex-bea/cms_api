@@ -130,14 +130,14 @@ async def price_plan(...):
 ## 3. Readiness Plan Updates
 
 ### 3.1 Mark Phase 2.7 Complete
-**File:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md`
+**File:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md`
 
 **Updates:**
 - Add entry to Section 10 (Change Log) marking Phase 2.7 completion
 - Update Section 5.1 (Data Quality & Provenance) workstream status
 
 ### 3.2 Add Phase 2.8 Action Items
-**File:** `prds/CMS_Pricing_API_Readiness_Plan_for_Cle.md`
+**File:** `prds/DOC-cms-pricing-api-readiness-plan-v1.0.md`
 
 **Add to Section 5.2 (API Contract & Clients):**
 - [ ] Document provenance fields in OpenAPI schema (`datasets_used`, `trace_refs`)

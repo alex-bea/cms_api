@@ -26,6 +26,7 @@ from datetime import datetime, date
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from urllib.parse import urlparse
+from types import SimpleNamespace
 
 import pandas as pd
 import structlog
@@ -66,7 +67,7 @@ from ..enrichers.dis_reference_data_integration import (
     ReferenceDataManager,
     ReferenceDataSource,
 )
-from ..services.dataset_snapshot_service import DatasetSnapshotService
+from ...services.dataset_snapshot_service import DatasetSnapshotService, SnapshotMetadata
 from ..services.conversion_factor_fetcher import ConversionFactorFetcher
 from ..datasets.mpfs_builder import (
     MPFSNormalizedInputs,
@@ -685,7 +686,7 @@ class MPFSIngestor(BaseDISIngestor):
     def _extract_cf_value(self, raw_bytes: bytes) -> float:
         """Extract first numeric value from artefact content."""
         text = raw_bytes.decode("utf-8", errors="ignore")
-        matches = re.findall(r"\\d+\\.\\d+", text)
+        matches = re.findall(r"\d+\.\d+", text)
         if matches:
             try:
                 return float(matches[0])
@@ -849,35 +850,126 @@ class MPFSIngestor(BaseDISIngestor):
     ) -> DISObservabilityReport:
         """Generate DIS observability report using curated manifest metrics."""
         row_counts = stage_frame.quality_metrics.get("row_counts", {})
-        rows_processed = sum(row_counts.values())
-        return DISObservabilityReport(
-            batch_id=stage_frame.metadata.get("batch_id") or self.current_batch_id,
-            freshness_metrics=FreshnessMetrics(
-                last_successful_run=datetime.now(),
-                expected_cadence_hours=720.0,  # monthly cadence default
-                freshness_score=1.0,
-            ),
-            volume_metrics=VolumeMetrics(
-                rows_processed=rows_processed,
-                rows_rejected=0,
-                volume_score=1.0 if rows_processed > 0 else 0.0,
-            ),
-            schema_metrics=SchemaMetrics(
-                schema_version=self.schema_contracts["mpfs_rvu"].version,
-                drift_detected=False,
-                schema_score=1.0,
-            ),
-            quality_metrics=QualityMetrics(
-                validation_score=1.0,
-                completeness_score=1.0 if rows_processed > 0 else 0.0,
-                quality_score=1.0 if rows_processed > 0 else 0.0,
-            ),
-            lineage_metrics=LineageMetrics(
-                source_files=len(stage_frame.metadata.get("datasets", [])),
-                transformations_applied=len(manifest),
-                lineage_score=1.0,
-            ),
+        rows_processed = row_counts.get("mpfs_payment_curated")
+        if rows_processed is None:
+            rows_processed = sum(row_counts.values())
+        release_id = stage_frame.metadata.get("release_id", self.current_release_id or "")
+        batch_id = stage_frame.metadata.get("batch_id") or self.current_batch_id or str(uuid.uuid4())
+
+        previous_report = self.observability_collector.get_latest_report(self.dataset_name)
+
+        now = datetime.utcnow()
+        expected_frequency_hours = 24 * 365  # annual cadence
+        previous_update = previous_report.freshness.last_updated if previous_report else None
+        freshness = self.observability_collector.collect_freshness_metrics(
+            dataset_name=self.dataset_name,
+            last_updated=now,
+            expected_frequency_hours=expected_frequency_hours,
+            previous_update=previous_update,
         )
+
+        total_size_bytes = 0
+        for info in manifest.values():
+            path = info.get("path")
+            if not path:
+                continue
+            try:
+                total_size_bytes += Path(path).stat().st_size
+            except FileNotFoundError:
+                logger.warning("Manifest file missing during observability sizing", path=path)
+
+        previous_volume = previous_report.volume if previous_report else None
+        volume = self.observability_collector.collect_volume_metrics(
+            total_records=rows_processed,
+            total_size_bytes=total_size_bytes,
+            previous_metrics=previous_volume,
+        )
+
+        previous_schema_version = previous_report.schema.schema_version if previous_report else None
+        schema = self.observability_collector.collect_schema_metrics(
+            schema_version=self.schema_contracts["mpfs_rvu"].version,
+            validation_results={"valid": True, "breaking_changes": 0, "non_breaking_changes": 0},
+            previous_schema_version=previous_schema_version,
+        )
+
+        quality_metrics = {
+            "quality_score": 1.0 if rows_processed > 0 else 0.0,
+            "rules_passed": row_counts.get("mpfs_rvu", 0),
+            "rules_failed": 0,
+            "metrics": {
+                "null_rate": 0.0,
+                "duplicate_rate": 0.0,
+            },
+        }
+        quality = self.observability_collector.collect_quality_metrics(
+            validation_results=quality_metrics,
+            quality_threshold=self.sla_spec.quality_threshold if hasattr(self, "sla_spec") else 0.95,
+        )
+
+        source_files = stage_frame.metadata.get("source_files") or []
+        transformation_steps = ["Land", "Validate", "Normalize", "Enrich", "Publish"]
+        lineage = self.observability_collector.collect_lineage_metrics(
+            source_files=source_files,
+            transformation_steps=transformation_steps,
+            processing_timestamp=now,
+            ingest_run_id=batch_id,
+            batch_id=batch_id,
+            release_id=release_id,
+        )
+
+        report = self.observability_collector.generate_observability_report(
+            dataset_name=self.dataset_name,
+            freshness=freshness,
+            volume=volume,
+            schema=schema,
+            quality=quality,
+            lineage=lineage,
+        )
+
+        legacy_report = SimpleNamespace(
+            dataset_name=self.dataset_name,
+            batch_id=batch_id,
+            release_id=release_id,
+            generated_at=report.report_timestamp.isoformat(),
+            overall_score=report.overall_score,
+            critical_alerts=list(report.critical_alerts),
+            warnings=list(report.warnings),
+            freshness_metrics=SimpleNamespace(
+                last_successful_run=report.freshness.last_updated,
+                expected_cadence_hours=report.freshness.expected_frequency_hours,
+                freshness_score=report.freshness.freshness_score,
+                alerts=list(report.freshness.alerts or []),
+            ),
+            volume_metrics=SimpleNamespace(
+                rows_processed=report.volume.total_records,
+                rows_rejected=0,
+                volume_score=report.volume.volume_score,
+                total_size_bytes=report.volume.total_size_bytes,
+                expected_records=report.volume.expected_records,
+                expected_size_bytes=report.volume.expected_size_bytes,
+            ),
+            schema_metrics=SimpleNamespace(
+                schema_version=report.schema.schema_version,
+                drift_detected=report.schema.schema_evolution_detected,
+                schema_score=report.schema.schema_score,
+                schema_contract_valid=report.schema.schema_contract_valid,
+            ),
+            quality_metrics=SimpleNamespace(
+                validation_score=report.quality.quality_score,
+                completeness_score=report.quality.completeness_rate,
+                quality_score=report.quality.quality_score,
+                null_rate=report.quality.null_rate,
+                duplicate_rate=report.quality.duplicate_rate,
+            ),
+            lineage_metrics=SimpleNamespace(
+                source_files=source_files,
+                transformations_applied=transformation_steps,
+                lineage_score=report.lineage.lineage_score,
+            ),
+            raw_report=report,
+        )
+
+        return legacy_report
     
     async def ingest(self, year: int, quarter: Optional[str] = None) -> Dict[str, Any]:
         """Main ingestion method following DIS pipeline"""

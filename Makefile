@@ -1,6 +1,6 @@
 # CMS Pricing API Makefile
 
-.PHONY: help install install-dev test test-golden test-cov lint format clean
+.PHONY: help install install-dev test test-golden test-cov lint format clean bootstrap-env
 .PHONY: docker-build docker-up docker-down docker-logs migrate migrate-create migrate-downgrade
 .PHONY: dev worker shell docs check
 .PHONY: audit audit-with-tests audit-quick audit-companion audit-catalog audit-links audit-cross-refs audit-makefile audit-makefile-fix
@@ -135,3 +135,5 @@ setup: install-dev pre-commit ## Complete development setup
 	@echo "Run 'make dev' to start the development server"
 	@echo "Run 'make docker-up' to start with Docker Compose"
 	@echo "Run 'make audit' to run documentation audits"
+bootstrap-env: ## Bootstrap pinned local environment (.venv)
+	scripts/bootstrap_env.sh --force-recreate
