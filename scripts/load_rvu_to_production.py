@@ -9,10 +9,12 @@ This script runs the complete RVU ingestion pipeline and loads data to productio
 """
 
 import argparse
-import sys
 import logging
+import os
+import sys
 import time
 from pathlib import Path
+
 from sqlalchemy.orm import Session
 
 # Add project root to path
@@ -31,12 +33,25 @@ def main(release_id: str = None, output_dir: str = None):
     
     Args:
         release_id: Release ID to ingest (default: "rvu_2025_prod")
-        output_dir: Output directory for parquet files (default: "data/ingestion/production")
+        output_dir: Output directory for parquet files. If not provided,
+            the script will use RVU_OUTPUT_DIR env var, fall back to
+            "/var/data/ingestion/production" when available, otherwise
+            "data/ingestion/production".
     """
     
     # Use defaults if not provided
     release_id = release_id or "rvu_2025_prod"
-    output_dir = output_dir or "data/ingestion/production"
+
+    default_dirs = [
+        output_dir,
+        os.getenv("RVU_OUTPUT_DIR"),
+        "/var/data/ingestion/production",
+        "data/ingestion/production",
+    ]
+    for candidate in default_dirs:
+        if candidate:
+            output_dir = candidate
+            break
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     # Create database session
@@ -133,4 +148,3 @@ Examples:
     
     args = parser.parse_args()
     sys.exit(main(release_id=args.release_id, output_dir=args.output_dir))
-
