@@ -24,7 +24,6 @@ from cms_pricing.ingestion.parsers._parser_kit import (
     enforce_categorical_dtypes,
     finalize_parser_output,
     check_natural_key_uniqueness,
-    canonicalize_numeric_col,
     compute_row_id
 )
 from cms_pricing.ingestion.parsers.layout_registry import get_layout
@@ -518,6 +517,21 @@ def _apply_multiheader_aliases(df: pd.DataFrame) -> pd.DataFrame:
             total=len(series),
         )
 
+    # Normalize indicator-style columns: treat empty strings as nulls
+    indicator_columns = [
+        "na_indicator",
+        "opps_cap_applicable",
+        "bilateral_ind",
+        "multiple_proc_ind",
+        "assistant_surg_ind",
+        "co_surg_ind",
+        "team_surg_ind",
+        "endoscopic_base",
+    ]
+    for col in indicator_columns:
+        if col in df.columns:
+            df[col] = df[col].replace({"": pd.NA})
+
     return df
 
 
@@ -548,14 +562,34 @@ def _cast_dtypes(df: pd.DataFrame, metadata: Dict) -> pd.DataFrame:
     if 'status_code' in df.columns:
         df['status_code'] = df['status_code'].astype(str).str.strip().str.upper()
     
-    # RVUs as float64 (SCHEMA NAMES: rvu_*)
-    rvu_cols = ['rvu_work', 'rvu_pe_nonfac', 'rvu_pe_fac', 'rvu_malp']
-    for col in rvu_cols:
+    # RVUs as float64 with schema precision
+    precision_map = {
+        'rvu_work': 2,
+        'rvu_pe_nonfac': 2,
+        'rvu_pe_fac': 2,
+        'rvu_malp': 2,
+        'total_nonfac': 2,
+        'total_fac': 2,
+        'conversion_factor': 4,
+    }
+    for col, precision in precision_map.items():
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-            # Apply schema-driven precision (2 decimals, HALF_UP)
-            df[col] = canonicalize_numeric_col(df[col], precision=2, rounding_mode='HALF_UP')
-    
+            numeric = pd.to_numeric(df[col], errors='coerce')
+            df[col] = numeric.round(precision)
+
+    if 'na_indicator' in df.columns:
+        df['na_indicator'] = df['na_indicator'].astype('string').str.strip().replace({'': pd.NA}).str.upper()
+
+    if 'opps_cap_applicable' in df.columns:
+        df['opps_cap_applicable'] = (
+            df['opps_cap_applicable']
+            .astype('string')
+            .str.strip()
+            .replace({'': pd.NA})
+            .map({'Y': True, 'N': False})
+            .astype('boolean')
+        )
+
     # Global days as int
     if 'global_days' in df.columns:
         df['global_days'] = pd.to_numeric(df['global_days'], errors='coerce').fillna(0).astype('Int64')

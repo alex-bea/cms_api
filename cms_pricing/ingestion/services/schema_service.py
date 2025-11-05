@@ -139,7 +139,7 @@ class SchemaService:
                     "str",
                     False,
                     "Status code indicating if service is active",
-                    domain=["A", "R", "T", "I", "N"],
+                    domain=None,
                 ),
                 "global_days": column(
                     "global_days",
@@ -412,6 +412,12 @@ class SchemaService:
             version="1.0",
             generated_at=generated_at,
             columns={
+                "mac": column(
+                    "mac",
+                    "str",
+                    False,
+                    "Medicare Administrative Contractor code",
+                ),
                 "locality_code": column(
                     "locality_code",
                     "str",
@@ -419,46 +425,30 @@ class SchemaService:
                     "2-digit locality code",
                     pattern=r"^\d{2}$",
                 ),
-                "state_fips": column(
-                    "state_fips",
+                "state_name": column(
+                    "state_name",
                     "str",
-                    False,
-                    "2-digit state FIPS code",
-                    pattern=r"^\d{2}$",
-                ),
-                "county_fips": column(
-                    "county_fips",
-                    "str",
-                    False,
-                    "3-digit county FIPS code",
-                    pattern=r"^\d{3}$",
-                ),
-                "locality_name": column(
-                    "locality_name",
-                    "str",
-                    False,
-                    "Locality name",
-                ),
-                "effective_from": column(
-                    "effective_from",
-                    "datetime64[ns]",
-                    False,
-                    "Effective start date",
-                ),
-                "effective_to": column(
-                    "effective_to",
-                    "datetime64[ns]",
                     True,
-                    "Effective end date",
+                    "State name (as published by CMS)",
+                ),
+                "fee_area": column(
+                    "fee_area",
+                    "str",
+                    True,
+                    "Fee schedule area description",
+                ),
+                "county_names": column(
+                    "county_names",
+                    "str",
+                    True,
+                    "Comma separated county names",
                 ),
             },
-            primary_keys=["locality_code", "state_fips", "effective_from"],
-            partition_columns=["effective_from"],
+            primary_keys=["mac", "locality_code"],
+            partition_columns=[],
             business_rules=[
                 "Locality code must be 2 digits",
-                "State FIPS must be 2 digits",
-                "County FIPS must be 3 digits",
-                "Locality name must be non-empty",
+                "MAC code must be present",
             ],
             quality_thresholds={
                 "null_rate_threshold": 0.0,

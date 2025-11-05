@@ -3,6 +3,18 @@
   "version": "1.0",
   "generated_at": "2025-11-03T21:12:23.894548",
   "columns": {
+    "mac": {
+      "name": "mac",
+      "type": "str",
+      "nullable": false,
+      "description": "Medicare Administrative Contractor code",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
     "locality_code": {
       "name": "locality_code",
       "type": "str",
@@ -15,59 +27,35 @@
       "pattern": "^\\d{2}$",
       "sample_values": null
     },
-    "state_fips": {
-      "name": "state_fips",
+    "state_name": {
+      "name": "state_name",
       "type": "str",
-      "nullable": false,
-      "description": "2-digit state FIPS code",
-      "unit": null,
-      "domain": null,
-      "min_value": null,
-      "max_value": null,
-      "pattern": "^\\d{2}$",
-      "sample_values": null
-    },
-    "county_fips": {
-      "name": "county_fips",
-      "type": "str",
-      "nullable": false,
-      "description": "3-digit county FIPS code",
-      "unit": null,
-      "domain": null,
-      "min_value": null,
-      "max_value": null,
-      "pattern": "^\\d{3}$",
-      "sample_values": null
-    },
-    "locality_name": {
-      "name": "locality_name",
-      "type": "str",
-      "nullable": false,
-      "description": "Locality name",
-      "unit": null,
-      "domain": null,
-      "min_value": null,
-      "max_value": null,
-      "pattern": null,
-      "sample_values": null
-    },
-    "effective_from": {
-      "name": "effective_from",
-      "type": "datetime64[ns]",
-      "nullable": false,
-      "description": "Effective start date",
-      "unit": null,
-      "domain": null,
-      "min_value": null,
-      "max_value": null,
-      "pattern": null,
-      "sample_values": null
-    },
-    "effective_to": {
-      "name": "effective_to",
-      "type": "datetime64[ns]",
       "nullable": true,
-      "description": "Effective end date",
+      "description": "State name (as published by CMS)",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
+    "fee_area": {
+      "name": "fee_area",
+      "type": "str",
+      "nullable": true,
+      "description": "Fee schedule area description",
+      "unit": null,
+      "domain": null,
+      "min_value": null,
+      "max_value": null,
+      "pattern": null,
+      "sample_values": null
+    },
+    "county_names": {
+      "name": "county_names",
+      "type": "str",
+      "nullable": true,
+      "description": "Comma separated county names",
       "unit": null,
       "domain": null,
       "min_value": null,
@@ -77,18 +65,13 @@
     }
   },
   "primary_keys": [
-    "locality_code",
-    "state_fips",
-    "effective_from"
+    "mac",
+    "locality_code"
   ],
-  "partition_columns": [
-    "effective_from"
-  ],
+  "partition_columns": [],
   "business_rules": [
     "Locality code must be 2 digits",
-    "State FIPS must be 2 digits",
-    "County FIPS must be 3 digits",
-    "Locality name must be non-empty"
+    "MAC code must be present"
   ],
   "quality_thresholds": {
     "null_rate_threshold": 0.0,

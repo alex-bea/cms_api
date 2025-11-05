@@ -221,12 +221,12 @@ def test_pprrvu_multiheader_backfill():
     assert not result.data.empty, "Parser should produce rows for multiheader input"
     row = result.data.iloc[0]
 
-    assert row["rvu_work"] == "1.23"
-    assert row["rvu_pe_nonfac"] == "2.34"
-    assert row["rvu_pe_fac"] == "3.45"
-    assert row["rvu_malp"] == "0.56"
-    assert row["total_nonfac"] == "4.44"
-    assert row["total_fac"] == "5.55"
+    assert row["rvu_work"] == pytest.approx(1.23, rel=1e-4)
+    assert row["rvu_pe_nonfac"] == pytest.approx(2.34, rel=1e-4)
+    assert row["rvu_pe_fac"] == pytest.approx(3.45, rel=1e-4)
+    assert row["rvu_malp"] == pytest.approx(0.56, rel=1e-4)
+    assert row["total_nonfac"] == pytest.approx(4.44, rel=1e-4)
+    assert row["total_fac"] == pytest.approx(5.55, rel=1e-4)
 
 
 def test_pprrvu_hash_metadata_exclusion():

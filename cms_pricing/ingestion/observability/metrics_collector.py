@@ -91,6 +91,20 @@ class MetricsCollector(ABC):
         )
         self.metrics.append(metric)
     
+    def record_metric(
+        self,
+        name: str,
+        value: Union[int, float],
+        *,
+        tags: Optional[Dict[str, str]] = None,
+        metric_type: MetricType = MetricType.GAUGE,
+        description: str = ""
+    ) -> None:
+        """
+        Compatibility helper for legacy collectors that expect `record_metric`.
+        """
+        self.add_metric(name, value, metric_type, labels=tags or {}, description=description)
+    
     def get_metrics_summary(self) -> Dict[str, Any]:
         """Get summary of collected metrics"""
         summary = {}

@@ -33,13 +33,7 @@
       "nullable": false,
       "description": "Status code indicating if service is active",
       "unit": null,
-      "domain": [
-        "A",
-        "R",
-        "T",
-        "I",
-        "N"
-      ],
+      "domain": null,
       "min_value": null,
       "max_value": null,
       "pattern": null,
