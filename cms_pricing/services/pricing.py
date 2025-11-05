@@ -1,7 +1,7 @@
 """Pricing service for calculating Medicare rates"""
 
 import uuid
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import date, datetime
 
 from cms_pricing.schemas.pricing import (
@@ -30,6 +30,18 @@ logger = structlog.get_logger()
 
 class PricingService:
     """Main pricing service"""
+
+    # Mapping of primary dataset IDs to supporting curated dataset snapshot IDs.
+    # Each tuple maps (supporting_dataset_id, provenance_key) where provenance_key
+    # refers to the dataset identifier used in trace_refs (e.g., 'GPCI', 'CF').
+    SUPPORTING_DATASET_MAP: Dict[str, List[Tuple[str, str]]] = {
+        "MPFS": [
+            ("mpfs_payment_curated", "MPFS"),
+            ("mpfs_rvu", "MPFS"),
+            ("mpfs_gpci", "GPCI"),
+            ("mpfs_cf_vintage", "CF"),
+        ],
+    }
     
     def __init__(self, db: Session = None):
         self.db = db
@@ -627,126 +639,156 @@ class PricingService:
             List of dataset metadata dictionaries with snapshot information including release_id/batch_id
         """
         if not self.db:
-            # If no DB, extract provenance from line_items if available
-            release_map = self._extract_provenance_from_line_items(line_items, datasets_seen) if line_items else {}
-            
-            return [
-                {
-                    "dataset_id": ds,
-                    "digest": None,
-                    "effective_from": None,
-                    "effective_to": None,
-                    "source_url": None,
-                    "release_id": release_map.get(ds, {}).get("release_id"),
-                    "batch_id": release_map.get(ds, {}).get("batch_id")
-                }
-                for ds in sorted(datasets_seen)
-            ]
-        
-        datasets_used = []
-        valuation_date = date(valuation_year, 12, 31)  # Use end of year as valuation date
-        
-        # Extract release_id/batch_id from line items if available (Phase 2.6)
-        release_map = self._extract_provenance_from_line_items(line_items, datasets_seen) if line_items else {}
-        
-        for dataset_id in sorted(datasets_seen):
-            try:
-                # Try DatasetSnapshot first (Quick Win #1)
-                snapshot = self.db.query(DatasetSnapshot).filter(
-                    and_(
-                        DatasetSnapshot.dataset_id == dataset_id,
-                        DatasetSnapshot.effective_from <= valuation_date,
-                        or_(
-                            DatasetSnapshot.effective_to.is_(None),
-                            DatasetSnapshot.effective_to >= date(valuation_year, 1, 1)
-                        )
-                    )
-                ).order_by(
-                    DatasetSnapshot.effective_from.desc(),
-                    DatasetSnapshot.created_at.desc()
-                ).first()
-                
-                # Fallback to legacy Snapshot model if DatasetSnapshot not available
-                if not snapshot:
-                    snapshot = self.db.query(Snapshot).filter(
-                        and_(
-                            Snapshot.dataset_id == dataset_id,
-                            Snapshot.effective_from <= valuation_date,
-                            or_(
-                                Snapshot.effective_to.is_(None),
-                                Snapshot.effective_to >= date(valuation_year, 1, 1)
-                            )
-                        )
-                    ).order_by(
-                        Snapshot.effective_from.desc(),
-                        Snapshot.created_at.desc()
-                    ).first()
-                
-                # Get release info if available from engine results
-                release_info = release_map.get(dataset_id, {})
-                
-                if snapshot:
-                    # Handle both DatasetSnapshot and legacy Snapshot models
-                    if isinstance(snapshot, DatasetSnapshot):
-                        datasets_used.append({
-                            "dataset_id": snapshot.dataset_id,
-                            "digest": snapshot.digest,
-                            "effective_from": snapshot.effective_from.isoformat() if snapshot.effective_from else None,
-                            "effective_to": snapshot.effective_to.isoformat() if snapshot.effective_to else None,
-                            "source_url": snapshot.manifest_url,  # DatasetSnapshot uses manifest_url
-                            "release_id": snapshot.release_id or release_info.get("release_id"),  # Use snapshot's release_id if available
-                            "batch_id": release_info.get("batch_id")
-                        })
-                    else:
-                        # Legacy Snapshot model
-                        datasets_used.append({
-                            "dataset_id": snapshot.dataset_id,
-                            "digest": snapshot.digest,
-                            "effective_from": snapshot.effective_from.isoformat() if snapshot.effective_from else None,
-                            "effective_to": snapshot.effective_to.isoformat() if snapshot.effective_to else None,
-                            "source_url": snapshot.source_url,
-                            # NEW: Include release provenance (Phase 2.6)
-                            "release_id": release_info.get("release_id"),
-                            "batch_id": release_info.get("batch_id")
-                        })
-                else:
-                    # No snapshot found - include dataset ID but no provenance
-                    logger.debug(
-                        "No snapshot found for dataset",
-                        dataset_id=dataset_id,
-                        valuation_year=valuation_year,
-                        valuation_quarter=valuation_quarter
-                    )
-                    datasets_used.append({
-                        "dataset_id": dataset_id,
-                        "digest": None,
-                        "effective_from": None,
-                        "effective_to": None,
-                        "source_url": None,
-                        # Include release info if available from engines
-                        "release_id": release_info.get("release_id"),
-                        "batch_id": release_info.get("batch_id")
-                    })
-                    
-            except Exception as e:
-                logger.warning(
-                    "Failed to query snapshot for dataset",
-                    dataset_id=dataset_id,
-                    error=str(e),
-                    exc_info=True
+            release_map = (
+                self._extract_provenance_from_line_items(
+                    line_items, datasets_seen, include_supporting_datasets=True
                 )
-                # Still include the dataset even if snapshot lookup failed
-                release_info = release_map.get(dataset_id, {})
-                datasets_used.append({
+                if line_items
+                else {}
+            )
+
+            results: List[Dict[str, Any]] = [
+                {
                     "dataset_id": dataset_id,
                     "digest": None,
                     "effective_from": None,
                     "effective_to": None,
                     "source_url": None,
-                    "release_id": release_info.get("release_id"),
-                    "batch_id": release_info.get("batch_id")
-                })
-        
+                    "release_id": release_map.get(dataset_id, {}).get("release_id"),
+                    "batch_id": release_map.get(dataset_id, {}).get("batch_id"),
+                }
+                for dataset_id in sorted(datasets_seen)
+            ]
+
+            for dataset_id in sorted(datasets_seen):
+                for supporting_dataset, provenance_key in self.SUPPORTING_DATASET_MAP.get(dataset_id, []):
+                    provenance = release_map.get(provenance_key, {})
+                    results.append(
+                        {
+                            "dataset_id": supporting_dataset,
+                            "digest": None,
+                            "effective_from": None,
+                            "effective_to": None,
+                            "source_url": None,
+                            "release_id": provenance.get("release_id"),
+                            "batch_id": provenance.get("batch_id"),
+                        }
+                    )
+
+            return results
+
+        datasets_used: List[Dict[str, Any]] = []
+        supporting_queue: List[Tuple[str, Dict[str, Optional[str]]]] = []
+        valuation_date = date(valuation_year, 12, 31)
+
+        release_map = (
+            self._extract_provenance_from_line_items(
+                line_items, datasets_seen, include_supporting_datasets=True
+            )
+            if line_items
+            else {}
+        )
+
+        def fetch_latest_snapshot(dataset_id: str) -> Optional[Any]:
+            snapshot = self.db.query(DatasetSnapshot).filter(
+                and_(
+                    DatasetSnapshot.dataset_id == dataset_id,
+                    DatasetSnapshot.effective_from <= valuation_date,
+                    or_(
+                        DatasetSnapshot.effective_to.is_(None),
+                        DatasetSnapshot.effective_to >= date(valuation_year, 1, 1),
+                    ),
+                )
+            ).order_by(
+                DatasetSnapshot.effective_from.desc(),
+                DatasetSnapshot.created_at.desc(),
+            ).first()
+
+            if snapshot:
+                return snapshot
+
+            return self.db.query(Snapshot).filter(
+                and_(
+                    Snapshot.dataset_id == dataset_id,
+                    Snapshot.effective_from <= valuation_date,
+                    or_(
+                        Snapshot.effective_to.is_(None),
+                        Snapshot.effective_to >= date(valuation_year, 1, 1),
+                    ),
+                )
+            ).order_by(
+                Snapshot.effective_from.desc(),
+                Snapshot.created_at.desc(),
+            ).first()
+
+        def append_dataset(dataset_id: str, release_info: Dict[str, Optional[str]]) -> None:
+            snapshot: Optional[Any] = None
+            try:
+                snapshot = fetch_latest_snapshot(dataset_id)
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.warning(
+                    "Failed to query snapshot for dataset",
+                    dataset_id=dataset_id,
+                    error=str(exc),
+                    exc_info=True,
+                )
+
+            if snapshot:
+                if isinstance(snapshot, DatasetSnapshot):
+                    datasets_used.append(
+                        {
+                            "dataset_id": snapshot.dataset_id,
+                            "digest": snapshot.digest,
+                            "effective_from": snapshot.effective_from.isoformat() if snapshot.effective_from else None,
+                            "effective_to": snapshot.effective_to.isoformat() if snapshot.effective_to else None,
+                            "source_url": snapshot.manifest_url,
+                            "release_id": snapshot.release_id or release_info.get("release_id"),
+                            "batch_id": release_info.get("batch_id"),
+                        }
+                    )
+                else:
+                    datasets_used.append(
+                        {
+                            "dataset_id": snapshot.dataset_id,
+                            "digest": snapshot.digest,
+                            "effective_from": snapshot.effective_from.isoformat() if snapshot.effective_from else None,
+                            "effective_to": snapshot.effective_to.isoformat() if snapshot.effective_to else None,
+                            "source_url": snapshot.source_url,
+                            "release_id": release_info.get("release_id"),
+                            "batch_id": release_info.get("batch_id"),
+                        }
+                    )
+            else:
+                if not release_info.get("release_id") and not release_info.get("batch_id"):
+                    logger.debug(
+                        "No snapshot found for dataset",
+                        dataset_id=dataset_id,
+                        valuation_year=valuation_year,
+                        valuation_quarter=valuation_quarter,
+                    )
+                datasets_used.append(
+                    {
+                        "dataset_id": dataset_id,
+                        "digest": None,
+                        "effective_from": None,
+                        "effective_to": None,
+                        "source_url": None,
+                        "release_id": release_info.get("release_id"),
+                        "batch_id": release_info.get("batch_id"),
+                    }
+                )
+
+        for dataset_id in sorted(datasets_seen):
+            release_info = release_map.get(dataset_id, {})
+            append_dataset(dataset_id, release_info)
+
+            for supporting_dataset, provenance_key in self.SUPPORTING_DATASET_MAP.get(dataset_id, []):
+                supporting_release = release_map.get(provenance_key, {})
+                supporting_queue.append((supporting_dataset, supporting_release))
+
+        for dataset_id, release_info in supporting_queue:
+            append_dataset(dataset_id, release_info)
+
         return datasets_used
     
     def _extract_provenance_from_line_items(

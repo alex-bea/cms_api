@@ -335,6 +335,120 @@ class TestEngineReturnsCodePricingItem:
             assert return_type == CodePricingItem or return_type.__name__ == "CodePricingItem", \
                 f"{name} engine should return CodePricingItem, got {return_type}"
     
+    def test_collect_datasets_used_includes_mpfs_supporting_datasets(self, test_db_session):
+        """_collect_datasets_used should include MPFS supporting curated datasets."""
+        from datetime import date
+        from cms_pricing.models.dataset_snapshots import DatasetSnapshot
+        from cms_pricing.schemas.pricing import LineItemResponse
+
+        service = PricingService(test_db_session)
+
+        target_ids = {
+            "MPFS",
+            "mpfs_payment_curated",
+            "mpfs_rvu",
+            "mpfs_gpci",
+            "mpfs_cf_vintage",
+        }
+        test_db_session.query(DatasetSnapshot).filter(
+            DatasetSnapshot.dataset_id.in_(target_ids)
+        ).delete(synchronize_session=False)
+        test_db_session.commit()
+
+        snapshots = [
+            DatasetSnapshot(
+                dataset_id="MPFS",
+                release_id="mpfs_2025_annual_20250115",
+                digest="mpfs-digest",
+                effective_from=date(2025, 1, 1),
+                effective_to=None,
+                manifest_url="s3://mpfs/manifest.json",
+            ),
+            DatasetSnapshot(
+                dataset_id="mpfs_payment_curated",
+                release_id="mpfs_2025_annual_20250115",
+                digest="mpfs-payment-digest",
+                effective_from=date(2025, 1, 1),
+                effective_to=None,
+                manifest_url="s3://mpfs/payment/manifest.json",
+            ),
+            DatasetSnapshot(
+                dataset_id="mpfs_rvu",
+                release_id="mpfs_rvu_2025D",
+                digest="mpfs-rvu-digest",
+                effective_from=date(2025, 1, 1),
+                effective_to=None,
+                manifest_url="s3://mpfs/rvu/manifest.json",
+            ),
+            DatasetSnapshot(
+                dataset_id="mpfs_gpci",
+                release_id="gpci_2025_annual",
+                digest="mpfs-gpci-digest",
+                effective_from=date(2025, 1, 1),
+                effective_to=None,
+                manifest_url="s3://mpfs/gpci/manifest.json",
+            ),
+            DatasetSnapshot(
+                dataset_id="mpfs_cf_vintage",
+                release_id="cf_2025_annual",
+                digest="mpfs-cf-digest",
+                effective_from=date(2025, 1, 1),
+                effective_to=None,
+                manifest_url="s3://mpfs/cf/manifest.json",
+            ),
+        ]
+        test_db_session.add_all(snapshots)
+        test_db_session.commit()
+
+        line_item = LineItemResponse(
+            sequence=1,
+            code="99213",
+            setting="MPFS",
+            units=1.0,
+            utilization_weight=1.0,
+            allowed_cents=10000,
+            beneficiary_deductible_cents=0,
+            beneficiary_coinsurance_cents=0,
+            beneficiary_total_cents=0,
+            program_payment_cents=10000,
+            professional_allowed_cents=10000,
+            facility_allowed_cents=0,
+            source="benchmark",
+            facility_specific=False,
+            packaged=False,
+            reference_price_cents=None,
+            unit_conversion=None,
+            trace_refs=[
+                "mpfs_2025_01_99213",
+                "MPFS:release:mpfs_2025_annual_20250115",
+                "GPCI:release:gpci_2025_annual",
+                "CF:release:cf_2025_annual",
+            ],
+        )
+
+        datasets_used = service._collect_datasets_used(
+            datasets_seen={"MPFS"},
+            valuation_year=2025,
+            valuation_quarter=None,
+            line_items=[line_item],
+        )
+
+        dataset_ids = {entry["dataset_id"] for entry in datasets_used}
+
+        expected_supporting = target_ids
+        assert expected_supporting.issubset(dataset_ids)
+
+        datasets_map = {entry["dataset_id"]: entry for entry in datasets_used}
+        assert datasets_map["mpfs_gpci"]["release_id"] == "gpci_2025_annual"
+        assert datasets_map["mpfs_cf_vintage"]["release_id"] == "cf_2025_annual"
+        assert datasets_map["mpfs_payment_curated"]["release_id"] == "mpfs_2025_annual_20250115"
+
+        test_db_session.query(DatasetSnapshot).filter(
+            DatasetSnapshot.dataset_id.in_(target_ids)
+        ).delete(synchronize_session=False)
+        test_db_session.commit()
+
+    
     @pytest.mark.asyncio
     async def test_opps_engine_returns_code_pricing_item(self):
         """Integration-style test: OPPS engine returns CodePricingItem with proper structure"""
