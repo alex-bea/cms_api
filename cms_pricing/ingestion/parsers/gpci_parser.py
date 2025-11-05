@@ -127,12 +127,26 @@ def parse_gpci(
     
     # CI safety: Validate source_release format
     year = metadata['product_year']
-    valid_releases = {f'RVU{year[-2:]}A', f'RVU{year[-2:]}B', 
-                     f'RVU{year[-2:]}C', f'RVU{year[-2:]}D'}
-    if metadata['source_release'] not in valid_releases:
+    release_letters = ("A", "B", "C", "D")
+    source_release = str(metadata.get('source_release', '')).strip().upper()
+    valid_releases_short = {f'RVU{year[-2:]}{letter}' for letter in release_letters}
+    valid_releases_long = {f'RVU{year}{letter}' for letter in release_letters}
+    valid_releases = valid_releases_short | valid_releases_long
+
+    if source_release in valid_releases_long:
+        normalized_release = f'RVU{year[-2:]}{source_release[-1]}'
+        metadata['source_release'] = normalized_release
+        logger.debug(
+            "Normalized source_release to short form",
+            original=source_release,
+            normalized=normalized_release,
+        )
+        source_release = normalized_release
+
+    if source_release not in valid_releases:
         raise ParseError(
-            f"Unknown source_release: {metadata['source_release']}. "
-            f"Expected one of {valid_releases} for year {year}"
+            f"Unknown source_release: {metadata.get('source_release')}. "
+            f"Expected one of {sorted(valid_releases)} for year {year}"
         )
 
     # Step 1: Detect encoding
