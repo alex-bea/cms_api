@@ -63,6 +63,12 @@ We standardize QA into **Plan → Implement → Execute → Observe → Improve*
 - **Database test isolation:** Each test run must use a dedicated database URL to prevent conflicts between app startup table creation and Alembic migrations. Standard pattern: `postgresql://cms_user:cms_password@localhost:5432/cms_pricing_{environment}` where `{environment}` is `test`, `ci_{build_id}`, or `local`.
 - **Test database lifecycle:** Database tests follow strict order: (1) Environment setup with dedicated DB URL, (2) Infrastructure provisioning (Docker/managed), (3) Schema bootstrap via Alembic only, (4) Test execution, (5) Cleanup. Never mix app startup table creation with test fixtures.
 - **Detailed patterns:** For comprehensive database test patterns, troubleshooting, and implementation examples, see DOC-test-patterns-prd-v1.0.md.
+- **Incremental testing with sample data:** For large datasets (>10K rows) or slow operations (>5 minutes), **always test with a small sample first** before processing the full dataset. This enables rapid iteration and debugging. Example pattern:
+  - **Fast debug mode:** Limit dataset rows to 100-1000 rows for initial testing (20x faster for 20K+ row datasets)
+  - **Verify pipeline logic:** Confirm parsing, mapping, validation, and database loading work correctly with sample data
+  - **Full dataset:** Only process complete dataset after sample tests pass
+  - **Implementation:** Use row limiting in adapters/loaders (e.g., `df.head(1000)`) or process only one file from a multi-file dataset
+  - **Rationale:** Prevents wasting 20+ minutes on full runs when debugging issues like column mapping, NULL values, or database constraints. Sample tests should complete in <2 minutes for fast feedback loops.
 
 ### 3.4 Observe (Reporting & Telemetry)
 - Emit structured test results (JUnit XML + JSON metadata) to the QA warehouse and dashboards.
