@@ -248,41 +248,34 @@ git status | grep -q ".env" && echo "❌ DANGER: .env is staged!" || echo "✅ S
 # 5. Revoke old password
 ```
 
-### Step 5: Reset an RVU Ingestion Release (when needed)
+### Step 5: Reset & Preflight RVU Ingestion Runs
 
 Render short-circuits the RVU pipeline if the target release already exists in the `releases` table.  
-If you need to rerun an ingestion (e.g., after a loader fix), clear the existing release and child rows first.
+Before rerunning an ingest (e.g., loader fix, schema change), perform these guard steps from the Render shell:
 
-```bash
-# Run this inside the Render shell
-python - <<'PY'
-from sqlalchemy import text
-from cms_pricing.database import SessionLocal
+1. **Preflight check (fails fast if the source version already exists):**
+   ```bash
+   python3 tools/preflight_rvu_release.py --source fast_2025Q4
+   ```
+   This also warns if `MAX_INGESTION_ROWS` is still defined—unset it for production runs:  
+   `unset MAX_INGESTION_ROWS`
 
-db = SessionLocal()
-release_ids = [
-    row[0]
-    for row in db.execute(
-        text("select id from releases where type='RVU_FULL' and source_version='rvu_2025_p'")
-    )
-]
-print("Releases purged:", release_ids)
-for rid in release_ids:
-    for table in ("gpci_indices", "rvu_items", "opps_caps", "anes_cfs", "locality_counties"):
-        db.execute(text(f"delete from {table} where release_id = :rid"), {"rid": rid})
-    db.execute(text("delete from releases where id = :rid"), {"rid": rid})
-db.commit()
-db.close()
-PY
-```
+2. **Reset existing releases when necessary:**
+   ```bash
+   # Preview which releases would be deleted
+   python3 tools/reset_rvu_release.py --source fast_2025Q4 --dry-run
 
-After clearing the release, rerun:
+   # Delete the matching releases and child rows
+   python3 tools/reset_rvu_release.py --source fast_2025Q4
+   ```
+   You can target the latest release (`--latest`) or a specific UUID (`--release-id <uuid>`).
 
-```bash
-python scripts/load_rvu_to_production.py --release-id rvu_2025_prod_YYYYMMDD
-```
+3. **Run the ingest:**
+   ```bash
+   python scripts/load_rvu_to_production.py --release-id rvu_2025_prod_YYYYMMDD
+   ```
 
-Finally, run the verification queries from `docs/ingestion_verification.md` to confirm results.
+4. **Verify results:** Execute the checks in `docs/ingestion_verification.md` (row counts, sample values, non-null RVUs, etc.).
 
 ---
 
