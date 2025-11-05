@@ -27,6 +27,7 @@ import structlog
 from datetime import datetime
 
 from ..contracts.ingestor_spec import RawBatch, AdaptedBatch, SourceFile
+from ..metadata.vintage_extractor import extract_vintage_metadata
 from .rvu_spec import RVU_DATASETS, DatasetSpec
 
 logger = structlog.get_logger()
@@ -401,15 +402,59 @@ def _build_parser_metadata(
                 filename=inner_filename,
                 error=str(err),
             )
-    if not context:
-        year_guess = Path(inner_filename).stem[:4] if inner_filename[:4].isdigit() else str(datetime.utcnow().year)
-        context = {
-            "product_year": str(year_guess),
-            "quarter_vintage": "",
-            "vintage_date": datetime.utcnow(),
-            "source_release": "",
-            "release_letter": "D",
-        }
+    if context:
+        context = dict(context)
+    else:
+        context = {}
+
+    year_guess = (
+        Path(inner_filename).stem[:4]
+        if inner_filename[:4].isdigit()
+        else str(datetime.utcnow().year)
+    )
+
+    needs_year = not context.get("product_year")
+    needs_quarter = not context.get("quarter_vintage")
+    needs_vintage_date = not context.get("vintage_date")
+
+    if needs_year or needs_quarter or needs_vintage_date:
+        try:
+            vintage_context = extract_vintage_metadata(
+                filename=inner_filename,
+                release_id=release_id
+            )
+        except Exception as err:
+            logger.debug(
+                "extract_vintage_metadata_failed",
+                dataset=dataset_key,
+                filename=inner_filename,
+                error=str(err),
+            )
+            vintage_context = {
+                "product_year": str(year_guess),
+                "quarter_vintage": "",
+                "vintage_date": datetime.utcnow(),
+                "revision": None,
+            }
+
+        context.setdefault("product_year", vintage_context.get("product_year", str(year_guess)))
+        context.setdefault("quarter_vintage", vintage_context.get("quarter_vintage", ""))
+        context.setdefault("vintage_date", vintage_context.get("vintage_date", datetime.utcnow()))
+        context.setdefault("release_letter", vintage_context.get("revision") or "D")
+        context.setdefault(
+            "source_release",
+            f"RVU{context['product_year']}{context.get('release_letter', '')}"
+        )
+
+    # Ensure defaults for any remaining metadata fields
+    context.setdefault("product_year", str(year_guess))
+    context.setdefault("quarter_vintage", "")
+    context.setdefault("vintage_date", datetime.utcnow())
+    context.setdefault("release_letter", "D")
+    context.setdefault(
+        "source_release",
+        f"RVU{context['product_year']}{context.get('release_letter', '')}"
+    )
 
     metadata = {
         "release_id": release_id,
