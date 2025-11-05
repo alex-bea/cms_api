@@ -925,19 +925,24 @@ class RVUIngestor(BaseDISIngestor):
             
             # Create loader function wrapper for RVU-specific database loading
             def rvu_loader_func(enriched_data_dict: Dict[str, Any], release_id: str, batch_id: str, vintage_date: str) -> Dict[str, Any]:
-                if self.db_session:
-                    try:
-                        return load_rvu_dataframes(
-                            enriched_data_dict,
-                            release_id,
-                            batch_id,
-                            vintage_date,
-                            self.db_session,
-                        )
-                    except Exception as e:
-                        logger.error("Database loading failed", error=str(e), batch_id=batch_id)
-                        return {"error": str(e)}
-                return {}
+                # Create DB session if not provided
+                from cms_pricing.database import SessionLocal
+                db_session = self.db_session
+                if db_session is None:
+                    db_session = SessionLocal()
+                    self.db_session = db_session  # Cache for reuse
+                
+                try:
+                    return load_rvu_dataframes(
+                        enriched_data_dict,
+                        release_id,
+                        batch_id,
+                        vintage_date,
+                        db_session,
+                    )
+                except Exception as e:
+                    logger.error("Database loading failed", error=str(e), batch_id=batch_id)
+                    return {"error": str(e)}
             
             config = PublishConfig(
                 output_dir=self.output_dir,
@@ -1009,6 +1014,11 @@ class RVUIngestor(BaseDISIngestor):
         """Main ingestion method following DIS pipeline with 5-pillar observability"""
         
         from ..run.dis_pipeline import DISPipeline
+        from cms_pricing.database import SessionLocal
+        
+        # Ensure DB session exists for database loading in publish stage
+        if self.db_session is None:
+            self.db_session = SessionLocal()
         
         # Create and execute DIS pipeline
         pipeline = DISPipeline(
