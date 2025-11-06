@@ -27,15 +27,15 @@ Provide actionable steps for authoring, testing, and executing database schema c
 ---
 
 ## 1. Prerequisites & Tooling
-- [ ] Alembic configured and `alembic.ini` points to target environment  
-- [ ] PgBouncer connection details documented  
-- [ ] Access to prod-sized snapshot for dry-run  
-- [ ] Change ticket/PR template (TBD)
+- Alembic configured and `alembic.ini` points to target environment  
+- PgBouncer connection details documented  
+- Access to prod-sized snapshot for dry-run  
+- Change ticket/PR template (TBD)
 
-- [ ] PgBouncer mode noted (transaction pooling): use **SET LOCAL** for any session state (e.g., tenant GUC) and avoid server-side prepares unless specifically enabled (see §6).
-- [ ] Alembic offline DDL ready: generate SQL via 
+- PgBouncer mode noted (transaction pooling): use **SET LOCAL** for any session state (e.g., tenant GUC) and avoid server-side prepares unless specifically enabled (see §6).
+- Alembic offline DDL ready: generate SQL via 
 `alembic upgrade --sql` and attach to the PR/change ticket for review (see §3).
-- [ ] Observability: clients set 
+- Observability: clients set 
 `application_name` per job/role; migration job logs revision IDs and duration.
 
 *(TODO: enumerate command snippets, environment variables, safe sandbox instructions.)*

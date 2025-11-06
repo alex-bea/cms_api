@@ -279,10 +279,10 @@ COPY pyproject.toml .
 3. **CI/CD Integration**
    - [ ] Update CI pipeline to:
     - [x] Build both targets using BuildKit.
-    - [ ] Publish the production image to the registry.
+    - [x] Publish the production image to the registry.
     - [x] Cache pip/apt directories (`--mount=type=cache`) for faster rebuilds.
-   - [ ] Add an automated `docker run` smoke test (health endpoint + basic command).
-   - [ ] Wire in image vulnerability scanning (Trivy/Grype) for the prod target.
+   - [x] Add an automated `docker run` smoke test (health endpoint + basic command).
+   - [x] Wire in image vulnerability scanning (Trivy/Grype) for the prod target.
 
 4. **Dependency Review**
    - [ ] Confirm whether OCR/PDF packages (`pytesseract`, `pypdfium2`) need system deps at runtime; if so, document and install the minimal set.
