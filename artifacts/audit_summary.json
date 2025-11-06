@@ -1,7 +1,7 @@
 {
-  "passed": 11,
-  "total": 13,
-  "failed": 2,
+  "passed": 9,
+  "total": 12,
+  "failed": 3,
   "results": [
     {
       "name": "Documentation Catalog",
@@ -42,8 +42,8 @@
     {
       "name": "Source Map Verification",
       "category": "audit",
-      "status": "passed",
-      "exit_code": 0
+      "status": "failed",
+      "exit_code": 1
     },
     {
       "name": "Schema/API Mapper Alignment",
@@ -66,20 +66,14 @@
     {
       "name": "Changelog Compliance",
       "category": "audit",
-      "status": "passed",
-      "exit_code": 0
+      "status": "failed",
+      "exit_code": 1
     },
     {
       "name": "Code Pattern Check",
       "category": "audit",
       "status": "passed",
       "exit_code": 0
-    },
-    {
-      "name": "PRD Documentation Tests",
-      "category": "test",
-      "status": "failed",
-      "exit_code": -11
     }
   ]
 }
