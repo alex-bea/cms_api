@@ -22,6 +22,38 @@ A Python-based API that produces ZIP-level, episode-based treatment plan prices 
 - Redis (optional, for caching)
 - Docker & Docker Compose (recommended)
 
+### Building Docker Images
+
+We publish two Docker targets:
+
+- `production`: minimal runtime image (no build tools, smallest footprint)
+- `development`: includes dev/test tooling and the full source tree for hot reload
+
+Build both images locally:
+
+```bash
+# Production (used in Render/CI deployment)
+docker build --target production -t cms-api:prod .
+
+# Development (used for local dev / docker-compose)
+docker build --target development -t cms-api:dev .
+```
+
+The production image installs dependencies from `requirements.prod.txt`, while development builds on top of it with `requirements-dev.txt`.
+
+Run the production image manually:
+
+```bash
+docker run --rm -e PORT=8000 -p 8000:8000 cms-api:prod \
+  uvicorn cms_pricing.main:app --host 0.0.0.0 --port 8000 --workers 1
+```
+
+Healthcheck endpoint (included in the image):
+
+```bash
+curl http://localhost:8000/health
+```
+
 ### Using Docker Compose
 
 1. **Clone and start services**:

@@ -204,3 +204,57 @@ class TestMPFSConfigService:
             
             assert "YAML dictionary" in str(exc_info.value)
 
+    def test_year_level_config_fallback(self):
+        """Config should fall back to year-level file when release-specific file missing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            override_file = config_dir / "cf_year.xlsx"
+            override_file.write_text("dummy")
+
+            # Create year-level config file
+            year_config = config_dir / "mpfs_2025.yaml"
+            year_config.write_text(
+                yaml.dump(
+                    {
+                        "manual_override_path": str(override_file),
+                        "expected_checksum": "year_checksum",
+                    }
+                )
+            )
+
+            service = MPFSConfigService(config_dir=str(config_dir))
+            result = service.get_cf_overrides("mpfs_2025_B")
+
+            assert result is not None
+            assert result["manual_override_path"] == str(override_file)
+            assert result["expected_checksum"] == "year_checksum"
+
+    def test_release_specific_overrides_with_aliases(self):
+        """Release-specific overrides inside YAML should match suffix/quarter aliases."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            override_b = config_dir / "cf_q2.xlsx"
+            override_b.write_text("dummy-b")
+            override_q2 = config_dir / "cf_q2_special.xlsx"
+            override_q2.write_text("dummy-q2")
+
+            config_file = config_dir / "mpfs_2025.yaml"
+            config_file.write_text(
+                yaml.dump(
+                    {
+                        "default": {"expected_checksum": "base_checksum"},
+                        "releases": {
+                            "B": {"manual_override_path": str(override_b)},
+                            "2025_Q2": {"expected_checksum": "q2_checksum"},
+                        },
+                    }
+                )
+            )
+
+            service = MPFSConfigService(config_dir=str(config_dir))
+            result = service.get_cf_overrides("mpfs_2025_B")
+
+            assert result is not None
+            # Manual override comes from "B" entry, checksum from "2025_Q2"
+            assert result["manual_override_path"] == str(override_b)
+            assert result["expected_checksum"] == "q2_checksum"

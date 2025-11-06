@@ -37,6 +37,22 @@ Every MPFS ingester or schema change **must** trace back to **REF-cms-pricing-so
 - **Deviations:** None; any exceptions require ADR and update to this summary
 - **Discovery Manifest & Governance:** MPFS ingestor uses snapshot-based discovery (reuses RVU/GPCI snapshots via `DatasetSnapshotService`) and `ConversionFactorFetcher` for CF artifacts. No dedicated MPFS scraper; discovery generates manifests recording snapshot reuse vs download entries. CI runs `tools/verify_source_map.py` so `REF-cms-pricing-source-map-prd-v1.0.md` stays synchronized with discovered artifacts.
 
+### Release Cadence & Naming
+CMS publishes four planned RVU refreshes per calendar year plus ad-hoc correction notices. We align ingest scope and release identifiers to CMS suffixes so downstream lineage is deterministic.
+
+| CMS Release | Expected Publish | DIS Release ID Examples | Notes |
+|-------------|-----------------|-------------------------|-------|
+| RVU**25A**  | Early January   | `rvu_2025_A`, `gpci_2025_A` | Final Rule baseline. |
+| RVU**25B**  | April 1         | `rvu_2025_B`             | Mid-year update; overrides B quarter. |
+| RVU**25C**  | July 1          | `rvu_2025_C`             | Mid-year update; overrides C quarter. |
+| RVU**25D**  | October 1       | `rvu_2025_D`             | Mid-year update; overrides D quarter. |
+| RVU**25AR/BR/CR/DR** | As needed | `rvu_2025_AR`, etc. | Correction notices; suffix keeps CMS naming. |
+
+Implications for the ingestor:
+- `MPFSIngestor.ingest(year, quarter)` normalizes `quarter`/suffix/`rvu_YYYY_SUFFIX` so operators can target the correct CMS release; defaults to the latest registered snapshot when no quarter is supplied.
+- Snapshot discovery **must** prefer the requested release ID; if absent, the run should fail fast with instructions to ingest RVU first.
+- Metadata emitted by the MPFS run (batch manifest, observability record, `mpfs_cf_vintage`) includes `target_release_suffix`, `requested_release_param`, and the resolved RVU/GPCI release IDs to keep lineage auditable across quarters.
+
 ## API Readiness & Distribution
 - **Curated Views:** `mpfs_rvu_latest`, `mpfs_gpci_latest`, and `mpfs_cf_current` provide Latest-Effective semantics for pricing services  
 - **Digest Pinning:** APIs must accept `X-Dataset-Digest` / `?digest` matching curated manifest digests  
@@ -143,14 +159,15 @@ This design minimizes recomputation and decouples pricing logic from ingestion c
 - Parity with CMS Look-Up Tool is validated through API-level QA tests, not ingestion-time checks.
 
 ### Conversion Factor Governance (v1)
-- Default behaviour downloads CF artefact from CMS and caches under `data/ingestion/mpfs/raw/{year}`.  
-- Manual overrides are managed via **YAML Config Service** (primary method) or **CLI flags** (fallback until YAML service is production-ready).
+- Default behaviour derives the physician conversion factor directly from the registered RVU snapshot; CMS download/override is used only when a release publishes out-of-band CF guidance (e.g., correction notice).
+- When CMS publishes a CF artefact, the fetcher downloads and caches under `data/ingestion/mpfs/raw/{year}`; metadata records the source URL or override path.
+- Manual overrides are managed via the **YAML Config Service** (preferred) or **CLI flags** (emergency fallback). Overrides are keyed by release suffix (e.g., `mpfs_2025_B.yaml`) or year-level files with per-release sections.
 - CF governance supports both calculator and batch audit use cases; ingestion records metadata, not computed values.
 
 
 **YAML Config Service** (`cms_pricing/ingestion/services/mpfs_config_service.py`):
-- Per-release configuration files: `cf_overrides/{release_id}.yaml`
-- YAML schema:
+- Per-release configuration files: `cf_overrides/{release_id}.yaml`. Year-level files (e.g., `cf_overrides/mpfs_2025.yaml`) may contain a `releases:` map with entries such as `A`, `B`, `2025_Q2`, etc.; the service merges matching keys (suffix + quarter alias) so checksum/path overrides can be specified independently.
+- YAML schema (top-level or under `releases` entries):
   ```yaml
   manual_override_path: "/path/to/cf_2025.xlsx"
   expected_checksum: "abc123def456..."
@@ -158,6 +175,7 @@ This design minimizes recomputation and decouples pricing logic from ingestion c
 - Config service checks YAML first (if available), falls back to CLI flags if missing or invalid
 - Config is cached in-memory for process lifetime (restart required for updates)
 - Error handling: Missing YAML → WARN + fallback; Malformed YAML → Error with file path/line number + fallback
+- When no override is supplied, ingestion logs `conversion_factor_strategy=derive_from_rvu` and records the RVU release ID used to compute CF rows; overrides switch the strategy to `download`.
 
 **CLI Flags (Fallback)**:
 - **IMPORTANT**: CLI flags remain the primary/fallback mechanism until YAML service is live and production-ready

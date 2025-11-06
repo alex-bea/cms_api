@@ -59,9 +59,9 @@ PY
 
 The MPFS config service (`cms_pricing/ingestion/services/mpfs_config_service.py`) supports per-release YAML configuration files for conversion factor overrides.
 
-**Location**: `cf_overrides/{release_id}.yaml`
+**Location**: `cf_overrides/{release_id}.yaml` or year-level files such as `cf_overrides/mpfs_2025.yaml` that contain `default:` and `releases:` entries. Release aliases support suffixes (`A`, `B`, `AR`, etc.) and quarter tokens (`2025_Q2`, `Q3`). The service merges matching entries so you can specify checksum in one block and override path in another.
 
-**YAML Schema**:
+**YAML Schema** (top-level or under `releases` entries):
 ```yaml
 manual_override_path: "/path/to/cf_2025.xlsx"
 expected_checksum: "abc123def456..."
@@ -75,9 +75,10 @@ expected_checksum: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852
 
 **Behavior**:
 - Config service checks for YAML file matching `{release_id}.yaml` in `cf_overrides/` directory
-- If YAML exists and is valid, overrides are applied
+- If YAML exists and is valid, overrides are applied (release-specific sections override defaults)
 - If YAML missing or malformed, falls back to CLI flags (see below)
 - Config is cached in-memory for process lifetime (restart required for updates)
+- When no override is supplied, the ingestor derives the conversion factor directly from the RVU snapshot and records `conversion_factor_strategy=derive_from_rvu`. Use overrides only when CMS publishes a separate CF artefact or when Ops needs to supply a manual file.
 
 **CLI Flags (Fallback Until YAML Service Production-Ready)**
 
@@ -99,6 +100,20 @@ python scripts/run_mpfs_ingestion.py \
 - Missing YAML → WARN logged, fallback to CLI flags
 - Malformed YAML → Error raised with file path and line number, fallback to CLI flags
 - Invalid override path → FileNotFoundError raised with clear message
+
+### 1.4 Quarter & Release Targeting
+
+- CMS publishes four planned RVU refreshes (A/B/C/D) plus correction notices (AR/BR/CR/DR). Always ingest the corresponding RVU release **before** running MPFS.
+- The MPFS ingestor accepts `--quarter` (or explicit release suffix) and resolves it to the correct snapshot (`rvu_2025_B`, `gpci_2025_B`, etc.). If the requested release is missing, the run fails fast so Ops can ingest RVU first.
+- When no quarter is supplied, MPFS uses the latest registered snapshots. For backfills or mid-year reruns, pass the explicit quarter to keep lineage deterministic.
+- Command-line helpers:
+  ```bash
+  # List registered snapshots for reference
+  python scripts/list_snapshots.py --dataset rvu_items
+  # Target the July (C) release
+  python scripts/run_mpfs_ingestion.py --year 2025 --quarter C
+  ```
+- Manifest metadata now includes `target_release_suffix`, `requested_release_param`, and the resolved RVU/GPCI release IDs. Capture those values in change tickets when promoting data downstream.
 
 ---
 
@@ -157,7 +172,9 @@ python scripts/run_mpfs_ingestion.py \
   [--cf-expected-checksum <sha256>]
 ```
 
-> **Note:** CLI flags currently wrap the ingestor entrypoint; configuration-service driven overrides will replace manual flags once implemented. Keep manual override path under version control until then.
+> **Notes:**  
+> - `--quarter` accepts CMS suffixes (`A`, `B`, `C`, `D`, `AR`, etc.) or `Q1`–`Q4`. If omitted, the latest registered snapshot is used.  
+> - CLI flags currently wrap the ingestor entrypoint; configuration-service driven overrides will replace manual flags once implemented. Keep manual override path under version control until then.
 
 ### 3.3 Monitor Logs
 
@@ -226,6 +243,14 @@ if missing:
     raise SystemExit("Snapshot verification failed")
 PY
 ```
+
+```bash
+jq '.metadata | {target_release_suffix, requested_release_param, snapshot_release_ids, conversion_factor_strategy}' "$MANIFEST"
+```
+
+- Expect `snapshot_release_ids.rvu_items` / `gpci_indices` to match the requested quarter (e.g., `rvu_2025_B`).
+- `conversion_factor_strategy` should read `derive_from_rvu` unless a manual override/download was used (`download`).
+- Include these metadata values in the ops ticket/run log for provenance.
 
 ### 4.3 Payment Spot Check
 

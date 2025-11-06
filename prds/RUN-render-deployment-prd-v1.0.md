@@ -1484,6 +1484,116 @@ Based on today's deployment, always ensure:
 
 ---
 
+
+## Part 8A: Docker Build Best Practices (2025‑11 Update)
+
+**Purpose:** Ensure CMS Pricing API Docker builds remain reproducible, small, and compliant with Render deployment standards.
+
+### Core Principles
+
+- **Multi‑stage Dockerfile** — separate builder/runtime targets, shared `ARG` for base image, and an optional `development` target for hot reload.  
+- **BuildKit cache mounts** — enable `--mount=type=cache` for apt/pip to keep rebuilds fast.  
+- **Runtime‑only dependencies** — use `requirements.prod.txt` (which includes `-r requirements.txt`) and keep development extras in `requirements.dev.txt`.  
+- **Slim runtime copy** — bring a prebuilt virtual environment plus only the runtime directories/files instead of `COPY . ..`.  
+- **Non‑root runtime user** — create data directories before switching users and set explicit ownership.  
+- **OCI image labels** — define `org.opencontainers.image.title`, `description`, `source`, and `version` for traceability.  
+- **Healthcheck alignment** — include a lightweight healthcheck that respects `$PORT` and matches Render’s deployment expectations.  
+- **Tight `.dockerignore`** — exclude docs, artifacts, and tests, but explicitly re‑include `tests/scripts/**` for bootstrap helpers.  
+- **Sorted, single‑layer apt installs** — use `--no‑install‑recommends`, clean up in the same layer, and sort package names for readability.  
+- **Rebuild validation checklist** — build the production target, run the bootstrap/migration script, smoke‑test the health endpoint, and compare image size/history vs. prior baseline.  
+- **Ongoing maintenance** — refresh docs when new system dependencies (e.g., Tesseract) are added so the runtime stage remains minimal.
+
+### Example Multi‑Stage Dockerfile
+
+```dockerfile
+# syntax=docker/dockerfile:1
+ARG PYTHON_IMAGE=python:3.11-slim-bookworm
+
+# ---------- Builder ----------
+FROM ${PYTHON_IMAGE} AS builder
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+WORKDIR /app
+
+# Cached system deps
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential curl python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Cached pip deps
+COPY requirements.prod.txt .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m venv /opt/venv && \
+    . /opt/venv/bin/activate && \
+    pip install --no-cache-dir -r requirements.prod.txt
+
+# ---------- Runtime ----------
+FROM ${PYTHON_IMAGE} AS production
+LABEL org.opencontainers.image.title="cms-pricing-api" \
+      org.opencontainers.image.description="CMS Pricing API runtime image" \
+      org.opencontainers.image.source="https://github.com/alex-bea/cms-api" \
+      org.opencontainers.image.version="1.0.0"
+
+WORKDIR /app
+
+# Copy venv and runtime code
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Create non‑root user and writable dirs
+RUN groupadd -r appuser && useradd -r -g appuser appuser && \
+    mkdir -p data/observability data/metrics data/quarantine data/cache && \
+    chown -R appuser:appuser /app
+USER appuser
+
+COPY --chown=appuser:appuser cms_pricing/ ./cms_pricing/
+COPY --chown=appuser:appuser alembic/ ./alembic/
+COPY --chown=appuser:appuser alembic.ini .
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
+
+EXPOSE 8000
+CMD ["uvicorn", "cms_pricing.main:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}"]
+```
+
+### Dependency Management
+
+| File | Purpose |
+|------|----------|
+| `requirements.txt` | Shared baseline dependencies |
+| `requirements.dev.txt` | Linting, testing, and local extras (installed in CI) |
+| `requirements.prod.txt` | Runtime‑only subset, used in Docker build |
+
+### .dockerignore Example
+
+```bash
+# Ignore everything test-related except bootstrap scripts
+tests/
+!tests/
+!tests/scripts/
+!tests/scripts/**
+```
+
+This ensures `tests/scripts/bootstrap_test_db.py` enters the Docker build context.
+
+### Validation Checklist
+
+```bash
+docker build --target production .
+docker run --rm -e PORT=8000 <image> python tests/scripts/bootstrap_test_db.py
+curl http://localhost:8000/health
+docker history <image> | head
+```
+
+### Maintenance Guidelines
+
+- Pin the base image by digest and refresh OCI labels when tagging releases.  
+- Update this PRD whenever system dependencies (e.g., `tesseract-ocr`, `libmagic`) are introduced to keep runtime minimal.  
+- Keep image size under 300 MB and confirm zero Render build minutes per §3.1 of `PRD-render-hosting-prd-v1.0.md`.  
+- Reference the top‑level `Dockerfile` and `.dockerignore` for implementation details.
+
+---
 ## Part 8: Automate Deployments with CI/CD (Optional)
 
 **Purpose:** Automate image builds and deployments to achieve zero on-platform build minutes per PRD policy §4.1.
@@ -2324,6 +2434,7 @@ curl -v https://cms-pricing-api.onrender.com/health 2>&1 | grep -E "HTTP|status"
 
 || Version | Date | Summary |
 ||---------|------|---------|
+|| **v1.4** | 2025‑11‑06 | **Added Part 8A: Docker Build Best Practices.** Captures 2025 Docker optimization learnings (multi‑stage builds, cache mounts, non‑root user, OCI labels, tighter .dockerignore) and adds validation/maintenance guidance. |
 || **v1.3** | 2025-10-22 | **Added Part 9: CI/CD Automation Status** - Documented fully automated deployment pipeline implementation. Added render.yaml IaC configuration, updated deploy.yml workflow with migration automation, created comprehensive setup guide (§9.3), troubleshooting (§9.5), monitoring (§9.6), and rollback procedures (§9.7). CI/CD now enforces migrations-first policy via Render Job API with fail-fast on migration failures. Zero Render build minutes achieved via image-based deployment. |
 || **v1.2** | 2025-10-21 | **Added Part 7 API deployment troubleshooting** (5 critical issues from production deployment): 401 Unauthorized on health checks (authentication bypass required), Docker image caching on :latest tag (use :main or SHA tags), Out of Memory on Starter tier (memory optimization strategies), Permission denied for data directories (Dockerfile non-root user pattern), Schema contract validation failures (required fields). Added Part 7 Best Practices Summary with 7-point checklist. Based on cms-pricing-api deployment to Render. |
 || **v1.1** | 2025-10-21 | **Added 5 deployment learnings (Gaps 4-8).** Enhanced Part 2 Step 1 with PostgreSQL version note (Gap 6: Render may provision 17.x when 16 requested). Enhanced Part 2 Step 3 with detailed psql PATH setup for macOS/Linux (Gap 4: common "command not found" fix). Enhanced Part 2 Step 4 with strong .env security warnings and checklist (Gap 7: never commit credentials). Added Part 4 troubleshooting for Python segfaults (Gap 5: conda conflicts, venv solution). Added database-only deployment pattern (Gap 8: schema-ready vs data-ready states). Based on 2025-10-21 Render deployment experience. |

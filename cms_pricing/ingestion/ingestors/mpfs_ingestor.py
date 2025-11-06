@@ -78,6 +78,9 @@ from ..datasets.mpfs_builder import (
 
 logger = structlog.get_logger()
 
+RELEASE_SUFFIXES = {"A", "B", "C", "D", "AR", "BR", "CR", "DR"}
+QUARTER_TO_SUFFIX = {"Q1": "A", "Q2": "B", "Q3": "C", "Q4": "D"}
+
 
 class MPFSIngestor(BaseDISIngestor):
     """DIS-compliant MPFS ingestor that creates curated views referencing RVU data"""
@@ -118,6 +121,12 @@ class MPFSIngestor(BaseDISIngestor):
         # Current run metadata
         self.current_release_id: Optional[str] = None
         self.current_batch_id: Optional[str] = None
+        self._conversion_factor_strategy: str = "auto"
+        self.target_year: Optional[int] = None
+        self.target_release_suffix: Optional[str] = None
+        self.target_rvu_release_id: Optional[str] = None
+        self.target_gpci_release_id: Optional[str] = None
+        self._requested_release_input: Optional[str] = None
         
         # Required properties for IngestorSpec
         self._dataset_name = "MPFS"
@@ -318,11 +327,13 @@ class MPFSIngestor(BaseDISIngestor):
             metadata=metadata,
         )
 
-    def _conversion_factor_source_file(self, year: int, release_id: Optional[str] = None) -> SourceFile:
-        """Create SourceFile describing conversion factor artefact for the year.
-        
-        Checks config service for YAML overrides first, then falls back to CLI flags.
-        CLI flags remain the primary/fallback mechanism until YAML service is production-ready.
+    def _conversion_factor_source_file(
+        self, year: int, release_id: Optional[str] = None
+    ) -> Optional[SourceFile]:
+        """Create SourceFile describing conversion factor artefact for the year if an override is configured.
+
+        YAML overrides (and future CLI wiring) take precedence. If no override is discovered we now derive the
+        conversion factor directly from the RVU snapshot instead of attempting a CMS download that may 404.
         """
         source_url = self._conversion_factor_url(year)
         filename = Path(urlparse(source_url).path).name or f"conversion_factor_{year}.zip"
@@ -371,12 +382,20 @@ class MPFSIngestor(BaseDISIngestor):
         # CLI flags can still override via metadata if provided externally
         # This maintains backward compatibility until YAML service is production-ready
 
-        return SourceFile(
-            url=source_url,
-            filename=filename,
-            content_type=self._infer_content_type(filename),
-            metadata=metadata,
+        if metadata.get("manual_override_path"):
+            return SourceFile(
+                url=source_url,
+                filename=filename,
+                content_type=self._infer_content_type(filename),
+                metadata=metadata,
+            )
+
+        logger.info(
+            "No conversion factor override configured; will derive from RVU snapshot",
+            year=year,
+            release_id=release_id,
         )
+        return None
 
     @staticmethod
     def _infer_content_type(filename: str) -> str:
@@ -395,6 +414,54 @@ class MPFSIngestor(BaseDISIngestor):
         # CMS typically publishes CF artefacts under /files/zip/cy-YYYY-mpfs-conversion-factor.zip
         # Allow overrides via SourceFile metadata if the pattern changes.
         return f"https://www.cms.gov/files/zip/cy-{year}-mpfs-conversion-factor.zip"
+
+    def _normalize_release_suffix(self, year: int, quarter: Optional[str]) -> Optional[str]:
+        """Normalize a user-supplied quarter/release argument to CMS suffix (A/B/C/D, AR, etc.)."""
+        if quarter is None:
+            return None
+
+        value = str(quarter).strip().upper()
+        if not value:
+            return None
+
+        self._requested_release_input = value
+        normalized = value.replace("-", "_")
+
+        # Map quarter-esque tokens first (Q1 → A, etc.)
+        for token, suffix in QUARTER_TO_SUFFIX.items():
+            if normalized.endswith(token):
+                return suffix
+
+        # Strip dataset prefixes (e.g., RVU_2025_B) if present
+        if "_" in normalized:
+            tokens = [t for t in normalized.split("_") if t]
+            candidate = tokens[-1]
+            if candidate in RELEASE_SUFFIXES:
+                return candidate
+
+        # Support compact forms like 2025B or RVU25AR
+        match = re.search(r"(AR|BR|CR|DR|A|B|C|D)$", normalized)
+        if match:
+            suffix = match.group(1)
+            if suffix in RELEASE_SUFFIXES:
+                return suffix
+
+        return None
+
+    @staticmethod
+    def _build_dataset_release_id(prefix: str, year: int, suffix: Optional[str]) -> Optional[str]:
+        """Compose dataset-specific release identifier (e.g., rvu_2025_B)."""
+        if not suffix:
+            return None
+        prefix_clean = prefix.strip().lower()
+        return f"{prefix_clean}_{year}_{suffix}"
+
+    def _set_ingest_scope(self, year: int, quarter: Optional[str]) -> None:
+        """Persist target year and release IDs for this ingestion run."""
+        self.target_year = year
+        self.target_release_suffix = self._normalize_release_suffix(year, quarter)
+        self.target_rvu_release_id = self._build_dataset_release_id("rvu", year, self.target_release_suffix)
+        self.target_gpci_release_id = self._build_dataset_release_id("gpci", year, self.target_release_suffix)
     
     async def discover_source_files(self) -> List[SourceFile]:
         """Discover MPFS source inputs via dataset snapshots and CF fetcher"""
@@ -402,28 +469,49 @@ class MPFSIngestor(BaseDISIngestor):
 
         snapshot_files: List[SourceFile] = []
 
-        rvu_snapshot = self.snapshot_service.get_latest_snapshot("rvu_items")
+        rvu_release_id = self.target_rvu_release_id
+        rvu_snapshot = self.snapshot_service.get_latest_snapshot("rvu_items", release_id=rvu_release_id)
+        if rvu_release_id and (not rvu_snapshot or not rvu_snapshot.path):
+            raise ValueError(f"RVU snapshot for release {rvu_release_id} not available; run RVU ingestion first")
+        if not rvu_snapshot or not rvu_snapshot.path:
+            rvu_snapshot = self.snapshot_service.get_latest_snapshot("rvu_items")
         if not rvu_snapshot or not rvu_snapshot.path:
             raise ValueError("RVU snapshot not available; run RVU ingestion first")
         snapshot_files.append(self._snapshot_source_file(rvu_snapshot))
 
-        gpci_snapshot = self.snapshot_service.get_latest_snapshot("gpci_indices")
+        gpci_release_id = self.target_gpci_release_id
+        gpci_snapshot = self.snapshot_service.get_latest_snapshot("gpci_indices", release_id=gpci_release_id)
+        if gpci_release_id and (not gpci_snapshot or not gpci_snapshot.path):
+            # Try to align with RVU release suffix if available
+            candidate_release = None
+            if rvu_snapshot and rvu_snapshot.release_id.startswith("rvu_"):
+                candidate_release = rvu_snapshot.release_id.replace("rvu_", "gpci_", 1)
+            if candidate_release and candidate_release != gpci_release_id:
+                gpci_snapshot = self.snapshot_service.get_latest_snapshot("gpci_indices", release_id=candidate_release)
         if not gpci_snapshot or not gpci_snapshot.path:
             raise ValueError("GPCI snapshot not available; run RVU ingestion first")
         snapshot_files.append(self._snapshot_source_file(gpci_snapshot))
 
-        current_year = datetime.now().year
+        current_year = self.target_year or datetime.now().year
         # Determine release_id from RVU snapshot for config service lookup
         release_id = rvu_snapshot.release_id if rvu_snapshot else None
         cf_source = self._conversion_factor_source_file(current_year, release_id=release_id)
 
-        source_files = snapshot_files + [cf_source]
+        source_files = list(snapshot_files)
+        if cf_source:
+            source_files.append(cf_source)
+            self._conversion_factor_strategy = "download"
+        else:
+            self._conversion_factor_strategy = "derive_from_rvu"
 
         logger.info(
             "MPFS discovery completed",
             snapshot_count=len(snapshot_files),
-            download_count=1,
+            download_count=1 if cf_source else 0,
             files_found=len(source_files),
+            rvu_release=rvu_snapshot.release_id if rvu_snapshot else None,
+            gpci_release=gpci_snapshot.release_id if gpci_snapshot else None,
+            requested_suffix=self.target_release_suffix,
         )
         return source_files
     
@@ -445,6 +533,11 @@ class MPFSIngestor(BaseDISIngestor):
                 "batch_id": batch_id,
                 "release_id": self.current_release_id,
                 "vintage_date": datetime.now().date().isoformat(),
+                "target_year": self.target_year or datetime.now().year,
+                "target_release_suffix": self.target_release_suffix,
+                "requested_release_param": self._requested_release_input,
+                "requested_rvu_release_id": self.target_rvu_release_id,
+                "requested_gpci_release_id": self.target_gpci_release_id,
             },
         )
 
@@ -470,6 +563,16 @@ class MPFSIngestor(BaseDISIngestor):
                 raw_batch.metadata.setdefault("downloads", {})[dataset_id] = cf_record
             else:
                 raise ValueError(f"Unsupported ingestion mode for source file {source_file.filename}")
+
+        if "mpfs_cf" not in raw_batch.metadata["datasets"]:
+            raw_batch.metadata["datasets"].append("mpfs_cf")
+
+        if self._conversion_factor_strategy == "derive_from_rvu":
+            raw_batch.metadata.setdefault("derived_inputs", {})["mpfs_cf"] = {
+                "strategy": "derive_from_rvu_snapshot",
+                "source_dataset": "rvu_items",
+                "release_id": raw_batch.metadata.get("release_id"),
+            }
 
         logger.info(
             "MPFS land stage completed",
@@ -628,7 +731,12 @@ class MPFSIngestor(BaseDISIngestor):
 
         rvu_df = self._load_snapshot_dataframe("rvu_items", rvu_snapshot)
         gpci_df = self._load_snapshot_dataframe("gpci_indices", gpci_snapshot)
-        cf_df = self._load_conversion_factor_dataframe(cf_meta) if cf_meta else pd.DataFrame()
+        if cf_meta:
+            cf_df = self._load_conversion_factor_dataframe(cf_meta)
+            cf_strategy = "download"
+        else:
+            cf_df = self._derive_conversion_factor_from_rvu(rvu_df, rvu_snapshot, raw_batch.metadata)
+            cf_strategy = "derive_from_rvu"
 
         dataframes = {"rvu": rvu_df, "gpci": gpci_df, "cf": cf_df}
         schema_contract = {
@@ -642,6 +750,10 @@ class MPFSIngestor(BaseDISIngestor):
                 "rvu_items": rvu_snapshot.get("release_id"),
                 "gpci_indices": gpci_snapshot.get("release_id"),
             },
+            "conversion_factor_strategy": cf_strategy,
+            "conversion_factor_source": (
+                (cf_meta.get("source_url") or cf_meta.get("path")) if cf_meta else "rvu_snapshot"
+            ),
         }
 
         adapted_batch = AdaptedBatch(
@@ -720,6 +832,129 @@ class MPFSIngestor(BaseDISIngestor):
             ]
         )
         return df
+
+    def _derive_conversion_factor_from_rvu(
+        self,
+        rvu_df: pd.DataFrame,
+        rvu_snapshot_meta: Optional[Dict[str, Any]],
+        batch_metadata: Optional[Dict[str, Any]],
+    ) -> pd.DataFrame:
+        """Derive conversion factor from RVU snapshot when no external artefact is available."""
+        if rvu_df is None or rvu_df.empty:
+            logger.warning("RVU dataframe empty; unable to derive conversion factor")
+            return pd.DataFrame()
+
+        column_lookup = {col.lower(): col for col in rvu_df.columns}
+        cf_col = None
+        for candidate in ("conversion_factor", "cf_value", "cf"):
+            if candidate in column_lookup:
+                cf_col = column_lookup[candidate]
+                break
+
+        if not cf_col:
+            logger.warning(
+                "Conversion factor column not present in RVU snapshot; derived CF will be empty",
+                available_columns=list(rvu_df.columns)[:20],
+            )
+            return pd.DataFrame()
+
+        def _parse_date(raw: Optional[str]) -> Optional[date]:
+            if not raw:
+                return None
+            try:
+                return date.fromisoformat(str(raw))
+            except (TypeError, ValueError):
+                return None
+
+        vintage_date: Optional[date] = None
+        vintage_raw = (batch_metadata or {}).get("vintage_date")
+        if isinstance(vintage_raw, str):
+            try:
+                vintage_date = date.fromisoformat(vintage_raw)
+            except ValueError:
+                logger.warning("Unable to parse vintage_date from batch metadata", vintage_date=vintage_raw)
+        if not vintage_date:
+            vintage_date = datetime.now().date()
+
+        target_year = self.target_year or vintage_date.year
+        effective_start_fallback = _parse_date((rvu_snapshot_meta or {}).get("effective_from")) or date(target_year, 1, 1)
+        effective_end_fallback = _parse_date((rvu_snapshot_meta or {}).get("effective_to")) or date(target_year, 12, 31)
+        source_release = (rvu_snapshot_meta or {}).get("release_id")
+
+        anesthesia_cols = [col for col in rvu_df.columns if "anest" in col.lower()]
+        if anesthesia_cols:
+            logger.info(
+                "Anesthesia conversion factor columns detected in RVU snapshot; ignoring for physician-factor MVP",
+                columns=anesthesia_cols,
+            )
+
+        cf_rows = pd.DataFrame({"cf_value": pd.to_numeric(rvu_df[cf_col], errors="coerce")})
+        if "effective_start" in rvu_df.columns:
+            cf_rows["effective_start"] = pd.to_datetime(rvu_df["effective_start"], errors="coerce")
+        elif "effective_from" in rvu_df.columns:
+            cf_rows["effective_start"] = pd.to_datetime(rvu_df["effective_from"], errors="coerce")
+        else:
+            cf_rows["effective_start"] = pd.NaT
+
+        if "effective_end" in rvu_df.columns:
+            cf_rows["effective_end"] = pd.to_datetime(rvu_df["effective_end"], errors="coerce")
+        elif "effective_to" in rvu_df.columns:
+            cf_rows["effective_end"] = pd.to_datetime(rvu_df["effective_to"], errors="coerce")
+        else:
+            cf_rows["effective_end"] = pd.NaT
+
+        cf_rows = cf_rows.dropna(subset=["cf_value"])
+        if cf_rows.empty:
+            logger.warning(
+                "Conversion factor column in RVU snapshot contains no numeric values; derived CF will be empty",
+                column=cf_col,
+            )
+            return pd.DataFrame()
+
+        cf_rows["cf_value"] = cf_rows["cf_value"].round(6)
+        cf_rows["effective_start"] = cf_rows["effective_start"].fillna(pd.Timestamp(effective_start_fallback))
+        cf_rows["effective_end"] = cf_rows["effective_end"].fillna(pd.Timestamp(effective_end_fallback))
+
+        cf_rows["effective_start"] = cf_rows["effective_start"].dt.date
+        cf_rows["effective_end"] = cf_rows["effective_end"].dt.date
+
+        unique_rows = (
+            cf_rows[["cf_value", "effective_start", "effective_end"]]
+            .drop_duplicates()
+            .sort_values(["effective_start", "effective_end", "cf_value"])
+        )
+
+        records = []
+        for _, row in unique_rows.iterrows():
+            effective_start_value = row["effective_start"] or effective_start_fallback
+            effective_end_value = row["effective_end"] or effective_end_fallback
+            year_value = effective_start_value.year if isinstance(effective_start_value, date) else target_year
+            records.append(
+                {
+                    "cf_value": float(row["cf_value"]),
+                    "cf_type": "physician",
+                    "year": year_value,
+                    "effective_start": effective_start_value,
+                    "effective_end": effective_end_value,
+                    "release_id": self.current_release_id or source_release or "",
+                    "source_file": "derived_from_rvu_snapshot",
+                    "source_snapshot_release": source_release,
+                }
+            )
+
+        if not records:
+            return pd.DataFrame()
+
+        derived_values = [record["cf_value"] for record in records]
+        logger.info(
+            "Derived conversion factor from RVU snapshot",
+            values=derived_values,
+            column=cf_col,
+            release_id=source_release,
+            suffix=self.target_release_suffix,
+        )
+
+        return pd.DataFrame(records)
 
     def _select_cf_member(self, members: List[str]) -> str:
         """Select preferred file within conversion factor archive."""
@@ -1025,8 +1260,19 @@ class MPFSIngestor(BaseDISIngestor):
         logger.info("Starting MPFS ingestion", year=year, quarter=quarter)
         
         try:
+            # Establish target scope (year + optional release suffix)
+            self._conversion_factor_strategy = "auto"
+            self._requested_release_input = None
+            self._set_ingest_scope(year, quarter)
+            if quarter and not self.target_release_suffix:
+                logger.warning(
+                    "Quarter argument provided but could not be normalized; defaulting to latest snapshot",
+                    quarter=quarter,
+                )
+
             # Generate release and batch IDs
-            self.current_release_id = f"mpfs_{year}_{quarter or 'annual'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            release_tag = self.target_release_suffix or (quarter or "latest")
+            self.current_release_id = f"mpfs_{year}_{release_tag}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             self.current_batch_id = str(uuid.uuid4())
             
             # DIS Pipeline: Land → Validate → Normalize → Enrich → Publish

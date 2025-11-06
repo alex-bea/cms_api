@@ -1,0 +1,2 @@
+# Production runtime requirements mirror the base runtime list.
+-r requirements.txt
