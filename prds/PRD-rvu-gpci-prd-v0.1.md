@@ -279,6 +279,125 @@ The RVU ingestor follows the **thin orchestrator pattern** (<1,000 lines), deleg
 
 **Note:** Validation logic is owned by `stages/validate.py` and `stages/normalize.py` modules, not the ingestor. Business rules are registered via `ValidationService` during ingestor initialization.
 
+### 6.3 Implementation Reference
+
+This section documents the **actual implementation** of the RVU ingestor as a reference for future ingestors. For pattern details and reusable guidance, see **STD-data-architecture-impl-v1.0.md**.
+
+**Reference Implementation:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py` (`RVUIngestor`)
+
+#### Discovery Implementation
+
+**Location:** Discovery helpers within `RVUIngestor`
+
+- **`_DiscoveryCallable` Wrapper:** Provides a dual sync/async access pattern that detects the current event loop and either returns a coroutine or runs it eagerly. See **STD-data-architecture-impl-v1.0.md §1.8.1** for pattern details.
+- **Manifest-First Discovery:** Prefers previously generated manifest files for offline/test runs before invoking the scraper. The helper checks multiple candidate paths (`output_dir`, its parent, and parent’s parent) to support local fixtures.
+- **Async-First with Sync Fallback:** Primary discovery uses the scraper’s async API; if no files are returned, the manifest-based fallback is reused, enabling deterministic local runs. See **REF-scraper-ingestor-integration-v1.0.md** for scraper integration patterns.
+- **Scraper Integration:** Scraper results are converted to `SourceFile` objects with metadata extraction (posted_at, version, file_type) and lineage fields applied consistently.
+
+**Cross-References:**
+- **STD-data-architecture-impl-v1.0.md §1.8.1** - Discovery Callable Wrapper Pattern
+- **REF-scraper-ingestor-integration-v1.0.md §2** - Discovery Manifest Contract
+- **STD-scraper-prd-v1.0.md §23** - Scraper Pattern Implementations
+
+#### Initialization Implementation
+
+**Location:** `RVUIngestor.__init__`
+
+- **ServiceFactory Pattern:** Centralized service initialization with lazy loading via `ServiceConfig`. See **STD-data-architecture-impl-v1.0.md §2.6** for the initialization pattern.
+- **Schema Bootstrap:** Registers schemas once during init via `SchemaService.bootstrap_rvu_schemas()` to prevent double-registration.
+- **Schema Pre-caching:** Caches schemas at init time for 5-10% performance improvement. See **STD-data-architecture-impl-v1.0.md §1.8.2** for optimization details.
+- **Business Rules Registration:** Auto-registers validation rules from each `DatasetSpec.business_rules` collection during initialization.
+- **Metadata Tracking:** Initializes `current_release_id` and `schema_drift_config` for stage coordination.
+
+**Cross-References:**
+- **STD-data-architecture-impl-v1.0.md §2.6** - Component Initialization Pattern
+- **STD-data-architecture-impl-v1.0.md §1.8.2** - Schema Pre-caching Optimization
+- **STD-data-architecture-impl-v1.0.md §1.4** - DatasetSpec Registry
+
+#### Multi-Dataset Handling Implementation
+
+**Location:** `RVUIngestor._adapt_rvu_raw_data` wrapper and `cms_pricing/ingestion/datasets/rvu_spec.py`
+
+- **DatasetSpec Registry:** Plugin model for dataset-specific behavior (`RVU_DATASETS`). See **STD-data-architecture-impl-v1.0.md §1.4** for the DatasetSpec pattern.
+- **Adapter Delegation:** A single adapter method delegates to the shared `adapt_rvu_raw_data()` helper using the registry entry determined via `route_file_to_rvu_spec`.
+- **Validation Rules Aggregation:** Collects rules from each `DatasetSpec.validation_rules` property via the `validators` aggregate on `RVU_DATASETS`.
+
+**Cross-References:**
+- **STD-data-architecture-impl-v1.0.md §1.4** - DatasetSpec Registry
+- **STD-data-architecture-impl-v1.0.md §3.3** - Validation Rules & Business Rules
+
+#### Stage Delegation Implementation
+
+**Location:** Stage methods on `RVUIngestor`
+
+- **Thin Orchestrator Pattern:** Public stage methods (`land`, `validate`, `normalize`, `enrich`, `publish`) delegate to shared `execute_*` modules from `cms_pricing/ingestion/stages`. See **STD-data-architecture-impl-v1.0.md §1.3** for the stage module pattern.
+- **Legacy Compatibility Helpers:** Private `_*_stage` methods remain for DIS test compatibility while publicly exposing the modular executors.
+- **Config Objects:** Uses `*Config` dataclasses (`LandConfig`, `ValidateConfig`, etc.) to configure stage behavior.
+
+**Cross-References:**
+- **STD-data-architecture-impl-v1.0.md §1.3** - Modular Stage Helpers
+
+#### Compatibility Patterns Implementation
+
+**Location:** `RVUIngestor._coerce_raw_batch_like` and `_normalize_stage`
+
+- **RawBatch Coercion:** `_coerce_raw_batch_like()` handles dict-like objects from legacy tests. See **STD-data-architecture-impl-v1.0.md §1.8.3** for compatibility patterns.
+- **Signature Flexibility:** The normalize stage accepts both `(validated_batch)` and `(validated_batch, raw_batch)` signatures to support older callers.
+- **Type Detection:** Metadata extraction handles both object attributes and dict keys.
+
+**Cross-References:**
+- **STD-data-architecture-impl-v1.0.md §1.8.3** - Compatibility Helpers
+
+#### Enrichment Orchestration Implementation
+
+**Location:** `RVUIngestor.enrich` and `_enrich_stage`
+
+- **Multi-Dataset Processing:** Iterates over dataframes, processes each dataset separately using `execute_enrich()`.
+- **Empty DataFrame Handling:** Skips enrichment for empty datasets while preserving structure so downstream stages receive consistent frames.
+- **StageFrame Construction:** Builds a `StageFrame` per dataset with metadata and reference data context.
+- **Metrics Aggregation:** Collects enrichment metrics per dataset and aggregates totals/reference sources.
+
+**Cross-References:**
+- **STD-data-architecture-impl-v1.0.md §1.8.4** - Enrichment Orchestration
+- **STD-data-architecture-impl-v1.0.md §4.2.1** - Feature Flags (ENABLE_ENRICHMENT)
+
+#### Publish Stage Implementation
+
+**Location:** `RVUIngestor.publish` and `_publish_stage`
+
+- **Flexible Input Handling:** Accepts both `StageFrame` objects and dicts, filtering out non-DataFrame values before passing them to the executor.
+- **Schema Drift Detection:** Provides a `drift_detector` callback to `execute_publish()`. See **STD-data-architecture-impl-v1.0.md §1.8.5** for the callback pattern.
+- **Database Loader Pattern:** Wraps `load_rvu_dataframes()` in a `loader_func` passed into the publish executor. See **STD-data-architecture-impl-v1.0.md §1.8.8** for the loader pattern.
+- **Backward Compatibility Mapping:** Maintains curated-table aliases (`rvu_items`, `gpci_indices`, etc.) to satisfy legacy consumers.
+
+**Cross-References:**
+- **STD-data-architecture-impl-v1.0.md §1.8.5** - Publish Stage Callbacks
+- **STD-data-architecture-impl-v1.0.md §1.8.8** - Database Loader Function Pattern
+
+#### Observability Implementation
+
+**Location:** `RVUIngestor._collect_observability_metrics`
+
+- **5-Pillar Metrics:** Collects freshness, volume, schema, quality, and lineage metrics. See **STD-data-architecture-impl-v1.0.md §4.5** for observability events.
+- **Previous Report Comparison:** Compares against the latest report for trend analysis and anomaly surfacing.
+- **Warning Aggregation:** Collects warnings from multiple sources (empty input, quarantine, validation).
+- **Guidance Document Tracking:** Tracks PDF count, size, and summary generation status.
+
+**Cross-References:**
+- **STD-data-architecture-impl-v1.0.md §4.5** - Observability Events
+
+#### Error Handling Implementation
+
+**Location:** Error-handling helpers on `RVUIngestor`
+
+- **Graceful Pipeline Failures:** Catches exceptions, returns structured error responses with `error_type`.
+- **Empty Input Detection:** Only marks partial if no source files and no files downloaded and no records. See **STD-data-architecture-impl-v1.0.md §1.8.6** for the empty-input pattern.
+- **Error Type Preservation:** Ensures `error_type` and `batch_id` remain available even in error paths.
+
+**Cross-References:**
+- **STD-data-architecture-impl-v1.0.md §1.8.6** - Empty Input Detection
+- **STD-data-architecture-impl-v1.0.md §1.8.7** - Error Handling Patterns
+
 ---
 
 ## 7) Observability & Ops

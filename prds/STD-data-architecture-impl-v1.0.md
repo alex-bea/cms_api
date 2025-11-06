@@ -147,7 +147,7 @@ result = await execute_normalize(
 
 **Feature Flags:** Honour pipeline toggles (e.g., `ENABLE_ENRICHMENT`) when wiring stages; shared helpers accept config flags to support dry runs.
 
-**Schema Drift Callbacks:** Provide a drift-detector callable (see `cms_pricing/ingestion/ingestors/rvu_ingestor.py:705-707`) so publish stage can emit drift metrics without inlining drift logic.
+**Schema Drift Callbacks:** Provide a drift-detector callable (see the publish workflow in `cms_pricing/ingestion/ingestors/rvu_ingestor.py`) so the stage can emit drift metrics without inlining drift logic.
 
 **Testing Guidance:** When adding a new dataset, unit-test stage modules directly and wire them through the ingestor to ensure compatibility with base contracts.
 
@@ -160,7 +160,7 @@ result = await execute_normalize(
 ### 1.4 DatasetSpec Registry (Phase 2 update)
 - **Definition:** `cms_pricing/ingestion/datasets/spec.py` defines `DatasetSpec` and `EnrichmentRule` dataclasses capturing parser reference, schema ID, natural keys, loader, validation/business rules, enrichment rules, and filename patterns.
 - **RVU example:** `cms_pricing/ingestion/datasets/rvu_spec.py` registers specs for PPRRVU, GPCI, OPPS Cap, ANES CF, and Locality. `route_file_to_rvu_spec(filename)` returns the matching spec for adapter/loader orchestration.
-- **Usage pattern:** Ingestors build stage configs by iterating `RVU_DATASETS.values()` (see `cms_pricing/ingestion/ingestors/rvu_ingestor.py:372-378`) instead of hardcoding per-dataset switches.
+- **Usage pattern:** Ingestors build stage configs by iterating `RVU_DATASETS.values()` (see `RVUIngestor` discovery/normalization setup) instead of hardcoding per-dataset switches.
 - **Onboarding checklist:** New datasets MUST add a DatasetSpec entry (parser, schema SemVer, natural keys, loader, validation rules, enrichment rules, routing patterns) and register schemas via `SchemaService.bootstrap_*`.
 - **Documentation impact:** Dataset PRDs should reference their DatasetSpec modules; implementation guides should illustrate spec extension rather than direct parser lookups.
 
@@ -803,8 +803,550 @@ Study these working examples:
 | Dataset | File | Pattern | Key Features |
 |---------|------|---------|--------------|
 | **MPFS** | `cms_pricing/ingestion/ingestors/mpfs_ingestor.py` | Snapshot Reuse | Reuses RVU/GPCI snapshots via `DatasetSnapshotService`, fetches CF via `ConversionFactorFetcher`, creates curated views |
-| **RVU** | `cms_pricing/ingestion/ingestors/rvu_ingestor.py:97` | Direct Links | Quarterly releases, fixed-width parsing |
-| **OPPS** | `cms_pricing/ingestion/ingestors/opps_ingestor.py:52` | Quarterly Navigation | AMA license handling, addenda |
+| **RVU** | `cms_pricing/ingestion/ingestors/rvu_ingestor.py` | Direct Links | Quarterly releases, fixed-width parsing |
+| **OPPS** | `cms_pricing/ingestion/ingestors/opps_ingestor.py` | Quarterly Navigation | AMA license handling, addenda |
+
+---
+
+### 1.8 Advanced Ingestor Patterns
+
+This section documents advanced patterns proven in the RVU ingestor implementation that are reusable across all ingestors. For the RVU reference implementation, see **PRD-rvu-gpci-prd-v0.1.md §6.3**.
+
+**Reference Implementation:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py`
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - RVU Implementation Reference
+- **REF-scraper-ingestor-integration-v1.0.md** - Discovery Manifest Contract
+- **STD-scraper-prd-v1.0.md** - Scraper Pattern Implementations
+- **STD-data-architecture-impl-v1.0.md §1.3** - Modular Stage Helpers
+- **STD-data-architecture-impl-v1.0.md §1.4** - DatasetSpec Registry
+- **STD-data-architecture-impl-v1.0.md §2.6** - Component Initialization Pattern
+- **STD-data-architecture-impl-v1.0.md §4.2.1** - Feature Flags
+- **STD-data-architecture-impl-v1.0.md §4.5** - Observability Events
+
+#### 1.8.1 Discovery Callable Wrapper Pattern
+
+**Purpose:** Provide dual sync/async access to discovery results, automatically detecting event loop state.
+
+**Problem:** Legacy code expects sync `discovery()` calls, but modern ingestors use async scrapers. Calling `asyncio.run()` when an event loop is already running causes errors.
+
+**Solution:** Wrap the async discovery coroutine in a callable that detects event loop state and handles both cases.
+
+**Implementation:**
+
+```python
+class _DiscoveryCallable:
+    """Wrapper providing both sync and async access to discovery results."""
+    
+    def __init__(self, coro_factory: Callable[[], Awaitable[List[SourceFile]]]):
+        self._coro_factory = coro_factory
+    
+    def __call__(self) -> List[SourceFile]:
+        """Synchronous entrypoint (used by legacy callers).
+        
+        Avoid calling asyncio.run() if an event loop is already running.
+        In that case, return the coroutine so callers can `await` it.
+        """
+        try:
+            asyncio.get_running_loop()
+            # A loop is running in this thread; return coroutine for awaiting.
+            return self._coro_factory()
+        except RuntimeError:
+            # No running loop → safe to run
+            return asyncio.run(self._coro_factory())
+    
+    def __await__(self):
+        """Allow `await ingestor.discovery()` in async contexts."""
+        return self._coro_factory().__await__()
+
+# Usage in ingestor:
+@property
+def discovery(self):
+    return _DiscoveryCallable(self._discover_source_files_async)
+```
+
+**Reference:** Discovery helpers on `RVUIngestor` in `cms_pricing/ingestion/ingestors/rvu_ingestor.py`
+
+**When to Use:**
+- Implementing discovery methods that may be called from both sync and async contexts
+- Supporting legacy test code that expects sync discovery
+- Integrating with scrapers that return async coroutines
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Discovery Implementation
+- **REF-scraper-ingestor-integration-v1.0.md §2** - Discovery Manifest Contract
+
+#### 1.8.2 Schema Pre-caching Optimization
+
+**Purpose:** Improve validation performance by pre-caching schema contracts at initialization time.
+
+**Problem:** Repeated schema lookups during validation stage add 5-10% overhead.
+
+**Solution:** Cache schemas during ingestor initialization and pass cached schemas to stage modules.
+
+**Implementation:**
+
+```python
+def __init__(self, output_dir: str, db_session: Any = None):
+    super().__init__(output_dir, db_session)
+    
+    # Initialize services
+    self.services = ServiceFactory(ServiceConfig(...))
+    
+    # Register schemas first (before lazy access to schema_registry)
+    registry = self.services.schema_registry
+    self.services.schema_service.bootstrap_rvu_schemas(registry)
+    
+    # Pre-cache schema contracts for validation performance (Optimization #1)
+    # This eliminates repeated schema lookups during validation - saves 5-10% on validation time
+    self._dataset_schema_map = {
+        "pprrvu": "cms_pprrvu",
+        "gpci": "cms_gpci",
+        "oppscap": "cms_oppscap",
+        "anescf": "cms_anescf",
+        "localitycounty": "cms_localitycounty"
+    }
+    self._cached_schemas = self.services.schema_service.cache_schemas(
+        registry, self._dataset_schema_map
+    )
+
+# In normalize stage:
+result = await execute_normalize(
+    validated_batch=validated_batch,
+    raw_batch=raw_batch,
+    config=config,
+    adapter_func=adapter_func,
+    schema_registry=self.services.schema_registry,
+    validation_engine=self.services.validation_service,
+    dataset_schema_map=self._dataset_schema_map,
+    cached_schemas=self._cached_schemas,  # Pass cached schemas
+)
+```
+
+**Reference:** Schema caching and normalize configuration inside `RVUIngestor.__init__` and `_normalize_stage`
+
+**Performance Impact:** 5-10% reduction in validation time for large datasets.
+
+**When to Use:**
+- Ingestors processing multiple datasets
+- High-volume validation workloads
+- Performance-critical ingestion pipelines
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Initialization Implementation
+- **STD-data-architecture-impl-v1.0.md §2.6** - Component Initialization Pattern
+
+#### 1.8.3 Compatibility Helpers (RawBatch Coercion)
+
+**Purpose:** Maintain backward compatibility with legacy tests and code that pass dict-like objects instead of typed objects.
+
+**Problem:** Legacy tests pass dicts instead of `RawBatch` objects, causing type errors in stage methods.
+
+**Solution:** Implement coercion helpers that detect object type and convert dicts to appropriate typed objects.
+
+**Implementation:**
+
+```python
+def _coerce_raw_batch_like(self, candidate: Any) -> Optional[RawBatch]:
+    """Accept dict-like raw batch and coerce to an object with .metadata, .raw_content.
+    
+    This maintains compatibility with legacy tests that pass dicts.
+    """
+    if candidate is None:
+        return None
+    if hasattr(candidate, "metadata"):
+        return candidate  # Already RawBatch-like
+    if hasattr(candidate, "get") and callable(candidate.get):
+        meta = candidate.get("metadata", {}) or {}
+        raw_content = candidate.get("raw_content")
+        raw_directory = candidate.get("raw_directory") or candidate.get("raw_data_path")
+        source_files = candidate.get("source_files")
+        raw_data_path = candidate.get("raw_data_path")
+        # Create a minimal shim object
+        class _Shim:
+            pass
+        shim = _Shim()
+        shim.metadata = meta
+        shim.raw_content = raw_content
+        shim.raw_directory = raw_directory
+        shim.source_files = source_files
+        shim.raw_data_path = raw_data_path
+        return shim  # type: ignore
+    return None
+
+# In normalize stage, handle both signatures:
+async def _normalize_stage(self, validated_batch: Dict[str, Any], raw_batch: Optional[Dict[str, Any]] = None):
+    # Handle backward-compatible signature where raw_batch might be passed first
+    if isinstance(validated_batch, RawBatch):
+        actual_raw_batch = validated_batch
+        actual_validated_batch = raw_batch if raw_batch else validated_batch
+    else:
+        # Coerce dict to RawBatch if needed
+        actual_raw_batch = self._coerce_raw_batch_like(raw_batch)
+        actual_validated_batch = validated_batch
+    # ... rest of implementation
+```
+
+**Reference:** `_coerce_raw_batch_like` and `_normalize_stage` in `RVUIngestor`
+
+**When to Use:**
+- Migrating existing ingestors with legacy test suites
+- Supporting gradual migration from dict-based to typed APIs
+- Maintaining compatibility during refactoring
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Compatibility Patterns Implementation
+
+#### 1.8.4 Enrichment Orchestration (Multi-Dataset)
+
+**Purpose:** Process multiple datasets in a single enrichment stage, aggregating metrics and reference data usage.
+
+**Problem:** Ingestors handling multiple datasets need to process each dataset separately while maintaining overall metrics.
+
+**Solution:** Iterate over datasets, process each with `execute_enrich()`, then aggregate metrics and reference data sources.
+
+**Implementation:**
+
+```python
+async def enrich(self, adapted_batch: Any) -> Dict[str, Any]:
+    # Extract dataframes from adapted_batch
+    dataframes = adapted_batch.get("dataframes", {})
+    
+    enriched_dataframes: Dict[str, "pd.DataFrame"] = {}
+    enrichment_metrics: Dict[str, Dict[str, Any]] = {}
+    reference_data_sources: Dict[str, List[str]] = {}
+    total_records = 0
+    confidence_scores: List[float] = []
+    
+    # Process each dataset using the extracted stage module
+    for dataset_key, df in dataframes.items():
+        if df is None or (hasattr(df, "empty") and df.empty):
+            enriched_dataframes[dataset_key] = df
+            enrichment_metrics[dataset_key] = {"enrichment_skipped": True}
+            continue
+        
+        dataset_schema = schema_bundle.get(dataset_key, {})
+        stage_metadata = {
+            "batch_id": batch_id,
+            "release_id": release_id,
+            "dataset": dataset_key,
+            **metadata_block
+        }
+        stage_frame = StageFrame(
+            data=df,
+            schema=dataset_schema,
+            metadata=stage_metadata,
+            quality_metrics={}
+        )
+        
+        ref_data = RefData(tables={}, metadata={})
+        
+        # Use extracted enrichment stage module
+        enriched_stage_frame = await execute_enrich(
+            stage_frame=stage_frame,
+            ref_data=ref_data,
+            config=config,
+            reference_enricher=self.services.reference_enricher,
+            reference_data_manager=self.services.reference_data_manager,
+            observability_collector=self.services.observability_collector,
+            release_id=release_id
+        )
+        
+        enriched_df = enriched_stage_frame.data
+        enriched_dataframes[dataset_key] = enriched_df
+        enrichment_metrics[dataset_key] = enriched_stage_frame.quality_metrics or {}
+        
+        sources = enrichment_metrics[dataset_key].get("reference_data_sources", [])
+        if sources:
+            reference_data_sources[dataset_key] = sources
+        
+        total_records += len(enriched_df)
+        if "enrichment_rate" in enrichment_metrics[dataset_key]:
+            confidence_scores.append(enrichment_metrics[dataset_key]["enrichment_rate"])
+    
+    # Aggregate metrics
+    average_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.0
+    flattened_sources: List[str] = sorted({
+        source for sources in reference_data_sources.values() for source in sources
+    })
+    
+    return {
+        "status": "success",
+        "batch_id": batch_id,
+        "release_id": release_id,
+        "enriched_data": enriched_dataframes,
+        "reference_data_used": flattened_sources,
+        "mapping_confidence": average_confidence,
+        "record_count": total_records,
+        "enrichment_metrics": enrichment_metrics
+    }
+```
+
+**Reference:** Enrichment orchestration within `RVUIngestor.enrich`
+
+**When to Use:**
+- Ingestors processing multiple related datasets
+- Need to aggregate enrichment metrics across datasets
+- Tracking reference data usage across multiple sources
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Enrichment Orchestration Implementation
+- **STD-data-architecture-impl-v1.0.md §4.2.1** - Feature Flags (ENABLE_ENRICHMENT)
+
+#### 1.8.5 Publish Stage Callbacks (Drift Detector, Loader Function)
+
+**Purpose:** Separate dataset-specific logic (database loading, schema drift detection) from shared publish stage logic.
+
+**Problem:** `execute_publish()` needs dataset-specific database loading and drift detection, but should remain reusable.
+
+**Solution:** Use callback functions (`drift_detector`, `loader_func`) passed to `execute_publish()` to encapsulate dataset-specific logic.
+
+**Implementation:**
+
+```python
+async def publish(self, enriched_batch: Any) -> Dict[str, Any]:
+    # Create drift detector wrapper
+    def drift_detector(schema_dict: Dict[str, Any], dataset_name: str) -> Dict[str, Any]:
+        return self._detect_schema_drift(schema_dict, dataset_name)
+    
+    # Create loader function wrapper for dataset-specific database loading
+    def rvu_loader_func(enriched_data_dict: Dict[str, Any], release_id: str, batch_id: str, vintage_date: str) -> Dict[str, Any]:
+        # Create DB session if not provided
+        from cms_pricing.database import SessionLocal
+        db_session = self.db_session
+        if db_session is None:
+            db_session = SessionLocal()
+            self.db_session = db_session  # Cache for reuse
+        
+        try:
+            return load_rvu_dataframes(
+                enriched_data_dict,
+                release_id,
+                batch_id,
+                vintage_date,
+                db_session,
+            )
+        except Exception as e:
+            logger.error("Database loading failed", error=str(e), batch_id=batch_id)
+            return {"error": str(e)}
+    
+    config = PublishConfig(
+        output_dir=self.output_dir,
+        dataset_name=self.dataset_name,
+        enable_database_load=True,
+        enable_schema_drift_detection=True,
+        enable_latest_effective_view=True
+    )
+    
+    # Use extracted publish stage module
+    result = await execute_publish(
+        enriched_batch=enriched_batch_dict,
+        config=config,
+        db_session=self.db_session,
+        loader_func=rvu_loader_func,  # Dataset-specific loader
+        drift_detector=drift_detector  # Dataset-specific drift detection
+    )
+    
+    return result
+```
+
+**Reference:** Publish orchestration within `RVUIngestor.publish` and `_publish_stage`
+
+**When to Use:**
+- Ingestors with dataset-specific database schemas
+- Need custom schema drift detection logic
+- Want to reuse `execute_publish()` while keeping dataset-specific logic separated
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Publish Stage Implementation
+- **STD-data-architecture-impl-v1.0.md §1.8.8** - Database Loader Function Pattern
+
+#### 1.8.6 Empty Input Detection
+
+**Purpose:** Distinguish between truly empty input (no files discovered) and parsing failures (files discovered but invalid).
+
+**Problem:** Pipeline should return "partial" status only for truly empty input, not for parsing failures.
+
+**Solution:** Check for empty input only if no source files discovered AND no files downloaded AND no records processed.
+
+**Implementation:**
+
+```python
+async def ingest(self, release_id: str, batch_id: str) -> Dict[str, Any]:
+    # Execute pipeline
+    pipeline_result = await pipeline.execute(release_id, batch_id)
+    
+    # Adjust status for empty input to satisfy test expectations
+    # Mark as partial only if discovery found absolutely nothing (truly empty)
+    files_downloaded = pipeline_result.get("files_downloaded", 0)
+    total_records = pipeline_result.get("total_records", 0)
+    source_files = pipeline_result.get("source_files", [])
+    
+    # Only mark partial if: no source files discovered AND no files downloaded AND no records
+    # (If files were discovered but parsing failed, that's not "empty input" - it's a parsing issue)
+    truly_empty = len(source_files) == 0 and files_downloaded == 0 and total_records == 0
+    if truly_empty:
+        # Only override to partial if current status is success (preserve explicit failures)
+        if pipeline_result.get("status") == "success":
+            pipeline_result["status"] = "partial"
+        pipeline_result["_empty_input"] = True
+    
+    return pipeline_result
+```
+
+**Reference:** Empty-input guard within `RVUIngestor.ingest`
+
+**When to Use:**
+- Need to distinguish empty input from parsing failures
+- Want to provide accurate status reporting
+- Supporting test suites that expect "partial" status for empty runs
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Error Handling Implementation
+
+#### 1.8.7 Error Handling Patterns
+
+**Purpose:** Provide structured error responses with proper status preservation and error type tracking.
+
+**Problem:** Pipeline failures should return structured responses with error context, not just raise exceptions.
+
+**Solution:** Catch exceptions in pipeline execution, log context, and return structured error responses.
+
+**Implementation:**
+
+```python
+async def ingest(self, release_id: str, batch_id: str) -> Dict[str, Any]:
+    # Create and execute DIS pipeline
+    pipeline = DISPipeline(
+        ingestor=self,
+        output_dir=self.output_dir,
+        db_session=self.db_session
+    )
+    
+    # Execute pipeline and collect results
+    try:
+        pipeline_result = await pipeline.execute(release_id, batch_id)
+    except Exception as e:
+        # Handle pipeline execution failures gracefully
+        logger.error("Pipeline execution failed in ingest()", error=str(e), release_id=release_id, batch_id=batch_id)
+        pipeline_result = {
+            "status": "failed",
+            "release_id": release_id,
+            "batch_id": batch_id,
+            "error": str(e),
+            "error_type": type(e).__name__,  # Preserve error type
+            "files_downloaded": 0,
+            "total_records": 0,
+            "source_files": []
+        }
+    
+    return pipeline_result
+
+# In publish stage:
+try:
+    result = await execute_publish(...)
+except Exception as e:
+    error_batch_id = batch_id if 'batch_id' in locals() else "unknown"
+    logger.error("Publish stage failed", error=str(e), batch_id=error_batch_id)
+    return {
+        "status": "failed",
+        "batch_id": error_batch_id,
+        "error": str(e)
+    }
+```
+
+**Reference:** Error-handling utilities on `RVUIngestor`
+
+**When to Use:**
+- Need structured error responses for API consumers
+- Want to preserve error context for debugging
+- Supporting graceful degradation
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Error Handling Implementation
+
+#### 1.8.8 Database Loader Function Pattern
+
+**Purpose:** Standardize database loading interface while allowing dataset-specific implementation.
+
+**Problem:** `execute_publish()` needs to load data to database, but each dataset has different table schemas and loading logic.
+
+**Solution:** Wrap dataset-specific loader functions in a standardized signature that `execute_publish()` can call.
+
+**Implementation:**
+
+```python
+# In ingestor publish method:
+def rvu_loader_func(enriched_data_dict: Dict[str, Any], release_id: str, batch_id: str, vintage_date: str) -> Dict[str, Any]:
+    """Dataset-specific loader function with standardized signature.
+    
+    Args:
+        enriched_data_dict: Dictionary of dataset_name -> DataFrame
+        release_id: Release identifier
+        batch_id: Batch identifier
+        vintage_date: Vintage date string (YYYY-MM-DD)
+    
+    Returns:
+        Dictionary with loading results (record_counts, table_names, etc.)
+    """
+    # Create DB session if not provided
+    from cms_pricing.database import SessionLocal
+    db_session = self.db_session
+    if db_session is None:
+        db_session = SessionLocal()
+        self.db_session = db_session  # Cache for reuse
+    
+    try:
+        return load_rvu_dataframes(
+            enriched_data_dict,
+            release_id,
+            batch_id,
+            vintage_date,
+            db_session,
+        )
+    except Exception as e:
+        logger.error("Database loading failed", error=str(e), batch_id=batch_id)
+        return {"error": str(e)}
+
+# Pass to execute_publish:
+result = await execute_publish(
+    enriched_batch=enriched_batch_dict,
+    config=config,
+    db_session=self.db_session,
+    loader_func=rvu_loader_func,  # Dataset-specific loader
+    drift_detector=drift_detector
+)
+```
+
+**Reference:** Loader callback wiring in `RVUIngestor._publish_stage`
+
+**Loader Function Signature:**
+```python
+def loader_func(
+    enriched_data_dict: Dict[str, Any],
+    release_id: str,
+    batch_id: str,
+    vintage_date: str
+) -> Dict[str, Any]:
+    """Standard loader function signature.
+    
+    Returns dict with keys:
+    - record_counts: Dict[str, int] - Record counts per dataset
+    - table_names: Dict[str, str] - Table names per dataset
+    - errors: List[str] - Any errors encountered
+    """
+    pass
+```
+
+**When to Use:**
+- Need to load multiple datasets to different database tables
+- Want to reuse `execute_publish()` while keeping loading logic dataset-specific
+- Supporting multiple database schemas per ingestor
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Publish Stage Implementation
+- **STD-data-architecture-impl-v1.0.md §1.8.5** - Publish Stage Callbacks
+- **STD-database-platform-prd-v1.0.md §6.1** - Loader Pattern Documentation
 
 ---
 
@@ -1095,7 +1637,7 @@ self._cached_schemas = SchemaService.cache_schemas(
 2. Instantiate `ServiceFactory` and call `schema_service.bootstrap_*()` in `__init__`.
 3. Cache schema IDs and pass `cached_schemas` into normalize/validate stages.
 
-**References:** `rvu_ingestor.py:160-185`, `services/schema_service.py`.
+**References:** `RVUIngestor.__init__`, `cms_pricing/ingestion/services/schema_service.py`.
 
 ### 3.2.2 DatasetSpec.loader Pattern (Phase 2)
 
@@ -1153,7 +1695,7 @@ DatasetSpec now owns all validation logic:
 2. Remove inline ValidationEngine wiring; use `self.services.validation_service` instead.
 3. Trim obsolete ingestor methods once specs carry the logic (~100 lines saved in RVU).
 
-**Reference Implementation:** `cms_pricing/ingestion/datasets/rvu_spec.py`, `cms_pricing/ingestion/services/validation_service.py`, `cms_pricing/ingestion/ingestors/rvu_ingestor.py:190-193`.
+**Reference Implementation:** `cms_pricing/ingestion/datasets/rvu_spec.py`, `cms_pricing/ingestion/services/validation_service.py`, `RVUIngestor` initialization hooks.
 
 ### 3.4 Reference Data Dependencies
 
@@ -1513,19 +2055,19 @@ Pipeline automatically monitors and alerts on SLA breaches.
 
 | Pattern | Dataset | File | Key Methods | Notes |
 |---------|---------|------|-------------|-------|
-| **Snapshot Reuse** | MPFS | `mpfs_ingestor.py` | `discover_source_files()` uses `DatasetSnapshotService` + `ConversionFactorFetcher` | Reuses RVU/GPCI snapshots, fetches CF artifacts |
-| **Direct Links** | RVU | `rvu_ingestor.py:97` | `discover_source_files()`, `land()` | Quarterly releases A/B/C/D |
-| **Quarterly Navigation** | OPPS | `opps_ingestor.py:52` | `discover_files()`, `_land_stage()` | Handles AMA license interstitial |
+| **Snapshot Reuse** | MPFS | `cms_pricing/ingestion/ingestors/mpfs_ingestor.py` | `discover_source_files()` uses `DatasetSnapshotService` + `ConversionFactorFetcher` | Reuses RVU/GPCI snapshots, fetches CF artifacts |
+| **Direct Links** | RVU | `cms_pricing/ingestion/ingestors/rvu_ingestor.py` | `discover_source_files()`, `land()` | Quarterly releases, fixed-width parsing |
+| **Quarterly Navigation** | OPPS | `cms_pricing/ingestion/ingestors/opps_ingestor.py` | `discover_files()`, `_land_stage()` | Handles AMA license interstitial |
 | **Reference Data Join** | Geography | `cms_zip_locality_ingestor.py` | `_enrich_data()` | Census crosswalk joins |
 
 ### 5.2 Stage Implementation Examples
 
-| Stage | Reference Implementation | Line | Key Pattern |
-|-------|-------------------------|------|-------------|
-| **Discovery** | `mpfs_ingestor.py` | TBD | Use `DatasetSnapshotService.get_latest_snapshot()` + `ConversionFactorFetcher.ensure_conversion_factor()`, return `List[SourceFile]` |
-| **Land** | `mpfs_ingestor.py` | 264-319 | Download files, calculate checksums, create `RawBatch` |
-| **Validate** | `mpfs_ingestor.py` | 321-365 | Structural + domain + statistical validation |
-| **Normalize** | `mpfs_ingestor.py` | 429-468 | Parse ZIP/CSV/Excel to DataFrames |
+| Stage | Reference Implementation | Reference | Key Pattern |
+|-------|-------------------------|-----------|-------------|
+| **Discovery** | `cms_pricing/ingestion/ingestors/mpfs_ingestor.py` | `discover_source_files()` | Use `DatasetSnapshotService.get_latest_snapshot()` + `ConversionFactorFetcher.ensure_conversion_factor()`, return `List[SourceFile]` |
+| **Land** | `cms_pricing/ingestion/ingestors/mpfs_ingestor.py` | `_land_stage()` | Download files, calculate checksums, create `RawBatch` |
+| **Validate** | `cms_pricing/ingestion/ingestors/mpfs_ingestor.py` | `_validate_stage()` | Structural + domain + statistical validation |
+| **Normalize** | `cms_pricing/ingestion/ingestors/mpfs_ingestor.py` | `_normalize_stage()` | Parse ZIP/CSV/Excel to DataFrames |
 | **Enrich** | `mpfs_ingestor.py` | 510-527 | Join reference data, compute derived fields |
 | **Publish** | `mpfs_ingestor.py` | 529-552 | Create curated views, store in database |
 
@@ -2115,7 +2657,7 @@ Complete the DIS Compliance Checklist (§9.1) and submit for review.
 
 ### 7.1 MPFS Ingestor (Composition Pattern)
 
-**File:** `cms_pricing/ingestion/ingestors/mpfs_ingestor.py:55`
+**File:** `cms_pricing/ingestion/ingestors/mpfs_ingestor.py`
 
 **Key Features:**
 - Composes with RVU scraper for shared files
@@ -2148,7 +2690,7 @@ async def discover_source_files(self) -> List[SourceFile]:
 
 ### 7.2 RVU Ingestor (Direct Links Pattern)
 
-**File:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py:97`
+**File:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py`
 
 **Key Features:**
 - Direct file links from CMS website

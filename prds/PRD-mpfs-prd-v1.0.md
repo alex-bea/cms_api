@@ -248,19 +248,114 @@ The MPFS ingestor will follow the same modular architecture pattern as the RVU i
 6. **Delegate to Stage Modules** - Replace inline stage logic with calls to `stages/execute_*` functions
 7. **Target Line Count** - Achieve <1,000 lines (thin orchestrator pattern)
 
-**Patterns to Adopt:**
-- **DatasetSpec Pattern:** Plugin model for dataset-specific behavior
-- **SchemaService Pattern:** Centralized schema registry bootstrap
-- **ValidationService Pattern:** Business rules auto-registration
-- **Stage Module Pattern:** Shared stage logic in `stages/` modules
-- **Thin Orchestrator Pattern:** Ingestors <1,000 lines, delegate to modules
+Adopt the RVU implementation patterns outlined in the next section—DatasetSpec registry, centralized service/bootstrap, modular stage execution, and thin orchestrator design—to keep MPFS aligned with the shared ingestion architecture.
 
 **Reference Documentation:**
-- `STD-data-architecture-impl-v1.0.md` §1.7 - Migration guide for existing ingestors
+- `STD-data-architecture-impl-v1.0.md` §10 - Migration guide for existing ingestors
 - `DOC-master-catalog-prd-v1.0.md` §10 - Key architectural patterns catalog
 - `STD-database-platform-prd-v1.0.md` §6.1 - Loader pattern documentation
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - RVU implementation reference
 
-**Estimated Effort:** 2-3 days for full migration following RVU refactoring template.
+### Proven Patterns from RVU
+
+The RVU ingestor (`cms_pricing/ingestion/ingestors/rvu_ingestor.py`) serves as the reference implementation for MPFS migration. Key patterns to adopt:
+
+#### Discovery Patterns
+
+**RVU Implementation:** `rvu_ingestor.py:66-88, 252-434`
+
+- **`_DiscoveryCallable` Wrapper:** Dual sync/async access that detects event loop. See **STD-data-architecture-impl-v1.0.md §1.8.1**.
+- **Manifest-First Discovery:** Prefer local manifest files for offline/test runs before scraper.
+- **Async-First with Sync Fallback:** Primary async discovery via scraper, fallback to manifest-based sync.
+
+**MPFS Adoption:** MPFS uses snapshot-based discovery (reuses RVU/GPCI snapshots via `DatasetSnapshotService`) and `ConversionFactorFetcher` for CF artifacts. No dedicated MPFS scraper needed; discovery generates manifests recording snapshot reuse.
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Discovery Implementation
+- **STD-data-architecture-impl-v1.0.md §1.8.1** - Discovery Callable Wrapper Pattern
+- **REF-scraper-ingestor-integration-v1.0.md** - Discovery Manifest Contract
+
+#### Initialization Patterns
+
+**RVU Implementation:** `rvu_ingestor.py:139-197`
+
+- **ServiceFactory Pattern:** Centralized service initialization with lazy loading. See **STD-data-architecture-impl-v1.0.md §2.6**.
+- **Schema Pre-caching:** Cache schemas at init time for 5-10% performance improvement. See **STD-data-architecture-impl-v1.0.md §1.8.2**.
+- **Business Rules Registration:** Auto-register validation rules from DatasetSpecs during init.
+
+**MPFS Adoption:** Use `ServiceFactory` with `ServiceConfig` to initialize all services. Pre-cache MPFS schemas (`cms_mpfs_rvu`, `cms_mpfs_gpci`, `cms_mpfs_cf`) at initialization.
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Initialization Implementation
+- **STD-data-architecture-impl-v1.0.md §2.6** - Component Initialization Pattern
+- **STD-data-architecture-impl-v1.0.md §1.8.2** - Schema Pre-caching Optimization
+
+#### Compatibility Patterns
+
+**RVU Implementation:** `rvu_ingestor.py:201-226, 557-628`
+
+- **RawBatch Coercion:** `_coerce_raw_batch_like()` handles dict-like objects from legacy tests. See **STD-data-architecture-impl-v1.0.md §1.8.3**.
+- **Signature Flexibility:** Normalize stage accepts both `(validated_batch)` and `(validated_batch, raw_batch)` signatures.
+
+**MPFS Adoption:** Implement similar compatibility helpers to support legacy tests and gradual migration.
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Compatibility Patterns Implementation
+- **STD-data-architecture-impl-v1.0.md §1.8.3** - Compatibility Helpers
+
+#### Enrichment Orchestration
+
+**RVU Implementation:** `rvu_ingestor.py:663-824`
+
+- **Multi-Dataset Processing:** Iterate over dataframes, process each dataset separately using `execute_enrich()`.
+- **Empty DataFrame Handling:** Skip enrichment for empty datasets while preserving structure.
+- **Metrics Aggregation:** Collect enrichment metrics per dataset, aggregate totals.
+
+**MPFS Adoption:** Process MPFS datasets (RVU snapshots, GPCI snapshots, CF) separately, then aggregate metrics and reference data sources.
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Enrichment Orchestration Implementation
+- **STD-data-architecture-impl-v1.0.md §1.8.4** - Enrichment Orchestration
+
+#### Publish Stage Patterns
+
+**RVU Implementation:** `rvu_ingestor.py:853-1011`
+
+- **Schema Drift Detection:** Provide `drift_detector` callback to `execute_publish()`. See **STD-data-architecture-impl-v1.0.md §1.8.5**.
+- **Database Loader Pattern:** Wrap dataset-specific loader in `loader_func` for `execute_publish()`. See **STD-data-architecture-impl-v1.0.md §1.8.8**.
+
+**MPFS Adoption:** Implement `mpfs_loader_func` that wraps `load_mpfs_dataframes()` following the same pattern as RVU's `rvu_loader_func`.
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Publish Stage Implementation
+- **STD-data-architecture-impl-v1.0.md §1.8.5** - Publish Stage Callbacks
+- **STD-data-architecture-impl-v1.0.md §1.8.8** - Database Loader Function Pattern
+
+#### Error Handling Patterns
+
+**RVU Implementation:** `rvu_ingestor.py:1033-1045, 1047-1059`
+
+- **Graceful Pipeline Failures:** Catch exceptions, return structured error response with `error_type`.
+- **Empty Input Detection:** Only mark partial if no source files AND no files downloaded AND no records. See **STD-data-architecture-impl-v1.0.md §1.8.6**.
+
+**MPFS Adoption:** Implement similar error handling with proper status preservation and empty input detection.
+
+**Cross-References:**
+- **PRD-rvu-gpci-prd-v0.1.md §6.3** - Error Handling Implementation
+- **STD-data-architecture-impl-v1.0.md §1.8.6** - Empty Input Detection
+- **STD-data-architecture-impl-v1.0.md §1.8.7** - Error Handling Patterns
+
+#### Migration Checklist Mapping
+
+Map RVU patterns to MPFS migration checklist:
+
+| Checklist Item | RVU Pattern Reference | Implementation Location |
+|----------------|----------------------|------------------------|
+| Create DatasetSpecs | **PRD-rvu-gpci-prd-v0.1.md §6.3** - Multi-Dataset Handling | `rvu_spec.py:132-235` |
+| Extract Loaders | **PRD-rvu-gpci-prd-v0.1.md §6.3** - Publish Stage | `rvu_loaders.py` |
+| Use ServiceFactory | **PRD-rvu-gpci-prd-v0.1.md §6.3** - Initialization | `rvu_ingestor.py:156-167` |
+| Delegate to Stage Modules | **PRD-rvu-gpci-prd-v0.1.md §6.3** - Stage Delegation | `rvu_ingestor.py:638-661` |
+| Target Line Count | **PRD-rvu-gpci-prd-v0.1.md §6.1** - Modular Architecture | 990 lines achieved |
 
 **Note:** Single source of truth per CMS artifact; MPFS views **reference** RVU tables.
 
