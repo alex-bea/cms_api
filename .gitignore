@@ -155,6 +155,10 @@ Desktop.ini
 .venv-deploy/
 tmp/
 
+# Debug output artifacts (not part of deliverables)
+debug_output/
+debug_output_*/
+
 # Generated test fixtures (created during test runs)
 tests/fixtures/rvu/test_data/ingested_data/curated/**/*.parquet
 tests/fixtures/rvu/test_data/ingested_data/stage/**/*.parquet

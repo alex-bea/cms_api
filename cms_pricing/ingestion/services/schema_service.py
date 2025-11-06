@@ -28,6 +28,10 @@ logger = structlog.get_logger()
 class SchemaService:
     """Coordinates schema registry bootstrap and caching."""
 
+    # Dataset bootstrap map: dataset_name -> bootstrap function
+    # Bootstrap functions take (SchemaService instance, SchemaRegistry) and register schemas
+    _dataset_bootstrap_map: Dict[str, Any] = {}
+
     def __init__(self, dataset_name: str):
         self.dataset_name = dataset_name
         self._rvu_bootstrapped = False
@@ -70,6 +74,19 @@ class SchemaService:
             registered=registered,
             total=len(schemas),
         )
+
+    @classmethod
+    def get_bootstrapper(cls, dataset_name: str) -> Optional[Any]:
+        """
+        Get the bootstrap function for a dataset, if registered.
+        
+        Args:
+            dataset_name: Name of the dataset (e.g., "cms_rvu", "cms_mpfs")
+            
+        Returns:
+            Bootstrap function that takes (SchemaService instance, SchemaRegistry), or None if not registered
+        """
+        return cls._dataset_bootstrap_map.get(dataset_name)
 
     @staticmethod
     def get_contract(registry: Any, schema_name: str) -> Optional[Any]:
@@ -463,3 +480,15 @@ class SchemaService:
             anescf_schema,
             localitycounty_schema,
         ]
+
+
+# Register dataset bootstrap functions
+# Bootstrap functions take (SchemaService instance, SchemaRegistry) and register schemas
+def _bootstrap_rvu_wrapper(service: SchemaService, registry: Any) -> None:
+    """Wrapper to call bootstrap_rvu_schemas from the bootstrap map."""
+    service.bootstrap_rvu_schemas(registry)
+
+
+# Register RVU bootstrap
+SchemaService._dataset_bootstrap_map["cms_rvu"] = _bootstrap_rvu_wrapper
+SchemaService._dataset_bootstrap_map["rvu"] = _bootstrap_rvu_wrapper

@@ -94,6 +94,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **ServiceFactory Test Coverage** – Comprehensive test suite for ServiceFactory lazy initialization, eager initialization, singleton behavior, dependency wiring, and NotImplementedError pathways (20 unit tests + 18 integration/smoke tests)
+- **Schema Bootstrap Dataset-Awareness** – Keyed bootstrap map in `SchemaService` allows dataset-specific schema registration. RVU bootstrap registered; MPFS/OPPS/ZIP9 can register their own bootstrappers when they migrate
+
+### Fixed
+- **Schema Bootstrap Hard-Coding** – Removed hard-coded `bootstrap_rvu_schemas()` call in `ServiceFactory.initialize_all()`. Non-RVU datasets no longer trigger RVU bootstrap incorrectly
+
+### Changed
+- **Documentation Corrections** – Updated Phase 3 plan Step 4 status from "Completed" to "In Progress" to reflect actual migration state (only RVU migrated, MPFS/OPPS/ZIP9 pending). Clarified migration status in INGESTION_GUIDE.md
+
 ### Added - 2025-02-14
 
 - **Phase 2 Documentation Refresh Complete** - Comprehensive documentation updates for RVUIngestor refactoring

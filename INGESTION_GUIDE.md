@@ -78,6 +78,108 @@ python scripts/ingest_all.py --schedule --dataset MPFS --year 2025
 | ASP | Quarterly | Q1-Q4 | ASPIngester | 🔄 To Create |
 | NADAC | Weekly | Weekly | NADACIngester | 🔄 To Create |
 
+## 🔧 **Shared Services Architecture (ServiceFactory)**
+
+The ingestion system uses a centralized `ServiceFactory` to provide shared services (validation, observability, quarantine, reference data, schema registry) to all DIS ingestors. This eliminates duplication and ensures consistent service configuration.
+
+**Current Migration Status:**
+- ✅ **RVU ingestor** uses ServiceFactory (reference implementation)
+- ⏳ **MPFS, OPPS, ZIP9 ingestors** pending migration to ServiceFactory
+
+### ServiceFactory Usage Pattern
+
+All DIS ingestors should use `ServiceFactory` to access shared services:
+
+```python
+from cms_pricing.ingestion.services import ServiceFactory, ServiceConfig
+
+class MyIngestor(BaseDISIngestor):
+    def __init__(self, output_dir: str, db_session=None):
+        super().__init__(output_dir, db_session)
+        
+        # Configure shared services
+        service_config = ServiceConfig(
+            output_dir=output_dir,
+            dataset_name="my_dataset",
+            enable_observability=True,
+            enable_quarantine=True,
+            enable_reference_data=True,
+            enable_validation=True,
+            enable_schema_registry=True,
+            lazy_init=True,  # Services created on first access
+            db_session=db_session
+        )
+        
+        # Create service factory
+        self.services = ServiceFactory(service_config)
+        
+        # Access services via factory (lazy initialization)
+        # self.services.observability_collector
+        # self.services.validation_service
+        # self.services.quarantine_manager
+        # self.services.reference_data_manager
+        # self.services.schema_registry
+```
+
+### ServiceConfig Options
+
+- `output_dir`: Base output directory for ingestion artifacts
+- `dataset_name`: Name of the dataset (e.g., "cms_rvu", "cms_mpfs")
+- `enable_observability`: Enable observability collection (default: True)
+- `enable_quarantine`: Enable quarantine management (default: True)
+- `enable_reference_data`: Enable reference data management (default: True)
+- `enable_validation`: Enable validation engine (default: True)
+- `enable_schema_registry`: Enable schema registry (default: True)
+- `lazy_init`: Lazy-load services on first access (default: True)
+- `db_session`: Optional database session for services that need DB access
+
+### Lazy vs Eager Initialization
+
+**Lazy Initialization (default):**
+- Services are created only when first accessed
+- Reduces startup time and memory usage
+- Recommended for most use cases
+
+```python
+service_config = ServiceConfig(..., lazy_init=True)
+factory = ServiceFactory(service_config)
+# Services not created yet
+
+collector = factory.observability_collector  # Created on first access
+```
+
+**Eager Initialization:**
+- All enabled services created immediately
+- Useful when you know all services will be needed
+
+```python
+service_config = ServiceConfig(..., lazy_init=False)
+factory = ServiceFactory(service_config)
+# All services created immediately
+```
+
+### Guardrails
+
+1. **Consistent Factory Surface Area**: Services are accessed via stable property names (`self.services.validation_service`, `self.services.observability_collector`, etc.)
+
+2. **Single-Point Schema Bootstrap**: Schema registration happens once via `schema_service.bootstrap_*_schemas()` to avoid duplicate registration
+
+3. **Lazy Initialization**: Services are created only when accessed unless `lazy_init=False`
+
+4. **NotImplementedError Guardrails**: Disabled services raise descriptive `NotImplementedError` with fix guidance:
+   ```python
+   config = ServiceConfig(enable_validation=False, ...)
+   factory = ServiceFactory(config)
+   try:
+       _ = factory.validation_engine
+   except NotImplementedError as e:
+       # Error message: "Validation engine is disabled in ServiceConfig. Set enable_validation=True to use this service."
+   ```
+
+### Example: RVU Ingestor
+
+See `cms_pricing/ingestion/ingestors/rvu_ingestor.py` for a complete example of ServiceFactory integration.
+
 ## 🏗️ **Creating New Ingesters**
 
 ### Step 1: Create the Ingester Class

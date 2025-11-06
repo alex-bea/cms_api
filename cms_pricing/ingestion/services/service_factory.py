@@ -237,8 +237,15 @@ class ServiceFactory:
         if self.config.enable_schema_registry:
             registry = self.schema_registry
             service = self.schema_service
-            # Service method is idempotent; safe to call during eager init
-            service.bootstrap_rvu_schemas(registry)
+            # Look up dataset-specific bootstrap function
+            bootstrapper = service.get_bootstrapper(self.config.dataset_name)
+            if bootstrapper:
+                bootstrapper(service, registry)
+            else:
+                logger.debug(
+                    "No schema bootstrapper registered for dataset",
+                    dataset=self.config.dataset_name
+                )
 
         self._initialized = True
         logger.info("All services initialized", dataset=self.config.dataset_name)
