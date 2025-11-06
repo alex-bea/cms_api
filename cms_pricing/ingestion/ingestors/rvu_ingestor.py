@@ -16,7 +16,7 @@ import json
 import re
 import uuid
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable, Awaitable, Tuple, TYPE_CHECKING
 import httpx
@@ -43,6 +43,8 @@ from ..docs.guidance_summary import (
 from ..datasets.rvu_loaders import load_rvu_dataframes
 from ..datasets.rvu_adapter import adapt_rvu_raw_data
 from ..datasets.rvu_spec import RVU_DATASETS, route_file_to_rvu_spec
+from ...services.dataset_snapshot_service import DatasetSnapshotService
+from cms_pricing.database import SessionLocal
 
 # Import stage modules for orchestration
 from ..stages import (
@@ -152,6 +154,15 @@ class RVUIngestor(BaseDISIngestor):
         self.scraper = scraper or CMSRVUScraper(str(scraped_dir))
         self.historical_manager = historical_manager or HistoricalDataManager(str(historical_dir))
         
+        # Snapshot service handles dataset provenance registration
+        self._snapshot_service_managed_session = False
+        if db_session is not None:
+            self.snapshot_service = DatasetSnapshotService(db_session)
+        else:
+            session = SessionLocal()
+            self._snapshot_service_managed_session = True
+            self.snapshot_service = DatasetSnapshotService(session)
+        
         # Initialize shared services via factory (lazy initialization)
         service_config = ServiceConfig(
             output_dir=output_dir,
@@ -195,6 +206,15 @@ class RVUIngestor(BaseDISIngestor):
         # Initialize metadata tracking
         self.current_release_id: Optional[str] = None
         self.schema_drift_config: Dict[str, Any] = {"enabled": False}
+
+    def __del__(self):
+        if getattr(self, "_snapshot_service_managed_session", False):
+            snapshot_service = getattr(self, "snapshot_service", None)
+            if snapshot_service is not None:
+                try:
+                    snapshot_service.close()
+                except Exception:
+                    pass
     # ------------------------------------------------------------------
     # Compatibility helpers
     # ------------------------------------------------------------------
@@ -998,6 +1018,21 @@ class RVUIngestor(BaseDISIngestor):
                     "anes_cfs": result["curated_tables"].get("anescf"),
                     "locality_counties": result["curated_tables"].get("localitycounty")
                 })
+
+            if result.get("status") == "success":
+                try:
+                    self._register_dataset_snapshots(
+                        publish_result=result,
+                        release_id=release_id,
+                        vintage_date=vintage_date
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Snapshot registration failed",
+                        error=str(e),
+                        release_id=release_id,
+                        batch_id=batch_id
+                    )
             
             return result
             
@@ -1065,6 +1100,76 @@ class RVUIngestor(BaseDISIngestor):
             logger.error("Failed to collect observability metrics", error=str(e))
         
         return pipeline_result
+    
+    def _register_dataset_snapshots(
+        self,
+        publish_result: Dict[str, Any],
+        release_id: str,
+        vintage_date: str
+    ) -> None:
+        """Register curated RVU datasets in the snapshot registry."""
+        snapshot_service = getattr(self, "snapshot_service", None)
+        if snapshot_service is None:
+            logger.warning("Snapshot service unavailable; skipping snapshot registration")
+            return
+
+        curated_tables = publish_result.get("curated_tables") or {}
+        if not curated_tables:
+            logger.warning("No curated tables present in publish result; skipping snapshot registration")
+            return
+
+        manifest_path = publish_result.get("export_artifacts", {}).get("manifest")
+        manifest_path = manifest_path or publish_result.get("manifest_path")
+
+        try:
+            effective_from = date.fromisoformat(vintage_date)
+        except ValueError:
+            effective_from = datetime.utcnow().date()
+
+        dataset_paths = {
+            "rvu_items": curated_tables.get("pprrvu"),
+            "gpci_indices": curated_tables.get("gpci"),
+            "anescf": curated_tables.get("anescf"),
+            "localitycounty": curated_tables.get("localitycounty"),
+            "oppscap": curated_tables.get("oppscap"),
+        }
+
+        for dataset_id, parquet_path in dataset_paths.items():
+            if not parquet_path:
+                continue
+            path_obj = Path(parquet_path)
+            if not path_obj.exists():
+                logger.warning(
+                    "Curated parquet missing for snapshot registration",
+                    dataset_id=dataset_id,
+                    path=str(path_obj)
+                )
+                continue
+
+            digest = self._calculate_file_digest(path_obj)
+            snapshot_service.register_snapshot(
+                dataset_id=dataset_id,
+                release_id=release_id,
+                digest=digest,
+                effective_from=effective_from,
+                manifest_url=manifest_path,
+                curated_path=str(path_obj)
+            )
+            logger.info(
+                "Registered dataset snapshot",
+                dataset_id=dataset_id,
+                release_id=release_id,
+                effective_from=effective_from
+            )
+
+    @staticmethod
+    def _calculate_file_digest(parquet_path: Path) -> str:
+        """Return SHA256 digest for the given parquet file."""
+        hasher = hashlib.sha256()
+        with parquet_path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                hasher.update(chunk)
+        return hasher.hexdigest()
     
     async def _collect_observability_metrics(self, release_id: str, batch_id: str, pipeline_result: Dict[str, Any]):
         """Collect 5-pillar observability metrics for the ingestion run"""
