@@ -33,6 +33,10 @@ Provide an operational playbook for running and monitoring the Medicare Physicia
 
 ### 1.2 Snapshot Availability
 
+**Note:** The RVU ingestor (`cms_pricing/ingestion/ingestors/rvu_ingestor.py`) now automatically registers snapshots for all curated datasets (`rvu_items`, `gpci_indices`, `anescf`, `localitycounty`, `oppscap`) during the publish stage. Each successful RVU ingestion run will populate the `dataset_snapshots` table with SHA256 digests, effective dates, and manifest links, enabling MPFS and other downstream consumers to automatically discover and use RVU snapshots without manual intervention.
+
+Verify that RVU snapshots are available before running MPFS ingestion:
+
 ```bash
 python - <<'PY'
 from cms_pricing.database import SessionLocal
@@ -49,30 +53,78 @@ session.close()
 PY
 ```
 
-### 1.3 Conversion Factor Override Configuration (If Needed)
+### 1.3 Conversion Factor Override Configuration
 
-1. Preferred approach (planned): populate `config/ingestors/mpfs/cf_overrides/{release_id}.yaml`.
-2. Interim approach (until config service lands): pass CLI args `--cf-override-path` / `--cf-expected-checksum` when invoking helper script (see §3.2).
-3. Ensure override files are stored under `data/ingestion/mpfs/manual_overrides/` with restricted permissions.
+**YAML Config Service (Primary Method - Once Production-Ready)**
+
+The MPFS config service (`cms_pricing/ingestion/services/mpfs_config_service.py`) supports per-release YAML configuration files for conversion factor overrides.
+
+**Location**: `cf_overrides/{release_id}.yaml`
+
+**YAML Schema**:
+```yaml
+manual_override_path: "/path/to/cf_2025.xlsx"
+expected_checksum: "abc123def456..."
+```
+
+**Sample Config File** (`cf_overrides/mpfs_2025_D.yaml`):
+```yaml
+manual_override_path: "/data/ingestion/mpfs/manual_overrides/cf_2025_ar.xlsx"
+expected_checksum: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+```
+
+**Behavior**:
+- Config service checks for YAML file matching `{release_id}.yaml` in `cf_overrides/` directory
+- If YAML exists and is valid, overrides are applied
+- If YAML missing or malformed, falls back to CLI flags (see below)
+- Config is cached in-memory for process lifetime (restart required for updates)
+
+**CLI Flags (Fallback Until YAML Service Production-Ready)**
+
+**IMPORTANT**: CLI flags remain the primary/fallback mechanism until YAML service is live and production-ready. Once YAML service is stable, CLI flags become override/emergency only.
+
+To use CLI flags, pass arguments when invoking the ingestion script:
+```bash
+python scripts/run_mpfs_ingestion.py \
+  --cf-override-path /path/to/cf_2025.xlsx \
+  --cf-expected-checksum abc123def456
+```
+
+**Migration Path**:
+1. **Current State**: CLI flags are primary method
+2. **After YAML Service Lands**: YAML config becomes primary, CLI flags become override/emergency only
+3. **Recommended**: Store override files under `data/ingestion/mpfs/manual_overrides/` with restricted permissions
+
+**Error Handling**:
+- Missing YAML → WARN logged, fallback to CLI flags
+- Malformed YAML → Error raised with file path and line number, fallback to CLI flags
+- Invalid override path → FileNotFoundError raised with clear message
 
 ---
 
 ## 2. ConversionFactorFetcher Primer
 
-The ingestor downloads annual conversion factor artifacts on demand using `ConversionFactorFetcher`.
+The ingestor downloads annual conversion factor artifacts on demand using `ConversionFactorFetcher`. Override configuration is managed via YAML config service (primary) or CLI flags (fallback).
+
+**Configuration Priority**:
+1. **YAML Config Service** (if `cf_overrides/{release_id}.yaml` exists and is valid)
+2. **CLI Flags** (fallback until YAML service is production-ready)
 
 | Scenario | Behaviour | Operator Actions |
 |----------|-----------|------------------|
 | Cached file exists | Fetcher reuses artifact under `data/ingestion/mpfs/raw/{year}/`. Warns if checksum mismatch vs expected. | None (confirm log line `Reusing cached conversion factor artefact`). |
 | No cache | Async download via `httpx`. Saves to year directory, computes SHA256, records manifest metadata. | Ensure outbound network path is allowed. |
-| Manual override provided | Fetcher reads override path, hashes content, records `file://` source. | Maintain override file, include release_id in filename, update override config/CLI args. |
-| Checksum mismatch | Raises `ValueError` unless `warn_only=True` triggered by cache reuse. | Replace artifact or update expected checksum. |
+| YAML config override | Config service loads `cf_overrides/{release_id}.yaml`, fetcher uses `manual_override_path` and `expected_checksum` from config. | Create/update YAML config file for release. |
+| CLI flag override | Fetcher reads override path from CLI args, hashes content, records `file://` source. | Pass `--cf-override-path` and `--cf-expected-checksum` flags. |
+| Checksum mismatch | Raises `ValueError` unless `warn_only=True` triggered by cache reuse. | Replace artifact or update expected checksum in config/CLI. |
 
 **Operator Notes**
 
 - Logs appear with context `{url, target}` for downloads; tail ingestion logs to monitor progress.
 - Async fetch occurs during **Land stage**. Expect one download attempt per run.
-- For mid-year CF adjustments, supply override file + checksum and update config PR before executing.
+- For mid-year CF adjustments, supply override file + checksum and update YAML config (or CLI flags as fallback) before executing.
+- Config service logs: `Using YAML config override for conversion factor` when YAML config is used.
+- Config service logs: `Config service error, falling back to CLI flags` when YAML config is missing or invalid.
 
 ---
 
@@ -139,7 +191,43 @@ Expected datasets:
 - `mpfs_locality`
 - `mpfs_link_keys`
 
-### 4.2 Payment Sanity Check
+### 4.2 Snapshot Verification
+
+```bash
+python - <<'PY'
+from cms_pricing.database import SessionLocal
+from cms_pricing.services.dataset_snapshot_service import DatasetSnapshotService
+
+session = SessionLocal()
+svc = DatasetSnapshotService(session)
+
+datasets = (
+    "mpfs_payment_curated",
+    "mpfs_rvu",
+    "mpfs_gpci",
+    "mpfs_cf_vintage",
+    "mpfs_indicators_all",
+    "mpfs_locality",
+    "mpfs_link_keys",
+)
+
+missing = False
+for dataset in datasets:
+    snap = svc.get_latest_snapshot(dataset)
+    if not snap:
+        print(f"❌ Snapshot missing: {dataset}")
+        missing = True
+    else:
+        print(f"✅ {dataset}: {snap.release_id} ({snap.effective_from} – {snap.effective_to})")
+
+session.close()
+
+if missing:
+    raise SystemExit("Snapshot verification failed")
+PY
+```
+
+### 4.3 Payment Spot Check
 
 ```bash
 python - <<'PY'
@@ -153,7 +241,7 @@ PY "$MANIFEST"
 
 Optional: compare against PFREV sample (stored in `tests/fixtures/mpfs/pfrev_sample.json` when available).
 
-### 4.3 API Contract Check
+### 4.4 API Contract Check
 
 After publish completes and data is registered:
 ```bash
