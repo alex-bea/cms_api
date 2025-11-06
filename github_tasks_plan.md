@@ -280,6 +280,42 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 ---
 
+### Task 68: Add Docker Smoke Test to CI Workflow
+
+**Category:** DevOps  
+**Priority:** Medium  
+**Estimated Time:** 0.5 day  
+**Labels:** devops, testing, automation  
+**Status:** ✅ COMPLETE
+
+**Context:** The Build-Only workflow now pushes the production image to GHCR but does not perform a runtime validation. Adding an automated smoke test ensures the image boots and the `/health` endpoint responds before artifacts are published.
+
+**Detailed Steps:**
+1. Extend `.github/workflows/build-only.yml` (or deployment workflow) with a post-build step guarded to run for the production target: `docker run --rm -e PORT=8080 -p 8080:8080 <image> ...`.
+2. Poll `/health` (and optionally `/readyz`) using `curl --retry` inside the workflow to verify a 200 response, then stop the container.
+3. Capture container logs on failure to aid debugging and mark the job failed if the smoke test does not succeed.
+4. Document the smoke test behavior in the release checklist (`RUN-render-deployment-prd-v1.0.md`).
+
+---
+
+### Task 69: Integrate Container Vulnerability Scanning
+
+**Category:** Security  
+**Priority:** Medium  
+**Estimated Time:** 1 day  
+**Labels:** security, devops, automation  
+**Status:** ✅ COMPLETE
+
+**Context:** With the production image now published to GHCR, we need an automated vulnerability scan (Trivy/Grype) to gate releases and surface CVEs aligned with security governance.
+
+**Detailed Steps:**
+1. Add a step to the build workflow (production target only) that pulls the freshly built image and runs `aquasecurity/trivy-action@v0` or `anchore/scan-action@v4`.
+2. Configure the scanner to fail on High/Critical findings, uploading SARIF output for GitHub code scanning alerts.
+3. Store scan reports as workflow artifacts and notify the security channel if issues exceed thresholds.
+4. Update `RUN-render-deployment-prd-v1.0.md` with instructions for handling scan failures and remediations.
+
+---
+
 ### Task 68: Repair Async DB Connector URL
 
 **Category:** Database  
