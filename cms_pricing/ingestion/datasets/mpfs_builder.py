@@ -7,6 +7,9 @@ from datetime import date
 from typing import Dict, Iterable, Optional, Sequence
 
 import pandas as pd
+import structlog
+
+logger = structlog.get_logger()
 
 
 @dataclass
@@ -360,6 +363,32 @@ def normalize_conversion_factor(df: pd.DataFrame, year: int, release_id: str) ->
     normalized["cf_type"] = normalized["cf_type"].astype(str).str.strip().str.lower()
     normalized["release_id"] = release_id
 
+    # Detect extra numeric columns that are not being used (WARN logging for governance)
+    # MVP scope is physician-factor only; extra columns (e.g., anesthesia_cf, midyear_cf) are detected but unused
+    expected_columns = {"year", "cf_type", "cf_value", "effective_start", "effective_end", "release_id"}
+    all_numeric_cols = [col for col in normalized.columns if normalized[col].dtype.kind in {"i", "u", "f"}]
+    extra_numeric_cols = [
+        col for col in all_numeric_cols 
+        if col not in expected_columns and col != "cf_value"
+    ]
+    
+    # Also check for non-numeric columns that might represent additional CF types
+    extra_cols = [col for col in normalized.columns if col not in expected_columns]
+    
+    if extra_numeric_cols or (extra_cols and any("anesthesia" in str(col).lower() or "midyear" in str(col).lower() for col in extra_cols)):
+        all_extra_cols = list(set(extra_numeric_cols + extra_cols))
+        logger.warning(
+            "Additional CF columns present but unused",
+            release_id=release_id,
+            extra_columns=all_extra_cols,
+            message=(
+                "Additional CF columns detected but not persisted. "
+                "MVP scope is physician-factor only. "
+                "To extend functionality (e.g., anesthesia CF, midyear adjustments), "
+                "update governance approval and extend builder logic."
+            )
+        )
+
     ordered_columns = [
         "year",
         "cf_type",
@@ -369,7 +398,12 @@ def normalize_conversion_factor(df: pd.DataFrame, year: int, release_id: str) ->
         "release_id",
     ]
 
-    return normalized[ordered_columns].drop_duplicates().reset_index(drop=True)
+    # Filter to physician factor only (MVP scope)
+    result = normalized[ordered_columns].copy()
+    if "cf_type" in result.columns:
+        result = result[result["cf_type"] == "physician"].copy()
+    
+    return result.drop_duplicates().reset_index(drop=True)
 
 
 def build_curated_views(

@@ -69,6 +69,7 @@ from ..enrichers.dis_reference_data_integration import (
 )
 from ...services.dataset_snapshot_service import DatasetSnapshotService, SnapshotMetadata
 from ..services.conversion_factor_fetcher import ConversionFactorFetcher
+from ..services.mpfs_config_service import MPFSConfigService
 from ..datasets.mpfs_builder import (
     MPFSNormalizedInputs,
     build_curated_views,
@@ -87,6 +88,7 @@ class MPFSIngestor(BaseDISIngestor):
         db_session: Any = None,
         snapshot_service: Optional[DatasetSnapshotService] = None,
         cf_fetcher: Optional[ConversionFactorFetcher] = None,
+        config_service: Optional[MPFSConfigService] = None,
     ):
         super().__init__(output_dir, db_session)
 
@@ -103,6 +105,8 @@ class MPFSIngestor(BaseDISIngestor):
                 self.snapshot_service = DatasetSnapshotService(session)
 
         self.cf_fetcher = cf_fetcher or ConversionFactorFetcher(str(Path(self.output_dir) / "raw"))
+        # Config service is optional - CLI flags remain fallback until YAML service is production-ready
+        self.config_service = config_service or MPFSConfigService()
 
         self.historical_manager = HistoricalDataManager(str(Path(self.output_dir) / "historical"))
         self.schema_registry = schema_registry
@@ -314,21 +318,64 @@ class MPFSIngestor(BaseDISIngestor):
             metadata=metadata,
         )
 
-    def _conversion_factor_source_file(self, year: int) -> SourceFile:
-        """Create SourceFile describing conversion factor artefact for the year."""
+    def _conversion_factor_source_file(self, year: int, release_id: Optional[str] = None) -> SourceFile:
+        """Create SourceFile describing conversion factor artefact for the year.
+        
+        Checks config service for YAML overrides first, then falls back to CLI flags.
+        CLI flags remain the primary/fallback mechanism until YAML service is production-ready.
+        """
         source_url = self._conversion_factor_url(year)
         filename = Path(urlparse(source_url).path).name or f"conversion_factor_{year}.zip"
+
+        metadata = {
+            "dataset_id": "mpfs_cf",
+            "year": year,
+            "source_url": source_url,
+            "ingestion_mode": "conversion_factor",
+        }
+
+        # Check config service for overrides. Prefer the MPFS release ID, fall back to RVU release ID
+        # Config service takes precedence, but CLI flags remain fallback
+        release_candidates = []
+        if self.current_release_id:
+            release_candidates.append(self.current_release_id)
+        if release_id and release_id not in release_candidates:
+            release_candidates.append(release_id)
+
+        for candidate_release_id in release_candidates:
+            try:
+                config_overrides = self.config_service.get_cf_overrides(candidate_release_id)
+                if not config_overrides:
+                    continue
+
+                if config_overrides.get("manual_override_path"):
+                    metadata["manual_override_path"] = config_overrides["manual_override_path"]
+                    logger.info(
+                        "Using YAML config override for conversion factor",
+                        release_id=candidate_release_id,
+                        override_path=config_overrides["manual_override_path"],
+                    )
+                if config_overrides.get("expected_checksum"):
+                    metadata["expected_checksum"] = config_overrides["expected_checksum"]
+
+                # Once overrides applied for a candidate, stop searching
+                break
+            except (ValueError, FileNotFoundError) as e:
+                # Malformed YAML or invalid path - log warning but continue with CLI fallback/additional candidates
+                logger.warning(
+                    "Config service error, falling back to next override candidate or CLI flags",
+                    release_id=candidate_release_id,
+                    error=str(e),
+                )
+
+        # CLI flags can still override via metadata if provided externally
+        # This maintains backward compatibility until YAML service is production-ready
 
         return SourceFile(
             url=source_url,
             filename=filename,
             content_type=self._infer_content_type(filename),
-            metadata={
-                "dataset_id": "mpfs_cf",
-                "year": year,
-                "source_url": source_url,
-                "ingestion_mode": "conversion_factor",
-            },
+            metadata=metadata,
         )
 
     @staticmethod
@@ -366,7 +413,9 @@ class MPFSIngestor(BaseDISIngestor):
         snapshot_files.append(self._snapshot_source_file(gpci_snapshot))
 
         current_year = datetime.now().year
-        cf_source = self._conversion_factor_source_file(current_year)
+        # Determine release_id from RVU snapshot for config service lookup
+        release_id = rvu_snapshot.release_id if rvu_snapshot else None
+        cf_source = self._conversion_factor_source_file(current_year, release_id=release_id)
 
         source_files = snapshot_files + [cf_source]
 
