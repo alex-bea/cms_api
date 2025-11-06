@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   build:
@@ -30,16 +31,90 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build workflow image (no push)
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,enable=true,prefix=${{ matrix.target }}-
+            type=raw,value=production-latest,enable=${{ matrix.target == 'production' }}
+
+      - name: Log in to GHCR
+        if: matrix.target == 'production'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine primary image tag
+        if: matrix.target == 'production'
+        id: image
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          TAG=$(echo "$IMAGE_TAGS" | head -n 1)
+          echo "Primary tag determined: $TAG"
+          echo "primary_tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build workflow image
         uses: docker/build-push-action@v6
         with:
           context: .
           target: ${{ matrix.target }}
-          push: false
-          load: true
-          tags: ghcr.io/${{ github.repository }}:${{ matrix.target }}-${{ github.sha }}
+          push: ${{ matrix.target == 'production' }}
+          load: ${{ matrix.target != 'production' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+
+      - name: Smoke test production image
+        if: matrix.target == 'production'
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.primary_tag }}
+        run: |
+          set -euo pipefail
+          TAG="$IMAGE_TAG"
+          echo "Using image tag: $TAG"
+          docker pull "$TAG"
+          docker run -d --rm --name cms-api-smoke -e PORT=8080 -p 18080:8080 "$TAG"
+          trap 'STATUS=$?; docker logs cms-api-smoke || true; docker stop cms-api-smoke || true; exit $STATUS' EXIT
+
+          for attempt in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:18080/health > /dev/null; then
+              echo "Health endpoint responded successfully on attempt $attempt."
+              break
+            fi
+            echo "Health endpoint not ready yet (attempt $attempt). Retrying..."
+            sleep 3
+            if [ "$attempt" -eq 20 ]; then
+              echo "Health endpoint did not respond after 20 attempts."
+              exit 1
+            fi
+          done
+
+          docker stop cms-api-smoke
+          trap - EXIT
+          echo "✅ Smoke test succeeded for $TAG."
+
+      - name: Scan production image for vulnerabilities
+        if: matrix.target == 'production'
+        uses: aquasecurity/trivy-action@v0
+        with:
+          image-ref: ${{ steps.image.outputs.primary_tag }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-results.sarif
+
+      - name: Upload Trivy scan results
+        if: matrix.target == 'production'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
 
       - name: Show resulting images
         run: |
@@ -47,5 +122,5 @@ jobs:
 
       - name: Print success note
         run: |
-          echo "✅ Build-only workflow completed for target '${{ matrix.target }}' (no deploy)."
+          echo "✅ Build-only workflow completed for target '${{ matrix.target }}'."
 
