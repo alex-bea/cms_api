@@ -189,7 +189,7 @@ def _build_test_environment(
     base_rvu_df: Optional[pd.DataFrame] = None,
 ) -> Dict[str, Any]:
     """Helper to construct a test environment with optional manual CF override."""
-    rvu_df = base_rvu_df or _sample_rvu_df()
+    rvu_df = base_rvu_df if base_rvu_df is not None else _sample_rvu_df()
     gpci_df = _sample_gpci_df()
 
     def _write_snapshot(
