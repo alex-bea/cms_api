@@ -70,12 +70,17 @@ The plan is structured around four mutually exclusive and collectively exhaustiv
   - ✅ **COMPLETE:** Update MPFS and OPPS publishers to populate new provenance fields and enforce natural keys (HCPCS, locality, effective date). (Phase 2.4 - Updated `load_data.py`, `rvu_ingestor.py`, `opps_ingestor.py`)
   - Extend OPPS ingestion to persist wage index table with NK constraints; add facility-specific joins in engines (`cms_pricing/engines/opps.py`).
   - Produce retention/backfill playbook covering re-runs, digest reconciliation, and abort criteria.
+- **Snapshot publication**
+  - ✅ **COMPLETE:** RVU ingestor registers curated snapshots (`rvu_items`, `gpci_indices`, locality, anescf, oppscap) during publish stage; runbook updated with verification steps.
+  - ✅ **COMPLETE:** MPFS ingestor registers curated payment snapshots (`mpfs_payment_curated`, `mpfs_rvu`, `mpfs_gpci`, `mpfs_cf_vintage`, `mpfs_indicators_all`, `mpfs_locality`, `mpfs_link_keys`) with SHA256 digests for provenance.
+  - Capture post-run evidence: RVU & MPFS snapshot check output, manifest path, curated row counts.
 - **Snapshot selection & response provenance**
   - ✅ **COMPLETE:** Centralize snapshot selection in `cms_pricing/services/pricing.py` with deterministic fallbacks and alert hooks. (Quick Win #1 - `DatasetSnapshotService.select_snapshot()`, integrated into `PricingService._collect_datasets_used()`)
   - ✅ **COMPLETE:** Ensure `datasets_used` accumulates `dataset_id`, `release_id`, `dataset_digest`, `effective_from`, `effective_to` for every engine response. (Phase 2.6 - `_collect_datasets_used()` queries `DatasetSnapshot` table, falls back to extracting from `trace_refs`)
   - Add synthetic publish integration test: publish fixture manifests → run `/pricing/price` calls → verify cents + provenance metadata.
 - **Quality safeguards**
   - ✅ **COMPLETE:** Extend unit tests for locality and quarter selection (MPFS, OPPS, ASC). (Phase 2.7 - Golden tests updated with provenance validation)
+  - ✅ **COMPLETE:** MPFS ingestion contract tests verify `/pricing/price` endpoint includes `datasets_used` with `mpfs_cf`, `mpfs_rvu`, `mpfs_gpci` provenance metadata. (Phase 6.3 - Contract tests in `tests/api/test_golden.py` and `tests/services/test_pricing_provenance.py`)
   - Add wage index coverage test verifying indexed and non-indexed states.
   - Instrument checksum verification and failure alerts during ingestion jobs.
 - **Quick Win #1: Dataset Snapshots Table (Complete)**
@@ -181,7 +186,7 @@ The plan is structured around four mutually exclusive and collectively exhaustiv
 ---
 
 ## 9. Rollout Sequence & Evidence
-1. **Data Quality & Provenance gate** — migrations merged, backfills executed, synthetic publish + provenance tests green, retention runbook signed.
+1. **Data Quality & Provenance gate** — migrations merged, backfills executed, synthetic publish + provenance tests green, retention runbook signed, RVU + MPFS production ingest evidence (manifests, snapshot checks, curated row counts) archived.
 2. **API Contract & Clients gate** — dual-write telemetry clean, contract tests green, client enablement package delivered, OpenAPI version tagged.
 3. **Access & Compliance gate** — RBAC enforced in staging, failed-auth tests recorded, compliance BOM + tabletop results approved.
 4. **Operability & Support gate** — load-test SLOs met, dashboards live with alerts, on-call training recorded, runbooks published.
