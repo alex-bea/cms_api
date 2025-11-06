@@ -24,10 +24,12 @@ A Python-based API that produces ZIP-level, episode-based treatment plan prices 
 
 ### Building Docker Images
 
-We publish two Docker targets:
+We publish two Docker build targets:
 
-- `production`: minimal runtime image (no build tools, smallest footprint)
-- `development`: includes dev/test tooling and the full source tree for hot reload
+| Target | Base requirements file | Purpose |
+|--------|------------------------|---------|
+| `production` | `requirements.prod.txt` | Minimal runtime image used in Render/CI deployments (no build toolchain). |
+| `development` | `requirements.dev.txt` layered on top of `production` | Full toolchain + source tree for local development and hot reload. |
 
 Build both images locally:
 
@@ -39,7 +41,17 @@ docker build --target production -t cms-api:prod .
 docker build --target development -t cms-api:dev .
 ```
 
-The production image installs dependencies from `requirements.prod.txt`, while development builds on top of it with `requirements-dev.txt`.
+> **Dependency flow:** The production target installs only `requirements.prod.txt`. The development target inherits from production and then installs `requirements-dev.txt` (which pins lint/test tooling).
+
+Running the development image with hot reload:
+
+```bash
+docker run --rm -it \
+  -v "$(pwd)":/app \
+  -p 8000:8000 \
+  cms-api:dev \
+  uvicorn cms_pricing.main:app --host 0.0.0.0 --port 8000 --reload
+```
 
 Run the production image manually:
 
