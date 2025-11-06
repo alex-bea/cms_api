@@ -50,7 +50,7 @@ cms_pricing/ingestion/services/
    - Replace direct instantiations with the service factory.  
    - Update references throughout the file (e.g., `self.services.validation_engine`).
 
-4. **Apply to Other Ingestors**  
+4. **Apply to Other Ingestors** — ✅ Completed (MPFS, OPPS, ZIP9 migrated to ServiceFactory)  
    - Update MPFS, OPPS, ZIP9, and any additional ingestors to use the same factory.  
    - Capture any dataset-specific overrides in their own modules or service extensions.
 
@@ -68,15 +68,15 @@ cms_pricing/ingestion/services/
 
 ## Detailed Completion Plan (Phase 3 Remaining Work)
 
-### Step 4 — Extend ServiceFactory to Remaining Ingestors
+### Step 4 — Extend ServiceFactory to Remaining Ingestors ✅ **COMPLETED**
 - **Targets:** `cms_pricing/ingestion/ingestors/{mpfs_ingestor.py, opps_ingestor.py, cms_zip9_ingester.py}` (plus any others still hand-wiring services).
 - **Tasks:**
-  1. Audit each ingestor’s `__init__` for duplicated service construction (validation engines, quarantine managers, observability collectors, schema bootstrap).
-  2. Replace inline setups with `ServiceFactory(service_config)` usage mirroring RVU; ensure dataset-specific flags (e.g., disable reference data for ZIP9) are honoured via `ServiceConfig`.
-  3. Update stage calls (`self.land`, `self.validate`, etc.) to reference `self.services.*` instead of local attributes.
-  4. Run lightweight compile check (`python -m compileall cms_pricing/ingestion/ingestors/mpfs_ingestor.py` etc.) to catch missing references.
-- **Deliverable:** All ingestors rely on the shared factory; plan updated with completion notes.
-- **Estimated Time:** 1.5–2 hours (per ingestor updates + sanity passes).
+  1. ✅ Audit each ingestor's `__init__` for duplicated service construction (validation engines, quarantine managers, observability collectors, schema bootstrap).
+  2. ✅ Replace inline setups with `ServiceFactory(service_config)` usage mirroring RVU; ensure dataset-specific flags (e.g., disable reference data for ZIP9) are honoured via `ServiceConfig`.
+  3. ✅ Update stage calls (`self.land`, `self.validate`, etc.) to reference `self.services.*` instead of local attributes.
+  4. ✅ Run lightweight compile check (`python -m compileall cms_pricing/ingestion/ingestors/mpfs_ingestor.py` etc.) to catch missing references.
+- **Deliverable:** ✅ All ingestors rely on the shared factory; plan updated with completion notes.
+- **Estimated Time:** 1.5–2 hours (per ingestor updates + sanity passes). **Actual:** Completed successfully.
 
 ### Step 5 — Test Coverage & Documentation
 - **Unit Tests:** Add tests covering lazy initialization, repeated access, and failure paths inside `cms_pricing/ingestion/services/tests/` (or existing ingestion test suite). Mock config permutations to ensure toggles behave.
