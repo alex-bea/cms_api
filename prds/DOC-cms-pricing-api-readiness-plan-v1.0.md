@@ -74,6 +74,7 @@ The plan is structured around four mutually exclusive and collectively exhaustiv
   - ✅ **COMPLETE:** RVU ingestor registers curated snapshots (`rvu_items`, `gpci_indices`, locality, anescf, oppscap) during publish stage; runbook updated with verification steps.
   - ✅ **COMPLETE:** MPFS ingestor registers curated payment snapshots (`mpfs_payment_curated`, `mpfs_rvu`, `mpfs_gpci`, `mpfs_cf_vintage`, `mpfs_indicators_all`, `mpfs_locality`, `mpfs_link_keys`) with SHA256 digests for provenance.
   - Capture post-run evidence: RVU & MPFS snapshot check output, manifest path, curated row counts.
+  - 🔗 Latest OPPS sandbox evidence (`table_artifacts`, `file_checksums`, profile warnings) lives at `artifacts/opps_dry_runs/opps_2025q1_r01_20251107T205317.json`; reference this JSON in QA tickets to prove DIS metadata coverage without rerunning ingestion.
 - **Snapshot selection & response provenance**
   - ✅ **COMPLETE:** Centralize snapshot selection in `cms_pricing/services/pricing.py` with deterministic fallbacks and alert hooks. (Quick Win #1 - `DatasetSnapshotService.select_snapshot()`, integrated into `PricingService._collect_datasets_used()`)
   - ✅ **COMPLETE:** Ensure `datasets_used` accumulates `dataset_id`, `release_id`, `dataset_digest`, `effective_from`, `effective_to` for every engine response. (Phase 2.6 - `_collect_datasets_used()` queries `DatasetSnapshot` table, falls back to extracting from `trace_refs`)

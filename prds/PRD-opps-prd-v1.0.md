@@ -11,6 +11,12 @@ Overview
 
 Build a DIS-compliant ingester for CMS Hospital Outpatient Prospective Payment System (OPPS) quarterly releases, publishing: APC payment rates, HCPCS→APC mapping (Status Indicators), and an enriched curated view that applies the IPPS wage index via CCN→CBSA. Handles Q1–Q4 each year, retains full history and corrections, with 5-pillar observability and quarantine. Addendum A/B are the canonical quarterly snapshots; I/OCE and HCPCS updates provide validation context.  ￼
 
+### System Logic (CMS OPPS Context)
+
+The Hospital Outpatient Prospective Payment System (OPPS) determines hospital outpatient payments based on **Ambulatory Payment Classifications (APCs)**, **Status Indicators (SIs)**, and an annual **Conversion Factor (CF)**. Each HCPCS code is mapped to an APC in Addendum B, which carries a payment **Status Indicator** defining how (or if) the service is paid under OPPS (e.g., separately payable, packaged, or excluded).  
+The APC’s **Relative Weight** (from Addendum A) is multiplied by the **Conversion Factor** for that year and adjusted by the **geographic wage index** to yield the national payment rate.  
+The OPPS ingester captures all data necessary to reproduce or audit this calculation—Addenda A/B supply rates and mappings, the IPPS wage index supplies locality adjustments, and the annual Final Rule supplies the CF and policy baselines.
+
 Status: Draft for approval
 Owners: Platform/Data Eng (primary), Medicare SME (review)
 Consumers: Pricing engine, analytics, data science, ops
@@ -68,6 +74,16 @@ Non-Goals
 	•	Downstream premium/pricing product logic.
 	•	Non-CMS sources (e.g., commercial schedules, ASC addenda—unless explicitly added later).  ￼
 
+### Data Precedence & Policy Alignment
+
+In addition to quarterly ingestion, the OPPS ingester must recognize the **precedence hierarchy** established by CMS:
+
+1. **Annual Final Rule (Baseline):** Effective January 1 — defines the year’s APC weights, SIs, and Conversion Factor.  
+2. **Quarterly Addenda (A/B etc.):** Released April 1, July 1, October 1 — override the baseline for their effective periods.  
+3. **Ad-Hoc Corrections (e.g., Restated Drug/Device Rates):** Supersede both annual and quarterly data for their effective ranges.
+
+The ingestion pipeline must load data in this sequence (Annual → Quarterly → Corrections) and enforce temporal and precedence integrity to prevent payment drift.
+
 ⸻
 
 Scope & Assumptions
@@ -82,6 +98,15 @@ Assumptions
 	•	Environment provides DIS-compliant pipeline, allow-listed CMS domains (we will throttle and checksum; robots are not honored per business directive—see Risks).
 	•	Dependencies: schema registry, wage index reference, SI lookup (from rule appendices/I/OCE notes).  ￼
 
+**Expanded In-Scope Artifacts**
+
+- **Annual Final Rule Addenda (A, B, D1, E):** Establish the yearly APC, SI, and Conversion Factor baseline.  
+- **Quarterly Addenda (A/B):** Quarterly updates reflecting policy changes and pricing corrections for Q2–Q4.  
+- **Ad-Hoc Corrections (Restated Drug & Biologic Rates):** Irregular files that retroactively adjust prior periods.  
+- **Reference Sources:** I/OCE quarterly edit notes, HCPCS quarterly updates, annual IPPS wage index tables, and CPT licensing terms.
+
+🔧 **Configurable addenda coverage.** The OPPS ingestor loads the shared `cms_pricing/ingestion/config/ingestor_artifacts.yml` (dataset `opps`) to determine which addenda are required vs optional for each release type (baseline, quarterly, correction) and to recognize new artifacts (Addenda D1, E, Q). Sandboxed runs (enabled via `OPPS_LOCAL_SAMPLE_DIR`) downgrade missing required files to warnings so developers can exercise partial samples, while production runs remain strict.
+
 ⸻
 
 Data Sources
@@ -93,7 +118,9 @@ I/OCE Quarterly Release Files	Specs & edit notes	Quarterly	Code adds/deletes, SI
 HCPCS Quarterly Update	Official HCPCS code set updates	Quarterly	HCPCS, effective dates, descriptors	Validate existence/effective dating of HCPCS in B.  ￼
 IPPS Wage Index	Annual wage index tables	Annual	CBSA, CCN, wage index	Reference for enrichment rules.  ￼
 OPPS Program Page	Context on quarterly retro corrections	Quarterly	N/A	Confirms retro corrections cadence (e.g., ASP-based drugs).  ￼
-AMA CPT Licensing	Licensing terms for CPT content	Ad hoc	N/A	CPT® usage generally requires AMA license beyond CMS-program publications.  ￼
+AMA CPT Licensing	Licensing terms for CPT content	Ad hoc	N/A	CPT® usage generally requires AMA license beyond CMS-program publications.  
+Annual Final Rule Addenda (A, B, D1, E) | Baseline policy files setting APC/SI/CF/device offsets | Annual | APC, HCPCS, SI, CF, offsets | Effective Jan 1; baseline for year 2025+ releases
+Restated Drug & Biologic Rates | Ad-hoc corrections to prior quarters | Variable | HCPCS, Drug Rate Amount | Supersede earlier quarterly rates for overlapping periods￼
 
 
 ⸻
@@ -106,11 +133,25 @@ DIS Stages: Land → Validate → Normalize → Enrich → Publish
 	•	Land: Discover on OPPS Quarterly Addenda page; download A/B (and any ZIP/TXT); store with checksums & manifest (opps_YYYYqN_rNN).  ￼
 	•	Validate: Structural (presence, headers), schema (columns/types), domain (HCPCS/APC/SI patterns, ranges), cross-file checks (HCPCS existence, A↔B linkage), temporal windows. Use I/OCE notes for spot validations.  ￼
 	•	Normalize: Canonical schemas with effective_from (quarter start) and effective_to (day before next quarter).
+	- ### Release Sequencing & Precedence Control
+
+To maintain chronological integrity, the ingester enforces sequential loading order:
+
+| Precedence Rank | Source Type | Examples | Notes |
+|-----------------|--------------|-----------|-------|
+| **1** | Annual Final Rule (Baseline) | Addenda A/B/D1/E | Establish starting values for the calendar year |
+| **2** | Quarterly Addendum | April, July, October updates | Override baseline for their effective periods |
+| **3** | Ad-Hoc Correction | Restated drug/device rates | Supersede all prior data for their dates of service |
+
+Normalization assigns each record a `precedence_rank` and `update_type`. Batches are validated to ensure no later quarter is loaded before earlier ones and that a baseline exists for each year.  
+If a correction overlaps previous data, the ingester creates a new revision (e.g., `r99`) with `update_type='AdHoc_Correction'`.
 	•	Enrich: Join provider CCN → CBSA → wage index via reference tables; publish curated enriched view (denormalized view or materialization).  ￼
 	•	Publish: Parquet tables in /curated/opps/... + views (opps_rates_enriched, opps_hcpcs_crosswalk).
 
 Staging layout:
 /raw/opps/{opps_YYYYqN_rNN}/... → /stage/opps/{...} → /curated/opps/{...}
+
+
 
 ---
 ### Modular Architecture & Migration (Phase 2)
@@ -159,6 +200,20 @@ Core Tables
 	•	Keys: (fy, cbsa); attributes: wage index, occ-mix factors (as available).  ￼
 	4.	ref.si_lookup
 	•	Keys: status_indicator; attributes: human-readable label/description (sourced from rule appendices/I/OCE tables).  ￼
+	### Governance Metadata Extensions
+
+Each core table includes the following metadata fields to support time-series truth selection and auditing:
+
+| Field | Type | Description |
+|---|---|---|
+| `update_type` | ENUM(`Baseline`, `Quarterly_Addendum`, `AdHoc_Correction`) | Identifies release category |
+| `precedence_rank` | INT | Determines override priority (1–3) |
+| `provenance_link` | TEXT | Source URL to CMS artifact or manifest |
+| `conversion_factor` | NUMERIC | Annual CF value applied to APC relative weights |
+| `checksum` | TEXT | SHA-256 digest of source file for lineage |
+| `manifest_id` | UUID | Links to scraper manifest record |
+
+These fields are mandatory in `cms_opps_v1.0.json` and must be populated from the scraper manifests and Final Rule metadata.
 
 Contracts & Versioning
 	•	JSON schema contracts per table; bitemporal (effective_from/to, published_at); batch_id maps to opps_YYYYqN_rNN.
@@ -170,6 +225,12 @@ Release & Versioning Strategy
 	•	Quarterly releases: name batches opps_YYYYqN_rNN (rNN increments for corrections).
 	•	Corrections: ingest as new batches; prior batches remain immutable.
 	•	Bitemporality: quarter-based effective periods; published_at stamps the CMS publication/update date; views resolve latest valid record for a query date.  ￼
+	### Annual Baseline and Corrections Versioning
+
+- **Baseline (`r00`)** represents the Annual Final Rule Addenda effective Jan 1.  
+- **Quarterly Releases (`r01`, `r02`, `r03`)** apply incremental overrides for Q2–Q4.  
+- **Ad-Hoc Corrections (`r99`)** represent retroactive updates and trigger automated re-processing of affected records.  
+Each batch records `precedence_rank`, `effective_from`, `effective_to`, and `published_at` to allow bitemporal and priority-based resolution at query time.
 
 ⸻
 
@@ -184,6 +245,12 @@ Domain/Cross-file:
 	•	Wage index joinable for covered providers/areas.  ￼
 Temporal: no overlapping effective ranges per (hcpcs, modifier) within a batch.
 Quarantine: on fail, move artifact & sample rows to /quarantine/opps/{batch} with rule id, file digest, and counts; block publish.
+### Additional Governance Validations
+- **VALIDATION_RULE_900:** Reject batch if Annual Baseline for same year missing.  
+- **VALIDATION_RULE_901:** Verify Conversion Factor consistency across quarters (unless explicitly changed in Final Rule).  
+- **VALIDATION_RULE_902:** Ensure chronological ingest order (Annual → Q2 → Q3 → Q4 → Corrections).  
+- **VALIDATION_RULE_903:** For Ad-Hoc Corrections, ensure `precedence_rank=3` and `effective_date` overlaps existing periods with proper supersession.  
+All violations are critical and block publish until resolved.
 
 ⸻
 
@@ -239,6 +306,10 @@ Success Metrics & Acceptance Criteria
 	•	Validation: 100% structural/schema/domain/temporal rules pass; quarantines triaged.
 	•	Coverage: 100% of HCPCS rows present per quarter; wage index joins materialized in enriched view.
 	•	Observability: dashboards populated; alerting wired; lineage complete.
+	- **No Payment Drift:** Verify that APC rates and SI/APC assignments remain consistent across quarters unless explicitly changed by CMS.  
+- **Sequential Integrity:** 100% of loaded batches respect precedence order and contain baseline reference.  
+- **Metadata Completeness:** 100% rows contain `update_type`, `precedence_rank`, `provenance_link`, and `checksum`.  
+- **Version Continuity:** No missing quarters or duplicate effective ranges per year.
 
 ⸻
 
@@ -283,4 +354,3 @@ Optional API (Deferred / Derived Layer — DIS-Aligned)
 	•	GET /opps/status-indicators → SI label/description (lookup).
 	•	GET /opps/wage-index?ccn=&quarter= → CBSA + wage index.
 	•	Follow API lint/CI gates, SLOs, and versioning per Global API Program.
-

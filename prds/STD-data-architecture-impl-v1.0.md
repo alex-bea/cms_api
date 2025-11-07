@@ -288,6 +288,50 @@ class MyIngestor(BaseDISIngestor):
 **Required metadata columns (all stages):**  
 `release_id`, `vintage_date`, `product_year`, `quarter_vintage`, `source_filename`, `source_file_sha256`, `row_content_hash`
 
+**Curated Metadata & Evidence (`metadata.json` + dry-run output):**
+
+Every ingestor MUST emit a curated metadata document alongside parquet artifacts and expose the same payload in dry-run evidence. The document SHALL include:
+
+- Top-level release context: `release_id`, `batch_id`, `product_year`, `quarter_vintage`, `vintage_date`, `effective_from`, `effective_to`.
+- Source provenance array `source_files[]` with `filename`, `file_type`, `source_url`, `source_file_sha256`, `size_bytes`, and any additional scraper metadata.
+- Table artifact array `table_artifacts[]` capturing `table`, `records`, `parquet_path`, `file_sha256`, and `row_content_hash`.
+- Aggregates mirroring publish results: `tables_published`, `records_published`, and `file_checksums`.
+
+Example:
+
+```json
+{
+  "release_id": "opps_2025q1_r01",
+  "quarter_vintage": "A",
+  "vintage_date": "2025-01-01",
+  "source_files": [
+    {
+      "filename": "AddendumA.csv",
+      "source_url": "https://cms.gov/opps/2025/AddendumA.csv",
+      "source_file_sha256": "5eab...",
+      "size_bytes": 1827364
+    }
+  ],
+  "table_artifacts": [
+    {
+      "table": "opps_apc_payment",
+      "records": 15234,
+      "parquet_path": "/mnt/data/curated/opps/opps_2025q1_r01/opps_apc_payment.parquet",
+      "file_sha256": "cd2a...",
+      "row_content_hash": "9f01..."
+    }
+  ]
+}
+```
+
+> **Rule `R-DATA-009`:** Dry-run evidence scripts MUST surface this metadata verbatim so QA/ops can diff releases without rehydrating parquet.
+
+**Artifact Profile Config (`cms_pricing/ingestion/config/ingestor_artifacts.yml`):**
+
+- Declare required/optional artifacts per dataset and release profile (baseline, quarterly, correction, etc.).
+- Use `IngestorArtifactProfileService` to resolve the correct profile inside the DIS validation stage (`required_files_present` rule).
+- Sandbox/engineering runs may set `*_LOCAL_SAMPLE_DIR` or `*_ADDENDA_PROFILE` env vars to switch profiles without editing code; production runs must rely on the config defaults.
+
 ---
 
 #### D) Example: MPFS (PPRRVU + GPCI + Locality)

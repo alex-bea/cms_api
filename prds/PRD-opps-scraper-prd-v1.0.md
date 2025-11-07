@@ -38,7 +38,11 @@ Change control: Follows Main Scraper Standard PRD; ADR for interface/selector ch
 - **Manifest Requirements:** Emit dual manifests (`discovery_manifest.json`, `download_manifest.json`) with fields: intended artifacts, final URL, checksum, size, disclaimer mode, retries, content type, fetched timestamps. Discovery runs must also persist a shared `DiscoveryManifest` (`cms_pricing.ingestion.metadata.discovery_manifest`) under `data/scraped/opps/manifests/` so CI can enforce parity with `REF-cms-pricing-source-map-prd-v1.0.md` via `tools/verify_source_map.py`.  
 - **Storage Layout:** Artifacts persisted under `/raw/opps/{batch}/files/*` with `manifest.json` meeting DIS §3.2 requirements; manifests mirrored to `/ops/scraper/opps/{batch}/` for ops visibility  
 - **Validations & Gates:** Structural presence of Addendum A/B enforced, checksum verification, TLS + content-length sanity, disclaimer acceptance recorded; failures quarantine the batch (`/raw/opps/{batch}/quarantine/`) and surface via Ops alert  
-- **Hand-off to Ingester:** Successful batches notify OPPS ingester with manifest location + dataset digest; ingester re-validates before publish  
+- **Hand-off to Ingester:** Successful batches notify OPPS ingester with manifest location + dataset digest; ingester re-validates before publish. The scraper’s SHA-256 checksum is the authoritative idempotency key passed to the ingestor to ensure data consistency and lineage.  
+### Revision Increment & Read-Before-Write
+Before manifest promotion, the scraper queries the IngestRun registry
+for the highest `rNN` of the same `YYYYqN`. On checksum drift,
+the scraper sets `rNN = existing_max + 1` and records `change_reason='CMS Edit'`.
 - **SLAs:** Detect updates within ≤3 calendar days of CMS posting; deliver artifacts to ingestion within ≤1 business day post-detection  
 - **Deviations:** None—scraper adheres to **STD-scraper-prd-v1.0.md**; any exceptions require ADR and update here
 
@@ -71,6 +75,19 @@ Non-Goals
 ⸻
 
 3. Discovery → Detail → Disclaimer → Download (Control Flow)
+
+### Discovery Logic & Sequencing Mandates
+
+The scraper supports the CMS OPPS data precedence hierarchy and sequencing requirements as follows:
+
+- **Release Hierarchy:** The scraper recognizes and respects the CMS release precedence order: Annual releases → Quarterly baselines → Ad-Hoc updates. This ensures that baseline data is established before applying corrections or ad-hoc changes.
+
+- **Quarterly Baselines vs Corrections:** The scraper differentiates between standard quarterly baseline addenda and subsequent correction or updated rows posted on the CMS index. Corrections trigger revision increments (rNN) in batch identifiers to preserve lineage.
+
+- **Ad-Hoc Pages:** The scraper detects and processes ad-hoc data pages such as “Restated Drug and Biological Rates” or other non-standard releases linked from the index, incorporating them into the ingestion pipeline with appropriate precedence.
+
+- **Checksum-Driven Revision Numbering:** When a file with the same nominal filename differs in SHA-256 checksum from a previously ingested artifact, the scraper promotes a new revision number (rNN+1) and annotates the filename and manifests accordingly. This mechanism enforces idempotency and version control aligned with CMS update practices.
+
 	1.	Discovery (Index):
 	•	Poll Quarterly Addenda Updates index. Diff current vs last-seen: capture new quarters and “updated/correction” rows. Extract links to quarter pages.  ￼
 	2.	Quarter Page Crawl:
@@ -81,6 +98,18 @@ Non-Goals
 	•	Tier 3 — Final Fallback: Exponential backoff, reduce concurrency; if still blocked, quarantine the artifact with reason disclaimer_failed and fail the batch (structural presence rule).
 	4.	Download & Persist:
 	•	Stream to /raw/opps/{batch}/ with SHA-256 and size captured; record final resolved URL after redirects for audit/comparisons.
+
+	### Precedence Derivation Implementation
+- **Ad-Hoc Detection:** Identify "Restated Drug and Biological Rates" using
+  `//h1[contains(text(),'Restated Drug')] | //title[contains(.,'Restated Drug')]`
+  or case-insensitive regex `/restated.*drug/i`.
+  If match found → `update_type='AdHoc_Correction'`, `precedence_rank=3`.
+- **Quarterly Default:** Files listed on the main index but not marked "updated/correction"
+  or "restated" default to:
+  - `update_type='Baseline'`, `precedence_rank=1` for Q1 (Annual)
+  - `update_type='Quarterly_Addendum'`, `precedence_rank=2` for Q2–Q4.
+- **Fallback:** If rank derivation fails, log warning `metadata_missing_precedence`
+  and quarantine batch for manual review.
 
 ⸻
 
@@ -93,7 +122,10 @@ Discovery & download manifests must include change_reason="CMS Edit - filename u
 ⸻
 
 5. Structural Presence & Quarantine
-	•	Mandatory presence: Addendum A and B are required for a quarter to be considered complete. If any listed artifact on the quarter page is missing or fails, quarantine the batch with per-file reasons (e.g., missing, disclaimer_failed, checksum_mismatch).  ￼
+
+- **Structural Presence Gate (GATE_OPPS_002):** The scraper enforces a new gate requiring paired Addendum A and Addendum B discovery for each quarter to consider the batch structurally complete. If either Addendum A or B is missing or fails validation, the batch is quarantined with explicit per-file failure reasons (e.g., missing, disclaimer_failed, checksum_mismatch).
+
+- **Checksum as Authoritative Idempotency Key:** The scraper’s computed SHA-256 checksum for each artifact serves as the authoritative idempotency key. This checksum is passed to the ingester in the manifests to guarantee data consistency, prevent duplicate processing, and support lineage tracking across revisions.
 
 ⸻
 
@@ -108,12 +140,29 @@ Discovery & download manifests must include change_reason="CMS Edit - filename u
 ⸻
 
 7. Manifests, Layouts, & Provenance
+
+- **Manifest Data Contract Enhancements:** The discovery and download manifests are expanded to include the following fields to support CMS data precedence and ingestion handoff:
+
+	- `update_type`: Indicates the nature of the update, e.g., "Annual Release", "Quarterly Baseline", "Correction", or "Ad-Hoc". Derived from CMS page titles, index metadata, or URL patterns.
+
+	- `precedence_rank`: Numeric rank reflecting CMS data precedence hierarchy (e.g., Annual=1, Quarterly=2, Ad-Hoc=3), used for downstream conflict resolution.
+
+	- `effective_date`: The date the CMS release or correction is effective, parsed from page content or release metadata.
+
+These fields are populated during discovery and persisted in both discovery and download manifests to provide the ingester with explicit context for data versioning and prioritization.
+
 	•	Paths:
 	•	/raw/opps/{batch}/ — artifacts + download manifest
 	•	/ops/scraper/opps/{batch}/ — discovery manifest (and a mirrored copy of the download manifest for SRE/AI triage)
-	•	Discovery manifest (pre-download): intended files (title, subject=A/B, initial href, quarter, expected patterns).
-	•	Download manifest (post-download): final resolved URL, content type, size, sha256, disclaimer mode used (direct/headless), retry counts, timings, correlation_id, and change_reason if any.
+	•	Discovery manifest (pre-download): intended files (title, subject=A/B, initial href, quarter, expected patterns), plus `update_type`, `precedence_rank`, and `effective_date`.
+	•	Download manifest (post-download): final resolved URL, content type, size, sha256, disclaimer mode used (direct/headless), retry counts, timings, correlation_id, and change_reason if any, alongside the enhanced metadata fields.
 	•	Why dual manifests? One diff shows gaps immediately (intended vs fetched) and is ideal for automated triage.
+
+	### Effective Date Extraction Rule
+- The `effective_date` must be scraped from the quarter detail page header or release note
+  (e.g., “Effective April 1 2025”) rather than the file’s modified timestamp.
+- Normalize to ISO 8601 format (`YYYY-MM-DD`) before manifest emission,
+  in compliance with STD-data-architecture §2.1.
 
 ⸻
 
@@ -149,6 +198,10 @@ Dashboards/Alerts
 	•	DOM changes (index/quarter pages): use strict selectors first, then heuristic fallback (anchor-text regex for “Addendum A|B” and quarter patterns). Emit layout-drift warning and continue with reduced concurrency.
 	•	Silent edits: checksum drift with same filename → promote rNN+1, annotate “CMS Edit,” retain both artifacts, notify in ops channel.
 	•	Rate limits / blocks: backoff and lower concurrency; if persistent, rotate IPs or schedule re-try window.
+	### Gate OPPS_002 Escalation
+- Severity: `CRITICAL`
+- Action: Quarantine batch, raise PagerDuty alert, block ingest until both A & B present.
+- Metrics: `opps_structural_gate_fail_total`, `opps_structural_gate_fail_ratio`.
 
 ⸻
 

@@ -1,0 +1,32 @@
+profiles:
+  baseline:
+    required:
+      - addendum_a
+      - addendum_b
+      - addendum_d1
+      - addendum_e
+    optional:
+      - addendum_q
+      - addendum_zip
+  quarterly:
+    required:
+      - addendum_a
+      - addendum_b
+    optional:
+      - addendum_d1
+      - addendum_e
+      - addendum_q
+      - addendum_zip
+  correction:
+    required:
+      - addendum_a
+      - addendum_b
+    optional:
+      - addendum_d1
+      - addendum_e
+      - addendum_q
+      - addendum_zip
+default_profile: quarterly
+baseline_profile: baseline
+sandbox:
+  allow_missing_required: true

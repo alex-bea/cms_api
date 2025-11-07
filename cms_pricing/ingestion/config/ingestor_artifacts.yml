@@ -1,0 +1,53 @@
+datasets:
+  opps:
+    default_profile: quarterly
+    baseline_profile: baseline
+    baseline_regex: "_r00$"
+    release_profiles:
+      "_correction": correction
+    sandbox:
+      allow_missing_required: true
+    profiles:
+      baseline:
+        required:
+          - addendum_a
+          - addendum_b
+          - addendum_d1
+          - addendum_e
+        optional:
+          - addendum_q
+          - addendum_zip
+      quarterly:
+        required:
+          - addendum_a
+          - addendum_b
+        optional:
+          - addendum_d1
+          - addendum_e
+          - addendum_q
+          - addendum_zip
+      correction:
+        required:
+          - addendum_a
+          - addendum_b
+        optional:
+          - addendum_d1
+          - addendum_e
+          - addendum_q
+          - addendum_zip
+  mpfs:
+    default_profile: default
+    sandbox:
+      allow_missing_required: true
+    profiles:
+      default:
+        required: []
+        optional: []
+  rvu:
+    default_profile: default
+    sandbox:
+      allow_missing_required: true
+    profiles:
+      default:
+        required: []
+        optional: []

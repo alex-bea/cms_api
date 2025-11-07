@@ -44,6 +44,7 @@ from ..datasets.rvu_loaders import load_rvu_dataframes
 from ..datasets.rvu_adapter import adapt_rvu_raw_data
 from ..datasets.rvu_spec import RVU_DATASETS, route_file_to_rvu_spec
 from ...services.dataset_snapshot_service import DatasetSnapshotService
+from ..services.ingestor_artifact_profile import IngestorArtifactProfileService
 from cms_pricing.database import SessionLocal
 
 # Import stage modules for orchestration
@@ -153,6 +154,7 @@ class RVUIngestor(BaseDISIngestor):
         historical_dir.mkdir(parents=True, exist_ok=True)
         self.scraper = scraper or CMSRVUScraper(str(scraped_dir))
         self.historical_manager = historical_manager or HistoricalDataManager(str(historical_dir))
+        self.artifact_profile_service = IngestorArtifactProfileService()
         
         # Snapshot service handles dataset provenance registration
         self._snapshot_service_managed_session = False
