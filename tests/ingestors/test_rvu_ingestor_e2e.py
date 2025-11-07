@@ -32,6 +32,7 @@ from cms_pricing.ingestion.scrapers.cms_rvu_scraper import CMSRVUScraper
 from cms_pricing.ingestion.scrapers.cli import ScraperCLI
 from cms_pricing.models.rvu import Release, RVUItem, GPCIIndex, OPPSCap, AnesCF, LocalityCounty
 from cms_pricing.ingestion.contracts.ingestor_spec import SourceFile
+from cms_pricing.services.dataset_snapshot_service import DatasetSnapshotService
 
 # Test data
 from tests.fixtures.rvu.test_dataset_creator import RVUTestDatasetCreator
@@ -458,8 +459,87 @@ class TestRVUIngestorE2E:
         
         print(f"✅ Full pipeline completed in {total_time:.2f}s")
         print(f"   Processed {record_count} records")
-        print(f"   Quality score: {quality_score}")
-    
+
+    @pytest.mark.asyncio
+    async def test_snapshot_registration_uses_dataset_specific_release_ids(
+        self,
+        rvu_ingestor,
+        test_db_session,
+    ):
+        """RVU snapshot registration applies dataset-specific release namespaces."""
+
+        release_id = "rvu_2025_B"
+        batch_id = f"dataset_ids_{uuid.uuid4().hex[:8]}"
+
+        prefix_map = {
+            "rvu_items": "rvu",
+            "gpci_indices": "gpci",
+            "anescf": "anescf",
+            "localitycounty": "locality",
+            "oppscap": "oppscap",
+        }
+
+        with patch.object(
+            DatasetSnapshotService,
+            "register_snapshot",
+            wraps=DatasetSnapshotService.register_snapshot,
+        ) as mock_register:
+            result = await rvu_ingestor.ingest(release_id, batch_id)
+
+        assert result["status"] == "success"
+
+        # Build map of dataset_id -> release_id from registration calls
+        registered: Dict[str, str] = {}
+        for call in mock_register.call_args_list:
+            args = call.args
+            if len(args) < 3:
+                continue
+            dataset = args[1]
+            dataset_release = args[2]
+            if dataset in prefix_map:
+                registered[dataset] = dataset_release
+
+        # Every dataset should have been registered with dataset-specific prefix
+        for dataset, expected_prefix in prefix_map.items():
+            assert dataset in registered, f"Missing snapshot registration for {dataset}"
+            release_value = registered[dataset]
+            assert release_value.startswith(f"{expected_prefix}_"), (
+                f"Dataset {dataset} expected release prefix {expected_prefix}, got {release_value}"
+            )
+            parts = release_value.split("_")
+            assert len(parts) == 3, f"Release ID {release_value} should have format prefix_year_suffix"
+            assert parts[2] == "B", f"Release suffix should be B for dataset {dataset}, got {parts[2]}"
+
+    @pytest.mark.asyncio
+    async def test_snapshot_registration_stores_parquet_paths(
+        self,
+        rvu_ingestor,
+        test_db_session,
+    ):
+        """Snapshot registration should persist direct parquet paths (no manifest.json)."""
+
+        release_id = "rvu_2025_C"
+        batch_id = f"dataset_paths_{uuid.uuid4().hex[:8]}"
+
+        result = await rvu_ingestor.ingest(release_id, batch_id)
+        assert result["status"] == "success"
+
+        service = DatasetSnapshotService(test_db_session)
+        try:
+            rvu_snapshot = service.get_snapshot_by_release("rvu_items", release_id)
+            gpci_snapshot = service.get_snapshot_by_release("gpci_indices", "gpci_2025_C")
+
+            for snap, label in ((rvu_snapshot, "rvu_items"), (gpci_snapshot, "gpci_indices")):
+                assert snap is not None, f"Snapshot missing for {label}"
+                assert snap.manifest_url, f"{label} manifest_url missing"
+                assert not snap.manifest_url.endswith("manifest.json"), (
+                    f"{label} manifest_url incorrectly points to manifest.json"
+                )
+                parquet_path = Path(snap.manifest_url)
+                assert parquet_path.exists(), f"{label} parquet path not found: {parquet_path}"
+        finally:
+            service.close()
+
     @pytest.mark.asyncio
     async def test_observability_metrics(self, rvu_ingestor, sample_source_files, test_db_session):
         """Test 5-pillar observability metrics collection"""

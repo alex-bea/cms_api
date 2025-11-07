@@ -339,6 +339,11 @@ def mpfs_quarter_environment(tmp_path) -> Dict[str, Any]:
     return env
 
 
+@pytest.fixture
+def mpfs_missing_quarter_environment(tmp_path) -> Dict[str, Any]:
+    return _build_test_environment(tmp_path, base_release_suffix="A")
+
+
 @pytest.mark.asyncio
 async def test_mpfs_ingestor_full_pipeline(mpfs_test_environment):
     env = mpfs_test_environment
@@ -474,3 +479,12 @@ async def test_mpfs_ingestor_selects_release_by_quarter(mpfs_quarter_environment
     payment_df = pd.read_parquet(manifest_path.parent / "mpfs_payment_curated.parquet")
     assert not payment_df.empty
     assert pytest.approx(payment_df.loc[0, "conversion_factor"], rel=1e-6) == 36.0
+
+
+@pytest.mark.asyncio
+async def test_mpfs_ingestor_errors_when_quarter_missing(mpfs_missing_quarter_environment):
+    env = mpfs_missing_quarter_environment
+    ingestor: MPFSIngestor = env["ingestor"]
+
+    with pytest.raises(ValueError, match="rvu_2025_B"):
+        await ingestor.ingest(2025, quarter="Q2")
