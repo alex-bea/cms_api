@@ -37,6 +37,7 @@ Verify these are in place:
 - ✅ Deploy Hook URL created
 - ✅ Render API key created
 - ✅ (Optional) Build Filters / Root Dir set for API changes only
+- ✅ (If you plan to run ingestors on the Render shell) Read **“Low-Memory Snapshot Loading (Render)”** in `RENDER_DATA_LOADING_GUIDE.md` so you know how to clamp snapshot row counts and repair manifest paths before exercising MPFS/RVU flows
 
 ## One-Time Setup
 

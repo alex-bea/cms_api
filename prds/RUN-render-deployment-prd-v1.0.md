@@ -49,6 +49,7 @@
 - [x] Secure location (1Password/Vault) to store the Render `DATABASE_URL`
 - [x] Alembic migration `003_gpci_v13_add_mac_to_nk.py` and GPCI backfill script in the repo
 - [x] GPCI migration checklist (`.cursor/GPCI_V13_DEPLOYMENT_CHECKLIST.md`) reviewed alongside this guide
+- [x] (For Render shell rehearsals) Reviewed **“Low-Memory Snapshot Loading (Render)”** in `RENDER_DATA_LOADING_GUIDE.md` so ingestion jobs can run within the 2 GB dyno limits
 
 ## Part 1: Render Account Setup (5 minutes)
 
