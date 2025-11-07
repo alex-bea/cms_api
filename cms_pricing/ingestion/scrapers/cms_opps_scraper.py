@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -24,6 +25,15 @@ from dataclasses import dataclass
 import httpx
 from bs4 import BeautifulSoup
 from structlog import get_logger
+try:  # pragma: no cover - optional dependency for disclaimer handling/tests
+    import selenium  # type: ignore
+    if not hasattr(selenium, "webdriver"):
+        import selenium.webdriver  # type: ignore  # noqa: F401
+except Exception:  # pragma: no cover - selenium optional
+    selenium = None  # type: ignore
+webdriver = None  # type: ignore
+WebDriverWait = None  # type: ignore
+EC = None  # type: ignore
 
 from ..metadata.discovery_manifest import DiscoveryManifest, DiscoveryManifestStore
 
@@ -57,20 +67,33 @@ class CMSOPPSScraper:
     checksum validation and manifest generation.
     """
     
-    def __init__(self, base_url: str = "https://www.cms.gov", output_dir: Path = None):
+    def __init__(self, base_url: str = "https://www.cms.gov", output_dir: Path = None, local_sample_dir: Optional[Path] = None):
         self.base_url = base_url
         self.output_dir = output_dir or Path("data/scraped/opps")
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.manifest_store = DiscoveryManifestStore(self.output_dir / "manifests", prefix="cms_opps_manifest")
         self.opps_base_url = "https://www.cms.gov/medicare/payment/prospective-payment-systems/hospital-outpatient"
         self.quarterly_addenda_url = "https://www.cms.gov/medicare/payment/prospective-payment-systems/hospital-outpatient-pps/quarterly-addenda-updates"
+        env_sample_dir = os.getenv("OPPS_LOCAL_SAMPLE_DIR")
+        sample_dir = local_sample_dir or (Path(env_sample_dir).expanduser() if env_sample_dir else None)
+        self.local_sample_dir: Optional[Path] = None
+        if sample_dir:
+            sample_dir = Path(sample_dir)
+            if sample_dir.exists():
+                self.local_sample_dir = sample_dir
+                logger.info("OPPS scraper running in local sandbox mode", sample_dir=str(sample_dir))
+            else:
+                logger.warning("OPPS local sample directory not found", sample_dir=str(sample_dir))
         
         # OPPS-specific patterns
         self.quarterly_pattern = re.compile(r'(\d{4})\s*[Qq](\d)', re.IGNORECASE)
         self.addendum_pattern = re.compile(r'addendum\s*([AB])', re.IGNORECASE)
         self.file_patterns = {
-            'addendum_a': re.compile(r'addendum[\s\-]*a.*\.(csv|xls|xlsx|txt)', re.IGNORECASE),
-            'addendum_b': re.compile(r'addendum[\s\-]*b.*\.(csv|xls|xlsx|txt)', re.IGNORECASE),
+            'addendum_a': re.compile(r'addendum[\s\-_]*a.*\.(csv|xls|xlsx|txt)', re.IGNORECASE),
+            'addendum_b': re.compile(r'addendum[\s\-_]*b.*\.(csv|xls|xlsx|txt)', re.IGNORECASE),
+            'addendum_d1': re.compile(r'addendum[\s\-_]*d1.*\.(csv|xls|xlsx|txt)', re.IGNORECASE),
+            'addendum_e': re.compile(r'addendum[\s\-_]*e.*\.(csv|xls|xlsx|txt)', re.IGNORECASE),
+            'addendum_q': re.compile(r'addendum[\s\-_]*q.*\.(csv|xls|xlsx|txt)', re.IGNORECASE),
             'zip_files': re.compile(r'\.(zip|gz)$', re.IGNORECASE)
         }
         
@@ -93,6 +116,10 @@ class CMSOPPSScraper:
             List of discovered file information
         """
         logger.info("Starting OPPS file discovery", max_quarters=max_quarters)
+        
+        if self.local_sample_dir:
+            logger.info("Using local sandbox samples for discovery", sample_dir=str(self.local_sample_dir))
+            return self._discover_local_samples()
         
         try:
             # Get the main quarterly addenda page
@@ -601,6 +628,25 @@ class CMSOPPSScraper:
             'addendum-b' in href_lower):
             return 'addendum_b'
         
+        # Additional addendum variants (D1, E, Q)
+        if (self.file_patterns['addendum_d1'].search(href) or
+            self.file_patterns['addendum_d1'].search(text) or
+            'addendum d1' in text_lower or
+            'addendum-d1' in href_lower):
+            return 'addendum_d1'
+        
+        if (self.file_patterns['addendum_e'].search(href) or
+            self.file_patterns['addendum_e'].search(text) or
+            'addendum e' in text_lower or
+            'addendum-e' in href_lower):
+            return 'addendum_e'
+        
+        if (self.file_patterns['addendum_q'].search(href) or
+            self.file_patterns['addendum_q'].search(text) or
+            'addendum q' in text_lower or
+            'addendum-q' in href_lower):
+            return 'addendum_q'
+        
         # Check for ZIP files that might contain addenda
         if self.file_patterns['zip_files'].search(href):
             # Check if text suggests it contains addenda
@@ -758,6 +804,10 @@ class CMSOPPSScraper:
         """Discover files for the latest N quarters."""
         logger.info("Discovering latest OPPS quarters", quarters=quarters)
         
+        if self.local_sample_dir:
+            logger.info("Using local sandbox samples for latest discovery", sample_dir=str(self.local_sample_dir))
+            return self._discover_local_samples()
+        
         # Get latest quarters
         latest_quarters = self.get_latest_quarters(quarters)
         
@@ -795,6 +845,110 @@ class CMSOPPSScraper:
         ]
         
         return quarter_files
+    
+    def _discover_local_samples(self) -> List[ScrapedFileInfo]:
+        """Load OPPS files from a local sandbox directory."""
+        if not self.local_sample_dir:
+            return []
+        
+        samples: List[ScrapedFileInfo] = []
+        for file_path in sorted(self.local_sample_dir.iterdir()):
+            if not file_path.is_file():
+                continue
+            
+            year, quarter = self._infer_year_quarter_from_name(file_path.name)
+            if year is None or quarter is None:
+                logger.warning(
+                    "Skipping local sample (unable to infer year/quarter)",
+                    file=str(file_path)
+                )
+                continue
+            
+            file_type = self._infer_file_type_from_name(file_path.name)
+            batch_id = f"opps_{year}q{quarter}_local"
+            checksum = self._calculate_checksum(file_path)
+            metadata = {
+                "year": year,
+                "quarter": quarter,
+                "quarter_vintage": self._quarter_letter_from_int(quarter),
+                "source": "local_sandbox",
+                "sample_dir": str(self.local_sample_dir),
+                "filename": file_path.name
+            }
+            
+            samples.append(
+                ScrapedFileInfo(
+                    url=file_path.as_uri(),
+                    filename=file_path.name,
+                    file_type=file_type,
+                    batch_id=batch_id,
+                    discovered_at=datetime.utcnow(),
+                    source_page=str(self.local_sample_dir),
+                    metadata=metadata,
+                    local_path=file_path,
+                    checksum=checksum,
+                    downloaded_at=datetime.utcnow()
+                )
+            )
+        
+        if not samples:
+            logger.warning(
+                "No files discovered in local sandbox directory",
+                sample_dir=str(self.local_sample_dir)
+            )
+        
+        return samples
+    
+    def _infer_year_quarter_from_name(self, name: str) -> Tuple[Optional[int], Optional[int]]:
+        """Infer year and quarter from a filename."""
+        year_match = re.search(r"(20\d{2})", name)
+        year = int(year_match.group(1)) if year_match else None
+        
+        lower_name = name.lower()
+        month_to_quarter = {
+            "january": 1,
+            "jan": 1,
+            "april": 2,
+            "apr": 2,
+            "july": 3,
+            "jul": 3,
+            "october": 4,
+            "oct": 4,
+        }
+        
+        quarter = None
+        for token, q in month_to_quarter.items():
+            if token in lower_name:
+                quarter = q
+                break
+        
+        if quarter is None:
+            quarter_match = re.search(r"q([1-4])", lower_name)
+            if quarter_match:
+                quarter = int(quarter_match.group(1))
+        
+        return year, quarter
+    
+    def _infer_file_type_from_name(self, name: str) -> str:
+        """Infer OPPS file type from filename."""
+        lower_name = name.lower()
+        if "addendum a" in lower_name or "addenduma" in lower_name:
+            return "addendum_a"
+        if "addendum b" in lower_name or "addendumb" in lower_name:
+            return "addendum_b"
+        if "addendum d1" in lower_name or "addendum_d1" in lower_name or "addendumd1" in lower_name:
+            return "addendum_d1"
+        if "addendum e" in lower_name or "addendum_e" in lower_name or "addendume" in lower_name:
+            return "addendum_e"
+        if "addendum q" in lower_name or "addendum_q" in lower_name or "addendumq" in lower_name:
+            return "addendum_q"
+        if lower_name.endswith(".zip"):
+            return "addendum_zip"
+        return "opps_file"
+    
+    def _quarter_letter_from_int(self, quarter: int) -> str:
+        """Return CMS quarter letter for an integer quarter."""
+        return {1: "A", 2: "B", 3: "C", 4: "D"}.get(quarter, "A")
 
 
 # CLI interface

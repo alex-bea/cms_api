@@ -12,7 +12,7 @@ QTS Compliance: v1.1
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from datetime import datetime
 from pathlib import Path
 
@@ -161,6 +161,15 @@ class TestOPPSScraperMethods:
             ("/addendum-b.csv", "Addendum B", "addendum_b"),
             ("/opps-addendum-b.xlsx", "OPPS Addendum B", "addendum_b"),
             
+            # Additional addenda (D1/E/Q)
+            ("/january-2025-addendum-d1.csv", "January 2025 Addendum D1", "addendum_d1"),
+            ("/october-2025-addendum-d1.xlsx", "October 2025 Addendum D1", "addendum_d1"),
+            ("/addendum-d1.txt", "Addendum D1", "addendum_d1"),
+            ("/january-2025-addendum-e.csv", "January 2025 Addendum E", "addendum_e"),
+            ("/addendum-e.xlsx", "Addendum E", "addendum_e"),
+            ("/january-2025-addendum-q.csv", "January 2025 Addendum Q", "addendum_q"),
+            ("/addendum-q.xlsx", "Addendum Q", "addendum_q"),
+            
             # ZIP files
             ("/january-2025-addendum.zip", "January 2025 Addendum", "addendum_zip"),
             ("/april-2025-addendum.zip", "April 2025 Addendum", "addendum_zip"),
@@ -184,13 +193,16 @@ class TestOPPSScraperMethods:
         """Test that file classification is case insensitive."""
         assert scraper._classify_file("/ADDENDUM-A.CSV", "ADDENDUM A") == "addendum_a"
         assert scraper._classify_file("/addendum-b.xlsx", "addendum b") == "addendum_b"
+        assert scraper._classify_file("/ADDENDUM-D1.CSV", "ADDENDUM D1") == "addendum_d1"
+        assert scraper._classify_file("/ADDENDUM-E.CSV", "ADDENDUM E") == "addendum_e"
+        assert scraper._classify_file("/ADDENDUM-Q.CSV", "ADDENDUM Q") == "addendum_q"
         assert scraper._classify_file("/ADDENDUM.ZIP", "ADDENDUM") == "addendum_zip"
     
     # Test _resolve_disclaimer_url method
     @pytest.mark.asyncio
     async def test_resolve_disclaimer_url_direct_success(self, scraper):
         """Test direct URL resolution without disclaimer."""
-        mock_client = Mock()
+        mock_client = AsyncMock()
         mock_response = Mock()
         mock_response.headers = {'content-type': 'application/zip'}
         mock_response.text = ''
@@ -203,7 +215,7 @@ class TestOPPSScraperMethods:
     @pytest.mark.asyncio
     async def test_resolve_disclaimer_url_disclaimer_detected(self, scraper):
         """Test disclaimer detection and browser resolution."""
-        mock_client = Mock()
+        mock_client = AsyncMock()
         mock_response = Mock()
         mock_response.headers = {'content-type': 'text/html'}
         mock_response.text = 'disclaimer terms accept agreement'
@@ -221,7 +233,7 @@ class TestOPPSScraperMethods:
     @pytest.mark.asyncio
     async def test_resolve_disclaimer_url_disclaimer_fallback(self, scraper):
         """Test disclaimer resolution fallback when browser fails."""
-        mock_client = Mock()
+        mock_client = AsyncMock()
         mock_response = Mock()
         mock_response.headers = {'content-type': 'text/html'}
         mock_response.text = 'disclaimer terms accept agreement'
@@ -239,7 +251,7 @@ class TestOPPSScraperMethods:
     @pytest.mark.asyncio
     async def test_resolve_disclaimer_url_http_error(self, scraper):
         """Test HTTP error handling."""
-        mock_client = Mock()
+        mock_client = AsyncMock()
         mock_client.get.side_effect = Exception("HTTP Error")
         
         result = await scraper._resolve_disclaimer_url(mock_client, "https://example.com/file.zip", "Test File")
@@ -426,7 +438,7 @@ class TestOPPSScraperMethods:
         assert not patterns['zip_files'].search("file.csv")
     
     # Test initialization
-    def test_scraper_initialization(self):
+    def test_scraper_initialization(self, tmp_path):
         """Test scraper initialization with default and custom parameters."""
         # Test default initialization
         scraper1 = CMSOPPSScraper()
@@ -436,7 +448,7 @@ class TestOPPSScraperMethods:
         assert scraper1.quarterly_addenda_url == "https://www.cms.gov/medicare/payment/prospective-payment-systems/hospital-outpatient-pps/quarterly-addenda-updates"
         
         # Test custom initialization
-        custom_output = Path("/custom/output")
+        custom_output = tmp_path / "custom" / "output"
         scraper2 = CMSOPPSScraper(output_dir=custom_output)
         assert scraper2.output_dir == custom_output
         

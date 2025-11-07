@@ -115,19 +115,55 @@ service.close()
 PY
 ```
 
+**Optional: Enable Offline Sandbox Mode**
+```bash
+export OPPS_LOCAL_SAMPLE_DIR="$PWD/sample_data/january_202025_20web_20addendum_20a.12.31.24"
+```
+- When set, the scraper/ingestor reuse the local Section 508/Excel files instead of pulling from CMS.
+- Verify the directory contains the expected Addendum A/B artifacts before running the dry-run.
+
 ---
 
-### Step 3: Run OPPS Ingestion
+### Step 3: Run OPPS Dry-Run Pipeline
 
-Use the dedicated OPPS helper script (placeholder):
+Use the scripted harness that exercises the DIS pipeline end-to-end and saves evidence:
 ```bash
-python scripts/run_opps_ingestion.py \
-  --quarter 2025Q1 \
+python scripts/dry_run_opps.py \
+  --batch-id opps_2025q1_r01 \
   --output-dir data/ingestion/opps \
-  [--wage-index-path sample_data/opps25q1/WageIndex2025Q1.csv]
+  --pretty
 ```
 
-> **TODO:** Update once OPPS ingestor is fully refactored. Track progress in `artifacts/opps_implementation_plan.md`.
+**Flags**
+- `--batch-id` – `opps_<year>q<quarter>_r<release>`; confirm the quarter exists via the scraper before running.
+- `--output-dir` – directory containing `raw/stage/curated/quarantine`. Defaults to `./data`.
+- `--database-url` – optional, only required when verifying DB publishes.
+- `--disable-cpt-masking` – test-only flag if you need unmasked CPT descriptors.
+- `--evidence-dir` – defaults to `artifacts/opps_dry_runs/`; file name includes the batch id and timestamp.
+- `OPPS_ADDENDA_PROFILE` – optional override to force a specific addenda validation profile (`baseline`, `quarterly`, `correction`) instead of relying on the release number.
+
+**Expected stdout (pretty mode):**
+```json
+{
+  "batch_id": "opps_2025q1_r01",
+  "status": "success",
+  "tables_published": [
+    "apc_payment",
+    "hcpcs_crosswalk"
+  ],
+  "records_published": 15234,
+  "curated_output_path": "/abs/path/data/curated/opps/opps_2025q1_r01",
+  "curated_exists": true,
+  "files_generated": [
+    ".../opps_2025q1_r01/apc_payment.parquet",
+    ".../opps_2025q1_r01/hcpcs_crosswalk.parquet"
+  ]
+}
+```
+
+**Evidence bundle:** inspect or attach the generated JSON under `artifacts/opps_dry_runs/` when submitting readiness notes.
+
+- ✅ Latest sandbox evidence (table hashes + profile warnings): `artifacts/opps_dry_runs/opps_2025q1_r01_20251107T205317.json`. This captures `table_artifacts`, `file_checksums`, and the resolved validation profile so QA can diff releases without rerunning the pipeline.
 
 ---
 
@@ -147,9 +183,10 @@ Confirm:
 
 ### Step 5: Post-Run Validation
 
+- Review the evidence JSON to ensure `validation_passed=true` and that `stages_completed` lists all five phases.
 - Query curated parquet for expected HCPCS counts.
 - Run `/v1/opps` API contract test to ensure `datasets_used` includes OPPS datasets.
-- Document run evidence in operational ticket.
+- Document run evidence in operational ticket. Include path to the evidence JSON plus parquet row counts.
 
 ---
 

@@ -14,6 +14,8 @@ QTS Compliance: v1.0
 """
 
 import asyncio
+import hashlib
+import os
 import json
 import logging
 from datetime import datetime, date
@@ -36,6 +38,7 @@ from ..publishers.data_publishers import ParquetPublisher
 from ..quarantine.dis_quarantine import QuarantineManager
 from ..observability.dis_observability import DISObservabilityCollector
 from ..scrapers.cms_opps_scraper import CMSOPPSScraper, ScrapedFileInfo
+from ..services.ingestor_artifact_profile import IngestorArtifactProfileService
 
 logger = structlog.get_logger()
 
@@ -77,7 +80,11 @@ class OPPSIngestor(BaseDISIngestor):
         
         # OPPS-specific configuration
         self.cpt_masking_enabled = cpt_masking_enabled
-        self.scraper = CMSOPPSScraper(output_dir=self.output_dir)
+        env_sample_dir = os.getenv("OPPS_LOCAL_SAMPLE_DIR")
+        scraper_sample_dir = Path(env_sample_dir).expanduser() if env_sample_dir else None
+        self.scraper = CMSOPPSScraper(output_dir=self.output_dir, local_sample_dir=scraper_sample_dir)
+        self.local_sample_dir = self.scraper.local_sample_dir
+        self.artifact_profile_service = IngestorArtifactProfileService()
         
         # DIS compliance components
         self.schema_registry = SchemaRegistry()
@@ -486,12 +493,30 @@ class OPPSIngestor(BaseDISIngestor):
         if not quarter_files:
             raise ValueError(f"No files found for quarter {year}Q{quarter}")
         
-        # Download files
+        # Download files (or reuse local sandbox files)
         downloaded_files = []
         for file_info in quarter_files:
             try:
+                if file_info.local_path:
+                    local_path_obj = file_info.local_path
+                    if not isinstance(local_path_obj, Path):
+                        local_path_obj = Path(local_path_obj)
+                    if local_path_obj.exists():
+                        file_info.local_path = local_path_obj
+                        logger.info(
+                            "Using local sandbox file",
+                            file=file_info.filename,
+                            path=str(local_path_obj)
+                        )
+                        downloaded_files.append(file_info)
+                        continue
                 local_path = await self.scraper.download_file(file_info)
                 file_info.local_path = local_path
+                logger.info(
+                    "Downloaded OPPS file",
+                    file=file_info.filename,
+                    path=str(local_path)
+                )
                 downloaded_files.append(file_info)
             except Exception as e:
                 logger.error("Failed to download file", file=file_info.filename, error=str(e))
@@ -636,7 +661,9 @@ class OPPSIngestor(BaseDISIngestor):
         publish_results = {
             "tables_published": [],
             "records_published": 0,
-            "files_generated": []
+            "files_generated": [],
+            "table_artifacts": [],
+            "file_checksums": {}
         }
         
         try:
@@ -651,10 +678,20 @@ class OPPSIngestor(BaseDISIngestor):
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 
                 df.to_parquet(output_path, compression='snappy', index=False)
+                file_checksum = self._sha256_file(output_path)
+                row_hash = self._compute_row_content_hash(df, table_name)
                 
                 publish_results["tables_published"].append(table_name)
                 publish_results["records_published"] += len(df)
                 publish_results["files_generated"].append(str(output_path))
+                publish_results["file_checksums"][table_name] = file_checksum
+                publish_results["table_artifacts"].append({
+                    "table": table_name,
+                    "records": len(df),
+                    "parquet_path": str(output_path),
+                    "file_sha256": file_checksum,
+                    "row_content_hash": row_hash
+                })
                 
                 logger.info("Published table", 
                            table=table_name, 
@@ -715,6 +752,7 @@ class OPPSIngestor(BaseDISIngestor):
             "batch_id": batch_info.batch_id,
             "year": batch_info.year,
             "quarter": batch_info.quarter,
+            "quarter_vintage": self._quarter_to_letter(batch_info.quarter),
             "release_number": batch_info.release_number,
             "effective_from": batch_info.effective_from.isoformat(),
             "effective_to": batch_info.effective_to.isoformat() if batch_info.effective_to else None,
@@ -749,15 +787,22 @@ class OPPSIngestor(BaseDISIngestor):
     async def _validate_required_files(self, batch_info: OPPSBatchInfo) -> Dict[str, Any]:
         """Validate that required files are present."""
         file_types = [f.file_type for f in batch_info.files]
-        
-        required_types = ["addendum_a", "addendum_b"]
-        missing_types = [t for t in required_types if t not in file_types]
-        
+        profile_override = os.getenv("OPPS_ADDENDA_PROFILE")
+        profile = self.artifact_profile_service.resolve(
+            "opps",
+            release_id=batch_info.batch_id,
+            profile_override=profile_override,
+            sandbox_mode=bool(self.local_sample_dir),
+        )
+        result = profile.validate(file_types)
         return {
-            "passed": len(missing_types) == 0,
-            "errors": [f"Missing required file type: {t}" for t in missing_types] if missing_types else [],
+            "passed": result.passed,
+            "errors": result.errors,
+            "warnings": result.warnings,
             "file_types_found": file_types,
-            "required_types": required_types
+            "required_types": result.required,
+            "optional_types": result.optional,
+            "profile": result.profile_name,
         }
     
     async def _validate_file_formats(self, batch_info: OPPSBatchInfo) -> Dict[str, Any]:
@@ -971,16 +1016,39 @@ class OPPSIngestor(BaseDISIngestor):
     
     async def _generate_curated_metadata(self, batch_info: OPPSBatchInfo, publish_results: Dict):
         """Generate curated metadata."""
+        quarter_vintage = self._quarter_to_letter(batch_info.quarter)
+        source_files = []
+        for f in batch_info.files:
+            local_path = str(f.local_path) if f.local_path else None
+            size_bytes = f.local_path.stat().st_size if f.local_path and f.local_path.exists() else None
+            source_files.append({
+                "filename": f.filename,
+                "file_type": f.file_type,
+                "source_url": f.url,
+                "source_file_sha256": f.metadata.get("sha256") if f.metadata else f.checksum,
+                "checksum": f.checksum,
+                "size_bytes": size_bytes,
+                "local_path": local_path,
+                "metadata": f.metadata
+            })
+        
         metadata = {
             "batch_id": batch_info.batch_id,
+            "release_id": batch_info.batch_id,
+            "product_year": batch_info.year,
             "year": batch_info.year,
             "quarter": batch_info.quarter,
+            "quarter_vintage": quarter_vintage,
+            "vintage_date": batch_info.effective_from.isoformat(),
             "effective_from": batch_info.effective_from.isoformat(),
             "effective_to": batch_info.effective_to.isoformat() if batch_info.effective_to else None,
             "published_at": datetime.utcnow().isoformat(),
             "tables_published": publish_results["tables_published"],
             "records_published": publish_results["records_published"],
             "files_generated": publish_results["files_generated"],
+            "table_artifacts": publish_results.get("table_artifacts", []),
+            "file_checksums": publish_results.get("file_checksums", {}),
+            "source_files": source_files,
             "cpt_masking_enabled": self.cpt_masking_enabled,
             "ingester_version": "1.0.0",
             "dis_compliance": "v1.0",
@@ -992,6 +1060,37 @@ class OPPSIngestor(BaseDISIngestor):
             json.dump(metadata, f, indent=2)
         
         logger.info("Generated curated metadata", path=str(metadata_path))
+    
+    def _quarter_to_letter(self, quarter: int) -> str:
+        """Map quarter integer to CMS letter vintage."""
+        mapping = {1: "A", 2: "B", 3: "C", 4: "D"}
+        return mapping.get(quarter, "A")
+    
+    def _sha256_file(self, path: Path) -> Optional[str]:
+        """Return SHA256 for a file path, if it exists."""
+        if not path.exists():
+            return None
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(8192), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    
+    def _compute_row_content_hash(self, df: pd.DataFrame, table_name: str) -> Optional[str]:
+        """Compute deterministic row-content hash for a dataframe."""
+        try:
+            if df.empty:
+                return hashlib.sha256(b"").hexdigest()
+            normalized = df.sort_index(axis=1)
+            row_hashes = pd.util.hash_pandas_object(normalized, index=True).values.tobytes()
+            return hashlib.sha256(row_hashes).hexdigest()
+        except Exception as exc:
+            logger.warning(
+                "Unable to compute row content hash",
+                table=table_name,
+                error=str(exc)
+            )
+            return None
 
 
 # CLI interface

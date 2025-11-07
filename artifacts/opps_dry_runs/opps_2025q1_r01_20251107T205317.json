@@ -1,0 +1,126 @@
+{
+  "batch_id": "opps_2025q1_r01",
+  "status": "success",
+  "timestamp": "2025-11-07T20:53:17.999296",
+  "stages_completed": [
+    "land",
+    "validate",
+    "normalize",
+    "enrich",
+    "publish"
+  ],
+  "validation_passed": true,
+  "tables_published": [
+    "apc_payment",
+    "opps_rates_enriched"
+  ],
+  "records_published": 0,
+  "files_generated": [
+    "/Users/alexanderbea/Cursor/cms-api/data/ingestion/opps/curated/opps/opps_2025q1_r01/apc_payment.parquet",
+    "/Users/alexanderbea/Cursor/cms-api/data/ingestion/opps/curated/opps/opps_2025q1_r01/opps_rates_enriched.parquet"
+  ],
+  "table_artifacts": [
+    {
+      "table": "apc_payment",
+      "records": 0,
+      "parquet_path": "/Users/alexanderbea/Cursor/cms-api/data/ingestion/opps/curated/opps/opps_2025q1_r01/apc_payment.parquet",
+      "file_sha256": "a48025bd303c7b16838295fb33a7b8b4cafcf36a7b3b0cc936c0176f47d6ea2b",
+      "row_content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "opps_rates_enriched",
+      "records": 0,
+      "parquet_path": "/Users/alexanderbea/Cursor/cms-api/data/ingestion/opps/curated/opps/opps_2025q1_r01/opps_rates_enriched.parquet",
+      "file_sha256": "a48025bd303c7b16838295fb33a7b8b4cafcf36a7b3b0cc936c0176f47d6ea2b",
+      "row_content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "file_checksums": {
+    "apc_payment": "a48025bd303c7b16838295fb33a7b8b4cafcf36a7b3b0cc936c0176f47d6ea2b",
+    "opps_rates_enriched": "a48025bd303c7b16838295fb33a7b8b4cafcf36a7b3b0cc936c0176f47d6ea2b"
+  },
+  "curated_output_path": "/Users/alexanderbea/Cursor/cms-api/data/ingestion/opps/curated/opps/opps_2025q1_r01",
+  "curated_exists": true,
+  "curated_metadata_path": "/Users/alexanderbea/Cursor/cms-api/data/ingestion/opps/curated/opps/opps_2025q1_r01/metadata.json",
+  "curated_metadata": {
+    "batch_id": "opps_2025q1_r01",
+    "release_id": "opps_2025q1_r01",
+    "product_year": 2025,
+    "year": 2025,
+    "quarter": 1,
+    "quarter_vintage": "A",
+    "vintage_date": "2025-01-01",
+    "effective_from": "2025-01-01",
+    "effective_to": "2025-03-31",
+    "published_at": "2025-11-07T20:53:17.997597",
+    "tables_published": [
+      "apc_payment",
+      "opps_rates_enriched"
+    ],
+    "records_published": 0,
+    "files_generated": [
+      "/Users/alexanderbea/Cursor/cms-api/data/ingestion/opps/curated/opps/opps_2025q1_r01/apc_payment.parquet",
+      "/Users/alexanderbea/Cursor/cms-api/data/ingestion/opps/curated/opps/opps_2025q1_r01/opps_rates_enriched.parquet"
+    ],
+    "table_artifacts": [
+      {
+        "table": "apc_payment",
+        "records": 0,
+        "parquet_path": "/Users/alexanderbea/Cursor/cms-api/data/ingestion/opps/curated/opps/opps_2025q1_r01/apc_payment.parquet",
+        "file_sha256": "a48025bd303c7b16838295fb33a7b8b4cafcf36a7b3b0cc936c0176f47d6ea2b",
+        "row_content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "table": "opps_rates_enriched",
+        "records": 0,
+        "parquet_path": "/Users/alexanderbea/Cursor/cms-api/data/ingestion/opps/curated/opps/opps_2025q1_r01/opps_rates_enriched.parquet",
+        "file_sha256": "a48025bd303c7b16838295fb33a7b8b4cafcf36a7b3b0cc936c0176f47d6ea2b",
+        "row_content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "file_checksums": {
+      "apc_payment": "a48025bd303c7b16838295fb33a7b8b4cafcf36a7b3b0cc936c0176f47d6ea2b",
+      "opps_rates_enriched": "a48025bd303c7b16838295fb33a7b8b4cafcf36a7b3b0cc936c0176f47d6ea2b"
+    },
+    "source_files": [
+      {
+        "filename": "January 2025 Web Addendum A.12.31.24.xlsx",
+        "file_type": "addendum_a",
+        "source_url": "file:///Users/alexanderbea/Cursor/cms-api/sample_data/january_202025_20web_20addendum_20a.12.31.24/January%202025%20Web%20Addendum%20A.12.31.24.xlsx",
+        "source_file_sha256": null,
+        "checksum": "f075a939fc08173a041c887d03abefb8a5cf8d91c0939e6765d5e871e3e65ef5",
+        "size_bytes": 92307,
+        "local_path": "/Users/alexanderbea/Cursor/cms-api/sample_data/january_202025_20web_20addendum_20a.12.31.24/January 2025 Web Addendum A.12.31.24.xlsx",
+        "metadata": {
+          "year": 2025,
+          "quarter": 1,
+          "quarter_vintage": "A",
+          "source": "local_sandbox",
+          "sample_dir": "/Users/alexanderbea/Cursor/cms-api/sample_data/january_202025_20web_20addendum_20a.12.31.24",
+          "filename": "January 2025 Web Addendum A.12.31.24.xlsx"
+        }
+      },
+      {
+        "filename": "Section 508 version of January 2025 Web Addendum A.12.31.24.csv",
+        "file_type": "addendum_a",
+        "source_url": "file:///Users/alexanderbea/Cursor/cms-api/sample_data/january_202025_20web_20addendum_20a.12.31.24/Section%20508%20version%20of%20January%202025%20Web%20Addendum%20A.12.31.24.csv",
+        "source_file_sha256": null,
+        "checksum": "d07cf51d605a3c11c2810253d1b03406045e57029970c765573ee3780437d597",
+        "size_bytes": 75988,
+        "local_path": "/Users/alexanderbea/Cursor/cms-api/sample_data/january_202025_20web_20addendum_20a.12.31.24/Section 508 version of January 2025 Web Addendum A.12.31.24.csv",
+        "metadata": {
+          "year": 2025,
+          "quarter": 1,
+          "quarter_vintage": "A",
+          "source": "local_sandbox",
+          "sample_dir": "/Users/alexanderbea/Cursor/cms-api/sample_data/january_202025_20web_20addendum_20a.12.31.24",
+          "filename": "Section 508 version of January 2025 Web Addendum A.12.31.24.csv"
+        }
+      }
+    ],
+    "cpt_masking_enabled": true,
+    "ingester_version": "1.0.0",
+    "dis_compliance": "v1.0",
+    "qts_compliance": "v1.0"
+  }
+}

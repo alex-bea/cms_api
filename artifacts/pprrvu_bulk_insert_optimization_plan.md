@@ -230,3 +230,78 @@ Otherwise treat as a later milestone.
 
 **Outcome:**  
 This extension standardizes snapshot handling across all ingestion pipelines, eliminates NaN CF edge-cases, and ensures operators can tune memory safely on constrained Render instances.
+
+---
+
+## 10. MVP Deployment Checklist (Due EoD Tomorrow)
+
+### 🎯 Goal
+Deliver the PyArrow-based streaming snapshot loader and wire it into RVU + MPFS so ingestion completes without OOMs and with correct parquet metadata.
+
+---
+
+### 🧩 P0 – Must Ship
+
+- [ ] **Finalize `snapshot_loader.py`**
+  - [ ] Confirm helper implements `resolve_snapshot_path()`, `determine_row_limit()`, and `stream_parquet()`  
+  - [ ] Verify PyArrow import works and Pandas fallback path tested  
+  - [ ] Ensure logging shows “Row limiting applied …”  
+  - [ ] Run manifest + row-limit unit tests (green)
+
+- [ ] **Wire MPFS + RVU Ingestors**
+  - [ ] Replace `_load_snapshot_dataframe` in `MPFSIngestor`  
+  - [ ] Refactor RVU normalize/publish to use the shared loader  
+  - [ ] Confirm env knobs (`INGEST_SNAPSHOT_ROW_LIMIT=25000`) working in staging  
+
+- [ ] **Staging Validation**
+  - [ ] Run RVU + MPFS ingests end-to-end  
+  - [ ] Confirm:  
+    - [ ] Memory < 1.5 GB RSS  
+    - [ ] Snapshot metadata path → `.parquet`  
+    - [ ] No manifest regression errors  
+  - [ ] Record metrics (runtime, RSS, rows/sec)
+
+---
+
+### 🧱 P1 – Optional (If Time Allows)
+
+- [ ] **Normalize Snapshot Dates Helper**
+  - [ ] Move `_normalize_snapshot_date()` into shared helper (dataset_snapshot_service.py)
+  - [ ] Add regression test to ensure NaN → None conversion  
+
+- [ ] **Conversion Factor Coverage**
+  - [ ] Add regression test asserting CF dataframe non-empty when conversion_factor exists  
+  - [ ] Verify “RVU dataframe empty; unable to derive conversion factor” no longer appears  
+
+---
+
+### 🕓 P2 – Defer to Next Sprint
+
+- [ ] Document low-memory loader and env knobs in runbooks  
+- [ ] Adopt loader across OPPS + DIS pipelines  
+- [ ] Execute psycopg2 `execute_values` rollout behind feature flag  
+- [ ] Add CF inspection CLI + monitoring dashboard  
+- [ ] Prepare post-rollout performance report  
+
+---
+
+### 🔄 Rollback Plan
+
+- [ ] If ingestion fails or exceeds 1.5 GB RSS:
+  - [ ] Disable shared loader (`revert to pd.read_parquet`)
+  - [ ] Notify SRE in #data-platform Slack
+  - [ ] File regression issue in Linear with logs attached
+
+---
+
+### 🧭 Timeline (PST)
+
+| Time | Task |
+|------|------|
+| 9:00 – 10:00 | Finalize `snapshot_loader.py` |
+| 10:00 – 12:00 | Wire MPFS + RVU ingestors |
+| 12:00 – 13:00 | Run small staging ingestion |
+| 13:00 – 14:00 | Fix manifest/memory issues |
+| 14:00 – 15:00 | Add helper + CF regression tests |
+| 15:00 – 16:00 | Run full staging validation |
+| 16:00 – 17:00 | Tag commit + redeploy to Render |

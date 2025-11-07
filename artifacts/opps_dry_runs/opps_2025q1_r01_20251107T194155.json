@@ -1,0 +1,16 @@
+{
+  "batch_id": "opps_2025q1_r01",
+  "status": "failed",
+  "timestamp": "2025-11-07T19:41:55.726899",
+  "stages_completed": [],
+  "validation_passed": false,
+  "tables_published": [],
+  "records_published": 0,
+  "files_generated": [],
+  "table_artifacts": [],
+  "file_checksums": {},
+  "curated_output_path": "/Users/alexanderbea/Cursor/cms-api/data/ingestion/opps/curated/opps/opps_2025q1_r01",
+  "curated_exists": false,
+  "curated_metadata_path": "/Users/alexanderbea/Cursor/cms-api/data/ingestion/opps/curated/opps/opps_2025q1_r01/metadata.json",
+  "curated_metadata": null
+}
