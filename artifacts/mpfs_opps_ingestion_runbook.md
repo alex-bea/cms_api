@@ -118,9 +118,12 @@ PY
 **Optional: Enable Offline Sandbox Mode**
 ```bash
 export OPPS_LOCAL_SAMPLE_DIR="$PWD/sample_data/january_202025_20web_20addendum_20a.12.31.24"
+export OPPS_LOCAL_SAMPLE_DIRS="$OPPS_LOCAL_SAMPLE_DIR:$PWD/sample_data/january_2025_web_addendum_b.12.31.24"
+export OPPS_ADDENDA_PROFILE="${OPPS_ADDENDA_PROFILE:-sandbox_addenda}"
 ```
 - When set, the scraper/ingestor reuse the local Section 508/Excel files instead of pulling from CMS.
-- Verify the directory contains the expected Addendum A/B artifacts before running the dry-run.
+- Ensure both the Addendum A directory (`january_202025_20web_20addendum_20a.12.31.24`) and the Addendum B directory (`january_2025_web_addendum_b.12.31.24`) exist before running.
+- Shortcut: run `scripts/run_opps_sandbox.sh opps_2025q1_r01` to export the env vars and invoke the dry-run in one step.
 
 ---
 
@@ -133,6 +136,7 @@ python scripts/dry_run_opps.py \
   --output-dir data/ingestion/opps \
   --pretty
 ```
+Or, to reuse the preconfigured sample paths, run `scripts/run_opps_sandbox.sh opps_2025q1_r01`.
 
 **Flags**
 - `--batch-id` – `opps_<year>q<quarter>_r<release>`; confirm the quarter exists via the scraper before running.
@@ -140,6 +144,7 @@ python scripts/dry_run_opps.py \
 - `--database-url` – optional, only required when verifying DB publishes.
 - `--disable-cpt-masking` – test-only flag if you need unmasked CPT descriptors.
 - `--evidence-dir` – defaults to `artifacts/opps_dry_runs/`; file name includes the batch id and timestamp.
+- `--artifact-profile` – optional helper to set `OPPS_ADDENDA_PROFILE` (use `sandbox_addenda` for the local sample set).
 - `OPPS_ADDENDA_PROFILE` – optional override to force a specific addenda validation profile (`baseline`, `quarterly`, `correction`) instead of relying on the release number.
 
 **Expected stdout (pretty mode):**
@@ -148,15 +153,15 @@ python scripts/dry_run_opps.py \
   "batch_id": "opps_2025q1_r01",
   "status": "success",
   "tables_published": [
-    "apc_payment",
-    "hcpcs_crosswalk"
+    "opps_apc_payment",
+    "opps_hcpcs_crosswalk"
   ],
   "records_published": 15234,
   "curated_output_path": "/abs/path/data/curated/opps/opps_2025q1_r01",
   "curated_exists": true,
   "files_generated": [
-    ".../opps_2025q1_r01/apc_payment.parquet",
-    ".../opps_2025q1_r01/hcpcs_crosswalk.parquet"
+    ".../opps_2025q1_r01/opps_apc_payment.parquet",
+    ".../opps_2025q1_r01/opps_hcpcs_crosswalk.parquet"
   ]
 }
 ```

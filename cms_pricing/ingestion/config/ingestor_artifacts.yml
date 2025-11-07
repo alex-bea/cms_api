@@ -26,6 +26,13 @@ datasets:
           - addendum_e
           - addendum_q
           - addendum_zip
+      sandbox_addenda:
+        required:
+          - addendum_a
+          - addendum_b
+        optional:
+          - addendum_q
+          - addendum_zip
       correction:
         required:
           - addendum_a

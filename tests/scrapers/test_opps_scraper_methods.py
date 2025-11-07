@@ -11,6 +11,7 @@ Version: 1.0.0
 QTS Compliance: v1.1
 """
 
+import os
 import pytest
 from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from datetime import datetime
@@ -495,6 +496,25 @@ class TestOPPSScraperMethods:
         custom_base = "https://custom.cms.gov"
         scraper3 = CMSOPPSScraper(base_url=custom_base)
         assert scraper3.base_url == custom_base
+
+    def test_discover_local_samples_multiple_directories(self, tmp_path, monkeypatch):
+        """Ensure sandbox discovery picks up files from multiple local dirs."""
+        addendum_a_dir = tmp_path / "addendum_a"
+        addendum_b_dir = tmp_path / "addendum_b"
+        addendum_a_dir.mkdir()
+        addendum_b_dir.mkdir()
+        (addendum_a_dir / "Section 508 version of January 2025 Web Addendum A.12.31.24.csv").write_text("apc_code\n")
+        (addendum_b_dir / "508 Version of January 2025 Web Addendum B.12.31.24.csv").write_text("hcpcs_code\n")
+        env_value = f"{addendum_a_dir}{os.pathsep}{addendum_b_dir}"
+        monkeypatch.setenv("OPPS_LOCAL_SAMPLE_DIRS", env_value)
+        scraper = CMSOPPSScraper()
+        samples = scraper._discover_local_samples()
+        file_types = {sample.file_type for sample in samples}
+        assert "addendum_a" in file_types
+        assert "addendum_b" in file_types
+        sample_dirs = {sample.metadata.get("sample_dir") for sample in samples}
+        assert str(addendum_a_dir) in sample_dirs
+        assert str(addendum_b_dir) in sample_dirs
 
 
 class TestOPPSScraperEdgeCases:

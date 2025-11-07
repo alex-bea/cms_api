@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -63,6 +64,13 @@ async def _run(args: argparse.Namespace) -> Dict[str, Any]:
     """Execute the OPPS ingestion pipeline for the provided batch ID."""
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.artifact_profile:
+        os.environ["OPPS_ADDENDA_PROFILE"] = args.artifact_profile
+        logger.info("Using explicit artifact profile override", profile=args.artifact_profile)
+    elif _sandbox_samples_configured() and not os.getenv("OPPS_ADDENDA_PROFILE"):
+        os.environ["OPPS_ADDENDA_PROFILE"] = "sandbox_addenda"
+        logger.info("Auto-selected sandbox addenda profile for local samples", profile="sandbox_addenda")
 
     ingestor = OPPSIngestor(
         output_dir=output_dir,
@@ -124,7 +132,19 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Pretty-print the evidence JSON to stdout.",
     )
+    parser.add_argument(
+        "--artifact-profile",
+        help="Override OPPS addenda profile (sets OPPS_ADDENDA_PROFILE for this run).",
+    )
     return parser.parse_args()
+
+
+def _sandbox_samples_configured() -> bool:
+    """Return True when local sample directories are configured via env vars."""
+    return bool(
+        os.getenv("OPPS_LOCAL_SAMPLE_DIR")
+        or os.getenv("OPPS_LOCAL_SAMPLE_DIRS")
+    )
 
 
 def main() -> None:

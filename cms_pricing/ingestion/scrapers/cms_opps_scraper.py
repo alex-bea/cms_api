@@ -119,15 +119,37 @@ class CMSOPPSScraper:
         }
         self._download_semaphore = asyncio.Semaphore(4)
         env_sample_dir = os.getenv("OPPS_LOCAL_SAMPLE_DIR")
-        sample_dir = local_sample_dir or (Path(env_sample_dir).expanduser() if env_sample_dir else None)
-        self.local_sample_dir: Optional[Path] = None
-        if sample_dir:
-            sample_dir = Path(sample_dir)
-            if sample_dir.exists():
-                self.local_sample_dir = sample_dir
-                logger.info("OPPS scraper running in local sandbox mode", sample_dir=str(sample_dir))
+        env_sample_dirs = os.getenv("OPPS_LOCAL_SAMPLE_DIRS")
+        candidate_dirs: List[Path] = []
+        if local_sample_dir:
+            candidate_dirs.append(Path(local_sample_dir).expanduser())
+        if env_sample_dir:
+            candidate_dirs.append(Path(env_sample_dir).expanduser())
+        if env_sample_dirs:
+            for raw_dir in env_sample_dirs.split(os.pathsep):
+                raw_dir = raw_dir.strip()
+                if not raw_dir:
+                    continue
+                candidate_dirs.append(Path(raw_dir).expanduser())
+
+        self.local_sample_dirs: List[Path] = []
+        for candidate in candidate_dirs:
+            if not candidate:
+                continue
+            if candidate.exists():
+                self.local_sample_dirs.append(candidate)
             else:
-                logger.warning("OPPS local sample directory not found", sample_dir=str(sample_dir))
+                logger.warning(
+                    "OPPS local sample directory not found",
+                    sample_dir=str(candidate),
+                )
+
+        self.local_sample_dir: Optional[Path] = self.local_sample_dirs[0] if self.local_sample_dirs else None
+        if self.local_sample_dirs:
+            logger.info(
+                "OPPS scraper running in local sandbox mode",
+                sample_dirs=[str(path) for path in self.local_sample_dirs],
+            )
         
         # OPPS-specific patterns
         self.quarterly_pattern = re.compile(r'(\d{4})\s*[Qq](\d)', re.IGNORECASE)
@@ -216,8 +238,11 @@ class CMSOPPSScraper:
         """
         logger.info("Starting OPPS file discovery", max_quarters=max_quarters)
         
-        if self.local_sample_dir:
-            logger.info("Using local sandbox samples for discovery", sample_dir=str(self.local_sample_dir))
+        if self.local_sample_dirs:
+            logger.info(
+                "Using local sandbox samples for discovery",
+                sample_dirs=[str(path) for path in self.local_sample_dirs],
+            )
             return self._discover_local_samples()
         
         try:
@@ -979,8 +1004,11 @@ class CMSOPPSScraper:
         """Discover files for the latest N quarters."""
         logger.info("Discovering latest OPPS quarters", quarters=quarters)
         
-        if self.local_sample_dir:
-            logger.info("Using local sandbox samples for latest discovery", sample_dir=str(self.local_sample_dir))
+        if self.local_sample_dirs:
+            logger.info(
+                "Using local sandbox samples for latest discovery",
+                sample_dirs=[str(path) for path in self.local_sample_dirs],
+            )
             return self._discover_local_samples()
         
         # Get latest quarters
@@ -1022,54 +1050,67 @@ class CMSOPPSScraper:
         return quarter_files
     
     def _discover_local_samples(self) -> List[ScrapedFileInfo]:
-        """Load OPPS files from a local sandbox directory."""
-        if not self.local_sample_dir:
+        """Load OPPS files from one or more local sandbox directories."""
+        directories: List[Path] = []
+        if self.local_sample_dirs:
+            directories.extend(self.local_sample_dirs)
+        elif self.local_sample_dir:
+            directories.append(self.local_sample_dir)
+        if not directories:
             return []
         
         samples: List[ScrapedFileInfo] = []
-        for file_path in sorted(self.local_sample_dir.iterdir()):
-            if not file_path.is_file():
+        seen_paths: Set[Path] = set()
+        for sample_dir in directories:
+            if not sample_dir.exists():
+                logger.warning("Local sandbox directory missing", sample_dir=str(sample_dir))
                 continue
-            
-            year, quarter = self._infer_year_quarter_from_name(file_path.name)
-            if year is None or quarter is None:
-                logger.warning(
-                    "Skipping local sample (unable to infer year/quarter)",
-                    file=str(file_path)
+            for file_path in sorted(sample_dir.iterdir()):
+                if not file_path.is_file():
+                    continue
+                if file_path in seen_paths:
+                    continue
+                
+                year, quarter = self._infer_year_quarter_from_name(file_path.name)
+                if year is None or quarter is None:
+                    logger.warning(
+                        "Skipping local sample (unable to infer year/quarter)",
+                        file=str(file_path)
+                    )
+                    continue
+                
+                file_type = self._infer_file_type_from_name(file_path.name)
+                batch_id = f"opps_{year}q{quarter}_local"
+                checksum = self._calculate_checksum(file_path)
+                metadata = {
+                    "year": year,
+                    "quarter": quarter,
+                    "quarter_vintage": self._quarter_letter_from_int(quarter),
+                    "source": "local_sandbox",
+                    "sample_dir": str(sample_dir),
+                    "filename": file_path.name
+                }
+                
+                samples.append(
+                    ScrapedFileInfo(
+                        url=file_path.as_uri(),
+                        filename=file_path.name,
+                        file_type=file_type,
+                        batch_id=batch_id,
+                        discovered_at=datetime.utcnow(),
+                        source_page=str(sample_dir),
+                        metadata=metadata,
+                        local_path=file_path,
+                        checksum=checksum,
+                        downloaded_at=datetime.utcnow()
+                    )
                 )
-                continue
-            
-            file_type = self._infer_file_type_from_name(file_path.name)
-            batch_id = f"opps_{year}q{quarter}_local"
-            checksum = self._calculate_checksum(file_path)
-            metadata = {
-                "year": year,
-                "quarter": quarter,
-                "quarter_vintage": self._quarter_letter_from_int(quarter),
-                "source": "local_sandbox",
-                "sample_dir": str(self.local_sample_dir),
-                "filename": file_path.name
-            }
-            
-            samples.append(
-                ScrapedFileInfo(
-                    url=file_path.as_uri(),
-                    filename=file_path.name,
-                    file_type=file_type,
-                    batch_id=batch_id,
-                    discovered_at=datetime.utcnow(),
-                    source_page=str(self.local_sample_dir),
-                    metadata=metadata,
-                    local_path=file_path,
-                    checksum=checksum,
-                    downloaded_at=datetime.utcnow()
-                )
-            )
+                seen_paths.add(file_path)
         
         if not samples:
             logger.warning(
-                "No files discovered in local sandbox directory",
-                sample_dir=str(self.local_sample_dir)
+                "No files discovered in local sandbox directories",
+                sample_dirs=[str(path) for path in directories],
             )
         
         return samples

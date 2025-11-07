@@ -33,6 +33,7 @@ Objective is to finalize land→publish flow with validation coverage to ensure 
 
 ### Execution Checklist (Day 1 Morning – Stabilize OPPS)
 1. Select the target quarter and construct the batch id (e.g., `opps_2025q1_r01`), confirming discovery metadata exists for that year/quarter.
+   - ✅ Using `opps_2025q1_r01` with manifest `data/ingestion/opps/raw/opps/opps_2025q1_r01/manifest.json` (year=2025, quarter=1, vintage "A", local sandbox files resolved).
    - Offline dev? Export `OPPS_LOCAL_SAMPLE_DIR="$PWD/sample_data/january_202025_20web_20addendum_20a.12.31.24"` so the scraper loads local Section 508/Excel files instead of hitting CMS.
 2. Run the scripted dry-run to exercise land→publish stages and emit JSON evidence:
    ```bash
@@ -42,11 +43,19 @@ Objective is to finalize land→publish flow with validation coverage to ensure 
      --pretty
    ```
    - Evidence JSON is stored under `artifacts/opps_dry_runs/` with tables, record counts, and curated parquet paths.
+   - Prep ✅: confirmed `sample_data/january_202025_20web_20addendum_20a.12.31.24/` contains Section 508/Excel files; export `OPPS_LOCAL_SAMPLE_DIR="$PWD/sample_data/january_202025_20web_20addendum_20a.12.31.24"` before running.
+   - Prep ✅: Addendum B sample confirmed at `sample_data/january_2025_web_addendum_b.12.31.24/508 Version of January 2025 Web Addendum B.12.31.24.csv`; set `OPPS_LOCAL_SAMPLE_DIRS="$OPPS_LOCAL_SAMPLE_DIR:$PWD/sample_data/january_2025_web_addendum_b.12.31.24"` (or run `scripts/run_opps_sandbox.sh`) so discovery picks up both files.
+   - ✅ 2025-11-07T21:44:19Z dry-run succeeded via `.venv/bin/python scripts/dry_run_opps.py …`; evidence captured at `artifacts/opps_dry_runs/opps_2025q1_r01_20251107T214419.json` (records=0 for `opps_apc_payment`, `opps_rates_enriched`).
 3. Inspect `curated/opps/<batch_id>/` for the Addendum A/B parquet outputs referenced in the evidence file.
+   - ✅ Verified `data/ingestion/opps/curated/opps/opps_2025q1_r01/` contains `opps_apc_payment.parquet`, `opps_rates_enriched.parquet`, and `metadata.json` as of 2025-11-07T21:44:19Z (both parquet files currently 5.8 KB with 0 records per evidence).
 4. Open `curated/opps/<batch_id>/metadata.json` to confirm `quarter_vintage`, `source_files[].source_file_sha256`, and `table_artifacts[].row_content_hash` populate per the DIS metadata standard (`STD-data-architecture-impl-v1.0.md` §1.2).
+   - ✅ Metadata snapshot confirms `quarter_vintage="A"`, file checksums populated (SHA256 `a48025bd…`), and `row_content_hash` matches empty-table hash `e3b0c442…`; `source_files` entries reference the sandbox Section 508 + XLS paths.
 5. If only a subset of addenda is available locally, update `cms_pricing/ingestion/config/ingestor_artifacts.yml` (dataset `opps`) or set `OPPS_ADDENDA_PROFILE` to ensure validation expectations match the files under test (sandbox leniency will downgrade missing required addenda to warnings).
+   - ✅ Verified `cms_pricing/ingestion/config/ingestor_artifacts.yml` already sets `sandbox.allow_missing_required: true` for OPPS; no additional overrides needed for Addendum A-only samples.
 6. Attach the evidence JSON plus curated row counts to the Day 1 ticket before moving to schema/test updates (template example: `artifacts/opps_dry_runs/opps_2025q1_r01_20251107T205317.json`).
+   - ✅ Shared new evidence location `artifacts/opps_dry_runs/opps_2025q1_r01_20251107T214419.json` + zero-row counts for `opps_apc_payment` and `opps_rates_enriched` in the Day 1 tracking doc.
 7. Afternoon follow-up: re-run the script after implementing schema/test fixes to prove parity and update documentation checkpoints.
+   - 📌 Next action: once schema/test updates land, re-run `scripts/run_opps_sandbox.sh opps_2025q1_r01` (wraps the env vars + dry-run) and append the refreshed evidence JSON to the same ticket.
 
 ## II. Dependency Checklist (The How and Impact)
 
