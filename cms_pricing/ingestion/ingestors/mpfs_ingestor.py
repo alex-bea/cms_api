@@ -71,6 +71,7 @@ from ..enrichers.dis_reference_data_integration import (
 from ...services.dataset_snapshot_service import DatasetSnapshotService, SnapshotMetadata
 from ..services.conversion_factor_fetcher import ConversionFactorFetcher
 from ..services.mpfs_config_service import MPFSConfigService
+from ..services.ingestor_artifact_profile import IngestorArtifactProfileService
 from ..datasets.mpfs_builder import (
     MPFSNormalizedInputs,
     build_curated_views,
@@ -111,6 +112,7 @@ class MPFSIngestor(BaseDISIngestor):
         self.cf_fetcher = cf_fetcher or ConversionFactorFetcher(str(Path(self.output_dir) / "raw"))
         # Config service is optional - CLI flags remain fallback until YAML service is production-ready
         self.config_service = config_service or MPFSConfigService()
+        self.artifact_profile_service = IngestorArtifactProfileService()
 
         self.historical_manager = HistoricalDataManager(str(Path(self.output_dir) / "historical"))
         self.schema_registry = schema_registry
