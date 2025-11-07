@@ -15,12 +15,14 @@ import hashlib
 import json
 import logging
 import os
+import random
 import re
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Any
 from urllib.parse import urljoin, urlparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 from bs4 import BeautifulSoup
@@ -38,6 +40,42 @@ EC = None  # type: ignore
 from ..metadata.discovery_manifest import DiscoveryManifest, DiscoveryManifestStore
 
 logger = get_logger()
+
+
+GOVERNANCE_DATE_PATTERN = re.compile(
+    r"(Effective|Posted|Updated|Revised)\s+"
+    r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+"
+    r"(\d{1,2}),?\s+(\d{4})",
+    flags=re.IGNORECASE,
+)
+
+MONTH_LOOKUP = {
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+}
+
+
+@dataclass
+class DownloadTelemetry:
+    """Telemetry emitted for each download attempt."""
+
+    retry_count: int = 0
+    correlation_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    final_url: Optional[str] = None
+    content_type: Optional[str] = None
+    content_length: Optional[int] = None
+    status_code: Optional[int] = None
+    disclaimer_mode: Optional[str] = None
 
 
 @dataclass
@@ -74,6 +112,12 @@ class CMSOPPSScraper:
         self.manifest_store = DiscoveryManifestStore(self.output_dir / "manifests", prefix="cms_opps_manifest")
         self.opps_base_url = "https://www.cms.gov/medicare/payment/prospective-payment-systems/hospital-outpatient"
         self.quarterly_addenda_url = "https://www.cms.gov/medicare/payment/prospective-payment-systems/hospital-outpatient-pps/quarterly-addenda-updates"
+        self._request_headers = {
+            "User-Agent": "DIS-OPPS-Scraper/1.0 (+ops@yourco.com)",
+            "Accept": "application/octet-stream, application/zip, text/csv, */*",
+            "Referer": "https://www.cms.gov/",
+        }
+        self._download_semaphore = asyncio.Semaphore(4)
         env_sample_dir = os.getenv("OPPS_LOCAL_SAMPLE_DIR")
         sample_dir = local_sample_dir or (Path(env_sample_dir).expanduser() if env_sample_dir else None)
         self.local_sample_dir: Optional[Path] = None
@@ -104,7 +148,62 @@ class CMSOPPSScraper:
             'q3': re.compile(r'july|jul|q3|third\s*quarter', re.IGNORECASE),
             'q4': re.compile(r'october|oct|q4|fourth\s*quarter', re.IGNORECASE)
         }
-    
+
+    def _extract_governance_metadata(self, soup: BeautifulSoup, quarter_info: Dict[str, int]) -> Dict[str, Any]:
+        """Derive governance metadata fields from quarter page contents."""
+        text = soup.get_text(" ", strip=True)
+        update_type = self._determine_update_type(text, quarter_info)
+        precedence_rank = self._precedence_rank_for(update_type)
+        effective_date = self._find_date_in_text(text, {"effective"})
+        published_at = self._find_date_in_text(text, {"posted", "updated", "revised"})
+        return {
+            "update_type": update_type,
+            "precedence_rank": precedence_rank,
+            "effective_date": effective_date,
+            "published_at": published_at,
+        }
+
+    def _determine_update_type(self, text: str, quarter_info: Dict[str, int]) -> str:
+        lowered = text.lower()
+        correction_indicators = ["correction", "corrected", "errata", "update", "revised", "restated"]
+        if any(keyword in lowered for keyword in correction_indicators):
+            return "AdHoc_Correction"
+        if quarter_info.get("quarter") == 1:
+            return "Baseline"
+        return "Quarterly_Addendum"
+
+    def _precedence_rank_for(self, update_type: str) -> int:
+        return {
+            "Baseline": 1,
+            "Quarterly_Addendum": 2,
+            "AdHoc_Correction": 3,
+        }.get(update_type, 3)
+
+    def _find_date_in_text(self, text: str, keywords: Set[str]) -> Optional[str]:
+        for match in GOVERNANCE_DATE_PATTERN.finditer(text):
+            label = match.group(1).lower()
+            if label not in keywords:
+                continue
+            month = MONTH_LOOKUP.get(match.group(2).lower())
+            day = int(match.group(3))
+            year = int(match.group(4))
+            if not month:
+                continue
+            try:
+                return datetime(year, month, day).date().isoformat()
+            except ValueError:
+                continue
+        return None
+
+    async def _fetch_head_metadata(self, url: str) -> Dict[str, str]:
+        """Best-effort HEAD request to capture content headers."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0, headers=self._request_headers) as client:
+                response = await client.head(url, follow_redirects=True)
+                return dict(response.headers)
+        except Exception:
+            return {}
+
     async def discover_files(self, max_quarters: int = 8) -> List[ScrapedFileInfo]:
         """
         Discover OPPS quarterly addenda files.
@@ -325,7 +424,7 @@ class CMSOPPSScraper:
             quarter=quarter_info['quarter']
         )
         
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=self._request_headers) as client:
             response = await client.get(quarter_url)
             response.raise_for_status()
             
@@ -334,6 +433,7 @@ class CMSOPPSScraper:
             files = []
             year = quarter_info['year']
             quarter = quarter_info['quarter']
+            governance_metadata = self._extract_governance_metadata(soup, quarter_info)
             
             # Look for file links
             for link in soup.find_all('a', href=True):
@@ -349,7 +449,16 @@ class CMSOPPSScraper:
                     batch_id = f"opps_{year}q{quarter}_r01"
                     
                     # Handle disclaimer interstitials using tiered strategy
-                    final_url = await self._resolve_disclaimer_url(client, initial_url, text)
+                    final_url, header_snapshot, disclaimer_mode = await self._resolve_disclaimer_url(client, initial_url, text)
+                    if not header_snapshot:
+                        header_snapshot = await self._fetch_head_metadata(final_url)
+                    content_length = header_snapshot.get('content-length')
+                    try:
+                        size_bytes = int(content_length) if content_length else None
+                    except ValueError:
+                        size_bytes = None
+                    content_type_header = header_snapshot.get('content-type')
+                    manifest_id = str(uuid.uuid4())
                     
                     file_info = ScrapedFileInfo(
                         url=final_url,
@@ -364,7 +473,13 @@ class CMSOPPSScraper:
                             'addendum_type': file_type,
                             'original_text': text,
                             'initial_url': initial_url,
-                            'disclaimer_resolved': final_url != initial_url
+                            'disclaimer_resolved': final_url != initial_url,
+                            'disclaimer_mode': disclaimer_mode,
+                            'provenance_link': final_url,
+                            'manifest_id': manifest_id,
+                            'content_type': content_type_header,
+                            'size_bytes': size_bytes,
+                            **governance_metadata,
                         }
                     )
                     
@@ -378,30 +493,20 @@ class CMSOPPSScraper:
             
             return files
     
-    async def _resolve_disclaimer_url(self, client: httpx.AsyncClient, initial_url: str, text: str) -> str:
-        """
-        Resolve disclaimer interstitials using tiered strategy from PRD.
-        
-        Tier 1: Direct HTTP GET
-        Tier 2: Headless browser disclaimer acceptance
-        Tier 3: Quarantine (return original URL with error flag)
-        """
+    async def _resolve_disclaimer_url(
+        self,
+        client: httpx.AsyncClient,
+        initial_url: str,
+        text: str,
+    ) -> Tuple[str, Dict[str, str], str]:
+        """Resolve disclaimers and return final URL + headers + mode."""
         logger.debug("Resolving disclaimer URL", initial_url=initial_url, text=text)
-        
+
         try:
-            # Tier 1: Direct HTTP GET with appropriate headers
-            headers = {
-                'User-Agent': 'DIS-OPPS-Scraper/1.0 (+ops@yourco.com)',
-                'Accept': 'application/octet-stream, application/zip, */*',
-                'Referer': 'https://www.cms.gov/'
-            }
-            
-            response = await client.get(initial_url, headers=headers, follow_redirects=True)
-            
-            # Check if we got a disclaimer page (common indicators)
+            response = await client.get(initial_url, headers=self._request_headers, follow_redirects=True)
             content_type = response.headers.get('content-type', '').lower()
             content_text = response.text.lower() if response.text else ''
-            
+
             disclaimer_indicators = [
                 'license.asp' in initial_url.lower(),
                 'disclaimer' in content_text,
@@ -410,7 +515,7 @@ class CMSOPPSScraper:
                 'agreement' in content_text,
                 'click here to accept' in content_text
             ]
-            
+
             if any(disclaimer_indicators):
                 logger.warning(
                     "Disclaimer interstitial detected",
@@ -418,8 +523,6 @@ class CMSOPPSScraper:
                     content_type=content_type,
                     indicators=disclaimer_indicators
                 )
-                
-                # Tier 2: Headless browser disclaimer acceptance
                 resolved_url = await self._handle_disclaimer_with_browser(initial_url, text)
                 if resolved_url != initial_url:
                     logger.info(
@@ -427,16 +530,10 @@ class CMSOPPSScraper:
                         original_url=initial_url,
                         resolved_url=resolved_url
                     )
-                    return resolved_url
-                else:
-                    logger.warning(
-                        "Browser disclaimer resolution failed, quarantining",
-                        url=initial_url
-                    )
-                    # Tier 3: Quarantine - return original URL with error flag
-                    return initial_url
-            
-            # Check if we got a file (success indicators)
+                    return resolved_url, {}, "headless"
+                logger.warning("Browser disclaimer resolution failed, quarantining", url=initial_url)
+                return initial_url, {}, "quarantine"
+
             file_indicators = [
                 'application/zip' in content_type,
                 'application/octet-stream' in content_type,
@@ -444,7 +541,7 @@ class CMSOPPSScraper:
                 'application/vnd.ms-excel' in content_type,
                 response.headers.get('content-disposition', '').startswith('attachment')
             ]
-            
+
             if any(file_indicators):
                 logger.info(
                     "Successfully resolved to file",
@@ -452,24 +549,19 @@ class CMSOPPSScraper:
                     content_type=content_type,
                     content_length=response.headers.get('content-length', 'unknown')
                 )
-                return initial_url
-            
-            # If we get here, it's unclear what we got
+                return str(response.request.url), dict(response.headers), "direct"
+
             logger.warning(
                 "Unclear response type",
                 url=initial_url,
                 content_type=content_type,
                 status_code=response.status_code
             )
-            return initial_url
-            
-        except Exception as e:
-            logger.error(
-                "Error resolving disclaimer URL",
-                url=initial_url,
-                error=str(e)
-            )
-            return initial_url
+            return str(response.request.url), dict(response.headers), "direct"
+
+        except Exception as exc:
+            logger.error("Error resolving disclaimer URL", url=initial_url, error=str(exc))
+            return initial_url, {}, "direct"
     
     async def _handle_disclaimer_with_browser(self, disclaimer_url: str, text: str) -> str:
         """
@@ -698,8 +790,12 @@ class CMSOPPSScraper:
             batch_dir = self.output_dir / "scraped" / file_info.batch_id
             batch_dir.mkdir(parents=True, exist_ok=True)
             
-            # Download file
-            file_path = await self._download_with_retry(file_info.url, batch_dir / file_info.filename)
+            # Download file with telemetry
+            file_path, telemetry = await self._download_with_retry(
+                file_info.url,
+                batch_dir / file_info.filename,
+                file_info.metadata.get('disclaimer_mode'),
+            )
             
             # Calculate checksum
             checksum = self._calculate_checksum(file_path)
@@ -709,8 +805,18 @@ class CMSOPPSScraper:
             file_info.checksum = checksum
             file_info.downloaded_at = datetime.utcnow()
             
+            # Update metadata with telemetry details
+            file_info.metadata.setdefault('correlation_id', telemetry.correlation_id)
+            if telemetry.content_type and not file_info.metadata.get('content_type'):
+                file_info.metadata['content_type'] = telemetry.content_type
+            if telemetry.content_length and not file_info.metadata.get('size_bytes'):
+                try:
+                    file_info.metadata['size_bytes'] = int(telemetry.content_length)
+                except ValueError:
+                    pass
+
             # Generate manifest
-            await self._generate_manifest(file_info, batch_dir)
+            await self._generate_manifest(file_info, batch_dir, telemetry)
             
             logger.info(
                 "OPPS file downloaded successfully",
@@ -729,22 +835,45 @@ class CMSOPPSScraper:
             )
             raise
     
-    async def _generate_manifest(self, file_info: ScrapedFileInfo, batch_dir: Path):
+    async def _generate_manifest(
+        self,
+        file_info: ScrapedFileInfo,
+        batch_dir: Path,
+        telemetry: DownloadTelemetry,
+    ) -> None:
         """Generate manifest file for the batch."""
+        download_entry = {
+            'url': file_info.url,
+            'filename': file_info.filename,
+            'file_type': file_info.file_type,
+            'local_path': str(file_info.local_path),
+            'checksum': file_info.checksum,
+            'size_bytes': file_info.local_path.stat().st_size if file_info.local_path else None,
+            'content_type': file_info.metadata.get('content_type'),
+            'provenance_link': file_info.metadata.get('provenance_link'),
+            'manifest_id': file_info.metadata.get('manifest_id'),
+            'update_type': file_info.metadata.get('update_type'),
+            'precedence_rank': file_info.metadata.get('precedence_rank'),
+            'effective_date': file_info.metadata.get('effective_date'),
+            'published_at': file_info.metadata.get('published_at'),
+            'disclaimer_mode': file_info.metadata.get('disclaimer_mode'),
+            'download_telemetry': {
+                'retry_count': telemetry.retry_count,
+                'correlation_id': telemetry.correlation_id,
+                'final_url': telemetry.final_url,
+                'content_type': telemetry.content_type,
+                'content_length': telemetry.content_length,
+                'status_code': telemetry.status_code,
+                'disclaimer_mode': telemetry.disclaimer_mode,
+            },
+            'metadata': file_info.metadata,
+        }
         manifest = {
             'batch_id': file_info.batch_id,
             'discovered_at': file_info.discovered_at.isoformat(),
             'downloaded_at': file_info.downloaded_at.isoformat(),
             'source_page': file_info.source_page,
-            'files': [{
-                'url': file_info.url,
-                'filename': file_info.filename,
-                'file_type': file_info.file_type,
-                'local_path': str(file_info.local_path),
-                'checksum': file_info.checksum,
-                'size_bytes': file_info.local_path.stat().st_size,
-                'metadata': file_info.metadata
-            }],
+            'files': [download_entry],
             'scraper_version': '1.0.0',
             'discovery_method': 'cms_opps_scraper'
         }
@@ -763,24 +892,70 @@ class CMSOPPSScraper:
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
     
-    async def _download_with_retry(self, url: str, file_path: Path, max_retries: int = 3) -> Path:
-        """Download file with retry logic."""
-        for attempt in range(max_retries):
+    async def _download_with_retry(
+        self,
+        url: str,
+        file_path: Path,
+        disclaimer_mode: Optional[str],
+        max_retries: int = 4,
+    ) -> Tuple[Path, DownloadTelemetry]:
+        """Download file with retry logic and telemetry."""
+        telemetry = DownloadTelemetry(disclaimer_mode=disclaimer_mode)
+        attempt = 0
+        while attempt < max_retries:
             try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.get(url)
-                    response.raise_for_status()
-                    
-                    with open(file_path, 'wb') as f:
-                        f.write(response.content)
-                    
-                    return file_path
-                    
-            except Exception as e:
-                if attempt == max_retries - 1:
+                async with self._download_semaphore:
+                    async with httpx.AsyncClient(timeout=30.0, headers=self._request_headers) as client:
+                        response = await client.get(url, follow_redirects=True)
+                        response.raise_for_status()
+                        with open(file_path, 'wb') as f:
+                            f.write(response.content)
+                        telemetry.retry_count = attempt
+                        telemetry.final_url = str(response.request.url)
+                        telemetry.content_type = response.headers.get('content-type')
+                        content_length = response.headers.get('content-length')
+                        try:
+                            telemetry.content_length = int(content_length) if content_length else None
+                        except ValueError:
+                            telemetry.content_length = None
+                        telemetry.status_code = response.status_code
+                        return file_path, telemetry
+            except httpx.HTTPStatusError as exc:
+                attempt += 1
+                if attempt >= max_retries:
                     raise
-                logger.warning(f"Download attempt {attempt + 1} failed, retrying", error=str(e))
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                delay = self._calculate_retry_delay(attempt, exc.response.headers.get('Retry-After'))
+                logger.warning(
+                    "Download attempt failed",
+                    url=url,
+                    status=exc.response.status_code,
+                    retry_in=delay,
+                    attempt=attempt,
+                )
+                await asyncio.sleep(delay)
+            except Exception as err:
+                attempt += 1
+                if attempt >= max_retries:
+                    raise
+                delay = self._calculate_retry_delay(attempt)
+                logger.warning(
+                    "Download error, retrying",
+                    url=url,
+                    error=str(err),
+                    attempt=attempt,
+                    retry_in=delay,
+                )
+                await asyncio.sleep(delay)
+        return file_path, telemetry
+
+    def _calculate_retry_delay(self, attempt: int, retry_after_header: Optional[str] = None) -> float:
+        if retry_after_header:
+            try:
+                return float(retry_after_header)
+            except ValueError:
+                pass
+        base = min(60, (2 ** attempt))
+        return base + random.uniform(0, 0.5)
     
     def get_latest_quarters(self, count: int = 4) -> List[str]:
         """Get the latest N quarters for OPPS releases."""

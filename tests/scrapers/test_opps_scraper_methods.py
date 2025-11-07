@@ -16,6 +16,8 @@ from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from datetime import datetime
 from pathlib import Path
 
+from bs4 import BeautifulSoup
+
 from cms_pricing.ingestion.scrapers.cms_opps_scraper import CMSOPPSScraper
 
 
@@ -197,6 +199,34 @@ class TestOPPSScraperMethods:
         assert scraper._classify_file("/ADDENDUM-E.CSV", "ADDENDUM E") == "addendum_e"
         assert scraper._classify_file("/ADDENDUM-Q.CSV", "ADDENDUM Q") == "addendum_q"
         assert scraper._classify_file("/ADDENDUM.ZIP", "ADDENDUM") == "addendum_zip"
+
+    def test_extract_governance_metadata_baseline(self, scraper):
+        html = """
+        <div>
+            <p>Effective January 1, 2025</p>
+            <p>Posted December 1, 2024</p>
+        </div>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        meta = scraper._extract_governance_metadata(soup, {"year": 2025, "quarter": 1})
+        assert meta["update_type"] == "Baseline"
+        assert meta["precedence_rank"] == 1
+        assert meta["effective_date"] == "2025-01-01"
+        assert meta["published_at"] == "2024-12-01"
+
+    def test_extract_governance_metadata_ad_hoc(self, scraper):
+        html = """
+        <div>
+            <h1>July 2025 OPPS Correction</h1>
+            <p>Updated July 10, 2025</p>
+        </div>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        meta = scraper._extract_governance_metadata(soup, {"year": 2025, "quarter": 3})
+        assert meta["update_type"] == "AdHoc_Correction"
+        assert meta["precedence_rank"] == 3
+        assert meta["effective_date"] is None or meta["effective_date"].startswith("2025-")
+        assert meta["published_at"] == "2025-07-10"
     
     # Test _resolve_disclaimer_url method
     @pytest.mark.asyncio
@@ -207,10 +237,16 @@ class TestOPPSScraperMethods:
         mock_response.headers = {'content-type': 'application/zip'}
         mock_response.text = ''
         mock_response.status_code = 200
+        mock_response.request = Mock()
+        mock_response.request.url = "https://example.com/file.zip"
         mock_client.get.return_value = mock_response
         
         result = await scraper._resolve_disclaimer_url(mock_client, "https://example.com/file.zip", "Test File")
-        assert result == "https://example.com/file.zip"
+        assert result == (
+            "https://example.com/file.zip",
+            {'content-type': 'application/zip'},
+            "direct",
+        )
     
     @pytest.mark.asyncio
     async def test_resolve_disclaimer_url_disclaimer_detected(self, scraper):
@@ -220,6 +256,8 @@ class TestOPPSScraperMethods:
         mock_response.headers = {'content-type': 'text/html'}
         mock_response.text = 'disclaimer terms accept agreement'
         mock_response.status_code = 200
+        mock_response.request = Mock()
+        mock_response.request.url = "https://example.com/license.asp"
         mock_client.get.return_value = mock_response
         
         # Mock the browser resolution to return a different URL
@@ -228,7 +266,7 @@ class TestOPPSScraperMethods:
         
         with patch.object(scraper, '_handle_disclaimer_with_browser', side_effect=mock_browser_resolution):
             result = await scraper._resolve_disclaimer_url(mock_client, "https://example.com/license.asp", "Test File")
-            assert result == "https://example.com/resolved.zip"
+            assert result == ("https://example.com/resolved.zip", {}, "headless")
     
     @pytest.mark.asyncio
     async def test_resolve_disclaimer_url_disclaimer_fallback(self, scraper):
@@ -238,6 +276,8 @@ class TestOPPSScraperMethods:
         mock_response.headers = {'content-type': 'text/html'}
         mock_response.text = 'disclaimer terms accept agreement'
         mock_response.status_code = 200
+        mock_response.request = Mock()
+        mock_response.request.url = "https://example.com/license.asp"
         mock_client.get.return_value = mock_response
         
         # Mock the browser resolution to fail (return original URL)
@@ -246,7 +286,7 @@ class TestOPPSScraperMethods:
         
         with patch.object(scraper, '_handle_disclaimer_with_browser', side_effect=mock_browser_fallback):
             result = await scraper._resolve_disclaimer_url(mock_client, "https://example.com/license.asp", "Test File")
-            assert result == "https://example.com/license.asp"
+            assert result == ("https://example.com/license.asp", {}, "quarantine")
     
     @pytest.mark.asyncio
     async def test_resolve_disclaimer_url_http_error(self, scraper):
@@ -255,7 +295,7 @@ class TestOPPSScraperMethods:
         mock_client.get.side_effect = Exception("HTTP Error")
         
         result = await scraper._resolve_disclaimer_url(mock_client, "https://example.com/file.zip", "Test File")
-        assert result == "https://example.com/file.zip"
+        assert result == ("https://example.com/file.zip", {}, "direct")
     
     # Test _handle_disclaimer_with_browser method
     @pytest.mark.asyncio
