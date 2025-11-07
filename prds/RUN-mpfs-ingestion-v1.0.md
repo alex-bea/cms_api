@@ -53,6 +53,8 @@ session.close()
 PY
 ```
 
+Release identifiers returned by the snapshot check should include dataset-specific prefixes (`rvu_YYYY_S`, `gpci_YYYY_S`, etc.). If a snapshot still reports the shared RVU base ID, rerun the RVU ingestor before starting MPFS so that per-dataset release IDs are registered. Snapshot metadata stores manifest URLs for provenance; `DatasetSnapshotService` resolves the actual parquet path automatically. Use `python tools/audit_snapshot_paths.py --dataset-id gpci_indices` to inspect manifest-only entries when troubleshooting.
+
 ### 1.3 Conversion Factor Override Configuration
 
 **YAML Config Service (Primary Method - Once Production-Ready)**
@@ -114,6 +116,13 @@ python scripts/run_mpfs_ingestion.py \
   python scripts/run_mpfs_ingestion.py --year 2025 --quarter C
   ```
 - Manifest metadata now includes `target_release_suffix`, `requested_release_param`, and the resolved RVU/GPCI release IDs. Capture those values in change tickets when promoting data downstream.
+
+### 1.5 Snapshot Health Tooling
+
+- **Audit (read-only):** `python tools/audit_snapshot_paths.py --dataset-id gpci_indices --show-all`
+- **Repair (mutating, requires --confirm):** `python scripts/repair_snapshot_paths.py --dataset-id gpci_indices --confirm`
+- **Parity check (weekly + CI):** `python tools/check_snapshot_release_parity.py --pairs rvu_items:gpci_indices`
+- Always run the audit script before the repair utility; the CSV backup emitted by the repair script must be attached to the ops ticket.
 
 ---
 
@@ -288,6 +297,8 @@ Confirm entries include `mpfs_cf`, `mpfs_rvu`, `mpfs_gpci` with release_id/batch
 | `ValueError: RVU snapshot not available` | RVU pipeline not run | Execute RVU ingestor or point to prior snapshot release. |
 | `Publish stage raised FileNotFoundError` | Output dir perms / disk full | Free disk space; ensure ingestor has write permissions. |
 | API missing `datasets_used` entries | Contract tests pending or publish not complete | Re-run API regression suite; inspect manifest metadata. |
+
+**Weekly parity check:** run `python tools/check_snapshot_release_parity.py --pairs rvu_items:gpci_indices` to ensure RVU/GPCI release suffixes stay aligned before scheduling MPFS ingestion. Use `--allow-missing` if staging snapshots are mid-promotion.
 
 ---
 

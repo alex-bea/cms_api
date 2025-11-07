@@ -26,16 +26,28 @@ This runbook lists validation steps and ops playbook items for the new MPFS inge
 - Spot-check 5 localities across different MACs against **Locality Key** and **Locality Configuration** notes (e.g., CA MSA consolidation).  [oai_citation:35‡Centers for Medicare & Medicaid Services](https://www.cms.gov/medicare/payment/fee-schedules/physician-fee-schedule/locality-key?utm_source=chatgpt.com)
 - Confirm Work/PE/MP GPCIs present for each locality vintage.  [oai_citation:36‡Centers for Medicare & Medicaid Services](https://www.cms.gov/medicare/physician-fee-schedule/search/documentation?utm_source=chatgpt.com)
 
-3) **Conversion Factor Vintage**
+3) **RVU Snapshot Registration Verification**
+- After each RVU ingestion run, confirm every curated dataset registered a dataset-specific release ID (e.g., `gpci_2025_B`, not `rvu_2025_B`).
+  ```bash
+  python tools/audit_snapshot_paths.py --show-all
+  python tools/audit_snapshot_paths.py --dataset-id gpci_indices
+  ```
+- If the audit shows entries with `status=manifest_json`, repair them before MPFS runs:
+  ```bash
+  python scripts/repair_snapshot_paths.py --dataset-id gpci_indices --confirm
+  ```
+- Escalate if any dataset is missing; MPFS reuse depends on the full set (`rvu_items`, `gpci_indices`, `anescf`, `localitycounty`, `oppscap`).
+
+4) **Conversion Factor Vintage**
 - Ensure `mpfs_cf_vintage` has the correct **CY 2025 CF** pinned per final rule context.  [oai_citation:37‡Centers for Medicare & Medicaid Services](https://www.cms.gov/newsroom/press-releases/hhs-finalizes-physician-payment-rule-strengthening-person-centered-care-and-health-quality-measures?utm_source=chatgpt.com)
 
-4) **API Smoke Tests**
+5) **API Smoke Tests**
 - **Single code** (200 + correlation-id present).
 - **Paged list** (pagination sane).
 - **Filters** (`quarter_vintage`, `modifier`).
 - **Health/stats** (freshness & volume reflect latest RVU drop).
 
-5) **Quarter-over-Quarter Diffs**
+6) **Quarter-over-Quarter Diffs**
 - Generate machine-readable diff (adds/deletes, indicator flips). Manually verify 2–3 deltas against CMS release notes or updated lists.  [oai_citation:38‡Centers for Medicare & Medicaid Services](https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files?utm_source=chatgpt.com)
 
 ## B. First-Month Ops
