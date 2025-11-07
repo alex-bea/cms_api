@@ -13,6 +13,30 @@ permissions:
   packages: write
 
 jobs:
+  snapshot-parity:
+    name: Verify RVU ↔ GPCI parity
+    if: ${{ github.event_name != 'pull_request' && secrets.SNAPSHOT_DATABASE_URL != '' }}
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.SNAPSHOT_DATABASE_URL }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run snapshot parity check
+        run: |
+          python tools/check_snapshot_release_parity.py --pairs rvu_items:gpci_indices
+
   build:
     name: Build Docker image (${{ matrix.target }})
     runs-on: ubuntu-latest
@@ -123,4 +147,3 @@ jobs:
       - name: Print success note
         run: |
           echo "✅ Build-only workflow completed for target '${{ matrix.target }}'."
-

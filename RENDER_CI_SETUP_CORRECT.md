@@ -61,6 +61,10 @@ Add these 3 secrets:
 - Your Render service URL: `https://dashboard.render.com/web/srv-XXXXX`
 - Copy the `srv-XXXXX` part
 
+#### `SNAPSHOT_DATABASE_URL`
+- Connection string for the staging snapshot registry (read-only credentials are sufficient).
+- Used by the GitHub snapshot-parity job to compare RVU vs GPCI release suffixes before triggering MPFS workflows.
+
 ### Step 2: Verify Database Environment
 
 **In Render Dashboard → Your Service → Environment:**
