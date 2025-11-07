@@ -1,122 +1,176 @@
-<!-- 1d1f7eb8-96c0-4a51-9473-f7376a2fc7b5 8a221020-5a52-4bf5-b2a6-e80a70643242 -->
-# RVU → GPCI Snapshot Alignment Plan (v1.1, 2025-11-06)
+<!-- 1d1f7eb8-96c0-4a51-9473-f7376a2fc7b5 9ec0f19c-9511-4d46-9641-459ab3bcab89 -->
+# RVU Snapshot Documentation Updates
 
-## Goal
+## Overview
+Update remaining documentation (3/5 items) to reflect completed RVU snapshot registration implementation, including dataset-specific release IDs, operational tools, and accurate metrics.
 
-Ensure the RVU pipeline registers each curated dataset with a dataset-specific release ID (e.g. `gpci_2025_B`) and that snapshot metadata exposes the actual parquet locations so MPFS discovery can locate snapshots by quarter. Includes code updates, fallback, backfill strategy, validation, and operational rollout.
+## Current Status
+**Actual line count:** 1,383 lines (verified via `wc -l`)
+**Reduction:** 67.4% from original 4,247 lines
+**Target:** <1,500 lines ✅ ACHIEVED
 
-## Current State & Requirements
+**Already Complete (2/5):**
+- ✅ `prds/RUN-mpfs-ingestion-v1.0.md` - Section 1.2 documents RVU snapshot auto-registration
+- ✅ `prds/PRD-mpfs-prd-v1.0.md` - Line 54 notes dataset-specific release IDs
 
-- RVU ingestor registers all datasets (`rvu_items`, `gpci_indices`, etc.) using the same base release ID (`rvu_YYYY_S`).
-- Snapshot metadata currently stores the manifest path, so MPFS attempts to read JSON as Parquet during `_load_snapshot_dataframe`.
-- MPFS discovery expects per-dataset release IDs (`rvu_YYYY_S`, `gpci_YYYY_S`, …); GPCI snapshots therefore go missing.
-- Need deterministic mapping from base RVU release ID to dataset-specific release namespaces and real parquet paths in snapshot metadata.
-- Recent failures (Nov 2025) confirmed that `DatasetSnapshotService.get_latest_snapshot()` resolves manifest.json instead of parquet; fallback handling and repair are required.
+**Remaining (3/5):**
+- ❌ `prds/PRD-rvu-gpci-prd-v0.1.md` - Missing snapshot registration section
+- ❌ `prds/RUN-global-operations-prd-v1.0.md` - Missing snapshot verification steps  
+- ❌ `prds/DOC-master-catalog-prd-v1.0.md` - Tools not registered
+- ⚠️ `prds/STD-data-architecture-impl-v1.0.md` - Outdated line counts (990 → 1,383)
 
-## Implementation Steps
+## Updates Required
 
-### 1. Locate Snapshot Registration Logic
+### 1. `prds/PRD-rvu-gpci-prd-v0.1.md` - Add Snapshot Registration
+**File:** `prds/PRD-rvu-gpci-prd-v0.1.md`  
+**Location:** After line 375 (after "Publish Stage Implementation")  
+**Priority:** HIGH
 
-- File: `cms_pricing/ingestion/ingestors/rvu_ingestor.py`
-- Review `_register_dataset_snapshots()` to confirm shared release ID usage and manifest-path registration.
+**Content to add:**
+```markdown
+#### Snapshot Registration (Post-Publish)
 
-### 2. Introduce Dataset-Specific Release Mapping
+**Location:** `RVUIngestor._register_dataset_snapshots` (lines 1104-1166)
 
-- Implement helper `_dataset_release_id(dataset_id: str, base_release_id: str) -> str` that derives dataset-specific release IDs.
-- Mapping table:
-| dataset_id       | Prefix     | Example target |
-|------------------|------------|----------------|
-| `rvu_items`      | `rvu`      | `rvu_2025_B`   |
-| `gpci_indices`   | `gpci`     | `gpci_2025_B`  |
-| `localitycounty` | `locality` | `locality_2025_B` |
-| `anescf`         | `anescf`   | `anescf_2025_B` |
-| `oppscap`        | `oppscap`  | `oppscap_2025_B` |
-- Parse the base release ID once via simple string split to extract `{year}_{suffix}` and compose `{prefix}_{year}_{suffix}` per dataset.
-- Default to returning the base release ID (with warning) if an unknown dataset surfaces (future proofing).
+After successful publish, snapshots are automatically registered in `dataset_snapshots` table:
 
-### 3. Fix Snapshot Metadata Paths
+**Datasets registered:**
+- rvu_items, gpci_indices, anescf, localitycounty, oppscap
 
-- In RVU publish stage, after manifest generation:
-- Load manifest JSON.
-- For each dataset, retrieve `parquet_path` from `manifest["datasets"][dataset_name]["parquet_path"]`.
-- Pass this parquet path as `path` to `register_snapshot()`.
-- Keep `manifest_url` pointing to manifest; only `path` changes.
-- Add structured logging showing dataset, base release ID, dataset-specific release ID, and parquet path.
-- Update `tests/ingestors/test_rvu_ingestor_e2e.py` to assert `SnapshotMetadata.path` matches the dataset’s parquet file.
-- **Temporary repair step:** Run a one-time utility to patch existing snapshot rows where `path` points to `manifest.json`, replacing it with the correct parquet path from the manifest. This should run in a networked environment before MPFS rerun.
+**Dataset-specific release IDs** (via `_dataset_release_id` helper):
+| Dataset | Example Release ID |
+|---------|-------------------|
+| rvu_items | rvu_2025_B |
+| gpci_indices | gpci_2025_B |
+| anescf | anescf_2025_B |
+| localitycounty | locality_2025_B |
+| oppscap | oppscap_2025_B |
 
-### 4. Add Manifest Fallback in MPFS
+**Metadata stored:**
+- SHA256 digest (Parquet file, computed in chunks)
+- Effective dates (from vintage_date)
+- Manifest URL (provenance)
+- Curated path (actual Parquet location)
 
-- File: `cms_pricing/ingestion/ingestors/mpfs_ingestor.py`
-- Update `_load_snapshot_dataframe()` to detect `.json` snapshot paths:
-```python
-if snapshot_meta["path"].endswith(".json"):
-with open(snapshot_meta["path"]) as f:
-manifest = json.load(f)
-parquet_path = manifest["datasets"][snapshot_meta["dataset_id"]]["parquet_path"]
-return pd.read_parquet(parquet_path)
+**Error handling:** Registration failures log warnings; pipeline continues
 
-•	This prevents ingestion failure if snapshot metadata drifts and still points to manifests.
-•	Keep this as a safety net until all snapshots store parquet paths.
+**Verification:**
+bash
+python tools/audit_snapshot_paths.py --dataset-id gpci_indices
 
-5. Update Snapshot Registration Calls
-•	With dataset-specific release IDs and real parquet paths, call register_snapshot() per dataset.
-•	Ensure release ID mapping helper is used and manifest URL remains consistent.
+**Tools:**
+- `tools/audit_snapshot_paths.py` - Audit snapshot paths
+- `scripts/repair_snapshot_paths.py` - Repair manifest.json paths
+```
 
-6. Backfill Strategy
-•	Historical backfill optional: current production has no prior snapshots; future re-registration script can be added if missing historical data causes MPFS mismatch.
-•	Defer backfill until stable ingestion is confirmed.
+**Acceptance:** Section added with all metadata fields documented
 
-7. Testing
-•	Extend RVU E2E tests to verify:
-•	Dataset-specific release IDs (e.g. gpci_2025_B) are passed to register_snapshot().
-•	Snapshot metadata path points to actual parquet file.
-•	Add regression coverage:
-•	Test where snapshot.path points to a manifest.json and ensure fallback loads parquet successfully.
-•	Verify that after RVU publish fix, DatasetSnapshotService.get_latest_snapshot() returns .parquet paths and dataset-specific release IDs.
+### 2. `prds/RUN-global-operations-prd-v1.0.md` - Add Snapshot Verification
+**File:** `prds/RUN-global-operations-prd-v1.0.md`  
+**Location:** After section A.2 "Locality & GPCI Integrity" (around line 27)  
+**Priority:** HIGH
 
-8. Documentation Updates
-•	prds/RUN-mpfs-ingestion-v1.0.md & prds/PRD-mpfs-prd-v1.0.md:
-•	Document dataset-specific release naming.
-•	Explain that RVU snapshots now record parquet paths (not just manifest URLs).
-•	artifacts/mpfs_implementation_plan.md:
-•	Add note to validate dataset-specific release IDs and parquet path metadata.
-•	Operational checklist: Before running MPFS ingestion, confirm all snapshot paths end with .parquet; if not, run scripts/repair_snapshot_paths.py to fix them.
+**Content to add:**
+```markdown
+3) **RVU Snapshot Registration Verification**
+- After RVU ingestion, verify dataset-specific release IDs registered:
+bash
+python tools/audit_snapshot_paths.py --show-all | grep -E "(rvu_items|gpci_indices)"
 
-9. Rollout
-•	Run repair script to patch existing snapshots.
-•	Deploy MPFS fallback to ensure ingestion stability.
-•	Implement and deploy RVU publish-stage fix for dataset-specific release IDs and parquet paths.
-•	Run unit/e2e tests locally.
-•	Deploy to staging, ingest latest release (e.g. B), and confirm:
-•	dataset_snapshots contains dataset-specific release IDs with parquet paths.
-•	MPFS ingestion and discovery succeed.
-•	Backfill production snapshots only if necessary after validation.
+- Expected output: Each dataset shows its own prefix (`rvu_2025_B`, `gpci_2025_B`, etc.)
+- If any show `status=manifest_json`, repair them:
+bash
+python scripts/repair_snapshot_paths.py --dataset-id gpci_indices --confirm
 
-10. Monitoring & Validation
-•	Add a simple weekly check to ensure gpci_indices release IDs (with gpci_ prefix) mirror rvu_items release IDs by suffix.
-•	Optional: CI lint to flag future calls to register_snapshot() that use base release ID instead of helper.
+- Confirm MPFS dependency: MPFS ingestion requires `rvu_items` and `gpci_indices` snapshots with matching quarter suffixes
+```
 
-⸻
+**Acceptance:** Verification commands added to operational checklist
 
-Change Log
-•	v1.1 (2025-11-06): Integrated learnings from manifest-path failure. Added repair script step, MPFS manifest fallback, regression test coverage, operational checklist, and clarified rollout sequencing.
-•	v1.0 (2025-11-04): Original alignment plan with per-dataset release IDs and snapshot metadata path correction.
+### 3. `prds/DOC-master-catalog-prd-v1.0.md` - Register Operational Tools
+**File:** `prds/DOC-master-catalog-prd-v1.0.md`  
+**Location:** Section 8.1 after line 234 (after `audit_task_completion.py`)  
+**Priority:** MEDIUM
 
----
+**Content to add:**
+```markdown
+- `tools/audit_snapshot_paths.py` - Audits dataset_snapshots table for path resolution issues; flags manifest.json entries requiring repair
+- `scripts/repair_snapshot_paths.py` - Repairs snapshot manifest_url fields pointing to .json files; updates to resolved parquet paths with CSV backup
+```
 
-✅ This updated version:
+**Acceptance:** Tools appear in catalog with descriptions
 
-- Resolves every “Key Learning” point.  
-- Adds repair + fallback before MPFS rerun.  
-- Keeps MVP scope minimal and achievable (no schema changes).  
-- Tightens test and rollout sequencing for immediate stability.
+### 4. `prds/STD-data-architecture-impl-v1.0.md` - Update Line Counts
+**File:** `prds/STD-data-architecture-impl-v1.0.md`  
+**Locations:** Lines 2116, 2961, 3101  
+**Priority:** MEDIUM
+
+**Current (incorrect):**
+- `<1,000 lines (RVU achieved 990 lines, 76.7% reduction from 4,247)`
+- `After: 990 lines (76.7% reduction)`
+- `(990 lines, completed migration)`
+
+**Replace with (verified):**
+- `<1,500 lines (RVU achieved 1,383 lines, 67.4% reduction from 4,247)`
+- `After: 1,383 lines (67.4% reduction)`
+- `(1,383 lines, completed migration)`
+
+**Acceptance:** All 3 locations updated with accurate metrics
+
+### 5. Create `prds/RUN-rvu-ingestion-v1.0.md` (Optional)
+**File:** New file `prds/RUN-rvu-ingestion-v1.0.md`  
+**Priority:** LOW (defer unless ops team requests)
+
+**Minimum scope if created:**
+1. **Pre-flight:** DB connectivity, file system check
+2. **Command:** 
+   ```bash
+   python scripts/run_rvu_ingestion.py --year 2025 --quarter B
+   ```
+3. **Verification:**
+   ```bash
+   # Check curated outputs
+   ls data/ingestion/rvu/curated/cms_rvu/*/
+   
+   # Verify snapshots
+   python tools/audit_snapshot_paths.py --show-all
+   ```
+4. **Troubleshooting:** Common errors (missing source files, DB connection)
+
+**Acceptance criteria:** Operator can run RVU ingestion following documented steps without eng support
+
+**Decision:** Defer to separate issue unless requested
+
+## Verification Commands (Specific to Files Touched)
+
+After completing updates 1-4, run:
+```bash
+# Verify specific files touched
+python tools/audit_doc_metadata.py --paths \
+  prds/PRD-rvu-gpci-prd-v0.1.md \
+  prds/RUN-global-operations-prd-v1.0.md \
+  prds/DOC-master-catalog-prd-v1.0.md \
+  prds/STD-data-architecture-impl-v1.0.md
+
+# Check all cross-references still valid
+python tools/audit_doc_links.py --paths \
+  prds/PRD-rvu-gpci-prd-v0.1.md \
+  prds/RUN-global-operations-prd-v1.0.md
+```
+
+## Summary
+- **Total items:** 5
+- **Already complete:** 2 (RUN-mpfs, PRD-mpfs)
+- **Required:** 3 (PRD-rvu-gpci, RUN-global-ops, DOC-catalog)
+- **Optional:** 1 (STD-architecture line counts)
+- **Deferred:** 1 (RUN-rvu-ingestion runbook)
+
 
 ### To-dos
 
-- [ ] Audit `_register_dataset_snapshots` in `cms_pricing/ingestion/ingestors/rvu_ingestor.py` to confirm shared release ID usage
-- [ ] Implement dataset-specific release ID helper and update snapshot registration calls with logging
-- [ ] Decide on and implement backfill strategy for existing gpci snapshots (script or migration)
-- [ ] Extend RVU + MPFS tests to assert dataset-specific release IDs and discovery success
-- [ ] Document naming changes in runbook, PRD, and MPFS implementation plan
-- [ ] Execute staging and production rollout steps, including monitoring script
+- [ ] Add snapshot registration section to PRD-rvu-gpci-prd-v0.1.md documenting automatic registration, dataset-specific release IDs, and verification commands
+- [ ] Add RVU snapshot verification subsection to RUN-global-operations-prd-v1.0.md with audit and repair commands
+- [ ] Register audit_snapshot_paths.py and repair_snapshot_paths.py in DOC-master-catalog-prd-v1.0.md tools section
+- [ ] Update STD-data-architecture-impl-v1.0.md line count metrics in 3 locations (990→1,351 lines, 76.7%→68.2% reduction)
+- [ ] Create RUN-rvu-ingestion-v1.0.md operational runbook using RUN-mpfs-ingestion-v1.0.md as template (optional)
+- [ ] Run tools/audit_doc_metadata.py and tools/audit_doc_links.py to verify documentation consistency
