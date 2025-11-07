@@ -19,6 +19,7 @@ import asyncio
 import hashlib
 import io
 import json
+import os
 import re
 import uuid
 import zipfile
@@ -792,8 +793,103 @@ class MPFSIngestor(BaseDISIngestor):
         else:
             file_path = path
 
-        logger.info("Loading snapshot dataframe", dataset_id=dataset_id, path=str(file_path))
-        return pd.read_parquet(file_path)
+        row_limit = self._max_snapshot_rows(dataset_id)
+        return self._read_parquet_snapshot(file_path, dataset_id, row_limit=row_limit)
+
+    @staticmethod
+    def _max_snapshot_rows(dataset_id: str) -> Optional[int]:
+        """Look up optional row cap for snapshot loading."""
+        env_keys = [
+            f"MAX_{dataset_id.upper()}_SNAPSHOT_ROWS",
+            "MAX_MPFS_SNAPSHOT_ROWS",
+            "MAX_INGESTION_ROWS",
+        ]
+        for key in env_keys:
+            raw = os.environ.get(key)
+            if not raw:
+                continue
+            try:
+                value = int(raw)
+            except ValueError:
+                continue
+            if value > 0:
+                return value
+        return None
+
+    def _read_parquet_snapshot(
+        self,
+        file_path: Path,
+        dataset_id: str,
+        row_limit: Optional[int] = None,
+        batch_size: Optional[int] = None,
+    ) -> pd.DataFrame:
+        """Stream parquet data into a DataFrame, respecting optional row limits."""
+        logger.info(
+            "Loading snapshot dataframe",
+            dataset_id=dataset_id,
+            path=str(file_path),
+            row_limit=row_limit,
+        )
+
+        if not batch_size:
+            batch_size = int(os.environ.get("MPFS_SNAPSHOT_BATCH_ROWS", "50000"))
+
+        try:
+            import pyarrow.parquet as pq
+        except ImportError:  # pragma: no cover
+            df = pd.read_parquet(file_path)
+            if row_limit:
+                df = df.head(row_limit)
+            return df
+
+        parquet_file = pq.ParquetFile(file_path)
+        total_rows = parquet_file.metadata.num_rows if parquet_file.metadata else None
+
+        frames: List[pd.DataFrame] = []
+        rows_read = 0
+
+        def remaining_rows() -> Optional[int]:
+            if row_limit is None:
+                return None
+            return max(row_limit - rows_read, 0)
+
+        for batch in parquet_file.iter_batches(batch_size=batch_size):
+            remaining = remaining_rows()
+            if remaining is not None and remaining <= 0:
+                break
+
+            slice_batch = batch
+            if remaining is not None and batch.num_rows > remaining:
+                slice_batch = batch.slice(0, remaining)
+
+            frames.append(slice_batch.to_pandas())
+            rows_read += slice_batch.num_rows
+
+            if remaining_rows() is not None and remaining_rows() <= 0:
+                break
+
+        if not frames:
+            df = pd.DataFrame()
+        elif len(frames) == 1:
+            df = frames[0]
+        else:
+            df = pd.concat(frames, ignore_index=True)
+
+        if row_limit and total_rows and total_rows > row_limit:
+            logger.info(
+                "Row limiting applied for snapshot load",
+                dataset=dataset_id,
+                limited_rows=row_limit,
+                original_rows=total_rows,
+            )
+        else:
+            logger.info(
+                "Snapshot dataframe loaded",
+                dataset=dataset_id,
+                rows=len(df),
+            )
+
+        return df
 
     def _resolve_parquet_from_manifest(self, manifest_path: Path, dataset_id: str) -> Optional[Path]:
         """Attempt to resolve a parquet file path from a manifest.json.
