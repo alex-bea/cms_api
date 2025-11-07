@@ -1210,11 +1210,13 @@ class MPFSIngestor(BaseDISIngestor):
             digest = self._calculate_dataset_digest(df)
 
             effective_from, effective_to = self._infer_effective_range(df)
+            effective_from = self._normalize_snapshot_date(effective_from) or datetime.now().date()
+            effective_to = self._normalize_snapshot_date(effective_to)
             self.snapshot_service.register_snapshot(
                 dataset_id=dataset_name,
                 release_id=release_id,
                 digest=digest,
-                effective_from=effective_from or datetime.now().date(),
+                effective_from=effective_from,
                 effective_to=effective_to,
                 manifest_url=str(manifest_path),
                 curated_path=str(file_path),
@@ -1291,6 +1293,41 @@ class MPFSIngestor(BaseDISIngestor):
         effective_from = start_series.dropna().dt.date.min() if start_series is not None else None
         effective_to = end_series.dropna().dt.date.max() if end_series is not None else None
         return effective_from, effective_to
+
+    @staticmethod
+    def _normalize_snapshot_date(value: Optional[Any]) -> Optional[date]:
+        """Convert pandas/NumPy date-like values to `date`, treating NaN/NaT as None."""
+        if value is None:
+            return None
+
+        if pd.isna(value):
+            return None
+
+        if isinstance(value, pd.Timestamp):
+            if pd.isna(value):
+                return None
+            return value.date()
+
+        if isinstance(value, datetime):
+            return value.date()
+
+        if isinstance(value, date):
+            return value
+
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value)
+            except ValueError:
+                return None
+
+        to_py = getattr(value, "to_pydatetime", None)
+        if callable(to_py):
+            try:
+                return to_py().date()
+            except Exception:
+                return None
+
+        return None
 
     def _generate_observability_report(
         self, stage_frame: StageFrame, manifest: Dict[str, Any]
