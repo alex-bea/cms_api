@@ -124,6 +124,22 @@ python scripts/run_mpfs_ingestion.py \
 - **Parity check (weekly + CI):** `python tools/check_snapshot_release_parity.py --pairs rvu_items:gpci_indices`
 - Always run the audit script before the repair utility; the CSV backup emitted by the repair script must be attached to the ops ticket.
 
+### 1.6 Render Low-Memory Quick Start
+
+Render’s starter dynos have 2 GB of RAM. Before running this runbook from the Render shell, complete the “Low-Memory Snapshot Loading (Render)” checklist in `RENDER_DATA_LOADING_GUIDE.md`:
+
+1. **Locate the latest manifest**  
+   ```bash
+   manifest=$(ls -t /var/data/ingestion/production/curated/cms_rvu/*/manifest.json | head -n1)
+   export manifest
+   ```
+2. **Repair snapshot rows (if needed)** – run the helper script to point `rvu_items`/`gpci_indices` at the `/var/data/ingestion/production/...` parquet files.
+3. **Set env limits** – e.g., `export MAX_MPFS_SNAPSHOT_ROWS=10000` and `export MPFS_SNAPSHOT_BATCH_ROWS=10000` so PyArrow streams manageable batches.
+4. **Run the ingest command** – reuse the snippet from the guide; watch for `Row limiting applied...` and confirm `conversion_factor_strategy`.
+5. **Spot-check CF output** – read `mpfs_cf_vintage.parquet`; if empty, raise the row limit and rerun.
+
+Document the env vars you used in the change ticket. Following these steps prevents pod OOMs and eliminates manual DB edits on Render.
+
 ---
 
 ## 2. ConversionFactorFetcher Primer
