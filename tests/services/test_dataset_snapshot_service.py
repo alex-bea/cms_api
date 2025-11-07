@@ -23,6 +23,17 @@ def check_table_exists(db_session):
         raise
 
 
+@pytest.fixture(autouse=True)
+def cleanup_snapshots(test_db_session):
+    """Ensure dataset_snapshots table is empty between tests."""
+    if not check_table_exists(test_db_session):
+        yield
+        return
+    test_db_session.execute(text("TRUNCATE TABLE dataset_snapshots"))
+    test_db_session.commit()
+    yield
+
+
 def test_select_snapshot_active(test_db_session):
     """Test selecting active snapshot by valuation date"""
     if not check_table_exists(test_db_session):
@@ -212,4 +223,3 @@ def test_register_snapshot_update_existing(test_db_session):
         DatasetSnapshot.release_id == "dmepos_2025_annual"
     ).count()
     assert count == 1
-

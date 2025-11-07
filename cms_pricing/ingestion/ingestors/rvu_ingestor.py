@@ -1123,6 +1123,10 @@ class RVUIngestor(BaseDISIngestor):
         except ValueError:
             effective_from = datetime.utcnow().date()
 
+        export_artifacts = publish_result.get("export_artifacts") or {}
+        manifest_path = export_artifacts.get("manifest")
+        manifest_path_str = str(manifest_path) if manifest_path else None
+
         dataset_paths = {
             "rvu_items": curated_tables.get("pprrvu"),
             "gpci_indices": curated_tables.get("gpci"),
@@ -1153,7 +1157,7 @@ class RVUIngestor(BaseDISIngestor):
                 release_id=specific_release_id,
                 digest=digest,
                 effective_from=effective_from,
-                manifest_url=normalized_path,
+                manifest_url=manifest_path_str or normalized_path,
                 curated_path=normalized_path,
             )
             logger.info(

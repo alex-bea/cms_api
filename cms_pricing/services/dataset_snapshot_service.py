@@ -260,57 +260,53 @@ class DatasetSnapshotService:
             String path or None if unable to resolve.
         """
         manifest_url = snapshot.manifest_url or ""
-        if manifest_url.startswith("data/") or manifest_url.startswith("./data/"):
-            # If this is a manifest file, try to resolve a concrete parquet path from it
-            if manifest_url.endswith(".json"):
-                try:
-                    mpath = Path(manifest_url)
-                    if mpath.exists():
-                        data = json.loads(mpath.read_text())
-                        # Try common shapes first
-                        # 1) datasets: { <key>: { parquet_path: "..." } }
-                        ds = data.get("datasets")
-                        if isinstance(ds, dict):
-                            # Try by dataset_id, then known aliases
-                            candidate_keys = [snapshot.dataset_id]
-                            alias_map = {
-                                "rvu_items": "pprrvu",
-                                "gpci_indices": "gpci",
-                                "anescf": "anescf",
-                                "localitycounty": "localitycounty",
-                                "oppscap": "oppscap",
-                            }
-                            alias = alias_map.get(snapshot.dataset_id)
-                            if alias:
-                                candidate_keys.append(alias)
-                            for key in candidate_keys:
-                                entry = ds.get(key)
-                                if isinstance(entry, dict):
-                                    parquet_path = entry.get("parquet_path") or entry.get("path")
-                                    if isinstance(parquet_path, str) and Path(parquet_path).exists():
+        if manifest_url:
+            mpath = Path(manifest_url)
+            if mpath.exists():
+                if mpath.is_file():
+                    if mpath.suffix.lower() == ".json":
+                        try:
+                            data = json.loads(mpath.read_text())
+                            # Try common shapes first
+                            ds = data.get("datasets")
+                            if isinstance(ds, dict):
+                                candidate_keys = [snapshot.dataset_id]
+                                alias_map = {
+                                    "rvu_items": "pprrvu",
+                                    "gpci_indices": "gpci",
+                                    "anescf": "anescf",
+                                    "localitycounty": "localitycounty",
+                                    "oppscap": "oppscap",
+                                }
+                                alias = alias_map.get(snapshot.dataset_id)
+                                if alias:
+                                    candidate_keys.append(alias)
+                                for key in candidate_keys:
+                                    entry = ds.get(key)
+                                    if isinstance(entry, dict):
+                                        parquet_path = entry.get("parquet_path") or entry.get("path")
+                                        if isinstance(parquet_path, str) and Path(parquet_path).exists():
+                                            return parquet_path
+                            ct = data.get("curated_tables")
+                            if isinstance(ct, dict):
+                                alias_map = {
+                                    "rvu_items": "pprrvu",
+                                    "gpci_indices": "gpci",
+                                    "anescf": "anescf",
+                                    "localitycounty": "localitycounty",
+                                    "oppscap": "oppscap",
+                                }
+                                alias = alias_map.get(snapshot.dataset_id)
+                                if alias and isinstance(ct.get(alias), str):
+                                    parquet_path = ct[alias]
+                                    if Path(parquet_path).exists():
                                         return parquet_path
-                        # 2) curated_tables: { <alias>: "...parquet" }
-                        ct = data.get("curated_tables")
-                        if isinstance(ct, dict):
-                            # Map dataset_id to alias
-                            alias_map = {
-                                "rvu_items": "pprrvu",
-                                "gpci_indices": "gpci",
-                                "anescf": "anescf",
-                                "localitycounty": "localitycounty",
-                                "oppscap": "oppscap",
-                            }
-                            alias = alias_map.get(snapshot.dataset_id)
-                            if alias and isinstance(ct.get(alias), str):
-                                parquet_path = ct[alias]
-                                if Path(parquet_path).exists():
-                                    return parquet_path
-                    # If manifest exists but we couldn't resolve a parquet file, fall through
-                except Exception as err:
-                    logger.debug("manifest_resolution_failed", error=str(err), manifest=manifest_url)
-            else:
-                # Return the local path directly (directory or file)
-                return manifest_url
+                        except Exception as err:
+                            logger.debug("manifest_resolution_failed", error=str(err), manifest=str(mpath))
+                    else:
+                        return str(mpath)
+                else:
+                    return str(mpath)
 
         dataset_root = self._default_curated_root(snapshot.dataset_id)
         if not dataset_root:
