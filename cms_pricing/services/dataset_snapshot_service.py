@@ -19,6 +19,17 @@ from cms_pricing.models.dataset_snapshots import DatasetSnapshot
 
 logger = structlog.get_logger()
 
+SNAPSHOT_ALIAS_MAP: Dict[str, List[str]] = {
+    "rvu_items": ["rvu_items", "pprrvu"],
+    "gpci_indices": ["gpci_indices", "gpci"],
+    "anescf": ["anescf"],
+    "localitycounty": ["localitycounty", "locality"],
+    "oppscap": ["oppscap"],
+    "mpfs_payment_curated": ["mpfs_payment_curated", "mpfs_payment"],
+    "mpfs_rvu": ["mpfs_rvu", "pprrvu"],
+    "mpfs_gpci": ["mpfs_gpci", "gpci"],
+}
+
 
 @dataclass
 class SnapshotMetadata:
@@ -259,40 +270,35 @@ class DatasetSnapshotService:
         Returns:
             String path or None if unable to resolve.
         """
-        alias_map = {
-            "rvu_items": "pprrvu",
-            "gpci_indices": "gpci",
-            "anescf": "anescf",
-            "localitycounty": "localitycounty",
-            "oppscap": "oppscap",
-        }
-
         def candidate_names() -> List[str]:
-            names = [snapshot.dataset_id]
-            alias = alias_map.get(snapshot.dataset_id)
-            if alias:
-                names.append(alias)
-            return names
+            aliases = SNAPSHOT_ALIAS_MAP.get(snapshot.dataset_id, [snapshot.dataset_id])
+            seen: List[str] = []
+            for entry in aliases:
+                if entry not in seen:
+                    seen.append(entry)
+            return seen
+
+        def normalize_candidate(path_value: Optional[str], base_dir: Optional[Path] = None) -> Optional[Path]:
+            if not isinstance(path_value, str) or not path_value.strip():
+                return None
+            candidate_path = Path(path_value.strip())
+            if base_dir and not candidate_path.is_absolute():
+                candidate_path = base_dir / candidate_path
+            candidate_path = self._normalize_ingestion_path(candidate_path)
+            if candidate_path.exists():
+                return candidate_path
+            return None
 
         manifest_url = snapshot.manifest_url or ""
         if manifest_url:
             mpath = Path(manifest_url)
+            mpath = self._normalize_ingestion_path(mpath)
             if mpath.exists():
                 if mpath.is_file():
                     if mpath.suffix.lower() == ".json":
                         try:
                             data = json.loads(mpath.read_text())
                             base_dir = mpath.parent
-
-                            def resolve_candidate(path_value: Optional[str]) -> Optional[str]:
-                                if not isinstance(path_value, str) or not path_value.strip():
-                                    return None
-                                candidate_path = Path(path_value)
-                                if not candidate_path.is_absolute():
-                                    candidate_path = base_dir / path_value
-                                if candidate_path.exists():
-                                    return str(candidate_path)
-                                return None
 
                             # Try common shapes first
                             ds = data.get("datasets")
@@ -302,9 +308,15 @@ class DatasetSnapshotService:
                                     entry = ds.get(key)
                                     if isinstance(entry, dict):
                                         parquet_path = entry.get("parquet_path") or entry.get("path")
-                                        resolved = resolve_candidate(parquet_path)
+                                        resolved = normalize_candidate(parquet_path, base_dir)
                                         if resolved:
-                                            return resolved
+                                            return str(resolved)
+                                for key in keys:
+                                    entry = ds.get(key)
+                                    if isinstance(entry, str):
+                                        resolved = normalize_candidate(entry, base_dir)
+                                        if resolved:
+                                            return str(resolved)
                             elif isinstance(ds, list):
                                 for entry in ds:
                                     if isinstance(entry, dict):
@@ -312,21 +324,22 @@ class DatasetSnapshotService:
                                         if entry_name and entry_name not in keys:
                                             continue
                                         parquet_path = entry.get("parquet_path") or entry.get("path")
-                                        resolved = resolve_candidate(parquet_path)
+                                        resolved = normalize_candidate(parquet_path, base_dir)
                                         if resolved:
-                                            return resolved
+                                            return str(resolved)
                                     elif isinstance(entry, str):
-                                        resolved = resolve_candidate(entry)
+                                        resolved = normalize_candidate(entry, base_dir)
                                         if resolved:
-                                            return resolved
+                                            return str(resolved)
 
                             ct = data.get("curated_tables")
                             if isinstance(ct, dict):
-                                alias = alias_map.get(snapshot.dataset_id)
-                                if alias and isinstance(ct.get(alias), str):
-                                    resolved = resolve_candidate(ct[alias])
-                                    if resolved:
-                                        return resolved
+                                for alias in candidate_names():
+                                    value = ct.get(alias)
+                                    if isinstance(value, str):
+                                        resolved = normalize_candidate(value, base_dir)
+                                        if resolved:
+                                            return str(resolved)
                         except Exception as err:
                             logger.debug("manifest_resolution_failed", error=str(err), manifest=str(mpath))
                     else:
@@ -339,7 +352,31 @@ class DatasetSnapshotService:
             return None
 
         release_dir = dataset_root / snapshot.release_id
+        release_dir = self._normalize_ingestion_path(release_dir)
         return str(release_dir)
+
+    @staticmethod
+    def _normalize_ingestion_path(path: Path) -> Path:
+        """Rewrite known absolute ingestion prefixes to repository-relative paths."""
+        if not isinstance(path, Path):
+            path = Path(path)
+
+        ingestion_prefixes = (
+            Path("/var/data/ingestion"),
+            Path("/app/data/ingestion"),
+        )
+
+        for prefix in ingestion_prefixes:
+            try:
+                relative = path.resolve(strict=False).relative_to(prefix)
+                return Path("data/ingestion") / relative
+            except ValueError:
+                continue
+
+        if str(path).startswith("./"):
+            return Path(str(path)[2:])
+
+        return path
 
     @staticmethod
     def _default_curated_root(dataset_id: str) -> Optional[Path]:
