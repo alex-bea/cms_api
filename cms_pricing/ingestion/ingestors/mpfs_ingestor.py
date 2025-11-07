@@ -780,6 +780,13 @@ class MPFSIngestor(BaseDISIngestor):
         if not path.exists():
             raise FileNotFoundError(f"Snapshot path does not exist for {dataset_id}: {path}")
 
+        # If the snapshot path is a manifest.json, resolve the dataset's parquet file from it
+        if path.suffix.lower() == ".json":
+            resolved = self._resolve_parquet_from_manifest(path, dataset_id)
+            if resolved is None:
+                raise FileNotFoundError(f"Unable to resolve parquet from manifest for {dataset_id}: {path}")
+            path = resolved
+
         if path.is_dir():
             file_path = self._select_parquet_candidate(path, dataset_id)
         else:
@@ -787,6 +794,66 @@ class MPFSIngestor(BaseDISIngestor):
 
         logger.info("Loading snapshot dataframe", dataset_id=dataset_id, path=str(file_path))
         return pd.read_parquet(file_path)
+
+    def _resolve_parquet_from_manifest(self, manifest_path: Path, dataset_id: str) -> Optional[Path]:
+        """Attempt to resolve a parquet file path from a manifest.json.
+
+        Tries common shapes:
+          - datasets: {<key>: { parquet_path: "..." }}
+          - curated_tables: { <alias>: "...parquet" }
+        Falls back to scanning the manifest directory for a parquet file.
+        """
+        try:
+            data = json.loads(manifest_path.read_text())
+        except Exception:
+            return None
+
+        # 1) datasets mapping
+        ds = data.get("datasets")
+        if isinstance(ds, dict):
+            # try exact dataset_id and known aliases
+            aliases = {
+                "rvu_items": "pprrvu",
+                "gpci_indices": "gpci",
+                "anescf": "anescf",
+                "localitycounty": "localitycounty",
+                "oppscap": "oppscap",
+            }
+            keys = [dataset_id]
+            if dataset_id in aliases:
+                keys.append(aliases[dataset_id])
+            for key in keys:
+                entry = ds.get(key)
+                if isinstance(entry, dict):
+                    p = entry.get("parquet_path") or entry.get("path")
+                    if isinstance(p, str):
+                        p_path = Path(p)
+                        if p_path.exists():
+                            return p_path
+
+        # 2) curated_tables mapping
+        ct = data.get("curated_tables")
+        if isinstance(ct, dict):
+            aliases = {
+                "rvu_items": "pprrvu",
+                "gpci_indices": "gpci",
+                "anescf": "anescf",
+                "localitycounty": "localitycounty",
+                "oppscap": "oppscap",
+            }
+            alias = aliases.get(dataset_id)
+            if alias and isinstance(ct.get(alias), str):
+                p_path = Path(ct[alias])
+                if p_path.exists():
+                    return p_path
+
+        # 3) Fallback: scan manifest directory for best candidate
+        for candidate in sorted(manifest_path.parent.glob("*.parquet")):
+            if dataset_id in candidate.stem:
+                return candidate
+        # any parquet as last resort
+        any_parquet = next(iter(sorted(manifest_path.parent.glob("*.parquet"))), None)
+        return any_parquet
 
     def _select_parquet_candidate(self, directory: Path, dataset_id: str) -> Path:
         """Select a parquet file within a directory that best matches the dataset id."""

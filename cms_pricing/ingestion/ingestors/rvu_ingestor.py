@@ -1118,9 +1118,6 @@ class RVUIngestor(BaseDISIngestor):
             logger.warning("No curated tables present in publish result; skipping snapshot registration")
             return
 
-        manifest_path = publish_result.get("export_artifacts", {}).get("manifest")
-        manifest_path = manifest_path or publish_result.get("manifest_path")
-
         try:
             effective_from = date.fromisoformat(vintage_date)
         except ValueError:
@@ -1147,20 +1144,53 @@ class RVUIngestor(BaseDISIngestor):
                 continue
 
             digest = self._calculate_file_digest(path_obj)
+            normalized_path = self._normalize_snapshot_path(path_obj)
+            # Derive dataset-specific release ID (e.g., gpci_YYYY_S)
+            specific_release_id = self._dataset_release_id(dataset_id, release_id)
+
             snapshot_service.register_snapshot(
                 dataset_id=dataset_id,
-                release_id=release_id,
+                release_id=specific_release_id,
                 digest=digest,
                 effective_from=effective_from,
-                manifest_url=manifest_path,
-                curated_path=str(path_obj)
+                manifest_url=normalized_path,
+                curated_path=normalized_path,
             )
             logger.info(
                 "Registered dataset snapshot",
                 dataset_id=dataset_id,
-                release_id=release_id,
+                release_id=specific_release_id,
                 effective_from=effective_from
             )
+
+    @staticmethod
+    def _dataset_release_id(dataset_id: str, base_release_id: str) -> str:
+        """Map base RVU release_id (e.g., rvu_2025_B) to dataset-specific namespace.
+
+        Example:
+            ('gpci_indices', 'rvu_2025_B') -> 'gpci_2025_B'
+        Falls back to base_release_id if the format is unexpected.
+        """
+        # Expect base format '<prefix>_<year>_<suffix>'
+        try:
+            parts = base_release_id.split("_")
+            if len(parts) != 3:
+                return base_release_id
+            _, year, suffix = parts
+        except Exception:
+            return base_release_id
+
+        prefix_map = {
+            "rvu_items": "rvu",
+            "gpci_indices": "gpci",
+            "anescf": "anescf",
+            "localitycounty": "locality",
+            "oppscap": "oppscap",
+        }
+        prefix = prefix_map.get(dataset_id)
+        if not prefix:
+            return base_release_id
+        return f"{prefix}_{year}_{suffix}"
 
     @staticmethod
     def _calculate_file_digest(parquet_path: Path) -> str:
@@ -1170,6 +1200,18 @@ class RVUIngestor(BaseDISIngestor):
             for chunk in iter(lambda: handle.read(1 << 20), b""):
                 hasher.update(chunk)
         return hasher.hexdigest()
+
+    @staticmethod
+    def _normalize_snapshot_path(path_obj: Path) -> str:
+        """Return repository-relative path when possible for snapshot storage."""
+        if not path_obj.is_absolute():
+            return str(path_obj)
+        try:
+            project_root = Path.cwd()
+            normalized = path_obj.relative_to(project_root)
+            return str(normalized)
+        except ValueError:
+            return str(path_obj)
     
     async def _collect_observability_metrics(self, release_id: str, batch_id: str, pipeline_result: Dict[str, Any]):
         """Collect 5-pillar observability metrics for the ingestion run"""
