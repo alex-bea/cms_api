@@ -259,6 +259,21 @@ class DatasetSnapshotService:
         Returns:
             String path or None if unable to resolve.
         """
+        alias_map = {
+            "rvu_items": "pprrvu",
+            "gpci_indices": "gpci",
+            "anescf": "anescf",
+            "localitycounty": "localitycounty",
+            "oppscap": "oppscap",
+        }
+
+        def candidate_names() -> List[str]:
+            names = [snapshot.dataset_id]
+            alias = alias_map.get(snapshot.dataset_id)
+            if alias:
+                names.append(alias)
+            return names
+
         manifest_url = snapshot.manifest_url or ""
         if manifest_url:
             mpath = Path(manifest_url)
@@ -267,40 +282,51 @@ class DatasetSnapshotService:
                     if mpath.suffix.lower() == ".json":
                         try:
                             data = json.loads(mpath.read_text())
+                            base_dir = mpath.parent
+
+                            def resolve_candidate(path_value: Optional[str]) -> Optional[str]:
+                                if not isinstance(path_value, str) or not path_value.strip():
+                                    return None
+                                candidate_path = Path(path_value)
+                                if not candidate_path.is_absolute():
+                                    candidate_path = base_dir / path_value
+                                if candidate_path.exists():
+                                    return str(candidate_path)
+                                return None
+
                             # Try common shapes first
                             ds = data.get("datasets")
+                            keys = candidate_names()
                             if isinstance(ds, dict):
-                                candidate_keys = [snapshot.dataset_id]
-                                alias_map = {
-                                    "rvu_items": "pprrvu",
-                                    "gpci_indices": "gpci",
-                                    "anescf": "anescf",
-                                    "localitycounty": "localitycounty",
-                                    "oppscap": "oppscap",
-                                }
-                                alias = alias_map.get(snapshot.dataset_id)
-                                if alias:
-                                    candidate_keys.append(alias)
-                                for key in candidate_keys:
+                                for key in keys:
                                     entry = ds.get(key)
                                     if isinstance(entry, dict):
                                         parquet_path = entry.get("parquet_path") or entry.get("path")
-                                        if isinstance(parquet_path, str) and Path(parquet_path).exists():
-                                            return parquet_path
+                                        resolved = resolve_candidate(parquet_path)
+                                        if resolved:
+                                            return resolved
+                            elif isinstance(ds, list):
+                                for entry in ds:
+                                    if isinstance(entry, dict):
+                                        entry_name = entry.get("name") or entry.get("dataset_id") or entry.get("dataset")
+                                        if entry_name and entry_name not in keys:
+                                            continue
+                                        parquet_path = entry.get("parquet_path") or entry.get("path")
+                                        resolved = resolve_candidate(parquet_path)
+                                        if resolved:
+                                            return resolved
+                                    elif isinstance(entry, str):
+                                        resolved = resolve_candidate(entry)
+                                        if resolved:
+                                            return resolved
+
                             ct = data.get("curated_tables")
                             if isinstance(ct, dict):
-                                alias_map = {
-                                    "rvu_items": "pprrvu",
-                                    "gpci_indices": "gpci",
-                                    "anescf": "anescf",
-                                    "localitycounty": "localitycounty",
-                                    "oppscap": "oppscap",
-                                }
                                 alias = alias_map.get(snapshot.dataset_id)
                                 if alias and isinstance(ct.get(alias), str):
-                                    parquet_path = ct[alias]
-                                    if Path(parquet_path).exists():
-                                        return parquet_path
+                                    resolved = resolve_candidate(ct[alias])
+                                    if resolved:
+                                        return resolved
                         except Exception as err:
                             logger.debug("manifest_resolution_failed", error=str(err), manifest=str(mpath))
                     else:

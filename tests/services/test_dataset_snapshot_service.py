@@ -3,10 +3,12 @@
 Part of Quick Win #1: Dataset Snapshots Table
 """
 
-import pytest
+import json
 from datetime import date
-from sqlalchemy.exc import ProgrammingError, OperationalError
+
+import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from cms_pricing.models.dataset_snapshots import DatasetSnapshot
 from cms_pricing.services.dataset_snapshot_service import DatasetSnapshotService
@@ -223,3 +225,41 @@ def test_register_snapshot_update_existing(test_db_session):
         DatasetSnapshot.release_id == "dmepos_2025_annual"
     ).count()
     assert count == 1
+
+
+def test_resolve_path_from_manifest_dataset_list(tmp_path, test_db_session):
+    """Manifests with dataset lists should resolve parquet paths via alias mapping."""
+    if not check_table_exists(test_db_session):
+        pytest.skip("dataset_snapshots table not yet created. Run: alembic upgrade head")
+
+    release_dir = tmp_path / "rvu_release"
+    release_dir.mkdir()
+    parquet_path = release_dir / "pprrvu_snapshot.parquet"
+    parquet_path.write_text("")  # touch file for existence check
+
+    manifest_payload = {
+        "datasets": [
+            {
+                "name": "pprrvu",
+                "parquet_path": parquet_path.name,  # relative path in manifest
+            }
+        ]
+    }
+    manifest_path = release_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest_payload))
+
+    snapshot = DatasetSnapshot(
+        dataset_id="rvu_items",
+        release_id="rvu_2025_D",
+        digest="sha256:test",
+        effective_from=date(2025, 1, 1),
+        manifest_url=str(manifest_path),
+    )
+
+    service = DatasetSnapshotService(test_db_session)
+    try:
+        resolved = service._resolve_curated_path(snapshot)  # pylint: disable=protected-access
+    finally:
+        service.close()
+
+    assert resolved == str(parquet_path)
