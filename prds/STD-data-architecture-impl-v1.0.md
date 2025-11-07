@@ -2056,6 +2056,10 @@ Pipeline automatically monitors and alerts on SLA breaches.
 | Pattern | Dataset | File | Key Methods | Notes |
 |---------|---------|------|-------------|-------|
 | **Snapshot Reuse** | MPFS | `cms_pricing/ingestion/ingestors/mpfs_ingestor.py` | `discover_source_files()` uses `DatasetSnapshotService` + `ConversionFactorFetcher` | Reuses RVU/GPCI snapshots, fetches CF artifacts |
+
+> **Release namespace guardrail:** Multi-dataset ingestors (RVU → MPFS, RVU → OPPS) MUST derive dataset-specific release IDs (e.g., `gpci_2025_B`). Do not reuse the base release ID across datasets—tests must assert the derived prefixes.
+
+> **Manifest resolver requirement:** Until the snapshot schema stores an explicit parquet path, every ingestor that relies on `DatasetSnapshotService` MUST keep the manifest JSON accessible on disk or ship a resolver that can map manifest entries to parquet files. Deleting manifests without re-registering snapshots is a break-glass operation.
 | **Direct Links** | RVU | `cms_pricing/ingestion/ingestors/rvu_ingestor.py` | `discover_source_files()`, `land()` | Quarterly releases, fixed-width parsing |
 | **Quarterly Navigation** | OPPS | `cms_pricing/ingestion/ingestors/opps_ingestor.py` | `discover_files()`, `_land_stage()` | Handles AMA license interstitial |
 | **Reference Data Join** | Geography | `cms_zip_locality_ingestor.py` | `_enrich_data()` | Census crosswalk joins |
@@ -2109,7 +2113,7 @@ Before starting:
 
 ### 6.2 Step 1: Create Ingestor Class (Thin Orchestrator Pattern - Phase 2)
 
-**Target:** Ingestors should be <1,000 lines (RVU achieved 990 lines, 76.7% reduction from 4,247)
+**Target:** Ingestors should be <1,500 lines (RVU currently 1,383 lines, 67.4% reduction from 4,247)
 
 Create file: `cms_pricing/ingestion/ingestors/{dataset}_ingestor.py`
 
@@ -2954,7 +2958,7 @@ pytest tests/ingestors/test_{dataset}_ingestor_e2e.py --cov=cms_pricing.ingestio
 
 **Reference Implementation:** RVU ingester refactoring (Phase 2, Steps 1-7)
 - **Before:** 4,247 lines
-- **After:** 990 lines (76.7% reduction)
+- **After:** 1,383 lines (67.4% reduction)
 - **Extracted:** ~1,585 lines to reusable modules
 
 ### 10.1 Migration Steps (In Order)
@@ -3094,7 +3098,7 @@ pytest tests/ingestors/test_{dataset}_ingestor_e2e.py --cov=cms_pricing.ingestio
 ### 10.6 Reference Resources
 
 - **Phase 2 Completion Plan:** `artifacts/phase2_completion_plan.md` (detailed step-by-step guide)
-- **RVU Reference Implementation:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py` (990 lines, completed migration)
+- **RVU Reference Implementation:** `cms_pricing/ingestion/ingestors/rvu_ingestor.py` (1,383 lines, completed migration)
 - **Step-by-Step Plans:**
   - Step 1: `artifacts/phase2_completion_plan.md` §Step 1
   - Step 2: `artifacts/phase2_completion_plan.md` §Step 2

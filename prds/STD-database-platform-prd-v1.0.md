@@ -257,6 +257,11 @@ class FeeOPPS:
 - **Secrets & rotation**
   - Store credentials in Vault/1Password; rotate on schedule (see §2) and on personnel change.
 
+### Snapshot Registry Guardrails
+- `DatasetSnapshotService` is the canonical interface; pipelines MUST register every curated dataset as part of publish.
+- Ingestors that emit multiple datasets per run SHALL derive dataset-specific release IDs (`rvu_YYYY_S`, `gpci_YYYY_S`, etc.). Reusing the base release ID across datasets is prohibited and CI tests enforce this constraint.
+- Until the schema stores an explicit parquet path, operations teams MUST retain the manifest JSON referenced by `manifest_url`. Health checks (`tools/audit_snapshot_paths.py`) and repair utilities (`scripts/repair_snapshot_paths.py`) rely on those manifests to resolve the actual parquet files.
+
 ---
 
 ## 5. Backup, Restore & Disaster Recovery

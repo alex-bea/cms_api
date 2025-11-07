@@ -51,6 +51,9 @@ CMS publishes four planned RVU refreshes per calendar year plus ad-hoc correctio
 Implications for the ingestor:
 - `MPFSIngestor.ingest(year, quarter)` normalizes `quarter`/suffix/`rvu_YYYY_SUFFIX` so operators can target the correct CMS release; defaults to the latest registered snapshot when no quarter is supplied.
 - Snapshot discovery **must** prefer the requested release ID; if absent, the run should fail fast with instructions to ingest RVU first.
+- RVU publish stage registers curated outputs with dataset-specific release IDs (`rvu_YYYY_S`, `gpci_YYYY_S`, `anescf_YYYY_S`, `locality_YYYY_S`, `oppscap_YYYY_S`). MPFS discovery therefore requests the matching prefix per dataset; shared release IDs are no longer accepted.
+- Snapshot metadata persists manifest URLs for provenance, but `DatasetSnapshotService` resolves the actual parquet path before MPFS loads a dataset. Local manifest-only entries are acceptable as long as the referenced parquet exists on disk.
+- If operators request a quarter (`Q2`, `B`, etc.) that does not exist in `dataset_snapshots`, the ingestor must fail fast with a `ValueError` instructing them to run the missing RVU ingestion first. MPFS is prohibited from silently falling back to “latest” when an explicit quarter is supplied.
 - Metadata emitted by the MPFS run (batch manifest, observability record, `mpfs_cf_vintage`) includes `target_release_suffix`, `requested_release_param`, and the resolved RVU/GPCI release IDs to keep lineage auditable across quarters.
 
 ## API Readiness & Distribution

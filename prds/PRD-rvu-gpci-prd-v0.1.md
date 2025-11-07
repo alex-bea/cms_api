@@ -374,6 +374,28 @@ This section documents the **actual implementation** of the RVU ingestor as a re
 - **STD-data-architecture-impl-v1.0.md §1.8.5** - Publish Stage Callbacks
 - **STD-data-architecture-impl-v1.0.md §1.8.8** - Database Loader Function Pattern
 
+#### Snapshot Registration
+
+**Location:** `RVUIngestor._register_dataset_snapshots()` and `_dataset_release_id()`
+
+- **Datasets covered:** `rvu_items`, `gpci_indices`, `anescf`, `localitycounty`, `oppscap` (all curated tables written during publish).
+- **Dataset-specific release IDs:** Each dataset receives its own namespace derived from the base RVU release ID: `rvu_{year}_{suffix}`, `gpci_{year}_{suffix}`, `anescf_{year}_{suffix}`, `locality_{year}_{suffix}`, `oppscap_{year}_{suffix}`. This prevents suffix drift when MPFS reuses snapshots.
+- **Metadata stored:** SHA256 digest computed from the parquet artifact, effective dates derived from the `vintage_date`, manifest URL for provenance, and curated path for direct parquet resolution.
+- **Idempotent updates:** Re-running the ingestor updates existing snapshot rows when the digest changes; the service logs when an existing record is refreshed instead of inserted.
+- **Failure handling:** Snapshot registration warnings are surfaced in logs without failing the entire pipeline so Ops can repair paths post-run.
+
+**Verification commands:**
+
+```bash
+# Audit all datasets for dataset-specific release IDs and parquet paths
+python tools/audit_snapshot_paths.py --dataset-id gpci_indices --show-all
+
+# Repair legacy rows that still reference manifest.json
+python scripts/repair_snapshot_paths.py --dataset-id gpci_indices --confirm
+```
+
+**Cross-References:** `cms_pricing/services/dataset_snapshot_service.py`, `tools/audit_snapshot_paths.py`, `scripts/repair_snapshot_paths.py`
+
 #### Observability Implementation
 
 **Location:** `RVUIngestor._collect_observability_metrics`

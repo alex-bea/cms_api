@@ -1097,6 +1097,11 @@ Browser	Chromium headless (Playwright) or ChromeDriver (Selenium)
 DB	Postgres 14/15
 Concurrency	1, 5, 10 workers
 
+**Required regression coverage (RVU→MPFS alignment):**
+- `tests/ingestors/test_rvu_ingestor_e2e.py::TestRVUIngestorE2E.test_snapshot_registration_uses_dataset_specific_release_ids`
+- `tests/ingestors/test_mpfs_ingestor_e2e.py::test_mpfs_ingestor_selects_release_by_quarter`
+- `tests/ingestors/test_mpfs_ingestor_e2e.py::test_mpfs_ingestor_errors_when_quarter_missing`
+
 
 ⸻
 

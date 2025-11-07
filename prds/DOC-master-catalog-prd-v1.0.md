@@ -78,6 +78,7 @@
 | `RUN-database-sanitization-prd-v1.0.md` | Draft v0.1 | Security, Data Engineering | PHI registry, tokenization pipeline, non-prod refresh process, staging soak checklist |
 | `RUN-openapi-docs-maintenance-v1.0.md` | Draft v1.0 | Platform Engineering (API Enablement) | OpenAPI regeneration, linting, publishing, and distribution workflow tied to Render deploys |
 | `RUN-mpfs-ingestion-v1.0.md` | Draft v1.0 | Data Engineering (MPFS) + Ops | MPFS snapshot-based ingestion, ConversionFactorFetcher workflow, override governance, verification checklist |
+| `RUN-rvu-ingestion-v1.0.md` | Draft v1.0 | Data Engineering (RVU) + Ops | RVU ingestion CLI workflow, manifest retention, snapshot audit/repair tooling |
 
 ---
 
@@ -232,6 +233,9 @@ graph TD
 - Pre-commit hooks enforce filename prefixes and header metadata (`tools/verify-prd-headers.sh`).  
 - `tools/update-prd-refs.sh` bulk-updates references after renames.
 - `tools/audit_task_completion.py` audits task completion in `github_tasks_plan.md` using multi-source verification (git history, tests, AST analysis, acceptance criteria, documentation). Run periodically to maintain accurate task status.
+- `tools/audit_snapshot_paths.py` audits `dataset_snapshots` entries and verifies that manifest URLs resolve to parquet files; highlights rows that still point at `manifest.json`.
+- `scripts/repair_snapshot_paths.py` repairs snapshot rows in place (with CSV backup) after manifests move; requires `--confirm` to mutate data.
+- `tools/check_snapshot_release_parity.py` compares paired datasets (default `rvu_items:gpci_indices`) and fails when release suffixes drift—wired into CI as part of the build-only workflow.
 
 ### 8.2 Cross-Reference Validation
 
