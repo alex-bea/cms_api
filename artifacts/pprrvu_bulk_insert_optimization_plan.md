@@ -15,6 +15,18 @@ This document extends the existing bulk-insert roadmap for the RVU (PPRRVU) pipe
 
 **Goal:** Deliver a shared ingestion pattern that (a) streams/parses parquet snapshots with deterministic row limits, (b) prepares RVU data for the upcoming psycopg2 execute-values fast path, and (c) documents the knobs so small dynos can complete full ingests without manual DB hacks.
 
+**MVP Focus:** The minimal viable implementation will focus on delivering the PyArrow-based streaming snapshot loader utility and the psycopg2 `execute_values` integration for the PPRRVU dataset only. Rollout to MPFS, OPPS, and other pipelines will be deferred to subsequent phases to minimize initial risk and complexity.
+
+---
+
+## Baseline Metrics (Pre-Optimization)
+
+| Metric                 | Value           | Notes                          |
+|------------------------|-----------------|--------------------------------|
+| Current ingest duration | ~20 minutes     | For 227k rows in PPRRVU        |
+| Row count per ingest    | 227,000 rows    | PPRRVU snapshot size           |
+| Peak memory footprint   | >2 GB RSS       | Observed during bulk insert    |
+
 ---
 
 ## 2. High-Level Strategy
@@ -23,7 +35,9 @@ This document extends the existing bulk-insert roadmap for the RVU (PPRRVU) pipe
 2. **Adopt the helper across ingestors.** Update RVU, MPFS, OPPS, DIS pipelines, and tests to call the shared loader instead of `pd.read_parquet`.  
 3. **Introduce psycopg2 `execute_values` for RVU inserts.** With memory stabilized on the read side, we can safely tackle the DB write hot-spot described in Tier‑2 of the brainstorm (bypassing SQLAlchemy per chunk).  
 4. **Document & operationalize env knobs.** Provide a single runbook for Render/CLI operators to throttle snapshot reads and toggle the fast-insert path.  
-5. **Measure & iterate.** Instrument ingestion metrics (rows/sec, peak RSS) before/after rollout to ensure the new pattern hits the <3 minute target on production-sized runs.
+5. **Measure & iterate.** Instrument ingestion metrics (rows/sec, peak RSS) before/after rollout to ensure the new pattern hits the <3 minute target on production-sized runs.  
+
+*Note:* We emphasize a “measure first” approach, establishing baseline metrics and profiling the bottleneck before committing to the execute_values optimization, with all improvements benchmarked against these baselines.
 
 ---
 
@@ -77,7 +91,8 @@ This document extends the existing bulk-insert roadmap for the RVU (PPRRVU) pipe
 - [ ] Stage rollout: enable shared loader + env knobs in staging Render service, run RVU + MPFS ingests, capture memory metrics.  
 - [ ] When stable, enable `RVU_USE_EXECUTE_VALUES` for staging RVU pipeline, verify DB row counts + runtime improvements.  
 - [ ] Production rollout: coordinate maintenance window, ensure DB snapshots are in place, flip flag, monitor ingestion dashboards.  
-- [ ] Post-rollout report: compare before/after ingest duration, memory usage, DB insert throughput; archive data under `artifacts/RVU_DATABASE_LOADING_COMPLETE.md`.
+- [ ] Post-rollout report: compare before/after ingest duration, memory usage, DB insert throughput; archive data under `artifacts/RVU_DATABASE_LOADING_COMPLETE.md`.  
+- [ ] **Rollback instructions:** In case of issues, disable the `RVU_USE_EXECUTE_VALUES` feature flag immediately to revert to the stable bulk_insert_mappings path. Notify SRE and relevant stakeholders via Slack channels about the rollback and observed issues.
 
 ---
 
@@ -158,3 +173,60 @@ Because `_bulk_replace_records` is shared, any execute_values or COPY integratio
 - `load_locality_data`
 
 We must verify column order, type bindings, and performance for each table before enabling the new path globally. Feature flags should allow gradual rollout per dataset if needed.
+
+### 8.4 Communications & Monitoring
+
+- Operators will be informed of the new ingestion knobs and feature flags via updated runbooks and direct Slack announcements prior to rollout.
+- Performance dashboards will be updated to include ingestion runtime, rows per second, and memory usage metrics with alerting thresholds configured to detect regressions or failures.
+- In case of ingestion issues or regression, operators should follow rollback instructions promptly and notify SRE teams through the designated Slack channels to coordinate investigation and remediation.
+
+---
+
+## 9. MPFS Snapshot & Conversion-Factor Hardening Plan
+
+**Owner:** Data Platform – MPFS Lead  
+**Duration:** ~8 days total (6 dev + 2 rollout/testing)
+
+### 9.1 Codify Shared Snapshot Loader (1.5 d)
+Extract the PyArrow streaming helpers currently used in `MPFSIngestor` into `cms_pricing/ingestion/utils/snapshot_loader.py`, exposing:
+- `resolve_snapshot_path(snapshot_meta, dataset_id)`
+- `determine_row_limit(dataset_id)`
+- `stream_parquet(path, row_limit, batch_rows)`
+Add unit tests covering manifest dict/list shapes, alias fallbacks (`rvu_items → pprrvu`, `gpci_indices → gpci`), relative-path resolution, row-limit enforcement, and Pandas fallback when PyArrow is missing.
+Wire MPFS to the helper and remove local `_max_snapshot_rows` / `_read_parquet_snapshot` logic.
+
+### 9.2 Adopt Loader Across RVU / OPPS / DIS (1.5 d)
+Replace direct `pd.read_parquet` calls in RVU normalize/publish, OPPS pipelines, and DIS scripts with the shared loader.  
+Ensure env knobs (`MAX_<DATASET>_SNAPSHOT_ROWS`, `INGEST_SNAPSHOT_ROW_LIMIT`, `SNAPSHOT_BATCH_ROWS`) behave consistently.  
+Update ingestion tests to assert new “Row limiting applied …” logs and manifest-path resolution.
+
+### 9.3 Document Render Runbook Changes (0.5 d)
+Add a **Low-Memory Snapshot Loading** section to `RENDER_DATA_LOADING_GUIDE.md` (link from `RUN-mpfs-ingestion-v1.0.md`) detailing:
+- How to set and export manifest variables  
+- Snapshot repair script usage (`dataset_snapshots.manifest_url → …/pprrvu_YYYY.parquet`)  
+- Recommended batch / row-limit env values for 2 GB dynos vs full runs  
+- Troubleshooting note for CF warning (“RVU dataframe empty; unable to derive conversion factor”)  
+
+### 9.4 Normalize Snapshot Dates Everywhere (0.5 d)
+Promote `_normalize_snapshot_date()` to a shared helper (in `dataset_snapshot_service.py`).  
+Reuse it in RVU / MPFS / OPPS snapshot registration to ensure NaN → None conversion.  
+Add regression tests in `tests/services/test_dataset_snapshot_service.py`.
+
+### 9.5 CF Coverage & Validation (0.5 d)
+Extend curated-view / CF normalizer tests to assert at least one row exists when `conversion_factor` appears.  
+Add a CLI example showing how to inspect `/var/data/ingestion/mpfs/curated/.../mpfs_cf_vintage.parquet` for sanity (year, cf_value).
+
+### 9.6 Optional: psycopg2 `execute_values` (3 d)
+If ready, follow the [PPRRVU Bulk Insert Optimization Plan](../artifacts/pprrvu_bulk_insert_optimization_plan.md):  
+implement `RVU_USE_EXECUTE_VALUES`, tuple serialization, feature flag, and metrics comparison.  
+Otherwise treat as a later milestone.
+
+### 9.7 Rollout & Verification (1 d)
+**Stage:** enable shared loader + runbook updates, run RVU + MPFS ingests with limits, capture RSS/time metrics.  
+**Prod:** run full ingestion during maintenance window, confirm snapshots register cleanly (no manual DB edits), log results in `artifacts/RVU_DATABASE_LOADING_COMPLETE.md`.  
+**Rollback:** disable shared-loader flag if any regressions occur and notify SRE via Slack.
+
+---
+
+**Outcome:**  
+This extension standardizes snapshot handling across all ingestion pipelines, eliminates NaN CF edge-cases, and ensures operators can tune memory safely on constrained Render instances.
