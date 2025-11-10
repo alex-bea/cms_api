@@ -1783,6 +1783,58 @@ gh label create "enhancement" --description "Tasks related to enhancement"
 
 ---
 
+### Task 74: OPPS Addendum A — CSV-first parsing & governance
+
+**Category:** Data Ingestion  
+**Priority:** High  
+**Estimated Time:** 1–2 days  
+**Labels:** opps, ingestion, readiness-plan
+
+**Description:**  
+Implement the Addendum A parsing pipeline so OPPS APC payment tables are populated from the Section 508 CSV (falling back to XLSX only when CSV is missing). Ensure normalized data carries governance metadata and publish stages emit non-zero rows.
+
+**Implementation Steps:**
+- Add a dedicated parser (e.g., `parsers/opps_addendum_a.py`) that prefers `.csv`, normalizes columns, and coerces numeric fields.
+- Update `OPPSIngestor._parse_addendum_a` / `_normalize_stage` to use the new parser and attach governance + batch metadata helpers.
+- Refresh fixtures (`tests/fixtures/opps/opps_dataset_creator.py`) with deterministic APC rows that match the schema.
+- Update `tests/ingestors/test_opps_ingestor_e2e.py` assertions to expect non-zero `opps_apc_payment` records and governance columns.
+- Re-run sandbox dry-run (`scripts/run_opps_sandbox.sh`) and capture the new evidence JSON for readiness documentation.
+
+**Acceptance Criteria:**
+- `opps_apc_payment.parquet` contains non-zero rows with correct numeric fields and governance metadata.
+- E2E tests validate populated APC data and updated schema.
+- Sandbox dry-run evidence reflects the populated APC table.
+
+**Status:** ⏳ PENDING
+
+---
+
+### Task 75: OPPS Addendum B — CSV-first crosswalk & enrichment
+
+**Category:** Data Ingestion  
+**Priority:** High  
+**Estimated Time:** 2 days  
+**Labels:** opps, ingestion, readiness-plan
+
+**Description:**  
+After Addendum A is live, implement Addendum B HCPCS→APC crosswalk parsing (CSV-first), wire SI lookup enrichment, and ensure `opps_hcpcs_crosswalk`/`opps_rates_enriched` tables carry real data and governance metadata.
+
+**Implementation Steps:**
+- Create `parsers/opps_addendum_b.py` to normalize HCPCS/Modifier/Status Indicator columns, preferring CSV input.
+- Update `_parse_addendum_b`, `_normalize_stage`, and `_enrich_with_wage_index` to populate crosswalk + enriched tables with governance fields.
+- Extend fixtures/tests to include matching HCPCS rows and wage-index reference data.
+- Run pytest suite and sandbox dry-run to verify crosswalk/enrichment outputs.
+- Document the updated workflow/evidence references in the OPPS runbook and ingestion guide.
+
+**Acceptance Criteria:**
+- `opps_hcpcs_crosswalk.parquet` and `opps_rates_enriched.parquet` contain non-zero rows with governance metadata.
+- Wage-index enrichment joins succeed; SI lookup data present.
+- Updated tests and sandbox evidence confirm populated crosswalk and enriched tables.
+
+**Status:** ⏳ PENDING
+
+---
+
 ### Task 74: Data Quality: Instrument checksum verification and failure alerts
 
 **Category:** Data Ingestion
