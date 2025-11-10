@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 from cms_pricing.database import SessionLocal
 from cms_pricing.models.dataset_snapshots import DatasetSnapshot
@@ -24,14 +24,8 @@ def resolve_snapshot_path(
     return None
 
 
-def audit_snapshots(
-    dataset_id: str | None,
-    limit: int,
-    show_all: bool,
-    session_factory: Optional[Callable[[], object]] = None,
-) -> int:
-    factory = session_factory or SessionLocal
-    session = factory()
+def audit_snapshots(dataset_id: str | None, limit: int, show_all: bool) -> int:
+    session = SessionLocal()
     service = DatasetSnapshotService(session)
 
     try:

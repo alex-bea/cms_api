@@ -9,13 +9,11 @@ This script runs the complete RVU ingestion pipeline and loads data to productio
 """
 
 import argparse
-import asyncio
 import logging
 import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -30,7 +28,7 @@ from cms_pricing.models.rvu import Release
 logger = logging.getLogger(__name__)
 
 
-def main(release_id: str = None, output_dir: str = None, preflight: bool = False):
+def main(release_id: str = None, output_dir: str = None):
     """Run RVU ingestion on production database.
     
     Args:
@@ -39,8 +37,6 @@ def main(release_id: str = None, output_dir: str = None, preflight: bool = False
             the script will use RVU_OUTPUT_DIR env var, fall back to
             "/var/data/ingestion/production" when available, otherwise
             "data/ingestion/production".
-        preflight: When True, run ingestion in file-only mode (no DB writes)
-            to reseed curated parquet outputs for downstream jobs.
     """
     
     # Use defaults if not provided
@@ -58,32 +54,13 @@ def main(release_id: str = None, output_dir: str = None, preflight: bool = False
             break
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
-    db_session: Optional[Session] = None
-    if not preflight:
-        db_session = SessionLocal()
+    # Create database session
+    db_session = SessionLocal()
     
     try:
         logger.info("Starting RVU ingestion on production database")
         logger.info(f"Release ID: {release_id}")
         logger.info(f"Output directory: {output_dir}")
-
-        if preflight:
-            logger.info("Preflight mode enabled: skipping DB writes + snapshot registration")
-            ingestor = RVUIngestor(
-                output_dir=output_dir,
-                db_session=None,
-                enable_snapshot_registration=False,
-            )
-            batch_id = f"preflight_{int(time.time())}"
-            result = asyncio.run(ingestor.ingest(release_id=release_id, batch_id=batch_id))
-            status = result.get("status", "unknown")
-            total_records = result.get("total_records", 0)
-            logger.info(
-                "Preflight ingestion completed: status=%s total_records=%s",
-                status,
-                total_records,
-            )
-            return 0 if status == "success" else 1
         
         # Optimization 1: Check if release already exists (short-circuit)
         source_version = release_id[:10]  # Truncate to match DB constraint (VARCHAR(10))
@@ -105,6 +82,7 @@ def main(release_id: str = None, output_dir: str = None, preflight: bool = False
         # Run ingestion (will use sample_data/rvu25a/ by default for testing)
         # In production, this would use scraper discovery
         logger.info(f"Running ingestion pipeline... (release_id={release_id}, batch_id={batch_id})")
+        import asyncio
         result = asyncio.run(ingestor.ingest(release_id=release_id, batch_id=batch_id))
         
         # Verify results (log summary instead of full dict)
@@ -130,8 +108,7 @@ def main(release_id: str = None, output_dir: str = None, preflight: bool = False
         return 1
         
     finally:
-        if db_session is not None:
-            db_session.close()
+        db_session.close()
         logger.info("Database session closed")
 
 
@@ -168,17 +145,6 @@ Examples:
         type=str,
         help="Output directory for parquet files (default: data/ingestion/production)"
     )
-    parser.add_argument(
-        "--preflight",
-        action="store_true",
-        help="Generate curated parquet outputs only (skip DB writes and snapshot registration)",
-    )
     
     args = parser.parse_args()
-    sys.exit(
-        main(
-            release_id=args.release_id,
-            output_dir=args.output_dir,
-            preflight=args.preflight,
-        )
-    )
+    sys.exit(main(release_id=args.release_id, output_dir=args.output_dir))

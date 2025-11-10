@@ -118,11 +118,6 @@ Documentation updates must capture final validation artifacts for sign-off.
 | 2 | P0 | `scripts/run_mpfs_ingest.py` | `docs/mpfs_runbook.md` | Execute full ingest, capture logs and validation outputs. | Use current vintage data snapshot. |
 | 3 | P1 | `artifacts/mpfs_readiness.md` | `docs/readiness_checklist.md` | Update readiness artifacts with evidence, note remaining documentation gaps. | Highlight conversion-factor fetcher tests status. |
 
-### ✅ Snapshot Preflight Automation (New)
-- Added `--preflight` mode to `scripts/load_rvu_to_production.py` (outputs curated parquet only, no DB writes) plus a Render cron job (`cms-rvu-preflight`) so `/app/data/ingestion/rvu/curated/cms_rvu/` stays populated between deploys.
-- New CLI `python -m cms_pricing.ingestion.ops.preflight` bundles the snapshot audit + optional repairs and stores logs under `artifacts/preflight/`.
-- Runbooks (`prds/RUN-mpfs-ingestion-v1.0.md`, `prds/RUN-global-operations-prd-v1.0.md`) now reference the automation so MPFS readiness checks no longer rely on ad-hoc manual ingests.
-
 ## II. Dependency Checklist (The How and Impact)
 
 - Cascading dependencies: Import fixes may affect `_publish_stage` and data loaders referencing shared utilities.
