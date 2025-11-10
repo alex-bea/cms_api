@@ -124,4 +124,3 @@ markers = [
 audit-snapshots = "cms_pricing.ops.audit_snapshot_paths:main"
 repair-snapshots = "cms_pricing.ops.repair_snapshot_paths:main"
 preflight-snapshots = "cms_pricing.ingestion.ops.preflight:main"
-rvu-preflight = "cms_pricing.ingestion.jobs.load_rvu_preflight:main"

@@ -100,8 +100,7 @@ def main() -> int:
     args = parser.parse_args()
     datasets = args.dataset_ids or ["rvu_items", "gpci_indices"]
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    default_log_root = Path("/tmp/preflight")
-    log_path = args.log_path or default_log_root / f"snapshot_preflight_{timestamp}.log"
+    log_path = args.log_path or Path("artifacts/preflight") / f"snapshot_preflight_{timestamp}.log"
 
     return run_preflight(
         dataset_ids=datasets,

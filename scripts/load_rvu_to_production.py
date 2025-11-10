@@ -25,7 +25,6 @@ sys.path.insert(0, str(project_root))
 
 from cms_pricing.database import SessionLocal
 from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor
-from cms_pricing.ingestion.jobs.load_rvu_preflight import run_preflight as run_rvu_preflight
 from cms_pricing.models.rvu import Release
 
 logger = logging.getLogger(__name__)
@@ -70,7 +69,21 @@ def main(release_id: str = None, output_dir: str = None, preflight: bool = False
 
         if preflight:
             logger.info("Preflight mode enabled: skipping DB writes + snapshot registration")
-            return run_rvu_preflight(release_id=release_id, output_dir=output_dir)
+            ingestor = RVUIngestor(
+                output_dir=output_dir,
+                db_session=None,
+                enable_snapshot_registration=False,
+            )
+            batch_id = f"preflight_{int(time.time())}"
+            result = asyncio.run(ingestor.ingest(release_id=release_id, batch_id=batch_id))
+            status = result.get("status", "unknown")
+            total_records = result.get("total_records", 0)
+            logger.info(
+                "Preflight ingestion completed: status=%s total_records=%s",
+                status,
+                total_records,
+            )
+            return 0 if status == "success" else 1
         
         # Optimization 1: Check if release already exists (short-circuit)
         source_version = release_id[:10]  # Truncate to match DB constraint (VARCHAR(10))
