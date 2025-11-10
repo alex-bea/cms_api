@@ -105,9 +105,9 @@ Pipeline typically completes in 15–30 minutes depending on download speed.
    Ensure each dataset reports `status=ok` with release IDs like `gpci_2025_B`.
 3. **Repair if needed**
    ```bash
-   python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --confirm
+   python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --confirm --backup /tmp/gpci_snapshot_backup.csv --search-root /var
    ```
-   Attach the generated CSV (`artifacts/snapshot_repairs/...`) to the ops ticket.
+   Attach the CSV you generated (e.g., `/tmp/gpci_snapshot_backup.csv`) to the ops ticket.
 4. **Row count sanity checks**
    ```bash
    python - <<'PY'

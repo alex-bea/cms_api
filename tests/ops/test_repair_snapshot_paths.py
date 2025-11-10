@@ -138,3 +138,53 @@ def test_repair_dedupes_repo_relative_paths(tmp_path, monkeypatch, snapshot_sess
     assert stored is not None
     assert stored.manifest_url == "data/ingestion/rvu/pprrvu.parquet"
     verify_session.close()
+
+
+def test_repair_honors_additional_search_roots(tmp_path, monkeypatch, snapshot_session_factory):
+    monkeypatch.setattr(repair_snapshot_paths, "SessionLocal", snapshot_session_factory)
+
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    external_root = tmp_path / "external_mount"
+
+    parquet_path = external_root / "data" / "ingestion" / "rvu" / "curated" / "cms_rvu" / "2025-11-10" / "data" / "pprrvu_snapshot.parquet"
+    parquet_path.parent.mkdir(parents=True, exist_ok=True)
+    parquet_path.write_text("placeholder")
+
+    manifest_payload = {
+        "datasets": [
+            {
+                "name": "pprrvu",
+                "parquet_path": "data/ingestion/rvu/curated/cms_rvu/2025-11-10/data/pprrvu_snapshot.parquet",
+            }
+        ]
+    }
+    manifest_path = repo_root / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest_payload))
+    monkeypatch.chdir(repo_root)
+
+    session = snapshot_session_factory()
+    _insert_snapshot(
+        session,
+        dataset_id="rvu_items",
+        manifest_url=str(manifest_path),
+    )
+
+    backup_path = repo_root / "backup.csv"
+    rc = repair_snapshot_paths.audit_and_repair(
+        dataset_id="rvu_items",
+        release_id=None,
+        limit=None,
+        dry_run=False,
+        confirm=True,
+        backup_path=backup_path,
+        search_roots=[external_root],
+    )
+    assert rc == 0
+    assert backup_path.exists()
+
+    verify_session = snapshot_session_factory()
+    stored = verify_session.get(DatasetSnapshot, ("rvu_items", "rvu_2025_D"))
+    assert stored is not None
+    assert stored.manifest_url == "data/ingestion/rvu/curated/cms_rvu/2025-11-10/data/pprrvu_snapshot.parquet"
+    verify_session.close()

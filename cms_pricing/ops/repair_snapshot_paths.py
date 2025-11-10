@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 from cms_pricing.database import SessionLocal
 from cms_pricing.models.dataset_snapshots import DatasetSnapshot
@@ -31,9 +32,11 @@ def audit_and_repair(
     dry_run: bool,
     confirm: bool,
     backup_path: Path,
+    search_roots: Optional[Sequence[Path]] = None,
 ) -> int:
     session = SessionLocal()
     service = DatasetSnapshotService(session)
+    candidate_roots = _collect_search_roots(search_roots)
 
     try:
         query = session.query(DatasetSnapshot)
@@ -65,11 +68,8 @@ def audit_and_repair(
             normalized = DatasetSnapshotService._normalize_ingestion_path(Path(new_path))
             normalized = DatasetSnapshotService._dedupe_repeated_prefix(normalized)
 
-            filesystem_path = normalized
-            if not filesystem_path.is_absolute():
-                filesystem_path = Path.cwd() / filesystem_path
-
-            if not filesystem_path.exists():
+            filesystem_path = _resolve_filesystem_path(normalized, candidate_roots)
+            if not filesystem_path:
                 print(
                     f"[WARN] Skipping {snap.dataset_id}:{snap.release_id} — resolved parquet missing at {normalized.as_posix()}",
                 )
@@ -143,6 +143,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Optional path for CSV backup (default: artifacts/snapshot_repairs/<timestamp>.csv)",
     )
+    parser.add_argument(
+        "--search-root",
+        action="append",
+        type=Path,
+        help="Additional filesystem roots to search when manifest paths are repo-relative (can be provided multiple times).",
+    )
     return parser
 
 
@@ -159,7 +165,48 @@ def main() -> int:
         dry_run=dry_run,
         confirm=args.confirm,
         backup_path=backup_path,
+        search_roots=args.search_root,
     )
+
+
+def _collect_search_roots(explicit_roots: Optional[Sequence[Path]]) -> List[Path]:
+    """Build ordered list of filesystem roots used to locate parquet files."""
+    roots: List[Path] = []
+
+    def _add(root: Path) -> None:
+        root = Path(root)
+        if root not in roots:
+            roots.append(root)
+
+    _add(Path.cwd())
+
+    env_roots = os.getenv("SNAPSHOT_SEARCH_ROOTS")
+    if env_roots:
+        for chunk in env_roots.split(os.pathsep):
+            chunk = chunk.strip()
+            if chunk:
+                _add(Path(chunk))
+
+    _add(Path("/var"))
+
+    if explicit_roots:
+        for root in explicit_roots:
+            _add(root)
+
+    return roots
+
+
+def _resolve_filesystem_path(normalized: Path, search_roots: Sequence[Path]) -> Optional[Path]:
+    """Return the first filesystem path that exists for the provided normalized path."""
+    if normalized.is_absolute():
+        return normalized if normalized.exists() else None
+
+    for base in search_roots:
+        candidate = Path(base) / normalized
+        if candidate.exists():
+            return candidate
+
+    return None
 
 
 if __name__ == "__main__":  # pragma: no cover

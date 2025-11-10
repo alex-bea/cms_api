@@ -64,11 +64,11 @@ python -m cms_pricing.ingestion.ops.preflight --repair-if-needed
 ```
 
 - **Expected:** `status=ok` for every snapshot row (path points at `data/ingestion/.../*.parquet`).  
-- **If `status=missing_target` or the path still shows `/var/.../manifest.json`:** run the repair script, which writes a CSV backup under `artifacts/snapshot_repairs/` and rewrites the manifest URL to the current parquet:
+- **If `status=missing_target` or the path still shows `/var/.../manifest.json`:** run the repair script, which writes a CSV backup (defaulting to `/tmp`) and rewrites the manifest URL to the current parquet. Specify the backup path explicitly and point the scanner at the Render volume (`--search-root /var`) so repo-relative paths resolve to `/var/data/...`:
 
 ```bash
-python -m cms_pricing.ops.repair_snapshot_paths --dataset-id rvu_items --confirm
-python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --confirm
+python -m cms_pricing.ops.repair_snapshot_paths --dataset-id rvu_items --confirm --backup /tmp/rvu_items_snapshot_backup.csv --search-root /var
+python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --confirm --backup /tmp/gpci_snapshot_backup.csv --search-root /var
 ```
 
 Re-run the audit after repairs; do not launch MPFS ingestion until both datasets report `status=ok`. Preflight logs default to `/tmp/preflight/<timestamp>.log` unless you pass `--log-path`; attach both the audit output and any repair CSVs to the ops ticket for traceability.

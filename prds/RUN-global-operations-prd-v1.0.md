@@ -34,10 +34,10 @@ This runbook lists validation steps and ops playbook items for the new MPFS inge
   python -m cms_pricing.ingestion.ops.preflight --repair-if-needed
   ```
 - **Expected:** `status=ok` for every row (path resolves to `data/ingestion/.../*.parquet`). Archive the audit output in the change ticket.
-- **If you see `status=manifest_json` or `status=missing_target`:** repair the affected dataset(s) before MPFS runs:
+- **If you see `status=manifest_json` or `status=missing_target`:** repair the affected dataset(s) before MPFS runs (capture a CSV backup under `/tmp` and include `--search-root /var` so repo-relative paths resolve on Render):
   ```bash
-  python -m cms_pricing.ops.repair_snapshot_paths --dataset-id rvu_items --confirm
-  python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --confirm
+  python -m cms_pricing.ops.repair_snapshot_paths --dataset-id rvu_items --confirm --backup /tmp/rvu_items_snapshot_backup.csv --search-root /var
+  python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --confirm --backup /tmp/gpci_snapshot_backup.csv --search-root /var
   ```
 - Re-run the audit after repairs. Preflight logs default to `/tmp/preflight/<timestamp>.log`; override with `--log-path` if you need an alternative location. Escalate if repairs keep flipping back to manifests; MPFS reuse depends on the full set (`rvu_items`, `gpci_indices`, `anescf`, `localitycounty`, `oppscap`).
 - Escalate if any dataset is missing; MPFS reuse depends on the full set (`rvu_items`, `gpci_indices`, `anescf`, `localitycounty`, `oppscap`).
