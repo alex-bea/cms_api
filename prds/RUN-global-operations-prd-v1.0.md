@@ -40,6 +40,8 @@ This runbook lists validation steps and ops playbook items for the new MPFS inge
   ```
 - Re-run the audit after repairs. Escalate if repairs keep flipping back to manifests; MPFS reuse depends on the full set (`rvu_items`, `gpci_indices`, `anescf`, `localitycounty`, `oppscap`).
 - Escalate if any dataset is missing; MPFS reuse depends on the full set (`rvu_items`, `gpci_indices`, `anescf`, `localitycounty`, `oppscap`).
+- **Automation hook:** The Render cron job `cms-rvu-preflight` executes `python scripts/load_rvu_to_production.py --preflight --release-id rvu_preflight --output-dir data/ingestion/rvu` every 6 hours. Check Render job history before MPFS runs, and rerun manually (same command) if the last execution failed.
+- **Evidence capture:** Use `python -m cms_pricing.ingestion.ops.preflight --dataset-id rvu_items --dataset-id gpci_indices` to gather audit logs (and optional repairs) under `artifacts/preflight/` so ops tickets always include snapshot proof.
 
 4) **Conversion Factor Vintage**
 - Ensure `mpfs_cf_vintage` has the correct **CY 2025 CF** pinned per final rule context.  [oai_citation:37‡Centers for Medicare & Medicaid Services](https://www.cms.gov/newsroom/press-releases/hhs-finalizes-physician-payment-rule-strengthening-person-centered-care-and-health-quality-measures?utm_source=chatgpt.com)

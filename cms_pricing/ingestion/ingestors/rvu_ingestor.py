@@ -145,8 +145,10 @@ class RVUIngestor(BaseDISIngestor):
         db_session: Any = None,
         scraper: Optional[CMSRVUScraper] = None,
         historical_manager: Optional[HistoricalDataManager] = None,
+        enable_snapshot_registration: bool = True,
     ):
         super().__init__(output_dir, db_session)
+        self.enable_snapshot_registration = enable_snapshot_registration
         base_output_dir = Path(self.output_dir)
         scraped_dir = base_output_dir / "scraped"
         historical_dir = base_output_dir / "historical"
@@ -156,14 +158,16 @@ class RVUIngestor(BaseDISIngestor):
         self.historical_manager = historical_manager or HistoricalDataManager(str(historical_dir))
         self.artifact_profile_service = IngestorArtifactProfileService()
         
-        # Snapshot service handles dataset provenance registration
+        # Snapshot service handles dataset provenance registration (optional)
         self._snapshot_service_managed_session = False
-        if db_session is not None:
-            self.snapshot_service = DatasetSnapshotService(db_session)
-        else:
-            session = SessionLocal()
-            self._snapshot_service_managed_session = True
-            self.snapshot_service = DatasetSnapshotService(session)
+        self.snapshot_service: Optional[DatasetSnapshotService] = None
+        if self.enable_snapshot_registration:
+            if db_session is not None:
+                self.snapshot_service = DatasetSnapshotService(db_session)
+            else:
+                session = SessionLocal()
+                self._snapshot_service_managed_session = True
+                self.snapshot_service = DatasetSnapshotService(session)
         
         # Initialize shared services via factory (lazy initialization)
         service_config = ServiceConfig(
@@ -1110,6 +1114,13 @@ class RVUIngestor(BaseDISIngestor):
         vintage_date: str
     ) -> None:
         """Register curated RVU datasets in the snapshot registry."""
+        if not self.enable_snapshot_registration:
+            logger.debug(
+                "Snapshot registration disabled; skipping",
+                release_id=release_id,
+            )
+            return
+
         snapshot_service = getattr(self, "snapshot_service", None)
         if snapshot_service is None:
             logger.warning("Snapshot service unavailable; skipping snapshot registration")
