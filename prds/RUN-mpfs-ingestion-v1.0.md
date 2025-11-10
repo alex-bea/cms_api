@@ -73,9 +73,9 @@ python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --conf
 Re-run the audit after repairs; do not launch MPFS ingestion until both datasets report `status=ok`. Capture the audit + repair output in the ops ticket for traceability.
 
 **Render Preflight (New):**
-- A cron job defined in `render.yaml` (`cms-rvu-preflight`) runs `python scripts/load_rvu_to_production.py --preflight --release-id rvu_preflight --output-dir data/ingestion/rvu` every 6 hours so dynos always contain the latest curated parquet outputs.
-- If the cron job fails or you need an on-demand reseed, run the same command manually from `/app`.
-- After the reseed, capture evidence with `python -m cms_pricing.ingestion.ops.preflight --dataset-id rvu_items --dataset-id gpci_indices --log-path artifacts/preflight/manual_<timestamp>.log` (this wraps the audit + optional repair routines and stores the log under `artifacts/preflight/`).
+- A cron job defined in `render.yaml` (`cms-rvu-preflight`) runs `python -m cms_pricing.ingestion.jobs.load_rvu_preflight --release-id rvu_preflight --output-dir data/ingestion/rvu` every 6 hours so dynos always contain the latest curated parquet outputs.
+- If the cron job fails or you need an on-demand reseed, run the same module command manually from `/app`.
+- After the reseed, capture evidence with `preflight-snapshots --dataset-id rvu_items --dataset-id gpci_indices --log-path artifacts/preflight/manual_<timestamp>.log` (or omit `--log-path` to use `/tmp/preflight/...`).
 
 ### 1.3 Conversion Factor Override Configuration
 
