@@ -9,11 +9,6 @@
 ## 0. Pre-Day Prep (optional, today evening)
 - Download the latest OPPS quarterly package (ZIP + Section 508 CSVs/XLSX) into `data/raw/opps/samples/` so parsing can happen offline tomorrow.
 - Skim `artifacts/opps_implementation_plan.md` to refresh parsing edge cases and column mappings; note any TODOs that should be prioritized tomorrow.
-- Enable **sandbox discovery mode** for offline development by pointing `OPPS_LOCAL_SAMPLE_DIR` at the curated sample folder:
-  ```bash
-  export OPPS_LOCAL_SAMPLE_DIR="$PWD/sample_data/january_202025_20web_20addendum_20a.12.31.24"
-  ```
-  The ingestor and dry-run harness will now reuse those local files instead of fetching from CMS.
 
 ---
 
@@ -97,9 +92,8 @@ Break for lunch after verifying both parser helpers successfully read the sample
        --pretty
      ```
    - Verify logs show progression through land→publish, curated parquet files land in `curated/opps/<batch_id>/`, and JSON evidence is written to `artifacts/opps_dry_runs/`.
-   - Missing addenda for sandbox samples should surface as warnings only. Adjust validation requirements via `cms_pricing/ingestion/config/ingestor_artifacts.yml` (dataset `opps`) or temporarily set `OPPS_ADDENDA_PROFILE` if you need to exercise baseline/correction profiles.
 3. **Evidence Attachment**
-   - Drop the generated evidence JSON (tables, record counts, curated path) into the daily status note or attach to the readiness checklist. Reference example: `artifacts/opps_dry_runs/opps_2025q1_r01_20251107T205317.json`.
+   - Drop the generated evidence JSON (tables, record counts, curated path) into the daily status note or attach to the readiness checklist.
    - Note any validation warnings in the Results section below.
 4. **Observability Snapshot**
    - Ensure `self.observability` receives metrics (record `validation_results`, `publish_results` contents at `opps_ingestor.py:443`).
@@ -208,75 +202,3 @@ PRD guarantees governance metadata (`update_type`, `precedence_rank`, `provenanc
 - `cms_pricing/models/opps/opps_hcpcs_crosswalk.py`
 - `cms_pricing/models/opps/opps_rates_enriched.py`
 - `artifacts/opps_implementation_plan.md`
-
-
-Additional planning
-0. Context Summary (The Why)
-OPPS PRD promises governance fields (update_type, precedence_rank, provenance_link, conversion_factor, checksum, manifest_id, published_at) and snake_case outputs, but the live schema (cms_opps_v1.0.json) and ingestor publish only the base columns and use mismatched table identifiers. Manifest metadata also still references schema version cms_opps:1.0.0 while the contract has moved to v1.1. We must align schema contracts, ingestor outputs, and documentation with DIS/STD requirements so downstream consumers get the expected governance metadata and contract pinning.
-
-I. Implementation Breakdown (The What and Where)
-#	Priority	Primary File(s)	Secondary File(s)	Description of Code Change	Notes
-1	P0	cms_pricing/ingestion/ingestors/opps_ingestor.py (_normalize_stage, _enrich_stage, _publish_stage, _setup_validation_rules)	tests/ingestors/test_opps_ingestor_e2e.py, tests/fixtures/opps/opps_dataset_creator.py, artifacts/opps_ingestor_tomorrow_plan.md	Rename normalized/published dict keys to opps_apc_payment, opps_hcpcs_crosswalk, opps_rates_enriched; update validators/tests to match canonical snake_case outputs.	Change occurs near _normalize_stage dictionary assignments around line 565.
-2	P0	cms_pricing/ingestion/contracts/cms_opps_v1.0.json, same file’s fallback in _create_default_opps_schema	cms_pricing/models/opps/*, schema_service.py (if caching schema), prds/PRD-opps-prd-v1.0.md	Add governance columns (update_type, precedence_rank, provenance_link, conversion_factor, checksum, manifest_id, published_at) and required validations to every table; bump contract metadata and fallback dicts to match v1.1.	Keep types/enums consistent with PRD; ensure schema registry reloaded.
-3	P1	cms_pricing/ingestion/ingestors/opps_ingestor.py (contract_schema_ref, manifest metadata builder)	STD-parser-contracts-prd-v2.0.md (reference), artifacts/opps_ingestor_tomorrow_plan.md	Update contract_schema_ref to cms_opps:1.1 and ensure manifests/logs persist schema_version per standard.	Non-breaking but required for compliance.
-4	P1	prds/PRD-opps-prd-v1.0.md	REF-cms-pricing-source-map-prd-v1.0.md, ADR index	Cross-check that PRD references actual schema fields; add ADR reference (or TODO) for precedence_rank governance if not already recorded.	Documentation sync after code/schema update.
-II. Dependency Checklist (The How and Impact)
-P0 Cascading Dependencies:
-
-Changing table keys in _normalize_stage (line ~565) affects _enrich_stage wage-index join (line ~613), _publish_stage (line ~632), validators that read normalized_data[...], CPT masking, and any tests referencing old names. Downstream parquet filenames, render manifests, and API routers expect canonical opps_* names; failure to rename leads to schema mismatch.
-Adding governance fields to the schema requires updating dataset creators, ORM models (if they mirror columns), validation rules, and possibly DB migrations if these tables persist in SQL.
-External Integrations:
-
-Schema contract updates touch the Schema Registry and any ingest manifests that include schema_version.
-Parquet consumers (Render notebooks, downstream analytics) depend on field names; confirm compatibility.
-Pseudo-code / Snippet:
-
-# cms_pricing/ingestion/ingestors/opps_ingestor.py::_normalize_stage
-TABLE_APC = "opps_apc_payment"
-if file_info.file_type == "addendum_a":
-    normalized_data[TABLE_APC] = await self._parse_addendum_a(file_info)
-
-# Enrich stage (line ~613)
-if TABLE_APC in enriched_data:
-    enriched_data["opps_rates_enriched"] = await self._enrich_with_wage_index(
-        enriched_data[TABLE_APC], wage_index_data
-    )
-
-# Schema contract (JSON snippet)
-"update_type": { "type": "string", "nullable": false,
-                 "validation": { "enum": ["Baseline","Quarterly_Addendum","AdHoc_Correction"] } }
-III. Testing and Validation Guidance (The Verification)
-Unit / Integration Tests:
-
-Update OPPS ingestor E2E test to assert canonical table names and new governance fields:
-assert "opps_apc_payment" in publish_results["tables_published"]
-assert set(df.columns).issuperset({"update_type","precedence_rank","checksum"})
-Add schema contract regression test to ensure schema_version == "1.1" is surfaced in metadata.
-Fixture Management:
-
-# Regenerate OPPS fixtures once schema columns are added
-pytest tests/fixtures/opps --maxfail=1
-If fixtures are generated via helper script, rerun the fixture builder after adding governance columns.
-
-End-to-End Verification:
-
-Run pytest tests/ingestors/test_opps_ingestor_e2e.py to cover land→publish.
-Execute a dry ingestion:
-python -m cms_pricing.ingestion.ingestors.opps_ingestor --batch-id opps_2025q1_r01 --database-url sqlite:///:memory:
-Verify curated/opps/opps_2025q1_r01/opps_apc_payment.parquet exists and includes governance fields.
-Acceptance Criteria / Success Metrics:
-
-All OPPS tests pass; parquet outputs use canonical names; schema registry reflects v1.1 with new columns; ingestion manifests record schema_version and include added metadata without errors.
-IV. Guardrails, Risk, and Rollback
-Primary Risk: Schema mismatch between PRD, contract, and published data could break downstream analytics or block DIS validation; renaming keys without updating tests may silently skip tables.
-
-Pre-Commit / Pre-Deploy Checks:
-
-pytest tests/ingestors/test_opps_ingestor_e2e.py
-Any schema validation tooling (e.g., python scripts/check_render_data.py opps if available)
-Lint/format as usual.
-Rollback Strategy:
-
-Revert schema contract and ingestor changes via git checkout cms_pricing/ingestion/contracts/cms_opps_v1.0.json cms_pricing/ingestion/ingestors/opps_ingestor.py.
-Redeploy previous ingestion artifact; rerun ingestion with prior code to ensure curated outputs revert to original structure.
-If governance fields cause ingestion failure, temporarily disable enriched columns via feature flag (e.g., set OPPS_ENABLE_GOVERNANCE_FIELDS=false) until fixes are ready.
