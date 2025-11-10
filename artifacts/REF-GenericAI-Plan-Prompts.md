@@ -24,6 +24,7 @@ Create a **prioritized table** listing all required fixes/features.
 |---|-----------|-----------------|------------------|-----------------------------|-------|
 | 1 | P0 |  |  |  |  |
 | 2 | P1 |  |  |  |  |
+| 3 | P2 |  |  |  |  |
 
 **Instructions:** - *Primary Files* → main locations where code changes are required.  
 - *Secondary Files* → tests, schemas, configs to update or validate.  

@@ -33,6 +33,7 @@ import pandas as pd
 import structlog
 
 from cms_pricing.database import SessionLocal
+from cms_pricing.utils.snapshot_fallback import collect_search_roots, resolve_repo_path
 from ..contracts.ingestor_spec import (
     BaseDISIngestor,
     SourceFile,
@@ -120,6 +121,7 @@ class MPFSIngestor(BaseDISIngestor):
         self.quarantine_manager = QuarantineManager(str(Path(self.output_dir) / "quarantine"))
         self.observability_collector = DISObservabilityCollector()
         self.reference_data_manager = ReferenceDataManager()
+        self._snapshot_search_roots = collect_search_roots()
         
         # Current run metadata
         self.current_release_id: Optional[str] = None
@@ -780,6 +782,14 @@ class MPFSIngestor(BaseDISIngestor):
             raise ValueError(f"Snapshot metadata for {dataset_id} missing path")
 
         path = Path(path_value)
+        if not path.is_absolute():
+            resolved = resolve_repo_path(path, self._snapshot_search_roots, dataset_hint=dataset_id)
+            if resolved:
+                path = resolved
+        if not path.exists():
+            resolved = resolve_repo_path(path, self._snapshot_search_roots, dataset_hint=dataset_id)
+            if resolved:
+                path = resolved
         if not path.exists():
             raise FileNotFoundError(f"Snapshot path does not exist for {dataset_id}: {path}")
 
