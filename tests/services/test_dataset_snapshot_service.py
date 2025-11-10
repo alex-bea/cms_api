@@ -331,3 +331,38 @@ def test_normalize_ingestion_path_handles_app_curated(test_db_session):
         Path("/app/data/curated/rvu/rvu_2025_D/pprrvu.parquet")
     )
     assert normalized == Path("data/curated/rvu/rvu_2025_D/pprrvu.parquet")
+
+
+def test_manifest_repo_relative_path_is_preserved(tmp_path, test_db_session):
+    if not check_table_exists(test_db_session):
+        pytest.skip("dataset_snapshots table not yet created. Run: alembic upgrade head")
+
+    release_dir = tmp_path / "rvu_release"
+    release_dir.mkdir()
+
+    manifest_payload = {
+        "datasets": [
+            {
+                "name": "pprrvu",
+                "parquet_path": "data/ingestion/rvu/data/ingestion/rvu/pprrvu.parquet",
+            }
+        ]
+    }
+    manifest_path = release_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest_payload))
+
+    snapshot = DatasetSnapshot(
+        dataset_id="rvu_items",
+        release_id="rvu_2025_D",
+        digest="sha256:test",
+        effective_from=date(2025, 1, 1),
+        manifest_url=str(manifest_path),
+    )
+
+    service = DatasetSnapshotService(test_db_session)
+    try:
+        resolved = service._resolve_curated_path(snapshot)  # pylint: disable=protected-access
+    finally:
+        service.close()
+
+    assert resolved == "data/ingestion/rvu/pprrvu.parquet"

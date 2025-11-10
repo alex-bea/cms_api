@@ -286,7 +286,11 @@ class DatasetSnapshotService:
             if not isinstance(path_value, str) or not path_value.strip():
                 return None
             candidate_path = Path(path_value.strip())
-            if base_dir and not candidate_path.is_absolute():
+            if (
+                base_dir
+                and not candidate_path.is_absolute()
+                and not self._is_repo_relative_root(candidate_path)
+            ):
                 candidate_path = base_dir / candidate_path
             candidate_path = self._normalize_ingestion_path(candidate_path)
             if candidate_path.exists():
@@ -401,14 +405,53 @@ class DatasetSnapshotService:
         for prefix, replacement in prefix_mappings:
             try:
                 relative = path.resolve(strict=False).relative_to(prefix)
-                return replacement / relative
+                path = replacement / relative
+                break
             except ValueError:
                 continue
 
-        if str(path).startswith("./"):
-            return Path(str(path)[2:])
+        posix_path = path.as_posix()
+        if posix_path.startswith("./"):
+            posix_path = posix_path[2:]
 
-        return path
+        normalized = Path(posix_path)
+        normalized = DatasetSnapshotService._dedupe_repeated_prefix(normalized)
+        return normalized
+
+    @staticmethod
+    def _dedupe_repeated_prefix(path: Path) -> Path:
+        """Collapse repeated data/ingestion or data/curated prefixes."""
+        if not isinstance(path, Path):
+            path = Path(path)
+
+        parts = list(path.parts)
+        if not parts:
+            return path
+
+        prefixes = (
+            ("data", "ingestion"),
+            ("data", "curated"),
+        )
+
+        for prefix in prefixes:
+            while len(parts) >= len(prefix) * 2 and tuple(parts[: len(prefix)]) == prefix:
+                next_slice = parts[len(prefix) : len(prefix) * 2]
+                if tuple(next_slice) == prefix:
+                    del parts[: len(prefix)]
+                else:
+                    break
+
+        return Path(*parts)
+
+    @staticmethod
+    def _is_repo_relative_root(path: Path) -> bool:
+        """Return True when the provided path begins at the repository root."""
+        if not isinstance(path, Path):
+            path = Path(path)
+
+        if not path.parts:
+            return False
+        return path.parts[0] == "data"
 
     @staticmethod
     def _default_curated_root(dataset_id: str) -> Optional[Path]:

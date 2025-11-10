@@ -24,17 +24,6 @@ def resolve_new_path(service: DatasetSnapshotService, snapshot: DatasetSnapshot)
         return None
 
 
-def should_repair(manifest_url: Optional[str]) -> bool:
-    if not manifest_url:
-        return False
-    manifest_url = manifest_url.strip()
-    if not manifest_url:
-        return False
-    return manifest_url.endswith(".json") and (
-        manifest_url.startswith("data/") or manifest_url.startswith("./data/")
-    )
-
-
 def audit_and_repair(
     dataset_id: Optional[str],
     release_id: Optional[str],
@@ -66,20 +55,34 @@ def audit_and_repair(
 
         repairs: List[Tuple[DatasetSnapshot, str]] = []
         for snap in snapshots:
-            if not should_repair(snap.manifest_url):
-                continue
             new_path = resolve_new_path(service, snap)
             if not new_path:
                 print(
                     f"[WARN] Could not resolve parquet path for {snap.dataset_id}:{snap.release_id}",
                 )
                 continue
-            if new_path == snap.manifest_url:
+
+            normalized = DatasetSnapshotService._normalize_ingestion_path(Path(new_path))
+            normalized = DatasetSnapshotService._dedupe_repeated_prefix(normalized)
+
+            filesystem_path = normalized
+            if not filesystem_path.is_absolute():
+                filesystem_path = Path.cwd() / filesystem_path
+
+            if not filesystem_path.exists():
+                print(
+                    f"[WARN] Skipping {snap.dataset_id}:{snap.release_id} — resolved parquet missing at {normalized.as_posix()}",
+                )
                 continue
-            repairs.append((snap, new_path))
+
+            normalized_str = normalized.as_posix()
+
+            if normalized_str == (snap.manifest_url or "").strip():
+                continue
+            repairs.append((snap, normalized_str))
 
         if not repairs:
-            print("No manifest.json entries required repair.")
+            print("No snapshot entries required repair.")
             return 0
 
         backup_path.parent.mkdir(parents=True, exist_ok=True)

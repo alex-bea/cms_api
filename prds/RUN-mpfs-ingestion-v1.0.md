@@ -60,6 +60,7 @@ Immediately after the DB check, run the parquet-path audit and repair routine:
 ```bash
 python -m cms_pricing.ops.audit_snapshot_paths --dataset-id rvu_items --show-all
 python -m cms_pricing.ops.audit_snapshot_paths --dataset-id gpci_indices --show-all
+python -m cms_pricing.ingestion.ops.preflight --repair-if-needed
 ```
 
 - **Expected:** `status=ok` for every snapshot row (path points at `data/ingestion/.../*.parquet`).  
@@ -70,7 +71,7 @@ python -m cms_pricing.ops.repair_snapshot_paths --dataset-id rvu_items --confirm
 python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --confirm
 ```
 
-Re-run the audit after repairs; do not launch MPFS ingestion until both datasets report `status=ok`. Capture the audit + repair output in the ops ticket for traceability.
+Re-run the audit after repairs; do not launch MPFS ingestion until both datasets report `status=ok`. Preflight logs default to `/tmp/preflight/<timestamp>.log` unless you pass `--log-path`; attach both the audit output and any repair CSVs to the ops ticket for traceability.
 
 ### 1.3 Conversion Factor Override Configuration
 
