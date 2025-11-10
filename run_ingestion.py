@@ -11,7 +11,9 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
+from cms_pricing.database import SessionLocal
 from cms_pricing.ingestion.nearest_zip_ingestion import NearestZipIngestionPipeline
+from cms_pricing.ingestion.utils import assert_schema_is_current, SchemaOutOfDateError
 
 
 async def main():
@@ -20,6 +22,13 @@ async def main():
     print("=" * 60)
     
     try:
+        # Ensure database schema is on the expected Alembic head
+        session = SessionLocal()
+        try:
+            assert_schema_is_current(session)
+        finally:
+            session.close()
+
         # Create pipeline
         pipeline = NearestZipIngestionPipeline("./data/ingestion")
         
@@ -64,6 +73,9 @@ async def main():
             print(f"\n❌ Ingestion failed")
             return 1
             
+    except SchemaOutOfDateError as exc:
+        print(f"\n❌ Ingestion aborted: {exc}")
+        return 1
     except Exception as e:
         print(f"\n❌ Ingestion failed: {e}")
         import traceback
