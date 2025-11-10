@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import json
 from datetime import date
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
@@ -436,12 +436,27 @@ class DatasetSnapshotService:
         )
 
         for prefix in prefixes:
-            while len(parts) >= len(prefix) * 2 and tuple(parts[: len(prefix)]) == prefix:
-                next_slice = parts[len(prefix) : len(prefix) * 2]
-                if tuple(next_slice) == prefix:
-                    del parts[: len(prefix)]
-                else:
-                    break
+            prefix_len = len(prefix)
+            if tuple(parts[:prefix_len]) != prefix:
+                continue
+
+            dataset_segment: Tuple[str, ...] = ()
+            if len(parts) > prefix_len:
+                dataset_segment = (parts[prefix_len],)
+
+            cleaned: List[str] = list(parts[: prefix_len + len(dataset_segment)])
+            idx = len(cleaned)
+
+            while idx < len(parts):
+                if tuple(parts[idx : idx + prefix_len]) == prefix:
+                    idx += prefix_len
+                    if dataset_segment and tuple(parts[idx : idx + len(dataset_segment)]) == dataset_segment:
+                        idx += len(dataset_segment)
+                    continue
+                cleaned.append(parts[idx])
+                idx += 1
+
+            return Path(*cleaned)
 
         return Path(*parts)
 
