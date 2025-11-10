@@ -119,3 +119,7 @@ markers = [
     "e2e: marks tests as end-to-end tests",
     "performance: marks tests as performance/benchmark tests",
 ]
+
+[tool.poetry.scripts]
+audit-snapshots = "cms_pricing.ops.audit_snapshot_paths:main"
+repair-snapshots = "cms_pricing.ops.repair_snapshot_paths:main"

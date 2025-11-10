@@ -31,7 +31,7 @@ Provide actionable steps for authoring, testing, and executing database schema c
 - PgBouncer connection details documented  
 - Access to prod-sized snapshot for dry-run  
 - Change ticket/PR template (TBD)
-- Snapshot utilities installed (`tools/audit_snapshot_paths.py`, `scripts/repair_snapshot_paths.py`) for verifying/repairing dataset snapshot metadata pre/post migration when manifests move locations.
+- Snapshot utilities installed (`cms_pricing.ops.audit_snapshot_paths`, `cms_pricing.ops.repair_snapshot_paths`) for verifying/repairing dataset snapshot metadata pre/post migration when manifests move locations.
 
 - PgBouncer mode noted (transaction pooling): use **SET LOCAL** for any session state (e.g., tenant GUC) and avoid server-side prepares unless specifically enabled (see §6).
 - Alembic offline DDL ready: generate SQL via 

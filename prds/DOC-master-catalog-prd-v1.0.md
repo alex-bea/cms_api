@@ -33,6 +33,8 @@
 | `STD-scraper-prd-v1.0.md` | Draft v1.1 | Data Engineering | 2025-10-15 | Updated with implementation patterns |
 | `STD-database-platform-prd-v1.0.md` | Draft v1.1 | Platform Engineering, SRE | 2025-10-21 | Migrations-first PostgreSQL standard; fresh DB initialization; schema naming; HIPAA controls |
 | `STD-api-docs-prd-v1.0.md` | Draft v1.0 | Platform Engineering (API Enablement) | 2025-10-22 | API documentation standard (OpenAPI source-of-truth, linting, accessibility). Companion runbook: `prds/RUN-openapi-docs-maintenance-v1.0.md` |
+| `STD-ingestor-config-prd-v1.0.md` | Draft v1.0 | Data Platform Engineering | 2025-11-06 | Canonical artifact/profile configuration standard for DIS ingestors |
+| `STD-metadata-governance-prd-v1.0.md` | Draft v1.0 | Platform & Data Engineering | 2025-11-06 | Defines discovery, land, and publish metadata artifacts plus governance extensions |
 
 ---
 
@@ -46,6 +48,7 @@
 | `REF-nearest-zip-resolver-prd-v1.0.md` | Draft v1.0 | Data Engineering | Same-state nearest ZIP algorithm |
 | `REF-cms-pricing-source-map-prd-v1.0.md` | Draft v1.0 | Pricing Platform Engineering | CMS pricing datasets, links, work-backwards checklist |
 | `REF-geography-source-map-prd-v1.0.md` | Draft v1.0 | Pricing Platform Engineering | Geography dataset map & checklist |
+| `REF-pricing-calculator-prd-v1.0.md` | Adopted v1.0 | Pricing Platform Engineering | Runtime pricing calculator architecture feeding the Pricing API |
 
 ---
 
@@ -122,6 +125,8 @@ graph TD
     SC[STD-api-security-and-auth-prd]
     SD[STD-scraper-prd]
     SE[STD-parser-contracts-prd]
+    SF[STD-ingestor-config-prd]
+    SG[STD-metadata-governance-prd]
   end
 
   subgraph References
@@ -129,6 +134,7 @@ graph TD
     RB[REF-geography-mapping-cursor-prd]
     RD[REF-cms-pricing-source-map-prd]
     RE[REF-geography-source-map-prd]
+    RF[REF-pricing-calculator-prd]
   end
 
   subgraph Products
@@ -149,11 +155,18 @@ graph TD
   end
 
   SA --> SE
+  SA --> SF
+  SA --> SG
   SE --> P1
   SE --> P2
   SE --> P5
   SA --> P1
   SA --> P4
+  SF --> P1
+  SF --> P2
+  SG --> P1
+  SG --> P2
+  SG --> P5
   SB --> P3
   SC --> P2
   SC --> P3
@@ -166,6 +179,8 @@ graph TD
   RD -.-> P1
   RD -.-> P2
   RE -.-> P4
+  RF -.-> P1
+  RF -.-> P2
   P1 -.-> R1
   P2 -.-> R1
   SA -.-> D1
@@ -233,8 +248,8 @@ graph TD
 - Pre-commit hooks enforce filename prefixes and header metadata (`tools/verify-prd-headers.sh`).  
 - `tools/update-prd-refs.sh` bulk-updates references after renames.
 - `tools/audit_task_completion.py` audits task completion in `github_tasks_plan.md` using multi-source verification (git history, tests, AST analysis, acceptance criteria, documentation). Run periodically to maintain accurate task status.
-- `tools/audit_snapshot_paths.py` audits `dataset_snapshots` entries and verifies that manifest URLs resolve to parquet files; highlights rows that still point at `manifest.json`.
-- `scripts/repair_snapshot_paths.py` repairs snapshot rows in place (with CSV backup) after manifests move; requires `--confirm` to mutate data.
+- `cms_pricing.ops.audit_snapshot_paths` audits `dataset_snapshots` entries and verifies that manifest URLs resolve to parquet files; highlights rows that still point at `manifest.json`.
+- `cms_pricing.ops.repair_snapshot_paths` repairs snapshot rows in place (with CSV backup) after manifests move; requires `--confirm` to mutate data.
 - `tools/check_snapshot_release_parity.py` compares paired datasets (default `rvu_items:gpci_indices`) and fails when release suffixes drift—wired into CI as part of the build-only workflow.
 
 ### 8.2 Cross-Reference Validation

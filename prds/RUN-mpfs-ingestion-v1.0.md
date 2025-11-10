@@ -53,7 +53,24 @@ session.close()
 PY
 ```
 
-Release identifiers returned by the snapshot check should include dataset-specific prefixes (`rvu_YYYY_S`, `gpci_YYYY_S`, etc.). If a snapshot still reports the shared RVU base ID, rerun the RVU ingestor before starting MPFS so that per-dataset release IDs are registered. Snapshot metadata stores manifest URLs for provenance; `DatasetSnapshotService` resolves the actual parquet path automatically. Use `python tools/audit_snapshot_paths.py --dataset-id gpci_indices` to inspect manifest-only entries when troubleshooting.
+Release identifiers returned by the snapshot check should include dataset-specific prefixes (`rvu_YYYY_S`, `gpci_YYYY_S`, etc.). If a snapshot still reports the shared RVU base ID, rerun the RVU ingestor before starting MPFS so that per-dataset release IDs are registered. Snapshot metadata stores manifest URLs for provenance; `DatasetSnapshotService` resolves the actual parquet path automatically. Use `python -m cms_pricing.ops.audit_snapshot_paths --dataset-id gpci_indices` to inspect manifest-only entries when troubleshooting.
+
+Immediately after the DB check, run the parquet-path audit and repair routine:
+
+```bash
+python -m cms_pricing.ops.audit_snapshot_paths --dataset-id rvu_items --show-all
+python -m cms_pricing.ops.audit_snapshot_paths --dataset-id gpci_indices --show-all
+```
+
+- **Expected:** `status=ok` for every snapshot row (path points at `data/ingestion/.../*.parquet`).  
+- **If `status=missing_target` or the path still shows `/var/.../manifest.json`:** run the repair script, which writes a CSV backup under `artifacts/snapshot_repairs/` and rewrites the manifest URL to the current parquet:
+
+```bash
+python -m cms_pricing.ops.repair_snapshot_paths --dataset-id rvu_items --confirm
+python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --confirm
+```
+
+Re-run the audit after repairs; do not launch MPFS ingestion until both datasets report `status=ok`. Capture the audit + repair output in the ops ticket for traceability.
 
 ### 1.3 Conversion Factor Override Configuration
 
@@ -119,8 +136,8 @@ python scripts/run_mpfs_ingestion.py \
 
 ### 1.5 Snapshot Health Tooling
 
-- **Audit (read-only):** `python tools/audit_snapshot_paths.py --dataset-id gpci_indices --show-all`
-- **Repair (mutating, requires --confirm):** `python scripts/repair_snapshot_paths.py --dataset-id gpci_indices --confirm`
+- **Audit (read-only):** `python -m cms_pricing.ops.audit_snapshot_paths --dataset-id gpci_indices --show-all`
+- **Repair (mutating, requires --confirm):** `python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --confirm`
 - **Parity check (weekly + CI):** `python tools/check_snapshot_release_parity.py --pairs rvu_items:gpci_indices`
 - Always run the audit script before the repair utility; the CSV backup emitted by the repair script must be attached to the ops ticket.
 

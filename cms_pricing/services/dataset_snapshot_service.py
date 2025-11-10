@@ -278,7 +278,11 @@ class DatasetSnapshotService:
                     seen.append(entry)
             return seen
 
-        def normalize_candidate(path_value: Optional[str], base_dir: Optional[Path] = None) -> Optional[Path]:
+        def normalize_candidate(
+            path_value: Optional[str],
+            base_dir: Optional[Path] = None,
+            allow_missing: bool = False,
+        ) -> Optional[Path]:
             if not isinstance(path_value, str) or not path_value.strip():
                 return None
             candidate_path = Path(path_value.strip())
@@ -287,6 +291,23 @@ class DatasetSnapshotService:
             candidate_path = self._normalize_ingestion_path(candidate_path)
             if candidate_path.exists():
                 return candidate_path
+            if allow_missing:
+                return candidate_path
+            return None
+
+        def resolve_manifest_entry(value: Optional[str], base: Optional[Path]) -> Optional[str]:
+            resolved = normalize_candidate(value, base)
+            if resolved:
+                return str(resolved)
+            fallback = normalize_candidate(value, base, allow_missing=True)
+            if fallback:
+                logger.debug(
+                    "manifest_candidate_missing",
+                    dataset_id=snapshot.dataset_id,
+                    release_id=snapshot.release_id,
+                    candidate=str(fallback),
+                )
+                return str(fallback)
             return None
 
         manifest_url = snapshot.manifest_url or ""
@@ -308,15 +329,15 @@ class DatasetSnapshotService:
                                     entry = ds.get(key)
                                     if isinstance(entry, dict):
                                         parquet_path = entry.get("parquet_path") or entry.get("path")
-                                        resolved = normalize_candidate(parquet_path, base_dir)
+                                        resolved = resolve_manifest_entry(parquet_path, base_dir)
                                         if resolved:
-                                            return str(resolved)
+                                            return resolved
                                 for key in keys:
                                     entry = ds.get(key)
                                     if isinstance(entry, str):
-                                        resolved = normalize_candidate(entry, base_dir)
+                                        resolved = resolve_manifest_entry(entry, base_dir)
                                         if resolved:
-                                            return str(resolved)
+                                            return resolved
                             elif isinstance(ds, list):
                                 for entry in ds:
                                     if isinstance(entry, dict):
@@ -324,27 +345,36 @@ class DatasetSnapshotService:
                                         if entry_name and entry_name not in keys:
                                             continue
                                         parquet_path = entry.get("parquet_path") or entry.get("path")
-                                        resolved = normalize_candidate(parquet_path, base_dir)
+                                        resolved = resolve_manifest_entry(parquet_path, base_dir)
                                         if resolved:
-                                            return str(resolved)
+                                            return resolved
                                     elif isinstance(entry, str):
-                                        resolved = normalize_candidate(entry, base_dir)
+                                        resolved = resolve_manifest_entry(entry, base_dir)
                                         if resolved:
-                                            return str(resolved)
+                                            return resolved
 
                             ct = data.get("curated_tables")
                             if isinstance(ct, dict):
                                 for alias in candidate_names():
                                     value = ct.get(alias)
                                     if isinstance(value, str):
-                                        resolved = normalize_candidate(value, base_dir)
+                                        resolved = resolve_manifest_entry(value, base_dir)
                                         if resolved:
-                                            return str(resolved)
+                                            return resolved
                         except Exception as err:
                             logger.debug("manifest_resolution_failed", error=str(err), manifest=str(mpath))
                     else:
                         return str(mpath)
                 else:
+                    return str(mpath)
+            else:
+                if mpath.suffix.lower() != ".json":
+                    logger.debug(
+                        "manifest_path_missing",
+                        dataset_id=snapshot.dataset_id,
+                        release_id=snapshot.release_id,
+                        candidate=str(mpath),
+                    )
                     return str(mpath)
 
         dataset_root = self._default_curated_root(snapshot.dataset_id)
@@ -361,15 +391,17 @@ class DatasetSnapshotService:
         if not isinstance(path, Path):
             path = Path(path)
 
-        ingestion_prefixes = (
-            Path("/var/data/ingestion"),
-            Path("/app/data/ingestion"),
+        prefix_mappings = (
+            (Path("/var/data/ingestion"), Path("data/ingestion")),
+            (Path("/app/data/ingestion"), Path("data/ingestion")),
+            (Path("/var/data/curated"), Path("data/curated")),
+            (Path("/app/data/curated"), Path("data/curated")),
         )
 
-        for prefix in ingestion_prefixes:
+        for prefix, replacement in prefix_mappings:
             try:
                 relative = path.resolve(strict=False).relative_to(prefix)
-                return Path("data/ingestion") / relative
+                return replacement / relative
             except ValueError:
                 continue
 

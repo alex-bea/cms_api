@@ -388,13 +388,13 @@ This section documents the **actual implementation** of the RVU ingestor as a re
 
 ```bash
 # Audit all datasets for dataset-specific release IDs and parquet paths
-python tools/audit_snapshot_paths.py --dataset-id gpci_indices --show-all
+python -m cms_pricing.ops.audit_snapshot_paths --dataset-id gpci_indices --show-all
 
 # Repair legacy rows that still reference manifest.json
-python scripts/repair_snapshot_paths.py --dataset-id gpci_indices --confirm
+python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --confirm
 ```
 
-**Cross-References:** `cms_pricing/services/dataset_snapshot_service.py`, `tools/audit_snapshot_paths.py`, `scripts/repair_snapshot_paths.py`
+**Cross-References:** `cms_pricing/services/dataset_snapshot_service.py`, `cms_pricing.ops.audit_snapshot_paths`, `cms_pricing.ops.repair_snapshot_paths`
 
 #### Observability Implementation
 

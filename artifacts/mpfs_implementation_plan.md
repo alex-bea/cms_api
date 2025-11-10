@@ -78,7 +78,7 @@ python -c "from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor;
 | Docs | Runbook split/refresh complete (`prds/RUN-mpfs-ingestion-v1.0.md`). PRD updated with builder logic + testing sections. Gap analysis marked MPFS stable. Release notes addendum recorded. CF fetcher flow and override workflow documented. | ✅ **COMPLETE** |
 | Data paths | RVU + GPCI snapshots resolved from `DatasetSnapshotService`; CF artefacts cached via `ConversionFactorFetcher` and recorded in manifest. | ✅ **COMPLETE** |
 
-**Snapshot release IDs (new):** RVU publish now assigns dataset-specific release IDs (e.g., `gpci_2025_B`) while storing manifest URLs for provenance. `DatasetSnapshotService` resolves the parquet path before MPFS loads data, and `tools/audit_snapshot_paths.py` can be used to spot any manifest-only entries that fail to resolve.
+**Snapshot release IDs (new):** RVU publish now assigns dataset-specific release IDs (e.g., `gpci_2025_B`) while storing manifest URLs for provenance. `DatasetSnapshotService` resolves the parquet path before MPFS loads data, and `cms_pricing.ops.audit_snapshot_paths` can be used to spot any manifest-only entries that fail to resolve.
 
 ---
 
@@ -90,7 +90,7 @@ python -c "from cms_pricing.ingestion.ingestors.rvu_ingestor import RVUIngestor;
 - [x] 1. Confirm vintage targets (e.g., CY2025 RVU D release, GPCI annual, CF 2025).  
 - [ ] 2. Document input digests in runbook (`prds/RUN-mpfs-ingestion-v1.0.md`).  
 - [x] 3. Align with API team on required output schema (facility vs non-facility amounts, locality joins, provenance fields).
-- [ ] 4. Run `python tools/audit_snapshot_paths.py --dataset-id gpci_indices` after each RVU deployment to ensure dataset-specific release IDs resolve to parquet outputs.
+- [ ] 4. Run `python -m cms_pricing.ops.audit_snapshot_paths --dataset-id gpci_indices` after each RVU deployment to ensure dataset-specific release IDs resolve to parquet outputs.
 
 ### Phase 1 – Retire Old Scraper Dependency (1 day) ✅ **COMPLETE**
 **Objective:** Remove deprecated `CMSMPFSScraper` and refactor MPFS ingestor to use snapshot-based discovery.

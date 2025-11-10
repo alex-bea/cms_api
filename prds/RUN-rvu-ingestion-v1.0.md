@@ -35,8 +35,8 @@ Outputs power downstream MPFS, OPPS, and API workloads via dataset snapshots and
 - Manifest retention: do **not** delete `manifest.json` files referenced by existing snapshots; repair tooling depends on them
 - Tools/scripts available:
   - `python scripts/run_rvu_ingestion.py`
-  - `python tools/audit_snapshot_paths.py`
-  - `python scripts/repair_snapshot_paths.py`
+  - `python -m cms_pricing.ops.audit_snapshot_paths`
+  - `python -m cms_pricing.ops.repair_snapshot_paths`
   - `python tools/check_snapshot_release_parity.py`
 - Credentials for CMS downloads if running scraper discovery (default fixture data is local)
 
@@ -53,7 +53,7 @@ Outputs power downstream MPFS, OPPS, and API workloads via dataset snapshots and
    ```
 3. **Snapshot health (previous run)** – verify last snapshots resolve to parquet
    ```bash
-   python tools/audit_snapshot_paths.py --dataset-id gpci_indices --show-all
+   python -m cms_pricing.ops.audit_snapshot_paths --dataset-id gpci_indices --show-all
    ```
 4. **Parity check** (optional but recommended before quarterly runs)
    ```bash
@@ -100,12 +100,12 @@ Pipeline typically completes in 15–30 minutes depending on download speed.
    Expect entries for `pprrvu`, `gpci`, `anescf`, `localitycounty`, `oppscap`.
 2. **Snapshot audit (mandatory)**
    ```bash
-   python tools/audit_snapshot_paths.py --dataset-id gpci_indices --show-all
+   python -m cms_pricing.ops.audit_snapshot_paths --dataset-id gpci_indices --show-all
    ```
    Ensure each dataset reports `status=ok` with release IDs like `gpci_2025_B`.
 3. **Repair if needed**
    ```bash
-   python scripts/repair_snapshot_paths.py --dataset-id gpci_indices --confirm
+   python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --confirm
    ```
    Attach the generated CSV (`artifacts/snapshot_repairs/...`) to the ops ticket.
 4. **Row count sanity checks**
@@ -156,8 +156,8 @@ Store in Ops ticket or `artifacts/rvu_run_log.md` if using shared ledger.
 ---
 
 ## 8. Supporting Tools
-- `tools/audit_snapshot_paths.py` – verifies snapshot metadata resolves to parquet
-- `scripts/repair_snapshot_paths.py` – rewrites legacy manifest URLs (requires `--confirm`)
+- `cms_pricing.ops.audit_snapshot_paths` – verifies snapshot metadata resolves to parquet
+- `cms_pricing.ops.repair_snapshot_paths` – rewrites legacy manifest URLs (requires `--confirm`)
 - `tools/check_snapshot_release_parity.py` – ensures RVU/GPCI suffixes match (runs in CI)
 - `tools/verify_source_map.py` – validates discovery manifests vs reference source map
 

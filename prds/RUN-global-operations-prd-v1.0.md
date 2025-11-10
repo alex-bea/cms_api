@@ -29,13 +29,16 @@ This runbook lists validation steps and ops playbook items for the new MPFS inge
 3) **RVU Snapshot Registration Verification**
 - After each RVU ingestion run, confirm every curated dataset registered a dataset-specific release ID (e.g., `gpci_2025_B`, not `rvu_2025_B`).
   ```bash
-  python tools/audit_snapshot_paths.py --show-all
-  python tools/audit_snapshot_paths.py --dataset-id gpci_indices
+  python -m cms_pricing.ops.audit_snapshot_paths --show-all
+  python -m cms_pricing.ops.audit_snapshot_paths --dataset-id gpci_indices
   ```
-- If the audit shows entries with `status=manifest_json`, repair them before MPFS runs:
+- **Expected:** `status=ok` for every row (path resolves to `data/ingestion/.../*.parquet`). Archive the audit output in the change ticket.
+- **If you see `status=manifest_json` or `status=missing_target`:** repair the affected dataset(s) before MPFS runs:
   ```bash
-  python scripts/repair_snapshot_paths.py --dataset-id gpci_indices --confirm
+  python -m cms_pricing.ops.repair_snapshot_paths --dataset-id rvu_items --confirm
+  python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --confirm
   ```
+- Re-run the audit after repairs. Escalate if repairs keep flipping back to manifests; MPFS reuse depends on the full set (`rvu_items`, `gpci_indices`, `anescf`, `localitycounty`, `oppscap`).
 - Escalate if any dataset is missing; MPFS reuse depends on the full set (`rvu_items`, `gpci_indices`, `anescf`, `localitycounty`, `oppscap`).
 
 4) **Conversion Factor Vintage**

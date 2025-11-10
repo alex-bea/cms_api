@@ -6,6 +6,10 @@ STD-metadata-governance-prd-v1.0.md
 **Scope:** All DIS-compliant scrapers, ingestors, and dataset snapshot services  
 **Purpose:** Document the metadata artifacts the codebase emits today so engineers can reason about lineage, validation, and downstream contracts without reverse‑engineering each pipeline.
 
+**Cross-References:**  
+- `prds/DOC-master-catalog-prd-v1.0.md` — Master catalog registration  
+- `prds/STD-data-architecture-prd-v1.0.md` — DIS lifecycle anchor  
+
 ---
 
 1. Overview

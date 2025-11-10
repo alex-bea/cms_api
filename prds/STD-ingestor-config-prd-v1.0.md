@@ -10,6 +10,10 @@ requires:
 **Owners:** Data Platform Engineering  
 **Consumers:** Ingestor authors (OPPS, MPFS, RVU, future ASC/NADAC pipelines)
 
+**Cross-References:**  
+- `prds/DOC-master-catalog-prd-v1.0.md` (master catalog registration)  
+- `prds/STD-data-architecture-impl-v1.0.md` (DIS implementation patterns)  
+
 ---
 
 ## 0. Context & Purpose
