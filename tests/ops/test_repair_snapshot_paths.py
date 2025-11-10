@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from cms_pricing.models.dataset_snapshots import DatasetSnapshot
-from cms_pricing.ops.repair_snapshot_paths import audit_and_repair
+from cms_pricing.ops import repair_snapshot_paths
 
 
 @pytest.fixture()
@@ -57,22 +57,25 @@ def _insert_snapshot(session, *, dataset_id: str, manifest_url: str) -> None:
     session.close()
 
 
-def test_repair_updates_manifest_from_manifest_json(tmp_path, snapshot_session_factory):
-    release_dir = tmp_path / "rvu_release"
-    release_dir.mkdir()
-    parquet_path = release_dir / "pprrvu_snapshot.parquet"
+def test_repair_updates_manifest_from_manifest_json(tmp_path, monkeypatch, snapshot_session_factory):
+    monkeypatch.setattr(repair_snapshot_paths, "SessionLocal", snapshot_session_factory)
+
+    repo_root = tmp_path
+    parquet_path = repo_root / "data" / "ingestion" / "rvu" / "curated" / "cms_rvu" / "2025-11-10" / "data" / "pprrvu_snapshot.parquet"
+    parquet_path.parent.mkdir(parents=True, exist_ok=True)
     parquet_path.write_text("placeholder")
 
     manifest_payload = {
         "datasets": [
             {
                 "name": "pprrvu",
-                "parquet_path": "pprrvu_snapshot.parquet",
+                "parquet_path": "data/ingestion/rvu/curated/cms_rvu/2025-11-10/data/pprrvu_snapshot.parquet",
             }
         ]
     }
-    manifest_path = release_dir / "manifest.json"
+    manifest_path = repo_root / "manifest.json"
     manifest_path.write_text(json.dumps(manifest_payload))
+    monkeypatch.chdir(repo_root)
 
     session = snapshot_session_factory()
     _insert_snapshot(
@@ -82,7 +85,7 @@ def test_repair_updates_manifest_from_manifest_json(tmp_path, snapshot_session_f
     )
 
     backup_path = tmp_path / "backup.csv"
-    rc = audit_and_repair(
+    rc = repair_snapshot_paths.audit_and_repair(
         dataset_id="rvu_items",
         release_id=None,
         limit=None,
@@ -96,18 +99,19 @@ def test_repair_updates_manifest_from_manifest_json(tmp_path, snapshot_session_f
     verify_session = snapshot_session_factory()
     stored = verify_session.get(DatasetSnapshot, ("rvu_items", "rvu_2025_D"))
     assert stored is not None
-    assert stored.manifest_url == str(parquet_path)
+    assert stored.manifest_url == "data/ingestion/rvu/curated/cms_rvu/2025-11-10/data/pprrvu_snapshot.parquet"
     verify_session.close()
 
 
 def test_repair_dedupes_repo_relative_paths(tmp_path, monkeypatch, snapshot_session_factory):
+    monkeypatch.setattr(repair_snapshot_paths, "SessionLocal", snapshot_session_factory)
+
     repo_root = tmp_path
     data_dir = repo_root / "data" / "ingestion" / "rvu"
     data_dir.mkdir(parents=True)
     parquet_path = data_dir / "pprrvu.parquet"
     parquet_path.write_text("placeholder")
 
-    original_cwd = Path.cwd()
     monkeypatch.chdir(repo_root)
 
     duplicated_path = "data/ingestion/rvu/data/ingestion/rvu/pprrvu.parquet"
@@ -119,7 +123,7 @@ def test_repair_dedupes_repo_relative_paths(tmp_path, monkeypatch, snapshot_sess
         manifest_url=duplicated_path,
     )
 
-    rc = audit_and_repair(
+    rc = repair_snapshot_paths.audit_and_repair(
         dataset_id="rvu_items",
         release_id=None,
         limit=None,
@@ -134,5 +138,3 @@ def test_repair_dedupes_repo_relative_paths(tmp_path, monkeypatch, snapshot_sess
     assert stored is not None
     assert stored.manifest_url == "data/ingestion/rvu/pprrvu.parquet"
     verify_session.close()
-
-    monkeypatch.chdir(original_cwd)

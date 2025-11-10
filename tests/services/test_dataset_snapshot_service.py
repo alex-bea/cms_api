@@ -333,12 +333,14 @@ def test_normalize_ingestion_path_handles_app_curated(test_db_session):
     assert normalized == Path("data/curated/rvu/rvu_2025_D/pprrvu.parquet")
 
 
-def test_manifest_repo_relative_path_is_preserved(tmp_path, test_db_session):
+def test_manifest_repo_relative_path_is_preserved(tmp_path, monkeypatch, test_db_session):
     if not check_table_exists(test_db_session):
         pytest.skip("dataset_snapshots table not yet created. Run: alembic upgrade head")
 
-    release_dir = tmp_path / "rvu_release"
-    release_dir.mkdir()
+    repo_root = tmp_path
+    parquet_path = repo_root / "data" / "ingestion" / "rvu" / "pprrvu.parquet"
+    parquet_path.parent.mkdir(parents=True, exist_ok=True)
+    parquet_path.write_text("content")
 
     manifest_payload = {
         "datasets": [
@@ -348,8 +350,10 @@ def test_manifest_repo_relative_path_is_preserved(tmp_path, test_db_session):
             }
         ]
     }
-    manifest_path = release_dir / "manifest.json"
+    manifest_path = repo_root / "manifest.json"
     manifest_path.write_text(json.dumps(manifest_payload))
+
+    monkeypatch.chdir(repo_root)
 
     snapshot = DatasetSnapshot(
         dataset_id="rvu_items",

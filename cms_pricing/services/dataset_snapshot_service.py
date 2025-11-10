@@ -293,6 +293,7 @@ class DatasetSnapshotService:
             ):
                 candidate_path = base_dir / candidate_path
             candidate_path = self._normalize_ingestion_path(candidate_path)
+            candidate_path = self._dedupe_repeated_prefix(candidate_path)
             if candidate_path.exists():
                 return candidate_path
             if allow_missing:
@@ -318,6 +319,7 @@ class DatasetSnapshotService:
         if manifest_url:
             mpath = Path(manifest_url)
             mpath = self._normalize_ingestion_path(mpath)
+            mpath = self._dedupe_repeated_prefix(mpath)
             if mpath.exists():
                 if mpath.is_file():
                     if mpath.suffix.lower() == ".json":
@@ -368,9 +370,9 @@ class DatasetSnapshotService:
                         except Exception as err:
                             logger.debug("manifest_resolution_failed", error=str(err), manifest=str(mpath))
                     else:
-                        return str(mpath)
+                        return self._stringify_path(mpath)
                 else:
-                    return str(mpath)
+                    return self._stringify_path(mpath)
             else:
                 if mpath.suffix.lower() != ".json":
                     logger.debug(
@@ -379,7 +381,7 @@ class DatasetSnapshotService:
                         release_id=snapshot.release_id,
                         candidate=str(mpath),
                     )
-                    return str(mpath)
+                    return self._stringify_path(mpath)
 
         dataset_root = self._default_curated_root(snapshot.dataset_id)
         if not dataset_root:
@@ -442,6 +444,11 @@ class DatasetSnapshotService:
                     break
 
         return Path(*parts)
+
+    def _stringify_path(self, path: Path) -> str:
+        """Normalize a filesystem path and return it as a repo-relative string."""
+        normalized = self._normalize_ingestion_path(path)
+        return normalized.as_posix()
 
     @staticmethod
     def _is_repo_relative_root(path: Path) -> bool:
