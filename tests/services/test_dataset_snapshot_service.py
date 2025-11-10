@@ -370,3 +370,31 @@ def test_manifest_repo_relative_path_is_preserved(tmp_path, monkeypatch, test_db
         service.close()
 
     assert resolved == "data/ingestion/rvu/pprrvu.parquet"
+
+
+def test_resolve_curated_path_falls_back_to_latest_drop(tmp_path, monkeypatch, test_db_session):
+    if not check_table_exists(test_db_session):
+        pytest.skip("dataset_snapshots table not yet created. Run: alembic upgrade head")
+
+    curated_root = tmp_path / "curated" / "cms_rvu" / "2025-11-06" / "data"
+    curated_root.mkdir(parents=True, exist_ok=True)
+    parquet_path = curated_root / "pprrvu_2025-11-06.parquet"
+    parquet_path.write_text("content")
+
+    monkeypatch.setenv("SNAPSHOT_SEARCH_ROOTS", str(tmp_path / "curated"))
+
+    snapshot = DatasetSnapshot(
+        dataset_id="rvu_items",
+        release_id="rvu_2025_D",
+        digest="sha256:test",
+        effective_from=date(2025, 1, 1),
+        manifest_url="data/ingestion/rvu/curated/cms_rvu/2025-11-10/data/pprrvu_2025-11-10.parquet",
+    )
+
+    service = DatasetSnapshotService(test_db_session)
+    try:
+        resolved = service._resolve_curated_path(snapshot)  # pylint: disable=protected-access
+    finally:
+        service.close()
+
+    assert resolved == "data/ingestion/rvu/curated/cms_rvu/2025-11-06/data/pprrvu_2025-11-06.parquet"

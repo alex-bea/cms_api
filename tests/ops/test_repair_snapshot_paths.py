@@ -188,3 +188,42 @@ def test_repair_honors_additional_search_roots(tmp_path, monkeypatch, snapshot_s
     assert stored is not None
     assert stored.manifest_url == "data/ingestion/rvu/curated/cms_rvu/2025-11-10/data/pprrvu_snapshot.parquet"
     verify_session.close()
+
+
+def test_repair_uses_latest_drop_when_requested_missing(tmp_path, monkeypatch, snapshot_session_factory):
+    monkeypatch.setattr(repair_snapshot_paths, "SessionLocal", snapshot_session_factory)
+
+    curated_root = tmp_path / "curated" / "cms_rvu" / "2025-11-06" / "data"
+    curated_root.mkdir(parents=True, exist_ok=True)
+    parquet_path = curated_root / "pprrvu_2025-11-06.parquet"
+    parquet_path.write_text("placeholder")
+
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    monkeypatch.chdir(repo_root)
+
+    session = snapshot_session_factory()
+    _insert_snapshot(
+        session,
+        dataset_id="rvu_items",
+        manifest_url="data/ingestion/rvu/curated/cms_rvu/2025-11-10/data/pprrvu_2025-11-10.parquet",
+    )
+
+    backup_path = repo_root / "backup.csv"
+    rc = repair_snapshot_paths.audit_and_repair(
+        dataset_id="rvu_items",
+        release_id=None,
+        limit=None,
+        dry_run=False,
+        confirm=True,
+        backup_path=backup_path,
+        search_roots=[tmp_path / "curated"],
+        use_latest_drop=True,
+    )
+    assert rc == 0
+
+    verify_session = snapshot_session_factory()
+    stored = verify_session.get(DatasetSnapshot, ("rvu_items", "rvu_2025_D"))
+    assert stored is not None
+    assert stored.manifest_url == "data/ingestion/rvu/curated/cms_rvu/2025-11-06/data/pprrvu_2025-11-06.parquet"
+    verify_session.close()

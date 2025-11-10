@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
@@ -12,6 +11,12 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 from cms_pricing.database import SessionLocal
 from cms_pricing.models.dataset_snapshots import DatasetSnapshot
 from cms_pricing.services.dataset_snapshot_service import DatasetSnapshotService
+from cms_pricing.utils.snapshot_fallback import (
+    collect_search_roots,
+    discover_latest_release,
+    filename_prefix,
+    replace_release_in_path,
+)
 
 
 def resolve_new_path(service: DatasetSnapshotService, snapshot: DatasetSnapshot) -> Optional[str]:
@@ -33,10 +38,11 @@ def audit_and_repair(
     confirm: bool,
     backup_path: Path,
     search_roots: Optional[Sequence[Path]] = None,
+    use_latest_drop: bool = False,
 ) -> int:
     session = SessionLocal()
     service = DatasetSnapshotService(session)
-    candidate_roots = _collect_search_roots(search_roots)
+    candidate_roots = collect_search_roots(search_roots)
 
     try:
         query = session.query(DatasetSnapshot)
@@ -70,10 +76,20 @@ def audit_and_repair(
 
             filesystem_path = _resolve_filesystem_path(normalized, candidate_roots)
             if not filesystem_path:
-                print(
-                    f"[WARN] Skipping {snap.dataset_id}:{snap.release_id} — resolved parquet missing at {normalized.as_posix()}",
-                )
-                continue
+                fallback_path = None
+                if use_latest_drop:
+                    fallback_path = _fallback_to_latest_drop(normalized, snap.dataset_id, candidate_roots)
+                if fallback_path:
+                    normalized = fallback_path
+                    normalized_str = normalized.as_posix()
+                    print(
+                        f"[INFO] Using latest available drop for {snap.dataset_id}:{snap.release_id} -> {normalized_str}",
+                    )
+                else:
+                    print(
+                        f"[WARN] Skipping {snap.dataset_id}:{snap.release_id} — resolved parquet missing at {normalized.as_posix()}",
+                    )
+                    continue
 
             normalized_str = normalized.as_posix()
 
@@ -149,6 +165,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Additional filesystem roots to search when manifest paths are repo-relative (can be provided multiple times).",
     )
+    parser.add_argument(
+        "--use-latest-drop",
+        action="store_true",
+        help="When target parquet files are missing, reuse the most recent drop available under the search roots.",
+    )
     return parser
 
 
@@ -166,34 +187,8 @@ def main() -> int:
         confirm=args.confirm,
         backup_path=backup_path,
         search_roots=args.search_root,
+        use_latest_drop=args.use_latest_drop,
     )
-
-
-def _collect_search_roots(explicit_roots: Optional[Sequence[Path]]) -> List[Path]:
-    """Build ordered list of filesystem roots used to locate parquet files."""
-    roots: List[Path] = []
-
-    def _add(root: Path) -> None:
-        root = Path(root)
-        if root not in roots:
-            roots.append(root)
-
-    _add(Path.cwd())
-
-    env_roots = os.getenv("SNAPSHOT_SEARCH_ROOTS")
-    if env_roots:
-        for chunk in env_roots.split(os.pathsep):
-            chunk = chunk.strip()
-            if chunk:
-                _add(Path(chunk))
-
-    _add(Path("/var"))
-
-    if explicit_roots:
-        for root in explicit_roots:
-            _add(root)
-
-    return roots
 
 
 def _resolve_filesystem_path(normalized: Path, search_roots: Sequence[Path]) -> Optional[Path]:
@@ -207,6 +202,22 @@ def _resolve_filesystem_path(normalized: Path, search_roots: Sequence[Path]) -> 
             return candidate
 
     return None
+
+
+def _fallback_to_latest_drop(normalized: Path, dataset_id: str, search_roots: Sequence[Path]) -> Optional[Path]:
+    """Return repo-relative path pointing at the freshest curated drop."""
+    prefix = filename_prefix(normalized, dataset_id)
+    dataset_hint = None
+    for hint in ("cms_rvu", dataset_id):
+        if hint and hint in normalized.parts:
+            dataset_hint = hint
+            break
+
+    latest = discover_latest_release(prefix, search_roots, dataset_hint=dataset_hint)
+    if not latest:
+        return None
+
+    return replace_release_in_path(normalized, latest.release, new_filename_prefix=prefix)
 
 
 if __name__ == "__main__":  # pragma: no cover

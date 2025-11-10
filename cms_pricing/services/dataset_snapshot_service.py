@@ -16,6 +16,12 @@ from sqlalchemy import and_, or_
 import structlog
 
 from cms_pricing.models.dataset_snapshots import DatasetSnapshot
+from cms_pricing.utils.snapshot_fallback import (
+    collect_search_roots,
+    discover_latest_release,
+    filename_prefix,
+    replace_release_in_path,
+)
 
 logger = structlog.get_logger()
 
@@ -56,6 +62,7 @@ class DatasetSnapshotService:
 
             self.db = SessionLocal()
             self._managed_session = True
+        self._search_roots = collect_search_roots()
 
     # ------------------------------------------------------------------
     # Snapshot selection
@@ -381,6 +388,9 @@ class DatasetSnapshotService:
                         release_id=snapshot.release_id,
                         candidate=str(mpath),
                     )
+                    fallback = self._fallback_to_latest_drop(snapshot, mpath)
+                    if fallback:
+                        return fallback
                     return self._stringify_path(mpath)
 
         dataset_root = self._default_curated_root(snapshot.dataset_id)
@@ -389,6 +399,9 @@ class DatasetSnapshotService:
 
         release_dir = dataset_root / snapshot.release_id
         release_dir = self._normalize_ingestion_path(release_dir)
+        fallback = self._fallback_to_latest_drop(snapshot, release_dir)
+        if fallback:
+            return fallback
         return str(release_dir)
 
     @staticmethod
@@ -492,3 +505,28 @@ class DatasetSnapshotService:
 
         # Fallback to generic dataset-id directory
         return Path("data/curated") / dataset_id
+
+    def _fallback_to_latest_drop(self, snapshot: DatasetSnapshot, missing_path: Path) -> Optional[str]:
+        """Use the most recent curated drop when the requested release is absent."""
+        prefix = filename_prefix(missing_path, snapshot.dataset_id)
+        dataset_hint = None
+        for hint in ("cms_rvu", snapshot.dataset_id):
+            if hint and hint in missing_path.parts:
+                dataset_hint = hint
+                break
+
+        latest = discover_latest_release(prefix, self._search_roots, dataset_hint=dataset_hint)
+        if not latest:
+            return None
+
+        fallback_path = replace_release_in_path(missing_path, latest.release, new_filename_prefix=prefix)
+        fallback_str = self._stringify_path(fallback_path)
+        logger.warning(
+            "snapshot_fallback_to_latest_drop",
+            dataset_id=snapshot.dataset_id,
+            release_id=snapshot.release_id,
+            requested=str(missing_path),
+            fallback=fallback_str,
+            latest_release=latest.release,
+        )
+        return fallback_str
