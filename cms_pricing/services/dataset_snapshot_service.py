@@ -21,6 +21,13 @@ from cms_pricing.utils.snapshot_fallback import (
     discover_latest_release,
     filename_prefix,
     replace_release_in_path,
+    resolve_repo_path,
+)
+from cms_pricing.utils.snapshot_fallback import (
+    collect_search_roots,
+    discover_latest_release,
+    filename_prefix,
+    replace_release_in_path,
 )
 
 logger = structlog.get_logger()
@@ -301,7 +308,7 @@ class DatasetSnapshotService:
                 candidate_path = base_dir / candidate_path
             candidate_path = self._normalize_ingestion_path(candidate_path)
             candidate_path = self._dedupe_repeated_prefix(candidate_path)
-            if candidate_path.exists():
+            if self._repo_path_exists(candidate_path, snapshot.dataset_id):
                 return candidate_path
             if allow_missing:
                 return candidate_path
@@ -327,12 +334,13 @@ class DatasetSnapshotService:
             mpath = Path(manifest_url)
             mpath = self._normalize_ingestion_path(mpath)
             mpath = self._dedupe_repeated_prefix(mpath)
-            if mpath.exists():
-                if mpath.is_file():
+            fs_manifest = self._filesystem_path(mpath, snapshot.dataset_id)
+            if fs_manifest:
+                if fs_manifest.is_file():
                     if mpath.suffix.lower() == ".json":
                         try:
-                            data = json.loads(mpath.read_text())
-                            base_dir = mpath.parent
+                            data = json.loads(fs_manifest.read_text())
+                            base_dir = fs_manifest.parent
 
                             # Try common shapes first
                             ds = data.get("datasets")
@@ -506,6 +514,28 @@ class DatasetSnapshotService:
         # Fallback to generic dataset-id directory
         return Path("data/curated") / dataset_id
 
+    def _filesystem_path(self, path: Path, dataset_id: Optional[str]) -> Optional[Path]:
+        """Resolve repo-relative path to actual filesystem location."""
+        if path.is_absolute():
+            return path if path.exists() else None
+
+        cwd_candidate = Path.cwd() / path
+        if cwd_candidate.exists():
+            return cwd_candidate
+
+        hint = self._dataset_hint(path, dataset_id)
+        return resolve_repo_path(path, self._search_roots, dataset_hint=hint)
+
+    @staticmethod
+    def _dataset_hint(path: Path, dataset_id: Optional[str]) -> Optional[str]:
+        for candidate in ("cms_rvu", dataset_id):
+            if candidate and candidate in path.parts:
+                return candidate
+        return None
+
+    def _repo_path_exists(self, path: Path, dataset_id: Optional[str]) -> bool:
+        return self._filesystem_path(path, dataset_id) is not None
+
     def _fallback_to_latest_drop(self, snapshot: DatasetSnapshot, missing_path: Path) -> Optional[str]:
         """Use the most recent curated drop when the requested release is absent."""
         prefix = filename_prefix(missing_path, snapshot.dataset_id)
@@ -520,6 +550,8 @@ class DatasetSnapshotService:
             return None
 
         fallback_path = replace_release_in_path(missing_path, latest.release, new_filename_prefix=prefix)
+        if not self._filesystem_path(fallback_path, snapshot.dataset_id):
+            return None
         fallback_str = self._stringify_path(fallback_path)
         logger.warning(
             "snapshot_fallback_to_latest_drop",

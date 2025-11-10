@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, Iterator, List, Optional, Sequence, Tuple
 
 
 DEFAULT_SEARCH_ROOTS = (
@@ -83,6 +83,21 @@ def discover_latest_release(
     return best
 
 
+def resolve_repo_path(
+    repo_path: Path,
+    search_roots: Sequence[Path],
+    dataset_hint: Optional[str] = None,
+) -> Optional[Path]:
+    """Resolve a repo-relative path (data/ingestion/...) to a filesystem location."""
+    variants = list(_repo_path_variants(repo_path, dataset_hint))
+    for root in search_roots:
+        for variant in variants:
+            candidate = Path(root) / variant
+            if candidate.exists():
+                return candidate
+    return None
+
+
 def _release_from_path(path: Path) -> Optional[str]:
     """Return release directory name inferred from `<release>/data/<file>` structure."""
     try:
@@ -121,3 +136,17 @@ def filename_prefix(path: Path, dataset_id: Optional[str] = None) -> str:
     stem = path.stem
     return stem.split("_")[0] if stem else (dataset_id or "dataset")
 
+
+def _repo_path_variants(path: Path, dataset_hint: Optional[str]) -> Iterator[Path]:
+    """Yield candidate repo paths by progressively trimming leading segments."""
+    parts = list(path.parts)
+    seen: set[Path] = set()
+
+    for idx in range(len(parts)):
+        subparts = parts[idx:]
+        if not subparts:
+            continue
+        candidate = Path(*subparts)
+        if candidate not in seen:
+            seen.add(candidate)
+            yield candidate

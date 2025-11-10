@@ -109,6 +109,8 @@ Pipeline typically completes in 15–30 minutes depending on download speed.
    python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --confirm --backup /tmp/gpci_snapshot_backup.csv --use-latest-drop
    ```
    Attach the CSV you generated (e.g., `/tmp/gpci_snapshot_backup.csv`) to the ops ticket.
+
+> **Shortcut:** `./scripts/render_snapshot_postdeploy.sh` packages the audit → repair → audit → preflight flow on Render so you can attach the resulting evidence directory to the change ticket.
 4. **Row count sanity checks**
    ```bash
    python - <<'PY'

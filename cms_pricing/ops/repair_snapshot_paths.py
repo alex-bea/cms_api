@@ -6,7 +6,7 @@ import argparse
 import csv
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from cms_pricing.database import SessionLocal
 from cms_pricing.models.dataset_snapshots import DatasetSnapshot
@@ -16,6 +16,7 @@ from cms_pricing.utils.snapshot_fallback import (
     discover_latest_release,
     filename_prefix,
     replace_release_in_path,
+    resolve_repo_path,
 )
 
 
@@ -74,7 +75,7 @@ def audit_and_repair(
             normalized = DatasetSnapshotService._normalize_ingestion_path(Path(new_path))
             normalized = DatasetSnapshotService._dedupe_repeated_prefix(normalized)
 
-            filesystem_path = _resolve_filesystem_path(normalized, candidate_roots)
+            filesystem_path = _resolve_filesystem_path(normalized, candidate_roots, snap.dataset_id)
             if not filesystem_path:
                 fallback_path = None
                 if use_latest_drop:
@@ -82,9 +83,16 @@ def audit_and_repair(
                 if fallback_path:
                     normalized = fallback_path
                     normalized_str = normalized.as_posix()
-                    print(
-                        f"[INFO] Using latest available drop for {snap.dataset_id}:{snap.release_id} -> {normalized_str}",
-                    )
+                    filesystem_path = _resolve_filesystem_path(normalized, candidate_roots, snap.dataset_id)
+                    if filesystem_path:
+                        print(
+                            f"[INFO] Using latest available drop for {snap.dataset_id}:{snap.release_id} -> {normalized_str}",
+                        )
+                    else:
+                        print(
+                            f"[WARN] Skipping {snap.dataset_id}:{snap.release_id} — fallback parquet still missing at {normalized_str}",
+                        )
+                        continue
                 else:
                     print(
                         f"[WARN] Skipping {snap.dataset_id}:{snap.release_id} — resolved parquet missing at {normalized.as_posix()}",
@@ -191,20 +199,33 @@ def main() -> int:
     )
 
 
-def _resolve_filesystem_path(normalized: Path, search_roots: Sequence[Path]) -> Optional[Path]:
+def _resolve_filesystem_path(
+    normalized: Path,
+    search_roots: Sequence[Path],
+    dataset_id: Optional[str],
+) -> Optional[Path]:
     """Return the first filesystem path that exists for the provided normalized path."""
     if normalized.is_absolute():
         return normalized if normalized.exists() else None
 
-    for base in search_roots:
-        candidate = Path(base) / normalized
-        if candidate.exists():
-            return candidate
+    cwd_candidate = Path.cwd() / normalized
+    if cwd_candidate.exists():
+        return cwd_candidate
 
-    return None
+    dataset_hint = None
+    for hint in ("cms_rvu", dataset_id):
+        if hint and hint in normalized.parts:
+            dataset_hint = hint
+            break
+
+    return resolve_repo_path(normalized, search_roots, dataset_hint=dataset_hint)
 
 
-def _fallback_to_latest_drop(normalized: Path, dataset_id: str, search_roots: Sequence[Path]) -> Optional[Path]:
+def _fallback_to_latest_drop(
+    normalized: Path,
+    dataset_id: str,
+    search_roots: Sequence[Path],
+) -> Optional[Path]:
     """Return repo-relative path pointing at the freshest curated drop."""
     prefix = filename_prefix(normalized, dataset_id)
     dataset_hint = None
@@ -217,7 +238,10 @@ def _fallback_to_latest_drop(normalized: Path, dataset_id: str, search_roots: Se
     if not latest:
         return None
 
-    return replace_release_in_path(normalized, latest.release, new_filename_prefix=prefix)
+    candidate = replace_release_in_path(normalized, latest.release, new_filename_prefix=prefix)
+    if not _resolve_filesystem_path(candidate, search_roots, dataset_id):
+        return None
+    return candidate
 
 
 if __name__ == "__main__":  # pragma: no cover

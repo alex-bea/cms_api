@@ -74,6 +74,8 @@ python -m cms_pricing.ops.repair_snapshot_paths --dataset-id gpci_indices --conf
 
 Re-run the audit after repairs; do not launch MPFS ingestion until both datasets report `status=ok`. Preflight logs default to `/tmp/preflight/<timestamp>.log` unless you pass `--log-path`; attach both the audit output and any repair CSVs to the ops ticket for traceability.
 
+> **Shortcut:** Run `./scripts/render_snapshot_postdeploy.sh` on Render to execute the audit → repair → audit → preflight sequence automatically and save the CSV/log bundle under `artifacts/render_snapshot_evidence/<timestamp>/`.
+
 ### 1.3 Conversion Factor Override Configuration
 
 **YAML Config Service (Primary Method - Once Production-Ready)**

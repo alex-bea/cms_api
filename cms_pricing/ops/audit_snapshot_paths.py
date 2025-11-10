@@ -9,6 +9,9 @@ from typing import Optional
 from cms_pricing.database import SessionLocal
 from cms_pricing.models.dataset_snapshots import DatasetSnapshot
 from cms_pricing.services.dataset_snapshot_service import DatasetSnapshotService
+from cms_pricing.utils.snapshot_fallback import collect_search_roots, resolve_repo_path
+
+SEARCH_ROOTS = collect_search_roots()
 
 
 def resolve_snapshot_path(
@@ -54,7 +57,10 @@ def audit_snapshots(dataset_id: str | None, limit: int, show_all: bool) -> int:
                 manifest.startswith("data/") or manifest.startswith("./data/")
             )
             resolved_path = resolve_snapshot_path(service, snap)
-            resolved_exists = resolved_path is not None and resolved_path.exists()
+            resolved_exists = False
+            if resolved_path is not None:
+                fs_path = _resolve_repo_relative_path(resolved_path)
+                resolved_exists = fs_path is not None
 
             status_parts: list[str] = []
             if manifest_is_local:
@@ -105,6 +111,25 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     return audit_snapshots(args.dataset_id, args.limit, args.show_all)
+
+
+def _resolve_repo_relative_path(path: Path) -> Optional[Path]:
+    if path.is_absolute():
+        return path if path.exists() else None
+
+    cwd_candidate = Path.cwd() / path
+    if cwd_candidate.exists():
+        return cwd_candidate
+
+    hint = _dataset_hint(path)
+    return resolve_repo_path(path, SEARCH_ROOTS, dataset_hint=hint)
+
+
+def _dataset_hint(path: Path) -> Optional[str]:
+    for candidate in ("cms_rvu", "rvu", "gpci", "cms_mpfs", "mpfs"):
+        if candidate in path.parts:
+            return candidate
+    return None
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -43,6 +43,8 @@ This runbook lists validation steps and ops playbook items for the new MPFS inge
 - Re-run the audit after repairs. Preflight logs default to `/tmp/preflight/<timestamp>.log`; override with `--log-path` if you need an alternative location. Escalate if repairs keep flipping back to manifests; MPFS reuse depends on the full set (`rvu_items`, `gpci_indices`, `anescf`, `localitycounty`, `oppscap`).
 - Escalate if any dataset is missing; MPFS reuse depends on the full set (`rvu_items`, `gpci_indices`, `anescf`, `localitycounty`, `oppscap`).
 
+> **Shortcut:** On Render, run `./scripts/render_snapshot_postdeploy.sh` to execute the audit → repair → audit → preflight flow and capture the evidence bundle automatically.
+
 4) **Conversion Factor Vintage**
 - Ensure `mpfs_cf_vintage` has the correct **CY 2025 CF** pinned per final rule context.  [oai_citation:37‡Centers for Medicare & Medicaid Services](https://www.cms.gov/newsroom/press-releases/hhs-finalizes-physician-payment-rule-strengthening-person-centered-care-and-health-quality-measures?utm_source=chatgpt.com)
 
