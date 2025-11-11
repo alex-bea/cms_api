@@ -12,7 +12,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from cms_pricing.models.dataset_snapshots import DatasetSnapshot
-from cms_pricing.services.dataset_snapshot_service import DatasetSnapshotService
+from cms_pricing.services.dataset_snapshot_service import (
+    DatasetSnapshotService,
+    SnapshotAlreadyExistsError,
+)
 
 
 def check_table_exists(db_session):
@@ -191,8 +194,8 @@ def test_register_snapshot_new(test_db_session):
     assert found is not None
 
 
-def test_register_snapshot_update_existing(test_db_session):
-    """Test that registering existing snapshot updates it"""
+def test_register_snapshot_update_existing_with_override(test_db_session):
+    """Test that registering existing snapshot requires override"""
     if not check_table_exists(test_db_session):
         pytest.skip("dataset_snapshots table not yet created. Run: alembic upgrade head")
     
@@ -207,12 +210,21 @@ def test_register_snapshot_update_existing(test_db_session):
     )
     
     # Register again with different digest
+    with pytest.raises(SnapshotAlreadyExistsError):
+        service.register_snapshot(
+            dataset_id="DMEPOS",
+            release_id="dmepos_2025_annual",
+            digest="sha256:new",
+            effective_from=date(2025, 1, 1),
+        )
+
     snapshot2 = service.register_snapshot(
         dataset_id="DMEPOS",
         release_id="dmepos_2025_annual",
         digest="sha256:new",
         effective_from=date(2025, 1, 1),
-        manifest_url="https://example.com/updated.json"
+        manifest_url="https://example.com/updated.json",
+        allow_overwrite=True,
     )
     
     # Should be the same object (updated)

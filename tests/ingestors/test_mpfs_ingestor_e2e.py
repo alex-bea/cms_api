@@ -50,6 +50,7 @@ class StubSnapshotService:
         effective_to: Optional[date] = None,
         manifest_url: Optional[str] = None,
         curated_path: Optional[str] = None,
+        **kwargs: Any,
     ):
         self.registered.append(
             {

@@ -33,6 +33,7 @@ from cms_pricing.ingestion.scrapers.cli import ScraperCLI
 from cms_pricing.models.rvu import Release, RVUItem, GPCIIndex, OPPSCap, AnesCF, LocalityCounty
 from cms_pricing.ingestion.contracts.ingestor_spec import SourceFile
 from cms_pricing.services.dataset_snapshot_service import DatasetSnapshotService
+from cms_pricing.models.dataset_snapshots import DatasetSnapshot
 
 # Test data
 from tests.fixtures.rvu.test_dataset_creator import RVUTestDatasetCreator
@@ -544,13 +545,13 @@ class TestRVUIngestorE2E:
     async def test_observability_metrics(self, rvu_ingestor, sample_source_files, test_db_session):
         """Test 5-pillar observability metrics collection"""
         print("\n📊 Testing observability metrics...")
-        
+
         release_id = f"test_rvu_{uuid.uuid4().hex[:8]}"
         batch_id = str(uuid.uuid4())
-        
+
         # Run pipeline
         pipeline_result = await rvu_ingestor.ingest(release_id, batch_id)
-        
+
         # Verify observability data
         observability = pipeline_result.get("observability", {})
         
@@ -572,7 +573,37 @@ class TestRVUIngestorE2E:
         print(f"   Overall score: {observability['overall_score']}")
         print(f"   Critical alerts: {len(observability['critical_alerts'])}")
         print(f"   Warnings: {len(observability['warnings'])}")
-    
+
+    @pytest.mark.asyncio
+    async def test_snapshot_registration_failure_rolls_back(
+        self,
+        rvu_ingestor,
+        sample_source_files,
+        test_db_session,
+    ):
+        """Ensure snapshot failures do not leave partial DB rows."""
+
+        release_id = f"test_rvu_{uuid.uuid4().hex[:8]}"
+        batch_id = str(uuid.uuid4())
+
+        # Use shared test session so we can verify DB state
+        rvu_ingestor.snapshot_service = DatasetSnapshotService(test_db_session)
+        rvu_ingestor._snapshot_service_managed_session = False
+
+        initial_count = test_db_session.query(DatasetSnapshot).count()
+
+        with patch.object(
+            DatasetSnapshotService,
+            "register_snapshot",
+            side_effect=RuntimeError("forced failure"),
+        ):
+            result = await rvu_ingestor.ingest(release_id, batch_id)
+
+        assert result["status"] == "success"
+
+        final_count = test_db_session.query(DatasetSnapshot).count()
+        assert final_count == initial_count
+
     @pytest.mark.asyncio
     async def test_quarantine_functionality(self, rvu_ingestor, test_data_dir):
         """Test quarantine functionality with invalid data"""
