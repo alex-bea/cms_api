@@ -13,6 +13,7 @@ This module implements a fully DIS-compliant ingestor for all RVU-related datase
 import asyncio
 import hashlib
 import json
+import shutil
 import re
 import uuid
 from collections import defaultdict
@@ -1128,6 +1129,8 @@ class RVUIngestor(BaseDISIngestor):
         export_artifacts = publish_result.get("export_artifacts") or {}
         manifest_path = export_artifacts.get("manifest")
         manifest_path_str = str(manifest_path) if manifest_path else None
+        dataset_digests = publish_result.get("file_digests") or {}
+        curated_directory = publish_result.get("curated_directory")
 
         dataset_paths = {
             "rvu_items": curated_tables.get("pprrvu"),
@@ -1137,37 +1140,73 @@ class RVUIngestor(BaseDISIngestor):
             "oppscap": curated_tables.get("oppscap"),
         }
 
-        for dataset_id, parquet_path in dataset_paths.items():
-            if not parquet_path:
-                continue
-            path_obj = Path(parquet_path)
-            if not path_obj.exists():
-                logger.warning(
-                    "Curated parquet missing for snapshot registration",
-                    dataset_id=dataset_id,
-                    path=str(path_obj)
-                )
-                continue
+        dataset_sources = {
+            "rvu_items": "pprrvu",
+            "gpci_indices": "gpci",
+            "anescf": "anescf",
+            "localitycounty": "localitycounty",
+            "oppscap": "oppscap",
+        }
 
-            digest = self._calculate_file_digest(path_obj)
-            normalized_path = self._normalize_snapshot_path(path_obj)
-            # Derive dataset-specific release ID (e.g., gpci_YYYY_S)
-            specific_release_id = self._dataset_release_id(dataset_id, release_id)
+        session = snapshot_service.db
+        registered_pairs = []
 
-            snapshot_service.register_snapshot(
-                dataset_id=dataset_id,
-                release_id=specific_release_id,
-                digest=digest,
-                effective_from=effective_from,
-                manifest_url=manifest_path_str or normalized_path,
-                curated_path=normalized_path,
+        try:
+            with session.begin():
+                for dataset_id, parquet_path in dataset_paths.items():
+                    if not parquet_path:
+                        continue
+                    path_obj = Path(parquet_path)
+                    if not path_obj.exists():
+                        logger.warning(
+                            "Curated parquet missing for snapshot registration",
+                            dataset_id=dataset_id,
+                            path=str(path_obj)
+                        )
+                        continue
+
+                    source_key = dataset_sources.get(dataset_id)
+                    digest = dataset_digests.get(source_key) if source_key else None
+                    if not digest:
+                        digest = self._calculate_file_digest(path_obj)
+                    normalized_path = self._normalize_snapshot_path(path_obj)
+                    specific_release_id = self._dataset_release_id(dataset_id, release_id)
+
+                    snapshot_service.register_snapshot(
+                        dataset_id=dataset_id,
+                        release_id=specific_release_id,
+                        digest=digest,
+                        effective_from=effective_from,
+                        manifest_url=manifest_path_str or normalized_path,
+                        curated_path=normalized_path,
+                        autocommit=False,
+                    )
+                    registered_pairs.append((dataset_id, specific_release_id))
+                    logger.info(
+                        "Registered dataset snapshot",
+                        dataset_id=dataset_id,
+                        release_id=specific_release_id,
+                        effective_from=effective_from
+                    )
+        except Exception as exc:
+            logger.error(
+                "Snapshot registration transaction failed",
+                error=str(exc),
+                release_id=release_id,
+                registered_pairs=registered_pairs,
             )
-            logger.info(
-                "Registered dataset snapshot",
-                dataset_id=dataset_id,
-                release_id=specific_release_id,
-                effective_from=effective_from
-            )
+            if curated_directory:
+                self._cleanup_release_directory(Path(curated_directory))
+            raise
+
+    @staticmethod
+    def _cleanup_release_directory(path: Path) -> None:
+        """Remove partially written release artifacts when registration fails."""
+        try:
+            if path.exists():
+                shutil.rmtree(path)
+        except Exception as err:
+            logger.warning("Failed to cleanup release directory", path=str(path), error=str(err))
 
     @staticmethod
     def _dataset_release_id(dataset_id: str, base_release_id: str) -> str:

@@ -16,13 +16,13 @@ MPFS Ingestor creates curated views that reference RVU data:
 """
 
 import asyncio
-import hashlib
 import io
 import json
 import os
 import re
 import uuid
 import zipfile
+import shutil
 from datetime import datetime, date
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -54,6 +54,7 @@ from ..adapters.data_adapters import AdapterFactory, AdapterConfig
 from ..validators.validation_engine import ValidationEngine
 from ..enrichers.data_enrichers import EnricherFactory
 from ..publishers.data_publishers import PublisherFactory
+from ..utils.atomic import atomic_write, atomic_write_json, compute_sha256
 from ..observability.dis_observability import (
     DISObservabilityCollector,
     FreshnessMetrics,
@@ -1216,25 +1217,26 @@ class MPFSIngestor(BaseDISIngestor):
         manifest: Dict[str, Any] = {}
         manifest_path = output_root / "manifest.json"
 
+        manifest_entries: Dict[str, Dict[str, Any]] = {}
+        file_digests: Dict[str, str] = {}
+        effective_ranges: Dict[str, Tuple[Optional[date], Optional[date]]] = {}
+
         for dataset_name, df in curated_views.items():
             file_path = output_root / f"{dataset_name}.parquet"
-            df.to_parquet(file_path, compression="snappy", index=False)
-            digest = self._calculate_dataset_digest(df)
+
+            def _write_parquet(target: Path) -> None:
+                df.to_parquet(target, compression="snappy", index=False)
+
+            atomic_write(file_path, _write_parquet)
+            digest = compute_sha256(file_path)
+            file_digests[dataset_name] = digest
 
             effective_from, effective_to = self._infer_effective_range(df)
             effective_from = self._normalize_snapshot_date(effective_from) or datetime.now().date()
             effective_to = self._normalize_snapshot_date(effective_to)
-            self.snapshot_service.register_snapshot(
-                dataset_id=dataset_name,
-                release_id=release_id,
-                digest=digest,
-                effective_from=effective_from,
-                effective_to=effective_to,
-                manifest_url=str(manifest_path),
-                curated_path=str(file_path),
-            )
+            effective_ranges[dataset_name] = (effective_from, effective_to)
 
-            manifest[dataset_name] = {
+            manifest_entries[dataset_name] = {
                 "path": str(file_path),
                 "rows": len(df),
                 "digest": digest,
@@ -1242,13 +1244,33 @@ class MPFSIngestor(BaseDISIngestor):
                 "effective_to": str(effective_to) if effective_to else None,
             }
 
-        manifest_path.write_text(json.dumps(manifest, indent=2))
+        manifest_payload = manifest_entries.copy()
 
-        observability_report = self._generate_observability_report(stage_frame, manifest)
+        session = self.snapshot_service.db
+        try:
+            atomic_write_json(manifest_path, manifest_payload)
+            with session.begin():
+                for dataset_name, info in manifest_entries.items():
+                    normalized_from, normalized_to = effective_ranges.get(dataset_name, (datetime.now().date(), None))
+                    self.snapshot_service.register_snapshot(
+                        dataset_id=dataset_name,
+                        release_id=release_id,
+                        digest=file_digests[dataset_name],
+                        effective_from=normalized_from,
+                        effective_to=normalized_to,
+                        manifest_url=str(manifest_path),
+                        curated_path=info.get("path"),
+                        autocommit=False,
+                    )
+        except Exception:
+            self._cleanup_release_directory(output_root)
+            raise
+
+        observability_report = self._generate_observability_report(stage_frame, manifest_entries)
 
         summary = {
             name: {"rows": info["rows"], "path": info["path"], "digest": info["digest"]}
-            for name, info in manifest.items()
+            for name, info in manifest_entries.items()
         }
 
         result = {
@@ -1259,16 +1281,20 @@ class MPFSIngestor(BaseDISIngestor):
             "manifest_path": str(manifest_path),
             "observability_report": observability_report,
             "metadata": stage_frame.metadata,
+            "file_digests": file_digests,
         }
 
         logger.info("MPFS publish stage completed", curated_tables=len(summary))
         return result
 
-    def _calculate_dataset_digest(self, df: pd.DataFrame) -> str:
-        """Calculate SHA256 digest for a dataframe using parquet serialization."""
-        buffer = io.BytesIO()
-        df.to_parquet(buffer, compression="snappy", index=False)
-        return hashlib.sha256(buffer.getvalue()).hexdigest()
+    @staticmethod
+    def _cleanup_release_directory(path: Path) -> None:
+        """Remove partially written release artifacts when registration fails."""
+        try:
+            if path.exists():
+                shutil.rmtree(path)
+        except Exception as err:
+            logger.warning("Failed to cleanup release directory", path=str(path), error=str(err))
 
     def _infer_effective_range(self, df: pd.DataFrame) -> Tuple[Optional[date], Optional[date]]:
         """Infer effective date range from dataframe columns."""

@@ -1,5 +1,4 @@
-"""
-Publish stage module for DIS pipeline.
+"""Publish stage module for DIS pipeline.
 
 Per DIS §3.6: Create snapshot tables, latest-effective views, load to database.
 This module extracts publishing logic from ingestors for reuse across datasets.
@@ -9,12 +8,13 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 import structlog
 
 import pandas as pd
 
 from ..contracts.ingestor_spec import StageFrame
+from ..utils.atomic import atomic_write, atomic_write_json, compute_sha256
 
 logger = structlog.get_logger()
 
@@ -170,13 +170,13 @@ async def execute_publish(
         }
         
         docs_path = docs_dir / "dataset_documentation.json"
-        with open(docs_path, 'w') as f:
-            json.dump(data_docs, f, indent=2)
-        
+        atomic_write_json(docs_path, data_docs)
+
         # Save data with idempotent upserts per DIS §3.6
         saved_paths: Dict[str, Path] = {}
+        file_digests: Dict[str, str] = {}
         if enriched_data:
-            saved_paths = _save_data_with_upserts(enriched_data, data_dir, vintage_date)
+            saved_paths, file_digests = _save_data_with_upserts(enriched_data, data_dir, vintage_date)
         
         # Load data into database if enabled
         load_results = {}
@@ -218,13 +218,13 @@ async def execute_publish(
                     "name": name,
                     "records": dataset_counts.get(name, 0),
                     "parquet_path": str(saved_paths.get(name)) if saved_paths.get(name) else None,
+                    "digest": file_digests.get(name),
                 }
                 for name in sorted(enriched_data.keys()) if isinstance(enriched_data, dict)
             ]
         }
         manifest_path = curated_dir / "manifest.json"
-        with open(manifest_path, 'w') as f:
-            json.dump(manifest_payload, f, indent=2)
+        atomic_write_json(manifest_path, manifest_payload)
         
         logger.info("Publish stage completed", 
                    batch_id=batch_id,
@@ -242,6 +242,7 @@ async def execute_publish(
             "latest_effective_view": str(view_path) if view_path else None,
             "record_count": total_records,
             "curated_tables": saved_paths,
+            "file_digests": file_digests,
             "latest_effective_views": [str(view_path)] if view_path else [],
             "export_artifacts": {
                 "schema_contract": str(docs_dir / "schema_contract.json"),
@@ -261,22 +262,39 @@ async def execute_publish(
         }
 
 
-def _save_data_with_upserts(enriched_data: Dict[str, Any], data_dir: Path, vintage_date: str) -> Dict[str, Path]:
+def _save_data_with_upserts(
+    enriched_data: Dict[str, Any], data_dir: Path, vintage_date: str
+) -> Tuple[Dict[str, Path], Dict[str, str]]:
     """Save enriched data with idempotent upserts per DIS §3.6."""
-    saved_paths = {}
+    saved_paths: Dict[str, Path] = {}
+    digests: Dict[str, str] = {}
     try:
         import pandas as pd
+
         for dataset_name, df in enriched_data.items():
-            if isinstance(df, pd.DataFrame) and not df.empty:
-                parquet_path = data_dir / f"{dataset_name}_{vintage_date}.parquet"
-                df.to_parquet(parquet_path, index=False, compression='snappy')
-                saved_paths[dataset_name] = parquet_path
-                logger.info(f"Saved {dataset_name} to {parquet_path}", records=len(df))
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                continue
+
+            parquet_path = data_dir / f"{dataset_name}_{vintage_date}.parquet"
+
+            def _write(target: Path) -> None:
+                df.to_parquet(target, index=False, compression="snappy")
+
+            atomic_write(parquet_path, _write)
+            saved_paths[dataset_name] = parquet_path
+            digests[dataset_name] = compute_sha256(parquet_path)
+            logger.info(
+                "Saved dataset to parquet",
+                dataset=dataset_name,
+                path=str(parquet_path),
+                records=len(df),
+            )
     except ImportError:
         logger.warning("pandas not available, skipping parquet save")
     except Exception as e:
         logger.error("Failed to save data", error=str(e))
-    return saved_paths
+        raise
+    return saved_paths, digests
 
 
 def _generate_latest_effective_view_sql(dataset_name: str) -> str:

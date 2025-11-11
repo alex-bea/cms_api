@@ -57,6 +57,19 @@ class SnapshotMetadata:
     path: Optional[str] = None
 
 
+class SnapshotRegistrationError(Exception):
+    """Raised when snapshot registration fails."""
+
+
+class SnapshotAlreadyExistsError(SnapshotRegistrationError):
+    """Raised when attempting to register a duplicate snapshot without override."""
+
+    def __init__(self, dataset_id: str, release_id: str):
+        super().__init__(f"Snapshot already exists for {dataset_id}:{release_id}")
+        self.dataset_id = dataset_id
+        self.release_id = release_id
+
+
 class DatasetSnapshotService:
     """Service for selecting dataset snapshots by valuation date"""
 
@@ -200,7 +213,10 @@ class DatasetSnapshotService:
         effective_from: date,
         effective_to: Optional[date] = None,
         manifest_url: Optional[str] = None,
-        curated_path: Optional[str] = None
+        curated_path: Optional[str] = None,
+        *,
+        allow_overwrite: bool = False,
+        autocommit: bool = True,
     ) -> DatasetSnapshot:
         """
         Register a new dataset snapshot.
@@ -224,18 +240,19 @@ class DatasetSnapshotService:
         # Check if already exists (efficient PK lookup)
         existing = self.db.get(DatasetSnapshot, (dataset_id, release_id))
         if existing:
-            logger.warning(
-                "Snapshot already exists, updating",
-                dataset_id=dataset_id,
-                release_id=release_id
-            )
+            if not allow_overwrite:
+                raise SnapshotAlreadyExistsError(dataset_id, release_id)
             existing.digest = digest
             existing.effective_from = effective_from
             existing.effective_to = effective_to
             existing.manifest_url = stored_manifest
-            self.db.commit()
+            if autocommit:
+                self.db.commit()
+                self.db.refresh(existing)
+            else:
+                self.db.flush()
             return existing
-        
+
         snapshot = DatasetSnapshot(
             dataset_id=dataset_id,
             release_id=release_id,
@@ -244,10 +261,13 @@ class DatasetSnapshotService:
             effective_to=effective_to,
             manifest_url=stored_manifest
         )
-        
+
         self.db.add(snapshot)
-        self.db.commit()
-        self.db.refresh(snapshot)
+        if autocommit:
+            self.db.commit()
+            self.db.refresh(snapshot)
+        else:
+            self.db.flush()
         
         logger.info(
             "Registered dataset snapshot",
