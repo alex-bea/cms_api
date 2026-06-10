@@ -52,6 +52,7 @@ services:
       - ./scripts:/app/scripts
       - ./tests:/app/tests
       - ./sample_data:/app/sample_data:ro
+      - ./pytest.ini:/app/pytest.ini
       - ./alembic.ini:/app/alembic.ini
       - ./data:/app/data
       - ./logs:/app/logs
@@ -78,6 +79,7 @@ services:
       - ./scripts:/app/scripts
       - ./tests:/app/tests
       - ./sample_data:/app/sample_data:ro
+      - ./pytest.ini:/app/pytest.ini
       - ./alembic.ini:/app/alembic.ini
       - ./data:/app/data
       - ./logs:/app/logs

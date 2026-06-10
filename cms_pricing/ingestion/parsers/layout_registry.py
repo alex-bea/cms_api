@@ -126,6 +126,16 @@ ANES_2025D_LAYOUT = {
     }
 }
 
+ANES_2026_LAYOUT = {
+    **ANES_2025D_LAYOUT,
+    'version': 'v2026.3.0',
+    'source_version': '2026',
+    'notes': [
+        '2026 TXT carries qualifying and non-qualifying APM CF columns',
+        'The canonical single-CF schema uses the non-qualifying APM CF at positions 73-77',
+    ],
+}
+
 # ===================================================================
 # LOCALITY-COUNTY LAYOUTS
 # ===================================================================
@@ -183,6 +193,11 @@ LAYOUT_REGISTRY = {
     # ANES layouts (D = October/Q4)
     ('anes', '2025', 'D'): ANES_2025D_LAYOUT,
     ('anes', '2025', None): ANES_2025D_LAYOUT,  # Annual
+    ('anes', '2026', 'A'): ANES_2026_LAYOUT,
+    ('anes', '2026', 'B'): ANES_2026_LAYOUT,
+    ('anes', '2026', 'C'): ANES_2026_LAYOUT,
+    ('anes', '2026', 'D'): ANES_2026_LAYOUT,
+    ('anes', '2026', None): ANES_2026_LAYOUT,
     
     # Locality layouts (D = October/Q4)
     ('locco', '2025', 'D'): LOCCO_2025D_LAYOUT,

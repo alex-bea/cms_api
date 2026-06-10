@@ -47,8 +47,8 @@
       "multipleOf": 0.001,
       "nullable": false,
       "description": "Work GPCI index (raw from CMS; floors applied at pricing time)",
-      "min_value": 0.3,
-      "max_value": 2.5,
+      "min_value": 0.2,
+      "max_value": 2.75,
       "sample_values": [1.000, 1.500, 1.122]
     },
     "gpci_pe": {
@@ -60,8 +60,8 @@
       "multipleOf": 0.001,
       "nullable": false,
       "description": "Practice expense GPCI index",
-      "min_value": 0.3,
-      "max_value": 2.5,
+      "min_value": 0.2,
+      "max_value": 2.75,
       "sample_values": [0.869, 1.081, 1.569]
     },
     "gpci_mp": {
@@ -73,8 +73,8 @@
       "multipleOf": 0.001,
       "nullable": false,
       "description": "Malpractice (MP) GPCI index (CMS terminology)",
-      "min_value": 0.3,
-      "max_value": 2.5,
+      "min_value": 0.2,
+      "max_value": 2.75,
       "sample_values": [0.575, 0.592, 1.859]
     },
     "effective_from": {
@@ -136,7 +136,7 @@
   "business_rules": [
     "MAC must be 5 digits (zero-padded)",
     "Locality code must be 2 digits (zero-padded)",
-    "GPCI indices must be between 0.3 and 2.5 (hard schema bounds); values above 2.0 are warning-range but CMS-observed",
+    "GPCI indices should normally be between 0.3 and 2.0; values outside that band are warnings, while values outside 0.2 and 2.75 fail hard validation",
     "Parser delivers raw GPCI values; floors (e.g., Alaska 1.50 work floor) applied at pricing time",
     "Expected 100-120 localities per release (CMS post-CA consolidation universe)",
     "Locality reconfiguration events may cause row count deltas across releases"
@@ -150,7 +150,7 @@
     "gpci_warn_min": 0.30,
     "gpci_warn_max": 2.00,
     "gpci_fail_min": 0.20,
-    "gpci_fail_max": 2.50
+    "gpci_fail_max": 2.75
   },
   "storage_note": "Stored as float64 in Parquet for efficiency. Canonicalized to Decimal with schema-defined precision before hashing to ensure determinism. Enrichment columns (locality_name, state) excluded from hash for stability.",
   "enrichment_note": "locality_name, state are optional enrichments from CMS Locality Key or source files. Parser may include if present in source; warehouse layer performs full enrichment via Locality crosswalk.",
@@ -176,6 +176,7 @@
         "Updated hash_metadata_exclusions to exclude enrichment columns",
         "Added quality_thresholds for CMS-realistic row counts (100-120, fail <90)",
         "Added quality_thresholds for GPCI bounds (warn [0.30, 2.00], fail [0.20, 2.50])",
+        "Updated hard validation bounds to [0.20, 2.75] after live CMS 2026 C data included observed MP GPCI values outside the older 0.30-2.50 schema band",
         "Updated business_rules to reflect CMS locality universe (~109 post-consolidation)",
         "Added enrichment_note explaining parser vs warehouse enrichment strategy",
         "Updated gpci_work description to clarify floors applied at pricing time"

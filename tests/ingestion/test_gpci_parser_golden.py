@@ -195,11 +195,11 @@ def test_gpci_golden_xlsx(fixtures_dir):
     
     # Split range checks for clarity (per user guidance)
     assert (gpci_work >= 0.20).all(), "All gpci_work values should be >= 0.20"
-    assert (gpci_work <= 2.50).all(), "All gpci_work values should be <= 2.50"
+    assert (gpci_work <= 2.75).all(), "All gpci_work values should be <= 2.75"
     assert (gpci_pe >= 0.20).all(), "All gpci_pe values should be >= 0.20"
-    assert (gpci_pe <= 2.50).all(), "All gpci_pe values should be <= 2.50"
+    assert (gpci_pe <= 2.75).all(), "All gpci_pe values should be <= 2.75"
     assert (gpci_mp >= 0.20).all(), "All gpci_mp values should be >= 0.20"
-    assert (gpci_mp <= 2.50).all(), "All gpci_mp values should be <= 2.50"
+    assert (gpci_mp <= 2.75).all(), "All gpci_mp values should be <= 2.75"
     
     # Verify metrics
     assert result.metrics['locality_count'] == len(result.data)
@@ -414,8 +414,8 @@ def test_gpci_metrics_structure(fixtures_dir):
     assert 'mp_max' in stats
     
     # Verify reasonable values
-    assert 0.20 <= stats['work_min'] <= 2.50
-    assert 0.20 <= stats['work_max'] <= 2.50
+    assert 0.20 <= stats['work_min'] <= 2.75
+    assert 0.20 <= stats['work_max'] <= 2.75
 
 
 # ============================================================================
@@ -506,3 +506,52 @@ def test_gpci_real_cms_duplicate_locality_00(fixtures_dir):
     locality_00_macs = set(locality_00_rows['mac'])
     assert len(locality_00_macs) == 2, \
         "Locality 00 rows should have different MACs (not true duplicates)"
+
+
+@pytest.mark.edge_case
+@pytest.mark.gpci
+def test_gpci_2026_year_prefixed_headers_and_tab_delimited_txt():
+    """Current CMS 2026 GPCI files use year-prefixed headers and tab TXT."""
+    rows = []
+    for idx in range(100):
+        mp_gpci = "2.529" if idx == 0 else "0.296" if idx == 1 else "0.566"
+        rows.append(
+            "\t".join(
+                [
+                    f"{10000 + idx:05d}",
+                    "AL",
+                    f"{idx % 99:02d}",
+                    f"LOCALITY {idx}",
+                    "1.000",
+                    "0.875",
+                    mp_gpci,
+                ]
+            )
+        )
+    content = "\n".join(
+        [
+            "ADDENDUM E. FINAL CY 2026 GEOGRAPHIC PRACTICE COST INDICES (GPCIs) BY STATE AND MEDICARE LOCALITY\t\t\t\t\t\t",
+            "\t\t\t\t\t\t",
+            "Medicare Administrative Contractor (MAC)\tState\tLocality Number\tLocality Name\t2026 PW GPCI (with 1.0 Floor)***\t2026 PE GPCI\t2026 MP GPCI",
+            *rows,
+        ]
+    )
+    metadata = {
+        **TEST_METADATA,
+        "release_id": "test_rvu26c_gpci",
+        "product_year": "2026",
+        "quarter_vintage": "2026Q3",
+        "vintage_date": datetime(2026, 7, 1, 0, 0, 0),
+        "source_release": "RVU26C",
+    }
+
+    result = parse_gpci(BytesIO(content.encode("utf-8")), "GPCI2026.txt", metadata)
+
+    assert len(result.data) == 100
+    assert len(result.rejects) == 0
+    first = result.data.iloc[0]
+    assert first["gpci_work"] == "1.000"
+    assert first["gpci_pe"] == "0.875"
+    assert first["gpci_mp"] == "2.529"
+    assert pd.to_datetime(first["effective_from"]) == pd.Timestamp("2026-07-01")
+    assert "0.296" in set(result.data["gpci_mp"])

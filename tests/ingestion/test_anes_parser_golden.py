@@ -520,3 +520,74 @@ def test_anes_date_from_filename_ANES25D():
     
     # Should still extract 2025 from filename pattern
     assert (result.data['effective_from'] == pd.to_datetime('2025-01-01')).all()
+
+
+def _anes_2026_fixed_width_line(
+    mac: str,
+    locality: str,
+    name: str,
+    qualifying_cents: str,
+    non_qualifying_cents: str,
+) -> str:
+    return (
+        f"{mac:<12}"
+        f"{locality:<6}"
+        f"{name:<49}"
+        f"{qualifying_cents:>4}"
+        "  "
+        f"{non_qualifying_cents:>4}"
+    )
+
+
+@pytest.mark.edge_case
+def test_anes_2026_txt_uses_non_qualifying_apm_cf():
+    """Current CMS 2026 ANES TXT includes qualifying and non-qualifying CFs."""
+    metadata = {
+        **TEST_METADATA,
+        "release_id": "test_anes26c",
+        "product_year": "2026",
+        "quarter_vintage": "C",
+        "vintage_date": datetime(2026, 7, 1),
+        "source_release": "RVU26C",
+    }
+    content = "\n".join(
+        [
+            _anes_2026_fixed_width_line("10112", "00", "ALABAMA", "1963", "1953"),
+            _anes_2026_fixed_width_line("02102", "01", "ALASKA", "2829", "2815"),
+        ]
+    )
+
+    result = parse_anes(BytesIO(content.encode("utf-8")), "ANES2026.txt", metadata)
+
+    assert len(result.data) == 2
+    alabama = result.data[result.data["mac"] == "10112"].iloc[0]
+    alaska = result.data[result.data["mac"] == "02102"].iloc[0]
+    assert alabama["anesthesia_cf_usd"] == 19.53
+    assert alaska["anesthesia_cf_usd"] == 28.15
+    assert pd.to_datetime(alabama["effective_from"]) == pd.Timestamp("2026-01-01")
+
+
+@pytest.mark.edge_case
+def test_anes_2026_csv_uses_non_qualifying_apm_cf_header():
+    """Current CMS 2026 ANES CSV has separate qualifying/non-qualifying columns."""
+    metadata = {
+        **TEST_METADATA,
+        "release_id": "test_anes26c_csv",
+        "product_year": "2026",
+        "quarter_vintage": "C",
+        "vintage_date": datetime(2026, 7, 1),
+        "source_release": "RVU26C",
+    }
+    content = (
+        "Contractor,Locality,Locality Name,"
+        "Qualifying APM National Anes CF (with 2.5% statutory increase) of 20.599835,"
+        "Non-Qualifying APM National Anes CF (with 2.5% Statutory increase)  of 20.49754\n"
+        "10112 ,00 ,ALABAMA,19.63,19.53\n"
+        "02102 ,01 ,ALASKA*,28.29,28.15\n"
+    )
+
+    result = parse_anes(BytesIO(content.encode("utf-8")), "ANES2026.csv", metadata)
+
+    assert len(result.data) == 2
+    assert set(result.data["anesthesia_cf_usd"]) == {19.53, 28.15}
+    assert "anesthesia_cf_qp_raw" in result.data.columns
