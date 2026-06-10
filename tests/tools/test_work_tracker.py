@@ -4,6 +4,7 @@ from textwrap import dedent
 from tools.work_tracker import (
     build_current_view,
     build_roadmap_view,
+    check_views_command,
     load_tracker,
     validate_tracker,
     write_views,
@@ -107,6 +108,34 @@ def test_write_views_creates_generated_files(tmp_path):
     assert "Generated from `state/work/`" in (
         tmp_path / "docs/workbench/CURRENT.md"
     ).read_text(encoding="utf-8")
+
+
+def test_check_views_detects_generated_view_drift(tmp_path):
+    _seed_minimal_tracker(tmp_path)
+    tracker = load_tracker(tmp_path)
+    write_views(tracker)
+    (tmp_path / "docs/workbench/CURRENT.md").write_text("stale\n", encoding="utf-8")
+
+    assert check_views_command(tmp_path) == 1
+
+
+def test_queued_for_merge_tasks_are_valid_and_rendered(tmp_path):
+    _seed_minimal_tracker(tmp_path)
+    task_path = tmp_path / "state/work/tasks/use-rvu.yaml"
+    task_path.write_text(
+        task_path.read_text(encoding="utf-8").replace(
+            "status: active", "status: queued_for_merge"
+        ),
+        encoding="utf-8",
+    )
+
+    tracker = load_tracker(tmp_path)
+    result = validate_tracker(tracker)
+
+    assert result.errors == []
+    current = build_current_view(tracker)
+    assert "## Queued For Merge" in current
+    assert "Use RVU" in current
 
 
 def test_repo_tracker_state_is_valid():
