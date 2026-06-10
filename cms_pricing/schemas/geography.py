@@ -62,7 +62,7 @@ class GeographyResolveResponse(BaseModel):
     """Response schema for geography resolution"""
     zip5: str = Field(..., description="5-digit ZIP code")
     candidates: List[GeographyCandidate] = Field(..., description="All possible mappings")
-    requires_resolution: bool = Field(..., description="Whether manual resolution is required")
+    requires_resolution: bool = Field(default=False, description="Whether manual resolution is required")
     ambiguity_threshold: float = Field(default=0.2, description="Threshold for requiring resolution")
     selected_candidate: Optional[GeographyCandidate] = Field(None, description="Selected candidate")
     resolution_method: str = Field(..., description="Method used for selection")

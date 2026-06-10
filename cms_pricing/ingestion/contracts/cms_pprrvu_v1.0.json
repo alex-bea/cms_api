@@ -66,7 +66,7 @@
       "unit": null,
       "domain": null,
       "min_value": 0.0,
-      "max_value": 100.0,
+      "max_value": 200.0,
       "pattern": null,
       "sample_values": null
     },
@@ -78,7 +78,7 @@
       "unit": null,
       "domain": null,
       "min_value": 0.0,
-      "max_value": 100.0,
+      "max_value": 500.0,
       "pattern": null,
       "sample_values": null
     },
@@ -102,7 +102,7 @@
       "unit": null,
       "domain": null,
       "min_value": 0.0,
-      "max_value": 10.0,
+      "max_value": 50.0,
       "pattern": null,
       "sample_values": null
     },
@@ -169,7 +169,7 @@
   "business_rules": [
     "HCPCS codes must be 5 characters",
     "Status code must be valid",
-    "RVU components must be non-negative",
+    "RVU components must be non-negative and within observed CMS high-cost procedure bounds",
     "Global days must be valid if present"
   ],
   "quality_thresholds": {

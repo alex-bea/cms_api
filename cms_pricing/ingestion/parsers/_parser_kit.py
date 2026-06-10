@@ -284,9 +284,9 @@ def compute_row_hashes_vectorized(
             normalized.append(canon_series)
         
         elif col_type == 'boolean' or pd.api.types.is_bool_dtype(series):
-            # Boolean → 'True'/'False' strings
-            canon_series = series.fillna('').map(
-                lambda v: 'True' if v else 'False' if v is not None else ''
+            # Boolean extension arrays cannot be filled with string sentinels.
+            canon_series = series.map(
+                lambda v: '' if pd.isna(v) else 'True' if bool(v) else 'False'
             )
             normalized.append(canon_series)
         

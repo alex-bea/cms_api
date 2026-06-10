@@ -8,7 +8,7 @@ from cms_pricing.schemas.pricing import (
     PricingRequest, PricingResponse, ComparisonRequest, ComparisonResponse,
     LineItemResponse, GeographyResponse, ComparisonDelta
 )
-from cms_pricing.schemas.geography import GeographyCandidate
+from cms_pricing.schemas.geography import GeographyCandidate, GeographyResolveResponse
 from cms_pricing.services.geography import GeographyService
 from cms_pricing.services.trace import TraceService
 from sqlalchemy.orm import Session
@@ -46,6 +46,96 @@ class PricingService:
             'DMEPOS': DMEPOSEngine(db=db),
             'DRUGS': DrugEngine(db=db)
         }
+
+    def _candidate_from_mapping(
+        self,
+        zip5: str,
+        data: Dict[str, Any],
+        used: bool = False,
+    ) -> GeographyCandidate:
+        """Convert legacy geography dicts to the canonical candidate schema."""
+        return GeographyCandidate(
+            zip5=data.get("zip5") or zip5,
+            locality_id=data.get("locality_id"),
+            locality_name=data.get("locality_name"),
+            cbsa=data.get("cbsa"),
+            cbsa_name=data.get("cbsa_name"),
+            county_fips=data.get("county_fips"),
+            state_code=data.get("state_code") or data.get("state"),
+            population_share=data.get("population_share"),
+            rural_flag=data.get("rural_flag"),
+            used=used,
+        )
+
+    def _normalize_geography_result(
+        self,
+        zip5: str,
+        result: Any,
+    ) -> GeographyResolveResponse:
+        """Normalize all geography service outputs before pricing engines see them."""
+        if isinstance(result, GeographyResolveResponse):
+            return result
+
+        if not isinstance(result, dict):
+            raise TypeError(f"Unsupported geography result type: {type(result).__name__}")
+
+        normalized_zip = result.get("zip5") or zip5
+
+        selected_candidate = result.get("selected_candidate")
+        if isinstance(selected_candidate, GeographyCandidate):
+            selected = selected_candidate
+        elif isinstance(selected_candidate, dict):
+            selected = self._candidate_from_mapping(normalized_zip, selected_candidate, used=True)
+        else:
+            selected = None
+
+        candidates: List[GeographyCandidate] = []
+        for candidate in result.get("candidates") or []:
+            if isinstance(candidate, GeographyCandidate):
+                candidates.append(candidate)
+            elif isinstance(candidate, dict):
+                candidates.append(
+                    self._candidate_from_mapping(
+                        normalized_zip,
+                        candidate,
+                        used=bool(candidate.get("used")),
+                    )
+                )
+
+        if selected is None and result.get("locality_id"):
+            selected = self._candidate_from_mapping(normalized_zip, result, used=True)
+
+        if selected and not candidates:
+            candidates = [selected]
+
+        return GeographyResolveResponse(
+            zip5=normalized_zip,
+            candidates=candidates,
+            requires_resolution=bool(result.get("requires_resolution", selected is None)),
+            ambiguity_threshold=float(result.get("ambiguity_threshold", 0.2)),
+            selected_candidate=selected,
+            resolution_method=result.get("resolution_method") or result.get("match_level") or "unknown",
+            warnings=list(result.get("warnings") or []),
+        )
+
+    def _build_geography_response(
+        self,
+        geography_result: GeographyResolveResponse,
+    ) -> GeographyResponse:
+        """Build pricing geography response from canonical geography output."""
+        candidate = geography_result.selected_candidate
+        return GeographyResponse(
+            zip5=geography_result.zip5,
+            locality_id=candidate.locality_id if candidate else None,
+            locality_name=candidate.locality_name if candidate else None,
+            cbsa=candidate.cbsa if candidate else None,
+            cbsa_name=candidate.cbsa_name if candidate else None,
+            county_fips=candidate.county_fips if candidate else None,
+            state_code=candidate.state_code if candidate else None,
+            rural_flag=candidate.rural_flag if candidate else None,
+            resolution_method=geography_result.resolution_method,
+            candidates=geography_result.candidates,
+        )
     
     async def price_single_code(
         self,
@@ -60,13 +150,16 @@ class PricingService:
     ) -> "CodePricingItemWithGeography":
         """Price a single code/component (returns CodePricingItemWithGeography)"""
         
-        from cms_pricing.schemas.pricing import CodePricingItemWithGeography, GeographyResponse
+        from cms_pricing.schemas.pricing import CodePricingItemWithGeography
         
         run_id = str(uuid.uuid4())
         
         try:
             # Resolve geography
-            geography_result = await self.geography_service.resolve_zip(zip)
+            geography_result = self._normalize_geography_result(
+                zip,
+                await self.geography_service.resolve_zip(zip),
+            )
             
             # Get appropriate engine
             engine = self.engines.get(setting)
@@ -85,19 +178,7 @@ class PricingService:
                 plan=plan
             )
             
-            # Create geography response
-            geography_response = GeographyResponse(
-                zip5=geography_result.zip5,
-                locality_id=geography_result.selected_candidate.locality_id if geography_result.selected_candidate else None,
-                locality_name=geography_result.selected_candidate.locality_name if geography_result.selected_candidate else None,
-                cbsa=geography_result.selected_candidate.cbsa if geography_result.selected_candidate else None,
-                cbsa_name=geography_result.selected_candidate.cbsa_name if geography_result.selected_candidate else None,
-                county_fips=geography_result.selected_candidate.county_fips if geography_result.selected_candidate else None,
-                state_code=geography_result.selected_candidate.state_code if geography_result.selected_candidate else None,
-                rural_flag=geography_result.selected_candidate.rural_flag if geography_result.selected_candidate else None,
-                resolution_method=geography_result.resolution_method,
-                candidates=geography_result.candidates
-            )
+            geography_response = self._build_geography_response(geography_result)
             
             # Return CodePricingItemWithGeography (Quick Win #2)
             return CodePricingItemWithGeography(
@@ -125,7 +206,10 @@ class PricingService:
         
         try:
             # Resolve geography
-            geography_result = await self.geography_service.resolve_zip(request.zip)
+            geography_result = self._normalize_geography_result(
+                request.zip,
+                await self.geography_service.resolve_zip(request.zip),
+            )
             
             # Get plan components
             if request.plan_id:
@@ -200,19 +284,7 @@ class PricingService:
                 total_beneficiary_cents += result.beneficiary_total_cents
                 total_program_payment_cents += result.program_payment_cents
             
-            # Create geography response
-            geography_response = GeographyResponse(
-                zip5=geography_result.zip5,
-                locality_id=geography_result.selected_candidate.locality_id if geography_result.selected_candidate else None,
-                locality_name=geography_result.selected_candidate.locality_name if geography_result.selected_candidate else None,
-                cbsa=geography_result.selected_candidate.cbsa if geography_result.selected_candidate else None,
-                cbsa_name=geography_result.selected_candidate.cbsa_name if geography_result.selected_candidate else None,
-                county_fips=geography_result.selected_candidate.county_fips if geography_result.selected_candidate else None,
-                state_code=geography_result.selected_candidate.state_code if geography_result.selected_candidate else None,
-                rural_flag=geography_result.selected_candidate.rural_flag if geography_result.selected_candidate else None,
-                resolution_method=geography_result.resolution_method,
-                candidates=geography_result.candidates
-            )
+            geography_response = self._build_geography_response(geography_result)
             
             # Collect dataset snapshots for provenance (Phase 2.6)
             datasets_used = self._collect_datasets_used(

@@ -1,8 +1,5 @@
 -- Initialize CMS Pricing database
 
--- Create database if it doesn't exist
-CREATE DATABASE cms_pricing;
-
 -- Create user if it doesn't exist
 DO $$
 BEGIN

@@ -35,6 +35,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql://cms_user:cms_password@db:5432/cms_pricing
+      TEST_DATABASE_URL: postgresql://cms_user:cms_password@db:5432/cms_pricing
       REDIS_URL: redis://redis:6379/0
       API_KEYS: "dev-key-123,admin-key-456"
       MAX_PROVIDERS: 100
@@ -46,6 +47,12 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - ./cms_pricing:/app/cms_pricing
+      - ./alembic:/app/alembic
+      - ./scripts:/app/scripts
+      - ./tests:/app/tests
+      - ./sample_data:/app/sample_data:ro
+      - ./alembic.ini:/app/alembic.ini
       - ./data:/app/data
       - ./logs:/app/logs
     depends_on:
@@ -61,10 +68,17 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql://cms_user:cms_password@db:5432/cms_pricing
+      TEST_DATABASE_URL: postgresql://cms_user:cms_password@db:5432/cms_pricing
       REDIS_URL: redis://redis:6379/0
       API_KEYS: "worker-key-789"
       LOG_LEVEL: INFO
     volumes:
+      - ./cms_pricing:/app/cms_pricing
+      - ./alembic:/app/alembic
+      - ./scripts:/app/scripts
+      - ./tests:/app/tests
+      - ./sample_data:/app/sample_data:ro
+      - ./alembic.ini:/app/alembic.ini
       - ./data:/app/data
       - ./logs:/app/logs
     depends_on:

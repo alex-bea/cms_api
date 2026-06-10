@@ -1,7 +1,8 @@
 """Base pricing engine"""
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from cms_pricing.schemas.pricing import CodePricingItem
@@ -34,14 +35,20 @@ class BasePricingEngine(ABC):
         """Price a single code/component (Quick Win #2: Returns unified CodePricingItem)"""
         pass
     
+    @staticmethod
+    def _normalize_modifier_code(modifier: Any) -> str:
+        """Normalize modifier input to a bare uppercase code."""
+        return str(modifier).strip().upper().lstrip("-")
+
     def _apply_modifiers(self, base_amount: float, modifiers: List[str]) -> float:
         """Apply modifiers to base amount"""
         amount = base_amount
         
         for modifier in modifiers:
-            if modifier == "-50":  # Bilateral
+            modifier_code = self._normalize_modifier_code(modifier)
+            if modifier_code == "50":  # Bilateral
                 amount *= 1.5
-            elif modifier == "-51":  # Multiple procedures
+            elif modifier_code == "51":  # Multiple procedures
                 amount *= 0.5
             # Add other modifier logic as needed
         
@@ -50,7 +57,7 @@ class BasePricingEngine(ABC):
     def _calculate_beneficiary_cost_sharing(
         self,
         allowed_amount: float,
-        deductible_remaining: float,
+        deductible_remaining: float = 0.0,
         coinsurance_rate: float = 0.20
     ) -> Dict[str, float]:
         """Calculate beneficiary cost sharing"""
@@ -75,3 +82,12 @@ class BasePricingEngine(ABC):
             "program_payment": program_payment,
             "remaining_deductible": deductible_remaining - deductible_applied
         }
+
+    def _amount_to_cents(self, amount: float) -> int:
+        """Round a dollar amount to integer cents."""
+        return int(
+            (Decimal(str(amount)) * Decimal("100")).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
+        )

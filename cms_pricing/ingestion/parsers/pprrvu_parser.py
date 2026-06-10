@@ -613,11 +613,20 @@ def _cast_dtypes(df: pd.DataFrame, metadata: Dict) -> pd.DataFrame:
     if 'global_days' in df.columns:
         df['global_days'] = pd.to_numeric(df['global_days'], errors='coerce').fillna(0).astype('Int64')
     
-    # Dates - inject from metadata (not in fixed-width file)
+    # Dates - inject release effective date from metadata (not in fixed-width file).
+    # The fallback to vintage_date is retained for older parser callers.
+    effective_fallback = metadata.get(
+        'effective_from',
+        metadata.get('vintage_date', pd.Timestamp('2025-01-01')),
+    )
+    effective_fallback = pd.to_datetime(effective_fallback, errors='coerce')
+    if pd.isna(effective_fallback):
+        effective_fallback = pd.Timestamp('2025-01-01')
+
     if 'effective_from' not in df.columns:
-        df['effective_from'] = metadata.get('vintage_date', pd.Timestamp('2025-01-01'))
+        df['effective_from'] = effective_fallback
     else:
         df['effective_from'] = pd.to_datetime(df['effective_from'], errors='coerce')
-        df['effective_from'] = df['effective_from'].fillna(metadata.get('vintage_date', pd.Timestamp('2025-01-01')))
+        df['effective_from'] = df['effective_from'].fillna(effective_fallback)
     
     return df

@@ -104,7 +104,7 @@ def client(api_key: str, test_db_session) -> TestClient:
         original_request = test_client.request
 
         def request_with_auth(method, url, **kwargs):  # type: ignore[override]
-            headers = kwargs.pop("headers", {})
+            headers = kwargs.pop("headers", None) or {}
             merged_headers = {**default_headers, **headers}
             return original_request(method, url, headers=merged_headers, **kwargs)
 

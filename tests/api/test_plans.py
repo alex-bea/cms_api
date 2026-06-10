@@ -150,16 +150,19 @@ def test_delete_plan(client: TestClient, api_key: str, sample_plan_data: dict):
     assert get_response.status_code == 404
 
 
-def test_plan_endpoints_require_auth(client: TestClient, sample_plan_data: dict):
+def test_plan_endpoints_require_auth(sample_plan_data: dict):
     """Test that plan endpoints require authentication."""
-    # Test create
-    response = client.post("/plans/", json=sample_plan_data)
-    assert response.status_code == 401
-    
-    # Test list
-    response = client.get("/plans/")
-    assert response.status_code == 401
-    
-    # Test get
-    response = client.get("/plans/00000000-0000-0000-0000-000000000000")
-    assert response.status_code == 401
+    from cms_pricing.main import app
+
+    with TestClient(app) as client:
+        # Test create
+        response = client.post("/plans/", json=sample_plan_data)
+        assert response.status_code == 401
+
+        # Test list
+        response = client.get("/plans/")
+        assert response.status_code == 401
+
+        # Test get
+        response = client.get("/plans/00000000-0000-0000-0000-000000000000")
+        assert response.status_code == 401

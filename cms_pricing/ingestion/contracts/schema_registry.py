@@ -190,8 +190,12 @@ class SchemaRegistry:
         warnings = []
         metrics = {}
         
-        # Check required columns
-        missing_columns = set(schema.columns.keys()) - set(df.columns)
+        # Check required columns. Nullable columns are optional at the parser
+        # boundary because CMS file layouts vary by release and format.
+        required_columns = {
+            name for name, spec in schema.columns.items() if not spec.nullable
+        }
+        missing_columns = required_columns - set(df.columns)
         if missing_columns:
             errors.append(f"Missing required columns: {missing_columns}")
         

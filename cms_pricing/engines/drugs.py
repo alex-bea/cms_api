@@ -49,11 +49,13 @@ class DrugEngine(BasePricingEngine):
         """Price a drug code using ASP and optionally NADAC (Quick Win #2: Returns unified CodePricingItem)"""
         
         try:
+            quarter_value = quarter or "1"
+
             # Get ASP data for Part B drugs
             asp_data = self.db.query(DrugASP).filter(
                 and_(
                     DrugASP.year == year,
-                    DrugASP.quarter == quarter or "1",  # Default to Q1
+                    DrugASP.quarter == quarter_value,
                     DrugASP.hcpcs == code,
                     DrugASP.effective_from <= f"{year}-12-31",
                     or_(
@@ -87,7 +89,7 @@ class DrugEngine(BasePricingEngine):
             
             # Build trace refs
             trace_refs = [
-                f"asp_{year}_{quarter}_{code}"
+                f"asp_{year}_{quarter_value}_{code}"
             ]
             
             # Drug engine doesn't have Phase 2 provenance yet (no release_id/batch_id in DrugASP)

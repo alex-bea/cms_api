@@ -33,6 +33,10 @@ class ValidationService:
         """Expose the underlying validation engine."""
         return self._engine
 
+    def validate_dataframe(self, *args: Any, **kwargs: Any) -> Any:
+        """Delegate dataframe validation to the underlying engine."""
+        return self._engine.validate_dataframe(*args, **kwargs)
+
     # Phase 2 Step 4: Validation rules extraction
     # See: artifacts/phase2_step4_detailed_plan.md
     def register_dataset_business_rules(self, dataset_spec: DatasetSpec) -> None:
