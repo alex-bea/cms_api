@@ -20,26 +20,17 @@ TASKS_DIR = STATE_DIR / "tasks"
 ROADMAP_VIEW = Path("docs/workbench/ROADMAP.md")
 CURRENT_VIEW = Path("docs/workbench/CURRENT.md")
 
-STATUSES = {
-    "queued",
-    "active",
-    "blocked",
-    "queued_for_merge",
-    "parked",
-    "icebox",
-    "done",
-}
+STATUSES = {"queued", "active", "blocked", "parked", "icebox", "done"}
 OWNER_MODES = {"alex", "agent", "shared"}
 TEAMS = {"system", "data", "api", "ops", "shared"}
 ACTIVE_TASK_LIMIT = 3
 STATUS_ORDER = {
     "active": 0,
     "blocked": 1,
-    "queued_for_merge": 2,
-    "queued": 3,
-    "parked": 4,
-    "icebox": 5,
-    "done": 6,
+    "queued": 2,
+    "parked": 3,
+    "icebox": 4,
+    "done": 5,
 }
 KIND_ORDER = ("roadmaps", "epics", "tasks")
 SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -281,12 +272,12 @@ def validate_tracker(tracker: TrackerData) -> ValidationResult:
                 f"{task.get('_path')}: parent epic '{parent_id}' does not exist"
             )
         tasks_by_epic.setdefault(parent_id, []).append(task)
-        if task.get("status") in {"active", "blocked", "queued_for_merge"}:
+        if task.get("status") in {"active", "blocked"}:
             active_tasks.append(task)
             for field in ("current_task", "next_action", "resume_from"):
                 if not str(task.get(field, "")).strip():
                     errors.append(
-                        f"{task.get('_path')}: {field} is required for active/blocked/queued_for_merge tasks"
+                        f"{task.get('_path')}: {field} is required for active/blocked tasks"
                     )
 
     if (
@@ -326,15 +317,7 @@ def task_counts(tasks: list[dict[str, Any]]) -> str:
     counts = {status: 0 for status in STATUSES}
     for task in tasks:
         counts[str(task.get("status"))] = counts.get(str(task.get("status")), 0) + 1
-    ordered = [
-        "active",
-        "blocked",
-        "queued_for_merge",
-        "queued",
-        "parked",
-        "icebox",
-        "done",
-    ]
+    ordered = ["active", "blocked", "queued", "parked", "icebox", "done"]
     parts = [f"{counts[status]} {status}" for status in ordered if counts.get(status)]
     return ", ".join(parts) if parts else "0 tasks"
 
@@ -395,7 +378,7 @@ def build_roadmap_view(tracker: TrackerData) -> str:
             current = [
                 task["title"]
                 for task in epic_tasks
-                if task.get("status") in {"active", "blocked", "queued_for_merge"}
+                if task.get("status") in {"active", "blocked"}
             ]
             if current:
                 lines.append(f"  Current tasks: {', '.join(current)}")
@@ -452,10 +435,6 @@ def build_current_view(tracker: TrackerData, warnings: list[str] | None = None) 
         [task for task in tracker.tasks if task.get("status") == "blocked"],
         key=task_sort_key,
     )
-    queued_for_merge_tasks = sorted(
-        [task for task in tracker.tasks if task.get("status") == "queued_for_merge"],
-        key=task_sort_key,
-    )
 
     lines = [
         "# CMS API Current Work",
@@ -484,13 +463,6 @@ def build_current_view(tracker: TrackerData, warnings: list[str] | None = None) 
     else:
         lines.extend(["- None.", ""])
 
-    lines.extend(["## Queued For Merge", ""])
-    if queued_for_merge_tasks:
-        for task in queued_for_merge_tasks:
-            lines.extend(render_task_block(tracker, task))
-    else:
-        lines.extend(["- None.", ""])
-
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -503,37 +475,6 @@ def write_views(tracker: TrackerData, warnings: list[str] | None = None) -> list
         build_current_view(tracker, warnings=warnings), encoding="utf-8"
     )
     return [roadmap_path, current_path]
-
-
-def check_views_command(root: Path) -> int:
-    tracker = load_tracker(root)
-    result = validate_tracker(tracker)
-    if result.errors:
-        for error in result.errors:
-            print(f"ERROR: {error}", file=sys.stderr)
-        return 1
-
-    expected = {
-        ROADMAP_VIEW: build_roadmap_view(tracker),
-        CURRENT_VIEW: build_current_view(tracker, warnings=result.warnings),
-    }
-    drifted: list[Path] = []
-    for rel_path, expected_text in expected.items():
-        path = root / rel_path
-        actual_text = path.read_text(encoding="utf-8") if path.exists() else None
-        if actual_text != expected_text:
-            drifted.append(rel_path)
-
-    if drifted:
-        for rel_path in drifted:
-            print(
-                f"ERROR: generated tracker view is stale: {rel_path}", file=sys.stderr
-            )
-        print("Run: python scripts/governance/build-work-tracker.py", file=sys.stderr)
-        return 1
-
-    print("Generated tracker views are current.")
-    return 0
 
 
 def check_command(root: Path) -> int:
@@ -568,7 +509,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=("check", "build", "check-views"),
+        choices=("check", "build"),
         help="Validate tracker state or rebuild generated views.",
     )
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
@@ -582,8 +523,6 @@ def main(argv: list[str] | None = None) -> int:
         return check_command(root)
     if args.command == "build":
         return build_command(root)
-    if args.command == "check-views":
-        return check_views_command(root)
     raise AssertionError(args.command)
 
 

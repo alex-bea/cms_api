@@ -70,7 +70,7 @@ summary: "Short context for humans and agents."
 Epics also include `parent_id`, pointing to a roadmap. Tasks include `parent_id`,
 pointing to an epic.
 
-Active, blocked, and queued-for-merge tasks must include:
+Active and blocked tasks must include:
 
 - `current_task`
 - `next_action`
@@ -83,7 +83,6 @@ Allowed statuses:
 - `queued`
 - `active`
 - `blocked`
-- `queued_for_merge`
 - `parked`
 - `icebox`
 - `done`
@@ -104,51 +103,12 @@ Allowed owner modes:
 
 ## Operating Rule
 
-Code PRs ship code. End-of-day tracker sync PRs reconcile tracker truth.
+When a meaningful work session finishes, update the tracker before handing back:
 
-During the day, agents may update tracker YAML locally for working context, but
-ordinary implementation PRs should not stage these files:
-
-- `state/work/**`
-- `state/plans/accepted.yaml`
-- `docs/workbench/CURRENT.md`
-- `docs/workbench/ROADMAP.md`
-
-If a PR changes tracker or governance behavior, use a dedicated tracker PR.
-
-## End-Of-Day Sync
-
-At end of day, create one tracker sync pass:
-
-1. Reconcile local task additions, status changes, evidence links, and resume
-   fields.
-2. Resolve duplicate task IDs and duplicate ranks.
-3. Run merge queue dry run.
-4. Rebuild tracker views once.
-5. Push a tracker-only PR.
-
-Commands:
-
-```bash
-python scripts/governance/check-work-tracker.py
-python scripts/governance/process_merge_queue.py --dry-run --json
-python scripts/governance/build-work-tracker.py
-git diff --check
-python tools/work_tracker.py check-views
-```
-
-## Conflict Avoidance
-
-New task IDs should be globally specific and action-object scoped, such as
-`load-latest-cms-rvu-local-db`, not generic names such as `add-health-command`.
-
-If duplicate ranks appear, keep main branch ordering stable and move the new
-local task to the next open rank in that epic.
-
-If `CURRENT.md` or `ROADMAP.md` conflicts, resolve tracker YAML first, then
-regenerate the views.
-
-If multiple agents touched the same epic, reconcile ranks and statuses in the
-end-of-day tracker PR before pushing.
+1. Mark completed tasks `done`.
+2. Add or update the next active task.
+3. Link the run evidence or status doc under `linked_outputs`.
+4. Rebuild generated views with `python tools/work_tracker.py build`.
+5. Validate with `python tools/work_tracker.py check`.
 
 This keeps chat history from becoming the only record of what happened.
