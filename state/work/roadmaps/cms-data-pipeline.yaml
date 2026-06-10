@@ -1,0 +1,15 @@
+id: cms-data-pipeline
+title: CMS Data Pipeline
+status: active
+rank: 1
+team: data
+owner_mode: shared
+updated_at: "2026-06-10"
+plan_path: null
+related_paths:
+  - "cms_pricing/ingestion"
+  - "scripts"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+summary: "Land, validate, normalize, enrich, publish, and select CMS reimbursement datasets for pricing."

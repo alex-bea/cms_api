@@ -1,0 +1,21 @@
+id: load-latest-cms-rvu-local-db
+parent_id: cms-rvu-ingestion
+title: Load Latest CMS RVU Into Local DB
+status: done
+rank: 2
+team: data
+owner_mode: agent
+updated_at: "2026-06-10"
+plan_path: "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+related_paths:
+  - "scripts/load_latest_cms_rvu_local.py"
+  - "cms_pricing/ingestion/datasets/rvu_loaders.py"
+  - "tests/scripts/test_load_latest_cms_rvu_local.py"
+  - "tests/ingestors/test_rvu_loader_aliases.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+summary: "Real DB RVU load command added, 2026 C live release loaded locally, snapshot effective dates verified, and locality-preserving DB dedupe fixed."
+current_task: "Completed in commit fe76d98."
+next_action: "Use the loader command for repeatable local/dev RVU refreshes."
+resume_from: "See docs/workbench/DOC-cms-rvu-local-db-load-status.md for row counts, selected release, and verification notes."
