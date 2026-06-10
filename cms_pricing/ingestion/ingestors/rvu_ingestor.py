@@ -1121,11 +1121,6 @@ class RVUIngestor(BaseDISIngestor):
             logger.warning("No curated tables present in publish result; skipping snapshot registration")
             return
 
-        try:
-            effective_from = date.fromisoformat(vintage_date)
-        except ValueError:
-            effective_from = datetime.utcnow().date()
-
         export_artifacts = publish_result.get("export_artifacts") or {}
         manifest_path = export_artifacts.get("manifest")
         manifest_path_str = str(manifest_path) if manifest_path else None
@@ -1171,12 +1166,17 @@ class RVUIngestor(BaseDISIngestor):
                         digest = self._calculate_file_digest(path_obj)
                     normalized_path = self._normalize_snapshot_path(path_obj)
                     specific_release_id = self._dataset_release_id(dataset_id, release_id)
+                    snapshot_effective_from = self._snapshot_effective_from(
+                        release_id=release_id,
+                        vintage_date=vintage_date,
+                        parquet_path=path_obj,
+                    )
 
                     snapshot_service.register_snapshot(
                         dataset_id=dataset_id,
                         release_id=specific_release_id,
                         digest=digest,
-                        effective_from=effective_from,
+                        effective_from=snapshot_effective_from,
                         manifest_url=manifest_path_str or normalized_path,
                         curated_path=normalized_path,
                         autocommit=False,
@@ -1186,7 +1186,7 @@ class RVUIngestor(BaseDISIngestor):
                         "Registered dataset snapshot",
                         dataset_id=dataset_id,
                         release_id=specific_release_id,
-                        effective_from=effective_from
+                        effective_from=snapshot_effective_from
                     )
         except Exception as exc:
             logger.error(
@@ -1236,6 +1236,138 @@ class RVUIngestor(BaseDISIngestor):
         if not prefix:
             return base_release_id
         return f"{prefix}_{year}_{suffix}"
+
+    @staticmethod
+    def _snapshot_effective_from(
+        release_id: str,
+        vintage_date: str,
+        parquet_path: Optional[Path] = None,
+    ) -> date:
+        """Return snapshot selection date for an RVU release artifact.
+
+        Snapshot effective dates drive artifact selection by date of service.
+        For quarterly RVU packages, use the CMS release effective start
+        (A/B/C/D => Jan/Apr/Jul/Oct), not the ingestion/publish run date.
+        """
+        release_effective = RVUIngestor._release_effective_from(release_id)
+        if release_effective:
+            return release_effective
+
+        parquet_effective = RVUIngestor._infer_parquet_effective_from(parquet_path)
+        if parquet_effective:
+            return parquet_effective
+
+        vintage_effective = RVUIngestor._coerce_snapshot_date(vintage_date)
+        return vintage_effective or datetime.utcnow().date()
+
+    @staticmethod
+    def _release_effective_from(release_id: str) -> Optional[date]:
+        """Parse CMS RVU release IDs into quarter-effective dates."""
+        value = str(release_id or "").strip().upper()
+        if not value:
+            return None
+
+        standard = re.search(r"(20\d{2})[_-]?([ABCD])(?:\d*)?$", value)
+        if standard:
+            return RVUIngestor._effective_date_for_release_suffix(
+                int(standard.group(1)),
+                standard.group(2),
+            )
+
+        quarter = re.search(r"(20\d{2}).*Q([1-4])(?:\D*)?$", value)
+        if quarter:
+            suffix = {"1": "A", "2": "B", "3": "C", "4": "D"}[quarter.group(2)]
+            return RVUIngestor._effective_date_for_release_suffix(
+                int(quarter.group(1)),
+                suffix,
+            )
+
+        compact = re.search(r"(?:RVU)?(\d{2})([ABCD])(?:\d*)?$", value)
+        if compact:
+            return RVUIngestor._effective_date_for_release_suffix(
+                2000 + int(compact.group(1)),
+                compact.group(2),
+            )
+
+        return None
+
+    @staticmethod
+    def _effective_date_for_release_suffix(year: int, suffix: str) -> date:
+        quarter_start_month = {"A": 1, "B": 4, "C": 7, "D": 10}
+        month = quarter_start_month[str(suffix).strip().upper()]
+        return date(year, month, 1)
+
+    @staticmethod
+    def _infer_parquet_effective_from(parquet_path: Optional[Path]) -> Optional[date]:
+        """Fallback for non-standard release IDs: infer from row-level dates."""
+        if not parquet_path or not parquet_path.exists():
+            return None
+
+        try:
+            import pandas as pd
+
+            df = pd.read_parquet(parquet_path, columns=["effective_from"])
+        except Exception as err:
+            logger.debug(
+                "Unable to infer snapshot effective date from parquet",
+                path=str(parquet_path),
+                error=str(err),
+            )
+            return None
+
+        parsed_dates = [
+            parsed
+            for parsed in (
+                RVUIngestor._coerce_snapshot_date(value)
+                for value in df["effective_from"].dropna().tolist()
+            )
+            if parsed is not None
+        ]
+        if not parsed_dates:
+            return None
+
+        unique_dates = sorted(set(parsed_dates))
+        if len(unique_dates) > 1:
+            logger.warning(
+                "Multiple row-level effective dates found in RVU dataset; using earliest for snapshot fallback",
+                path=str(parquet_path),
+                effective_dates=[entry.isoformat() for entry in unique_dates],
+            )
+        return unique_dates[0]
+
+    @staticmethod
+    def _coerce_snapshot_date(value: Any) -> Optional[date]:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if hasattr(value, "date") and callable(value.date):
+            try:
+                coerced = value.date()
+                if isinstance(coerced, date):
+                    return coerced
+            except Exception:
+                pass
+
+        text_value = str(value).strip()
+        if not text_value or text_value.lower() in {"nan", "nat", "none", "null"}:
+            return None
+        try:
+            return date.fromisoformat(text_value[:10])
+        except ValueError:
+            pass
+
+        try:
+            import pandas as pd
+
+            parsed = pd.to_datetime(value, errors="coerce")
+            if pd.isna(parsed):
+                return None
+            return parsed.date()
+        except Exception:
+            return None
 
     @staticmethod
     def _calculate_file_digest(parquet_path: Path) -> str:

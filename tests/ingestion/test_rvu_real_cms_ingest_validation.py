@@ -68,6 +68,58 @@ def _source_file(path: Path) -> SourceFile:
     )
 
 
+@pytest.mark.parametrize(
+    ("release_id", "expected"),
+    [
+        ("rvu_2025_A", date(2025, 1, 1)),
+        ("rvu_2025_B", date(2025, 4, 1)),
+        ("rvu_2026_C", date(2026, 7, 1)),
+        ("rvu_2026_D", date(2026, 10, 1)),
+        ("rvu26c", date(2026, 7, 1)),
+        ("rvu_2026_Q4", date(2026, 10, 1)),
+    ],
+)
+def test_rvu_release_id_maps_to_snapshot_effective_date(release_id, expected):
+    assert RVUIngestor._release_effective_from(release_id) == expected
+
+
+def test_snapshot_registration_uses_release_effective_date_not_run_date(tmp_path):
+    ingestor = RVUIngestor(str(tmp_path / "ingested"))
+    try:
+        ingestor.snapshot_service.close()
+    except Exception:
+        pass
+    snapshot_service = StubSnapshotService()
+    ingestor.snapshot_service = snapshot_service
+    ingestor._snapshot_service_managed_session = False
+
+    parquet_path = tmp_path / "pprrvu_2026-06-10.parquet"
+    parquet_path.write_bytes(b"placeholder")
+
+    ingestor._register_dataset_snapshots(
+        publish_result={
+            "curated_tables": {"pprrvu": parquet_path},
+            "file_digests": {"pprrvu": "digest"},
+            "export_artifacts": {"manifest": str(tmp_path / "manifest.json")},
+        },
+        release_id="rvu_2026_C",
+        vintage_date="2026-06-10",
+    )
+
+    assert snapshot_service.registered == [
+        {
+            "dataset_id": "rvu_items",
+            "release_id": "rvu_2026_C",
+            "digest": "digest",
+            "effective_from": date(2026, 7, 1),
+            "effective_to": None,
+            "manifest_url": str(tmp_path / "manifest.json"),
+            "curated_path": str(parquet_path),
+            "autocommit": False,
+        }
+    ]
+
+
 @pytest.mark.ingestor
 @pytest.mark.asyncio
 async def test_real_cms_rvu_sample_files_validate_normalize_and_publish(tmp_path):
@@ -190,4 +242,7 @@ async def test_real_cms_rvu_sample_files_validate_normalize_and_publish(tmp_path
         "oppscap_2025_A",
         "anescf_2025_A",
         "locality_2025_A",
+    }
+    assert {entry["effective_from"] for entry in snapshot_service.registered} == {
+        date(2025, 1, 1)
     }
