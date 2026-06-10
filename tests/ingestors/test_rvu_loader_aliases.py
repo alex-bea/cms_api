@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 
 from cms_pricing.ingestion.datasets.rvu_loaders import (
+    _dedupe_before_db_load,
     load_gpci_data,
     load_locality_data,
     load_oppscap_data,
@@ -94,7 +95,7 @@ def test_locality_loader_aliases():
     inserted = load_locality_data(df, uuid.uuid4(), batch_id="test", db_session=session)
     assert inserted == 1
     records = _extract_records(session)
-    assert records[0]["state"] == "CALIFORNIA"
+    assert records[0]["state"] == "CA"
     assert records[0]["fee_schedule_area"].startswith("SAN FRANCISCO")
     assert records[0]["county_name"] == "SAN FRANCISCO"
 
@@ -122,3 +123,64 @@ def test_pprrvu_loader_normalises_modifier():
     assert records[0]["hcpcs_code"] == "99213"
     assert records[0]["modifier_key"] is None
     assert records[0]["modifiers"] is None
+
+
+def test_pre_db_dedupe_preserves_gpci_rows_with_same_mac_different_locality():
+    df = pd.DataFrame(
+        [
+            {
+                "mac": "01112",
+                "locality_code": "05",
+                "effective_from": "2026-07-01",
+                "gpci_work": "1.095",
+            },
+            {
+                "mac": "01112",
+                "locality_code": "09",
+                "effective_from": "2026-07-01",
+                "gpci_work": "1.100",
+            },
+        ]
+    )
+
+    deduped = _dedupe_before_db_load("gpci", df)
+
+    assert len(deduped) == 2
+    assert set(deduped["locality_code"]) == {"05", "09"}
+
+
+def test_pre_db_dedupe_skips_partial_post_loader_keys():
+    df = pd.DataFrame(
+        [
+            {"mac": "01112", "gpci_work": "1.095"},
+            {"mac": "01112", "gpci_work": "1.100"},
+        ]
+    )
+
+    deduped = _dedupe_before_db_load("gpci", df)
+
+    assert len(deduped) == 2
+
+
+def test_pre_db_dedupe_preserves_oppscap_rows_with_same_modifier_and_mac():
+    df = pd.DataFrame(
+        [
+            {
+                "hcpcs": "0633T",
+                "modifier": "TC",
+                "mac": "01112",
+                "locality_code": "05",
+            },
+            {
+                "hcpcs": "0633T",
+                "modifier": "TC",
+                "mac": "01112",
+                "locality_code": "09",
+            },
+        ]
+    )
+
+    deduped = _dedupe_before_db_load("oppscap", df)
+
+    assert len(deduped) == 2
+    assert set(deduped["locality_code"]) == {"05", "09"}
