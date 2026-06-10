@@ -12,8 +12,8 @@ from typing import List, Tuple
 sys.path.append(str(Path(__file__).parent.parent))
 
 from cms_pricing.ingestion.geography import GeographyIngester
-from cms_pricing.ingestion.mpfs import MPFSIngester
-from cms_pricing.ingestion.opps import OPPSIngester
+from cms_pricing.ingestion.ingestors.mpfs_ingestor import MPFSIngestor
+from cms_pricing.ingestion.ingestors.opps_ingestor import OPPSIngestor
 from cms_pricing.ingestion.scheduler import scheduler
 import structlog
 
@@ -27,8 +27,8 @@ class DataIngestionManager:
         self.data_dir = data_dir
         self.ingesters = {
             'GEOGRAPHY': GeographyIngester,
-            'MPFS': MPFSIngester,
-            'OPPS': OPPSIngester,
+            'MPFS': MPFSIngestor,
+            'OPPS': OPPSIngestor,
             # Add more ingesters as they're created
         }
     

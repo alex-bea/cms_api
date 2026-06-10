@@ -1,6 +1,6 @@
 """Medicare Physician Fee Schedule pricing engine"""
 
-from typing import Any, Dict, Optional, List
+from typing import Any, List, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
@@ -63,10 +63,10 @@ class MPSFEngine(BasePricingEngine):
         ndc11: Optional[str] = None
     ) -> CodePricingItem:
         """Price a code using MPFS (Quick Win #2: Returns unified CodePricingItem)"""
-        
+
+        locality_id = None
         try:
             # Get locality from geography
-            locality_id = None
             if geography and geography.selected_candidate:
                 locality_id = geography.selected_candidate.locality_id
             
@@ -128,11 +128,26 @@ class MPSFEngine(BasePricingEngine):
             if not cf_result:
                 raise ValueError(f"No conversion factor found for year {year}")
             
+            required_values = {
+                "work_rvu": mpfs_result.work_rvu,
+                "mp_rvu": mpfs_result.mp_rvu,
+                "gpci_work": gpci_result.gpci_work,
+                "gpci_pe": gpci_result.gpci_pe,
+                "gpci_mp": gpci_result.gpci_mp,
+                "conversion_factor": cf_result.cf,
+            }
+            missing_values = [name for name, value in required_values.items() if value is None]
+            if missing_values:
+                raise ValueError(
+                    f"Missing MPFS pricing inputs for code {code}, locality {locality_id}: "
+                    f"{', '.join(missing_values)}"
+                )
+
             # Extract values from Row results
-            work_rvu = mpfs_result.work_rvu or 0
+            work_rvu = mpfs_result.work_rvu
             pe_nf_rvu = mpfs_result.pe_nf_rvu
             pe_fac_rvu = mpfs_result.pe_fac_rvu
-            mp_rvu = mpfs_result.mp_rvu or 0
+            mp_rvu = mpfs_result.mp_rvu
             mpfs_release_id = mpfs_result.release_id
             mpfs_batch_id = mpfs_result.batch_id
             
@@ -154,37 +169,43 @@ class MPSFEngine(BasePricingEngine):
             
             mpfs_data_obj = MPFSData()
             pe_rvu = self._get_pe_rvu(mpfs_data_obj, pos)
-            
-            # Calculate RVUs
-            pe_rvu = pe_rvu or 0
+
+            if pe_rvu is None:
+                raise ValueError(
+                    f"Missing PE RVU for code {code}, locality {locality_id}, POS {pos or 'default'}"
+                )
             
             # Apply GPCI
             work_rvu_adjusted = work_rvu * gpci_work
             pe_rvu_adjusted = pe_rvu * gpci_pe
             mp_rvu_adjusted = mp_rvu * gpci_mp
             
-            # Calculate total RVUs
-            total_rvu = work_rvu_adjusted + pe_rvu_adjusted + mp_rvu_adjusted
-            
-            # Apply conversion factor
-            base_allowed = total_rvu * cf
-            
-            # Apply modifiers
-            if modifiers:
-                base_allowed = self._apply_modifiers(base_allowed, modifiers)
-            
-            # Apply units and utilization weight
-            allowed_amount = base_allowed * units * utilization_weight
+            professional_base, technical_base = self._select_component_amounts(
+                work_rvu_adjusted=work_rvu_adjusted,
+                pe_rvu_adjusted=pe_rvu_adjusted,
+                mp_rvu_adjusted=mp_rvu_adjusted,
+                conversion_factor=cf,
+                professional_component=professional_component,
+                facility_component=facility_component,
+                modifiers=modifiers,
+            )
+
+            quantity_multiplier = units * utilization_weight
+            professional_allowed_amount = professional_base * quantity_multiplier
+            technical_allowed_amount = technical_base * quantity_multiplier
+            allowed_amount = professional_allowed_amount + technical_allowed_amount
             
             # Calculate beneficiary cost sharing
             cost_sharing = self._calculate_beneficiary_cost_sharing(allowed_amount)
             
             # Convert to cents
-            allowed_cents = int(allowed_amount * 100)
-            beneficiary_deductible_cents = int(cost_sharing["beneficiary_deductible"] * 100)
-            beneficiary_coinsurance_cents = int(cost_sharing["beneficiary_coinsurance"] * 100)
-            beneficiary_total_cents = int(cost_sharing["beneficiary_total"] * 100)
-            program_payment_cents = int(cost_sharing["program_payment"] * 100)
+            allowed_cents = self._amount_to_cents(allowed_amount)
+            beneficiary_deductible_cents = self._amount_to_cents(cost_sharing["beneficiary_deductible"])
+            beneficiary_coinsurance_cents = self._amount_to_cents(cost_sharing["beneficiary_coinsurance"])
+            beneficiary_total_cents = self._amount_to_cents(cost_sharing["beneficiary_total"])
+            program_payment_cents = self._amount_to_cents(cost_sharing["program_payment"])
+            professional_allowed_cents = self._amount_to_cents(professional_allowed_amount)
+            technical_allowed_cents = self._amount_to_cents(technical_allowed_amount)
             
             # Add MPFS provenance (standardized format)
             if mpfs_release_id:
@@ -218,8 +239,8 @@ class MPSFEngine(BasePricingEngine):
                 beneficiary_coinsurance_cents=beneficiary_coinsurance_cents,
                 beneficiary_total_cents=beneficiary_total_cents,
                 program_payment_cents=program_payment_cents,
-                professional_allowed_cents=allowed_cents if professional_component else 0,
-                facility_allowed_cents=0,  # MPFS is professional only
+                professional_allowed_cents=professional_allowed_cents,
+                facility_allowed_cents=technical_allowed_cents,
                 dataset_id=dataset_id,
                 release_id=mpfs_release_id,
                 batch_id=mpfs_batch_id,
@@ -256,6 +277,64 @@ class MPSFEngine(BasePricingEngine):
         else:
             # Facility settings - use facility PE RVU
             return mpfs_data.pe_fac_rvu
+
+    def _select_component_amounts(
+        self,
+        *,
+        work_rvu_adjusted: float,
+        pe_rvu_adjusted: float,
+        mp_rvu_adjusted: float,
+        conversion_factor: float,
+        professional_component: bool,
+        facility_component: bool,
+        modifiers: Optional[List[str]],
+    ) -> Tuple[float, float]:
+        """Return professional and technical MPFS base allowed amounts."""
+
+        modifier_codes = [
+            self._normalize_modifier_code(modifier)
+            for modifier in modifiers or []
+            if str(modifier).strip()
+        ]
+        has_professional_modifier = "26" in modifier_codes
+        has_technical_modifier = "TC" in modifier_codes
+
+        if has_professional_modifier and has_technical_modifier:
+            raise ValueError("MPFS modifiers 26 and TC cannot both be applied")
+
+        if has_professional_modifier:
+            include_professional = True
+            include_technical = False
+        elif has_technical_modifier:
+            include_professional = False
+            include_technical = True
+        else:
+            include_professional = professional_component
+            include_technical = facility_component
+
+        if not include_professional and not include_technical:
+            raise ValueError("At least one MPFS component must be selected")
+
+        generic_modifiers = [
+            modifier
+            for modifier in modifiers or []
+            if self._normalize_modifier_code(modifier) not in {"26", "TC"}
+        ]
+
+        professional_amount = (work_rvu_adjusted + mp_rvu_adjusted) * conversion_factor
+        technical_amount = pe_rvu_adjusted * conversion_factor
+
+        if include_professional:
+            professional_amount = self._apply_modifiers(professional_amount, generic_modifiers)
+        else:
+            professional_amount = 0.0
+
+        if include_technical:
+            technical_amount = self._apply_modifiers(technical_amount, generic_modifiers)
+        else:
+            technical_amount = 0.0
+
+        return professional_amount, technical_amount
     
     def __del__(self):
         """Clean up database session if we own it"""

@@ -27,7 +27,11 @@ def test_metrics_endpoint(client: TestClient, api_key: str):
     assert "text/plain" in response.headers["content-type"]
 
 
-def test_metrics_endpoint_requires_auth(client: TestClient):
+def test_metrics_endpoint_requires_auth():
     """Test that metrics endpoint requires authentication."""
-    response = client.get("/metrics")
+    from cms_pricing.main import app
+
+    with TestClient(app) as unauthenticated_client:
+        response = unauthenticated_client.get("/metrics")
+
     assert response.status_code == 401

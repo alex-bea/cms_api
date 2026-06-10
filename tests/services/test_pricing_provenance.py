@@ -8,7 +8,7 @@ Validates that:
 """
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock, MagicMock, patch
 from cms_pricing.services.pricing import PricingService
 from cms_pricing.schemas.pricing import LineItemResponse, CodePricingItem
 from cms_pricing.models.fee_schedules import FeeMPFS
@@ -229,8 +229,6 @@ class TestEngineReturnsCodePricingItem:
         
         # Mock database data
         # Engines now use with_entities() which returns Row objects with attribute access
-        from unittest.mock import MagicMock
-        
         # Create Row-like mock objects that support attribute access
         mock_mpfs_row = MagicMock()
         mock_mpfs_row.work_rvu = 0.93
@@ -257,27 +255,18 @@ class TestEngineReturnsCodePricingItem:
         def create_query_chain(*args):
             # args contains column expressions like FeeMPFS.work_rvu, FeeMPFS.release_id, etc.
             chain = MagicMock()
-            
-            def filter_chain(*filter_args, **filter_kwargs):
-                filter_mock = MagicMock()
-                
-                def first_result():
-                    # Determine which row to return based on columns in args
-                    columns = [str(arg) for arg in args if hasattr(arg, 'key')]
-                    
-                    # Check if this is MPFS query (has work_rvu)
-                    if any('work_rvu' in str(c) for c in args):
-                        return mock_mpfs_row
-                    # Check if this is GPCI query (has gpci_work)
-                    elif any('gpci_work' in str(c) for c in args):
-                        return mock_gpci_row
-                    # Check if this is ConversionFactor query (has cf)
-                    elif any('cf' in str(c) for c in args):
-                        return mock_cf_row
-                    return None
-                
-                filter_mock.first = MagicMock(return_value=first_result())
-                return filter_mock
+
+            def first_result():
+                # Check if this is MPFS query (has work_rvu)
+                if any('work_rvu' in str(c) for c in args):
+                    return mock_mpfs_row
+                # Check if this is GPCI query (has gpci_work)
+                if any('gpci_work' in str(c) for c in args):
+                    return mock_gpci_row
+                # Check if this is ConversionFactor query (has cf)
+                if any('cf' in str(c) for c in args):
+                    return mock_cf_row
+                return None
             
             chain.filter = MagicMock(return_value=MagicMock(
                 first=MagicMock(return_value=first_result())
@@ -364,8 +353,6 @@ class TestEngineReturnsCodePricingItem:
         
         # Mock database data
         # Engines now use with_entities() which returns Row objects with attribute access
-        from unittest.mock import MagicMock
-        
         # Create Row-like mock objects
         mock_opps_row = MagicMock()
         mock_opps_row.national_unadj_rate = 10000.0  # $100.00
@@ -381,24 +368,15 @@ class TestEngineReturnsCodePricingItem:
         # Setup query chain to handle with_entities() calls
         def create_query_chain(*args):
             chain = MagicMock()
-            
-            def filter_chain(*filter_args, **filter_kwargs):
-                filter_mock = MagicMock()
-                
-                def first_result():
-                    # Determine which row to return based on columns in args
-                    columns = [str(arg) for arg in args if hasattr(arg, 'key')]
-                    
-                    # Check if this is OPPS query (has national_unadj_rate)
-                    if any('national_unadj_rate' in str(c) for c in args):
-                        return mock_opps_row
-                    # Check if this is WageIndex query (has wage_index)
-                    elif any('wage_index' in str(c) for c in args):
-                        return mock_wage_index_row
-                    return None
-                
-                filter_mock.first = MagicMock(return_value=first_result())
-                return filter_mock
+
+            def first_result():
+                # Check if this is OPPS query (has national_unadj_rate)
+                if any('national_unadj_rate' in str(c) for c in args):
+                    return mock_opps_row
+                # Check if this is WageIndex query (has wage_index)
+                if any('wage_index' in str(c) for c in args):
+                    return mock_wage_index_row
+                return None
             
             chain.filter = MagicMock(return_value=MagicMock(
                 first=MagicMock(return_value=first_result())

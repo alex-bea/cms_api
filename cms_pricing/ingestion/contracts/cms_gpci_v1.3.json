@@ -48,7 +48,7 @@
       "nullable": false,
       "description": "Work GPCI index (raw from CMS; floors applied at pricing time)",
       "min_value": 0.3,
-      "max_value": 2.0,
+      "max_value": 2.5,
       "sample_values": [1.000, 1.500, 1.122]
     },
     "gpci_pe": {
@@ -61,7 +61,7 @@
       "nullable": false,
       "description": "Practice expense GPCI index",
       "min_value": 0.3,
-      "max_value": 2.0,
+      "max_value": 2.5,
       "sample_values": [0.869, 1.081, 1.569]
     },
     "gpci_mp": {
@@ -74,7 +74,7 @@
       "nullable": false,
       "description": "Malpractice (MP) GPCI index (CMS terminology)",
       "min_value": 0.3,
-      "max_value": 2.0,
+      "max_value": 2.5,
       "sample_values": [0.575, 0.592, 1.859]
     },
     "effective_from": {
@@ -136,7 +136,7 @@
   "business_rules": [
     "MAC must be 5 digits (zero-padded)",
     "Locality code must be 2 digits (zero-padded)",
-    "GPCI indices must be between 0.3 and 2.0 (schema bounds)",
+    "GPCI indices must be between 0.3 and 2.5 (hard schema bounds); values above 2.0 are warning-range but CMS-observed",
     "Parser delivers raw GPCI values; floors (e.g., Alaska 1.50 work floor) applied at pricing time",
     "Expected 100-120 localities per release (CMS post-CA consolidation universe)",
     "Locality reconfiguration events may cause row count deltas across releases"

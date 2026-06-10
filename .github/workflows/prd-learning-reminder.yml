@@ -6,12 +6,19 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 jobs:
   collect:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -41,7 +48,11 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const commentBody = `${{ steps.collect.outputs.markdown }}`;
+            const fs = require('fs');
+            const commentBody = fs.readFileSync('learning_results.md', 'utf8').trimEnd();
+            if (!commentBody.trim()) {
+              return;
+            }
             const marker = '<!-- prd-learning-anchor -->';
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -77,4 +88,3 @@ jobs:
           echo "" >> "$file"
           echo "Learning inbox updated:"
           tail "$file"
-

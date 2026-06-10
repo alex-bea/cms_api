@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Optional
 
 from cms_pricing.ingestion.scheduler import scheduler, TaskStatus
-from cms_pricing.ingestion.mpfs import MPFSIngester
-from cms_pricing.ingestion.opps import OPPSIngester
+from cms_pricing.ingestion.ingestors.mpfs_ingestor import MPFSIngestor
+from cms_pricing.ingestion.ingestors.opps_ingestor import OPPSIngestor
 from cms_pricing.database import SessionLocal
 from cms_pricing.models.snapshots import Snapshot
 import structlog
@@ -40,8 +40,8 @@ def ingest(dataset: str, year: int, quarter: Optional[str], data_dir: str):
         try:
             # Get the appropriate ingester
             ingesters = {
-                'MPFS': MPFSIngester,
-                'OPPS': OPPSIngester,
+                'MPFS': MPFSIngestor,
+                'OPPS': OPPSIngestor,
             }
             
             ingester_class = ingesters.get(dataset.upper())

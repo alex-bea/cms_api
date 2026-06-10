@@ -87,7 +87,7 @@ class TestTask4WarningLogs:
         with patch('cms_pricing.ingestion.ingestors.rvu_ingestor.Path.exists', return_value=True), \
              patch('cms_pricing.ingestion.ingestors.rvu_ingestor.Path.mkdir'), \
              patch('builtins.open', create=True), \
-             patch('cms_pricing.ingestion.ingestors.rvu_ingestor.zipfile.ZipFile') as mock_zip:
+             patch('cms_pricing.ingestion.datasets.rvu_adapter.zipfile.ZipFile') as mock_zip:
             
             # Setup mock ZIP
             mock_zip_instance = Mock()
@@ -134,4 +134,3 @@ class TestTask4WarningLogs:
         # Process and verify warning is emitted
         # This test verifies the code path exists
         assert True, "Code path exists (manual verification of warning logs needed)"
-

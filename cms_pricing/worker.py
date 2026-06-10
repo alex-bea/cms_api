@@ -7,7 +7,7 @@ from typing import Dict, Any
 
 import structlog
 from cms_pricing.config import settings
-from cms_pricing.ingestion.mpfs import MPFSIngester
+from cms_pricing.ingestion.ingestors.mpfs_ingestor import MPFSIngestor
 
 logger = structlog.get_logger()
 
@@ -62,7 +62,7 @@ class Worker:
         
         # Example: Ingest MPFS data for current year
         if settings.debug:  # Only in development
-            ingester = MPFSIngester("./data")
+            ingester = MPFSIngestor("./data")
             try:
                 result = await ingester.ingest(2025)
                 logger.info("MPFS ingestion completed", result=result)

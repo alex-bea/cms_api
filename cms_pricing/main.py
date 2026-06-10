@@ -17,7 +17,6 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 from starlette.responses import Response as StarletteResponse
 
 from cms_pricing.config import settings
-from cms_pricing.database import engine, Base
 from cms_pricing.middleware import LoggingMiddleware, SecurityMiddleware
 from cms_pricing.routers import plans, pricing, geography, trace, health, rvu, nearest_zip, mpfs, opps
 from cms_pricing.services.geography_health import router as geography_health_router
@@ -84,20 +83,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     # Startup
     logger.info("Starting CMS Pricing API", version=settings.app_version)
-    
-    # Create database tables (skip in test environment where Alembic handles this)
-    # Skip if we're in a test environment or if tables already exist
-    try:
-        # Check if we're in a test environment by looking for pytest
-        import sys
-        is_test_env = "pytest" in sys.modules or any("test" in arg for arg in sys.argv)
-        
-        if not is_test_env:
-            Base.metadata.create_all(bind=engine)
-    except Exception:
-        # If anything goes wrong, just skip table creation
-        pass
-    
+
     # Initialize cache
     await cache_manager.initialize()
     

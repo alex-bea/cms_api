@@ -20,6 +20,34 @@ import structlog
 logger = structlog.get_logger()
 
 
+def effective_start_for_quarter(
+    product_year: Any,
+    quarter_vintage: Optional[str] = None,
+    revision: Optional[str] = None,
+) -> datetime:
+    """Return the CMS release effective start date for a year/quarter pair.
+
+    CMS RVU releases use A-D revision letters for Jan/Apr/Jul/Oct updates.
+    This helper intentionally models effective dates, not publication dates.
+    """
+    year_match = re.search(r"20\d{2}", str(product_year or ""))
+    year = int(year_match.group(0)) if year_match else datetime.utcnow().year
+
+    quarter_number: Optional[int] = None
+    if quarter_vintage:
+        quarter_match = re.search(r"Q([1-4])", str(quarter_vintage), re.I)
+        if quarter_match:
+            quarter_number = int(quarter_match.group(1))
+
+    if quarter_number is None and revision:
+        revision_quarter = {"A": 1, "B": 2, "C": 3, "D": 4}
+        quarter_number = revision_quarter.get(str(revision).strip().upper())
+
+    quarter_number = quarter_number or 1
+    start_month = {1: 1, 2: 4, 3: 7, 4: 10}[quarter_number]
+    return datetime(year, start_month, 1)
+
+
 def extract_vintage_metadata(
     manifest_path: Optional[Path] = None,
     release_id: Optional[str] = None,
@@ -252,4 +280,3 @@ def validate_vintage_metadata(metadata: Dict[str, Any]) -> list:
             errors.append(f"Invalid quarter_vintage format: {qv}")
     
     return errors
-

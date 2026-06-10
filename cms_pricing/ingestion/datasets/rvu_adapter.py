@@ -27,7 +27,10 @@ import structlog
 from datetime import datetime
 
 from ..contracts.ingestor_spec import RawBatch, AdaptedBatch, SourceFile
-from ..metadata.vintage_extractor import extract_vintage_metadata
+from ..metadata.vintage_extractor import (
+    effective_start_for_quarter,
+    extract_vintage_metadata,
+)
 from .rvu_spec import RVU_DATASETS, DatasetSpec
 
 logger = structlog.get_logger()
@@ -464,12 +467,21 @@ def _build_parser_metadata(
         context.setdefault("release_letter", vintage_context.get("revision") or "D")
 
     context.setdefault("source_release", f"RVU{context['product_year']}{context.get('release_letter', '')}")
+    context.setdefault(
+        "effective_from",
+        effective_start_for_quarter(
+            context.get("product_year"),
+            context.get("quarter_vintage"),
+            context.get("release_letter"),
+        ),
+    )
 
     metadata = {
         "release_id": release_id,
         "product_year": context.get("product_year"),
         "quarter_vintage": context.get("quarter_vintage"),
         "vintage_date": context.get("vintage_date"),
+        "effective_from": context.get("effective_from"),
         "file_sha256": _sha256(file_bytes),
         "source_uri": source_file.url if source_file else "",
         "schema_id": spec.schema_id,
