@@ -265,6 +265,31 @@ def _assert_publish_invariants(
         )
 
 
+def _assert_snapshot_effective_dates(
+    snapshot_registrations: Iterable[Dict[str, Any]],
+    release_id: str,
+) -> None:
+    expected_effective = RVUIngestor._release_effective_from(release_id)
+    if expected_effective is None:
+        return
+
+    expected_value = expected_effective.isoformat()
+    mismatches = [
+        {
+            "dataset_id": entry.get("dataset_id"),
+            "release_id": entry.get("release_id"),
+            "effective_from": entry.get("effective_from"),
+            "expected_effective_from": expected_value,
+        }
+        for entry in snapshot_registrations
+        if entry.get("effective_from") != expected_value
+    ]
+    if mismatches:
+        raise LiveCMSValidationError(
+            f"Snapshot effective dates do not match {release_id} effective start: {mismatches}"
+        )
+
+
 async def run_live_rvu_validation(config: LiveCMSValidationConfig) -> Dict[str, Any]:
     started_at = datetime.now(timezone.utc)
     output_dir = Path(config.output_dir)
@@ -340,6 +365,10 @@ async def run_live_rvu_validation(config: LiveCMSValidationConfig) -> Dict[str, 
             publish,
             config.required_datasets,
             config.min_total_records,
+        )
+        _assert_snapshot_effective_dates(
+            snapshot_service.registered,
+            selected_release_id,
         )
 
         schema_validation = normalize.get("schema_validation") or {}
