@@ -325,6 +325,13 @@ def _scale_cf_to_usd(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with anesthesia_cf_usd column (USD decimal)
     """
+    if 'anesthesia_cf_raw' not in df.columns and 'anesthesia_cf_qp_raw' in df.columns:
+        logger.warning(
+            "Only qualifying APM anesthesia CF was present; using it as fallback",
+            note="Current canonical schema stores one anesthesia CF value",
+        )
+        df['anesthesia_cf_raw'] = df['anesthesia_cf_qp_raw']
+
     if 'anesthesia_cf_raw' not in df.columns:
         raise ParseError(
             "Missing anesthesia_cf_raw column for scaling. "
@@ -763,13 +770,32 @@ def _normalize_column_names(df: pd.DataFrame, alias_map: Dict[str, str]) -> pd.D
     """
     norm = {}
     for c in df.columns:
-        cc = str(c).lower().strip().replace('\ufeff', '').replace('\xa0', ' ')
-        cc = ' '.join(cc.split())  # Collapse whitespace
-        norm[c] = alias_map.get(cc, cc).strip().replace(' ', '_')
+        norm[c] = _canonical_column_name(c, alias_map)
     
     df = df.rename(columns=norm)
     
     return df
+
+
+def _canonical_column_name(column_name: Any, alias_map: Dict[str, str]) -> str:
+    """Normalize ANES columns, including 2026 dual-APM CF headers."""
+    cc = str(column_name).lower().strip().replace('\ufeff', '').replace('\xa0', ' ')
+    cc = ' '.join(cc.split())
+
+    alias = alias_map.get(cc)
+    if alias:
+        return alias
+
+    normalized_hyphen = cc.replace('-', ' ')
+    normalized_hyphen = ' '.join(normalized_hyphen.split())
+    if 'national anes cf' in normalized_hyphen:
+        if normalized_hyphen.startswith('non qualifying apm'):
+            return 'anesthesia_cf_raw'
+        if normalized_hyphen.startswith('qualifying apm'):
+            return 'anesthesia_cf_qp_raw'
+        return 'anesthesia_cf_raw'
+
+    return cc.replace(' ', '_')
 
 
 def _load_schema(schema_id: str) -> dict:

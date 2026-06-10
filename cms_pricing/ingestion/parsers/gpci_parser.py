@@ -19,6 +19,7 @@ Expected Rows: 100-120 (~109 Medicare localities)
 import hashlib
 import time
 import re
+import csv
 from typing import IO, Dict, Any, Tuple, Optional
 from io import BytesIO, StringIO
 from datetime import datetime
@@ -219,6 +220,14 @@ def parse_gpci(
     # Initialize rejects
     rejects_df = pd.DataFrame()
 
+    required_cols = ['mac', 'locality_code', 'gpci_work', 'gpci_pe', 'gpci_mp']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        raise ParseError(
+            f"Missing required GPCI columns: {missing_cols}. "
+            f"Available columns: {df.columns.tolist()}"
+        )
+
     # Step 4: Cast dtypes
     df = _cast_dtypes(df, metadata)
     
@@ -410,7 +419,7 @@ def _parse_fixed_width(content: bytes, encoding: str, layout: Dict) -> pd.DataFr
 
 def _parse_csv(content: bytes, encoding: str) -> pd.DataFrame:
     """
-    Parse CSV with dialect sniffing.
+    Parse CSV/TXT with dialect sniffing.
     
     Skips first 2 rows (CMS standard header format):
     - Row 1: Document title
@@ -420,7 +429,19 @@ def _parse_csv(content: bytes, encoding: str) -> pd.DataFrame:
     Raises ParseError on duplicate headers.
     """
     decoded = content.decode(encoding, errors='replace')
-    df = pd.read_csv(StringIO(decoded), skiprows=2, dtype=str)
+    if not decoded.strip():
+        raise ParseError("Empty GPCI file")
+
+    try:
+        df = pd.read_csv(
+            StringIO(decoded),
+            skiprows=2,
+            dtype=str,
+            sep=None,
+            engine='python',
+        )
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, csv.Error) as exc:
+        raise ParseError(f"Failed to parse delimited GPCI file: {exc}") from exc
     
     # Duplicate header guard (pandas mangles to .1, .2, etc.)
     dupes = [c for c in df.columns if '.' in str(c) and '.1' in str(c)]
@@ -456,15 +477,35 @@ def _normalize_column_names(df: pd.DataFrame, alias_map: Dict[str, str]) -> pd.D
     """
     norm = {}
     for c in df.columns:
-        # Strip BOM, NBSP, whitespace
-        cc = str(c).replace('\ufeff', '').replace('\xa0', ' ').strip().lower()
-        # Collapse multiple spaces
-        cc = ' '.join(cc.split())
-        # Apply alias map, convert spaces to underscores
-        norm[c] = alias_map.get(cc, cc).strip().replace(' ', '_')
+        norm[c] = _canonical_column_name(c, alias_map)
     
     df = df.rename(columns=norm)
     return df
+
+
+def _canonical_column_name(column_name: Any, alias_map: Dict[str, str]) -> str:
+    """Normalize CMS GPCI columns, including year-prefixed release headers."""
+    cc = str(column_name).replace('\ufeff', '').replace('\xa0', ' ').strip().lower()
+    cc = ' '.join(cc.split())
+
+    alias = alias_map.get(cc)
+    if alias:
+        return alias
+
+    no_footnote = re.sub(r'\*+$', '', cc).strip()
+    alias = alias_map.get(no_footnote)
+    if alias:
+        return alias
+
+    yearless = re.sub(r'^\d{4}\s+', '', no_footnote).strip()
+    if re.fullmatch(r'pw gpci(?: \(with 1\.0 floor\))?', yearless):
+        return 'gpci_work'
+    if yearless == 'pe gpci':
+        return 'gpci_pe'
+    if yearless == 'mp gpci':
+        return 'gpci_mp'
+
+    return no_footnote.replace(' ', '_')
 
 
 def _cast_dtypes(df: pd.DataFrame, metadata: Dict) -> pd.DataFrame:
@@ -481,9 +522,7 @@ def _cast_dtypes(df: pd.DataFrame, metadata: Dict) -> pd.DataFrame:
     # Dates
     if 'effective_from' not in df.columns:
         # Derive from quarter: A=Jan1, B=Apr1, C=Jul1, D=Oct1
-        quarter = metadata.get('quarter_vintage', 'A')[-1]  # Extract letter
-        month_map = {'A': '01', 'B': '04', 'C': '07', 'D': '10'}
-        month = month_map.get(quarter, '01')
+        month = _effective_month_from_quarter(metadata.get('quarter_vintage', 'A'))
         df['effective_from'] = pd.to_datetime(f"{metadata['product_year']}-{month}-01")
     else:
         df['effective_from'] = pd.to_datetime(df['effective_from'], errors='coerce')
@@ -504,15 +543,29 @@ def _cast_dtypes(df: pd.DataFrame, metadata: Dict) -> pd.DataFrame:
     return df
 
 
+def _effective_month_from_quarter(quarter_vintage: Any) -> str:
+    """Map CMS A/B/C/D and Q1/Q2/Q3/Q4 vintages to effective-start months."""
+    value = str(quarter_vintage or 'A').upper().replace('_', '')
+    if value in {'A', 'B', 'C', 'D'}:
+        quarter = value
+    elif 'Q' in value:
+        quarter = {'1': 'A', '2': 'B', '3': 'C', '4': 'D'}.get(value.split('Q')[-1][:1], 'A')
+    else:
+        quarter = value[-1:]
+
+    month_map = {'A': '01', 'B': '04', 'C': '07', 'D': '10'}
+    return month_map.get(quarter, '01')
+
+
 def _validate_gpci_ranges(df: pd.DataFrame) -> pd.DataFrame:
     """
     Return rows that violate hard range thresholds.
     
     Soft bounds [0.30, 2.00]: warn (logged, not rejected)
-    Hard bounds [0.20, 2.50]: fail (rejected)
+    Hard bounds [0.20, 2.75]: fail (rejected)
     """
     warn_low, warn_high = 0.30, 2.00
-    hard_low, hard_high = 0.20, 2.50
+    hard_low, hard_high = 0.20, 2.75
     
     # Convert to numeric for comparison (canonicalize_numeric_col returns strings)
     gpci_work_num = pd.to_numeric(df['gpci_work'], errors='coerce')
@@ -548,9 +601,9 @@ def _validate_gpci_ranges(df: pd.DataFrame) -> pd.DataFrame:
         # More specific error message for negatives
         has_negatives = negative_mask[mask].any()
         if has_negatives:
-            rejects['validation_error'] = 'GPCI value is negative or out of hard bounds [0.20, 2.50]'
+            rejects['validation_error'] = 'GPCI value is negative or out of hard bounds [0.20, 2.75]'
         else:
-            rejects['validation_error'] = 'GPCI value out of hard bounds [0.20, 2.50]'
+            rejects['validation_error'] = 'GPCI value out of hard bounds [0.20, 2.75]'
         rejects['validation_severity'] = 'BLOCK'
         rejects['validation_rule'] = 'gpci_hard_range'
         

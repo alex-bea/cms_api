@@ -43,9 +43,9 @@ def fixtures_dir():
 @pytest.mark.gpci
 def test_gpci_out_of_range_rejects(fixtures_dir):
     """
-    GPCI values outside hard bounds [0.20, 2.50] are rejected.
+    GPCI values outside hard bounds [0.20, 2.75] are rejected.
     
-    Fixture: GPCI work=3.0, PE=3.5 (above 2.50)
+    Fixture: GPCI work=3.0, PE=3.5 (above 2.75)
     Expected: Rows rejected with validation_error
     """
     fixture = fixtures_dir / 'out_of_range.csv'

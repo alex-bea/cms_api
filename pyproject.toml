@@ -110,6 +110,7 @@ markers = [
     "edge_case: marks tests as edge case/real-world quirk tests",
     "negative: marks tests as negative/error case tests",
     "real_source: marks tests for authentic CMS source file parity (QTS §5.1.3)",
+    "live_cms: marks tests that download current CMS source files and should run only when explicitly enabled",
     "ingestor: marks tests as ingestor/parser tests",
     "gpci: marks tests related to GPCI parser",
     "prd_docs: marks tests related to PRD documentation",
