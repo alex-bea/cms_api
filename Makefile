@@ -121,8 +121,8 @@ doc-reports: ## Generate documentation summary reports
 	python tools/generate_compliance_report.py
 
 task-hygiene: ## Sweep task tracking helpers (checkboxes, TODOs)
-	python tools/md_checkbox_scan.py
-	python tools/todo_lint.py
+	python tools/md_checkbox_scan.py --all
+	python tools/todo_lint.py --all
 
 pre-commit: ## Install pre-commit hooks
 	poetry run pre-commit install
