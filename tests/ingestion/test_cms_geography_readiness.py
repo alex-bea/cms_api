@@ -2,10 +2,7 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 
-from cms_pricing.ingestion.parsers.cms_geography import (
-    ParsedGeographyRow,
-    SourceStats,
-)
+from cms_pricing.ingestion.parsers.cms_geography import ParsedGeographyRow, SourceStats
 from cms_pricing.ingestion.validators.cms_geography_readiness import (
     CMS_ZIP_LOCALITY_2025Q4_THRESHOLDS,
     StateLocalityPair,

@@ -5,24 +5,23 @@ This module provides shared test fixtures and configuration that follows
 the QA Testing Standard (QTS) v1.0 requirements.
 """
 
-import pytest
 import asyncio
+import importlib.util
+from typing import Any, Dict
+
+import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from sqlalchemy.exc import ProgrammingError, OperationalError
-import importlib.util
-from typing import Dict, Any
 
-from fastapi.testclient import TestClient
-
-from cms_pricing.main import app
 from cms_pricing.config import settings
 from cms_pricing.database import get_db
+from cms_pricing.main import app
 
 # Import all models to ensure they're registered
 from cms_pricing.models.plans import Base as PlansBase
-
 
 GEOGRAPHY_MODULE = "cms_pricing.ingestion.geography"
 SCHEDULER_MODULE = "cms_pricing.ingestion.scheduler"
@@ -179,6 +178,7 @@ def test_data_dir():
     """Create test data directory with sample data under tmp or RVU_TEST_DATA_DIR."""
     import os
     import tempfile
+
     from tests.fixtures.rvu.test_dataset_creator import RVUTestDatasetCreator
 
     base_dir = os.getenv("RVU_TEST_DATA_DIR")

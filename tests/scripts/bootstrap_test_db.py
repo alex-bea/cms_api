@@ -17,14 +17,14 @@ import argparse
 import logging
 import os
 import sys
-from pathlib import Path
 from datetime import date
+from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.orm import Session
 
 try:
     from alembic import command

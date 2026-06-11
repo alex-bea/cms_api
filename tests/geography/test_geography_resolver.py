@@ -5,12 +5,12 @@ Tests ZIP+4-first resolution, strict mode, effective dating, and edge cases
 per PRD requirements.
 """
 
-import pytest
 from datetime import date
 
-from cms_pricing.services.geography import GeographyService
-from cms_pricing.models.geography import Geography
+import pytest
 
+from cms_pricing.models.geography import Geography
+from cms_pricing.services.geography import GeographyService
 
 GEOGRAPHY_RESOLVER_TEST_ZIPS = (
     "01434",

@@ -1,7 +1,7 @@
 import os
 
-from cms_pricing.config import settings
 from cms_pricing import database
+from cms_pricing.config import settings
 from scripts.bootstrap_local_db import configure_database_url
 
 
