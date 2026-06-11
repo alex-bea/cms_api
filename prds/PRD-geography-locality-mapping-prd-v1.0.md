@@ -31,7 +31,11 @@ Geography ingestion or resolver updates must reconcile against **REF-geography-s
 - **Enrichment & Crosswalks:** Join to MAC/locality dictionaries, maintain nearest-ZIP lookup tables, compute digest-aware caches, emit daily gap reports  
 - **Outputs:** `/curated/geography/{vintage}/zip_locality.parquet`, `zip_locality_zip5.parquet`, `nearest_zip_lookup.parquet`, alongside latest-effective resolver view `vw_geo_locality_current`  
 - **SLAs:** Land within ≤5 business days of CMS posting; publish + refresh resolver caches within ≤2 business days; digests recorded for reproducibility  
-- **Deviations:** None—exceptions require ADR and PRD update
+- **Deviations:** The current verified CMS ZIP-locality source is `2025Q4`.
+  Local 2026 RVU preflight uses explicit latest-active/open-ended geography
+  behavior so `2026-07-01` can be smoked before a newer ZIP-locality package is
+  verified. Production default remains strict source-window mode unless an
+  execution runbook explicitly approves latest-active behavior.
 
 ## API Readiness & Distribution
 - **Resolver Surface:** `POST /geography/resolve` (internal) returns locality + trace metadata including dataset digest  
@@ -41,6 +45,7 @@ Geography ingestion or resolver updates must reconcile against **REF-geography-s
 - **2025-09-26**: Initial draft of Geography PRD with **ZIP+4-first mandate**, effective-dating rules, schema, ingestion steps, QA, and trace requirements.
 - **2025-09-26**: Clarifications applied — non-strict default with explicit fallback policy; **nearest fallback constrained to same state**; carrier exposure optional; locality-name dictionary loader added; annual-as-quarter fallback allowed; ZIP+4 normalization; cache strategy clarified (digest-aware by default, TTL optional); conversational strict-mode errors; per-request radius override; daily gap report methodology.
 - **2026-06-11**: Local/dev real CMS ZIP-locality loader added for `ZIP5_OCT2025.txt` and `ZIP9_OCT2025.txt`; MPFS GPCI lookup now preserves source geography state while applying a narrow pricing-side crosswalk for CMS special source-state codes (`AS/FM/GU/MH/MP/PW -> HI`, `EK/WK -> KS`, `EM/WM -> MO`, `VA 01 -> DC`).
+- **2026-06-11**: Production-style CMS ZIP-locality ingestion is locally production-ready for RVU/geography preflight: strict `2025Q4` source-window mode correctly blocks `2026-07-01`, explicit latest-active mode passes, local smoke resolves `94110 -> CA/05/01112` and `66012 -> EK/00/05202`, and production mutation remains blocked pending an approved execution runbook.
 
 ---
 
@@ -143,6 +148,7 @@ Define how we ingest and use CMS geography mapping to resolve a service **ZIP(+4
 - **Nearest‑ZIP fallback policy:** Enforce **same‑state constraint** using `geography.state` (from ZIP9). Nearest fallback must **not** cross state lines.
 - **Edge cases:** Preserve leading zeros in ZIP+4; handle territories (PR, VI, GU, AS, MP) explicitly—return a friendly error if unsupported; APO/FPO/DPO may not map to standard localities and should be rejected with an actionable message.
 - **MPFS GPCI lookup:** Preserve `geography.state` exactly as supplied by CMS ZIP-locality files. Pricing engines may apply a scoped GPCI-state lookup crosswalk only when joining to GPCI rows whose state differs from CMS ZIP-locality special source-state codes. Current mappings: `AS/FM/GU/MH/MP/PW -> HI`, `EK/WK -> KS`, `EM/WM -> MO`, and `VA` locality `01 -> DC`.
+- **Production-readiness checkpoint:** `docs/workbench/DOC-cms-pricing-production-preflight-runbook.md` and `docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md` define the current RVU/geography preflight. The local evidence passed with the verified ZIP-locality digest `b14c414de73256ac9594d7cb0a58a75214ba04f4fe043468ffda507c3dd75c2e`, zero rejected rows, zero duplicate source keys, locality `00` preserved, `94110 -> CA/05/01112`, and `66012 -> EK/00/05202`.
 
 
 1. **Download**: Use resilient downloader (ETag/Last-Modified, retries, checksum) to fetch CMS ZIP archives.

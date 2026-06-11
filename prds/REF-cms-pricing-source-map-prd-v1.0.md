@@ -39,7 +39,7 @@ Provide a canonical “work-backwards” map of every CMS pricing dataset we ing
 
 | Source | Landing / Discovery | Download Artifacts | Authoritative Fields | Implementation Notes |
 |---|---|---|---|---|
-| **CMS ZIP→Locality & ZIP9** | https://www.cms.gov/medicare/payment/fee-schedules | `zip-code-carrier-locality-file-revised-08/14/2025.zip` containing `ZIP5_OCT2025.txt/.xlsx` with `ZIP5lyout.txt`, plus `ZIP9_OCT2025.txt` with `ZIP9lyout.txt` | ZIP5 layout defines `State`, `Zip Code`, `Carrier`, `Pricing Locality`, `Rural Indicator`, `Bene Lab`, `Year/Quarter`. ZIP9 layout adds `Plus Four Flag`, range columns, and override indicators. Schema contracts: `cms_zip_locality_v1.json`, `cms_zip9_overrides_v1.json`. | Local/dev loader `scripts/load_cms_geography_local.py` parses ZIP5/ZIP9 into runtime `geography` with digest/provenance; production DIS ingesters still need promotion from their current target-table/replay behavior. |
+| **CMS ZIP→Locality & ZIP9** | https://www.cms.gov/medicare/payment/fee-schedules | `zip-code-carrier-locality-file-revised-08/14/2025.zip` containing `ZIP5_OCT2025.txt/.xlsx` with `ZIP5lyout.txt`, plus `ZIP9_OCT2025.txt` with `ZIP9lyout.txt` | ZIP5 layout defines `State`, `Zip Code`, `Carrier`, `Pricing Locality`, `Rural Indicator`, `Bene Lab`, `Year/Quarter`. ZIP9 layout adds `Plus Four Flag`, range columns, and override indicators. Schema contracts: `cms_zip_locality_v1.json`, `cms_zip9_overrides_v1.json`. | Production-style geography ingestion now parses ZIP5/ZIP9 through the shared parser and can publish runtime `geography` with digest/provenance. Local RVU/geography preflight passed; production mutation remains blocked pending an approved execution runbook. |
 | **CMS RVU Bundles (PPRRVU, GPCI, OPPSCAP, ANES, Locality)** | https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files | Quarterly `rvu25[A-D].zip` containing `PPRRVU25_*.csv/txt/xlsx`, `GPCI2025.*`, `OPPSCAP_*.*`, `ANES2025.*`, `25LOCCO.*`, plus layout PDF (`RVU25D.pdf`). | Schema contracts in `cms_pricing/ingestion/contracts/`: `cms_pprrvu_v1.0.json`, `cms_gpci_v1.0.json`, `cms_oppscap_v1.0.json`, `cms_anescf_v1.0.json`, `cms_localitycounty_v1.0.json`. Core fields cover `HCPCS`, modifiers, RVU components, status indicators, locality IDs, conversion factors. | `RVUIngestor` (thin orchestrator, 990 lines) delegates parsing to `adapt_rvu_raw_data` in `datasets/rvu_adapter.py` and database loading to `load_rvu_dataframes` in `datasets/rvu_loaders.py` via `DatasetSpec` pattern. Metadata fallback now calls `extract_vintage_metadata()` so month-based filenames (e.g., `PPRRVU2025_Oct.txt`) map to the correct quarter/layout without manual overrides. |
 | **CMS MPFS (Conversion Factors, Abstracts, National Payment)** | https://www.cms.gov/medicare/medicare-fee-for-service-payment/physicianfeesched | Reuse RVU/GPCI snapshots via `DatasetSnapshotService`; fetch conversion factor ZIP/XLSX directly with `ConversionFactorFetcher`. Optional CMS national payment files for QA only. | MPFS-specific schema contracts are loaded via `mpfs_ingestor` (`mpfs_rvu`, `mpfs_cf_vintage`, `mpfs_payment_curated`, etc.). Expected columns include `hcpcs`, `status_code`, `global_days`, RVUs, GPCI indices, conversion factor, provenance metadata. | `MPFSIngestor` orchestrates reuse of RVU data, lands CF artifacts, computes facility/non-facility payments, and publishes curated tables for `/v1/mpfs`. |
 | **CMS OPPS Quarterly Addenda** | https://www.cms.gov/medicare/payment/prospective-payment-systems/hospital-outpatient-pps/quarterly-addenda-updates | ZIP bundles per quarter (e.g., `july-2025-opps-addendum.zip`, `...-addendum-b.zip`) containing Section 508 CSVs and XLSX workbooks for Addendum A & B. | `cms_opps_v1.0.json` defines tables: `opps_apc_payment` (APC, relative weight, payment rate, effective dates), `opps_hcpcs_crosswalk` (HCPCS, modifier, status indicator, APC), `opps_rates_enriched` (facility CCN, CBSA, wage index). | `CMSOPPSScraper` automates discovery/download; `opps_ingestor` scaffolding exists but lacks adapters/enrichers to publish the data. |
@@ -164,7 +164,7 @@ Each appendix below lists every artifact recorded in the most recent discovery m
 
 - **Primary artifact:** Refer to §2 Source Inventory row for `zip_code_carrier_locality.zip` (ZIP5 + ZIP9 package).
 
-- **Lineage:** `_land_data` downloads the package → validators enforce structural rules → normalization projects rows into `CMSZipLocality` models → enrichment decorates locality context → publish writes curated parquet and records ingestion runs. Geography resolvers and `/api/v1/rvu` locality endpoints consume the outputs.
+- **Lineage:** `_land_data` downloads the package → shared parser scans ZIP5/ZIP9 source rows → validation gates enforce source cleanliness, row-count floors, locality `00`, probe ZIP, and valuation-date behavior → production-style publication writes runtime `geography` rows and records provenance. Geography resolvers and RVU/MPFS smoke checks consume the runtime geography output.
 
 #### CMS RVU Bundles (PPRRVU, GPCI, OPPSCAP, ANES, Locality)
 - **Manifest:** `data/manifests/cms_rvu/cms_rvu_manifest_20251004_002058.jsonl`.
@@ -202,14 +202,14 @@ The lineage below connects discovery manifests to DIS pipeline stages and public
 
 | Filename | Landing URL | Content Type | Vintage | Notes |
 |---|---|---|---|---|
-| `zip_code_carrier_locality.zip` | https://www.cms.gov/files/zip/zip-code-carrier-locality-file-revised-08/14/2025.zip | application/zip | 2025-08-14 | Shared ZIP5 + ZIP9 package; land stage `_land_data` stores to `data/ingestion/cms_production/raw/<release>/files`. |
+| `zip_code_carrier_locality.zip` | https://www.cms.gov/files/zip/zip-code-carrier-locality-file-revised-08/14/2025.zip | application/zip | 2025-08-14 | Shared ZIP5 + ZIP9 package; verified digest `b14c414de73256ac9594d7cb0a58a75214ba04f4fe043468ffda507c3dd75c2e`; land stage `_land_data` stores to `data/ingestion/cms_production/raw/<release>/files`. |
 
 #### CMS ZIP→Locality & ZIP9
 - **Discover / Land**: `_land_data` downloads `zip_code_carrier_locality.zip` into `data/ingestion/cms_production/raw/<release>/files` (`cms_pricing/ingestion/ingestors/cms_zip_locality_production_ingester.py`).
 - **Validate**: `CMSZipLocalityValidator.run_validations` enforces structural + domain constraints (`cms_pricing/validators/cms_zip_locality_validator.py`).
-- **Normalize**: `_normalize_data` projects ZIP5/ZIP9 rows into `CMSZipLocality` models (`cms_pricing/models/nearest_zip.py`).
+- **Normalize**: `_normalize_data` delegates ZIP5/ZIP9 fixed-width parsing to `cms_pricing.ingestion.parsers.cms_geography` and preserves ZIP5, plus4, state, carrier, locality, rural flag, source quarter, and digest.
 - **Enrich**: `_enrich_data` decorates locality context and provenance metadata.
-- **Publish**: `_publish_data` writes curated parquet + metadata under `data/ingestion/cms_production/curated/<release>` and records the run via `IngestionRunsManager`.
+- **Publish**: `_publish_data` writes runtime `geography` rows plus curated metadata under `data/ingestion/cms_production/curated/<release>` and records the run via `IngestionRunsManager`.
 - **API**: Geography + RVU fallback logic consumes these tables via resolver services and `/api/v1/rvu` locality endpoints.
 
 #### CMS RVU Bundles (PPRRVU, GPCI, OPPSCAP, ANES, Locality)
@@ -287,3 +287,4 @@ Engineers must complete the following before writing code for any CMS pricing in
 | Date | Version | Author | Notes |
 |---|---|---|---|
 | 2025-10-04 | 1.0 | Pricing Platform Eng | Initial publication of CMS pricing source mapping and work-backwards checklist. |
+| 2026-06-11 | 1.1 | Pricing Platform Eng | Recorded production-style CMS ZIP-locality runtime geography readiness, RVU/geography local preflight evidence, and production mutation gate. |

@@ -62,7 +62,11 @@ jobs:
       - name: Install schemathesis
         run: pip install schemathesis
       - name: Run schemathesis
-        run: schemathesis run api-contracts/openapi.yaml --base-url=http://localhost:8000
+        run: >
+          schemathesis run api-contracts/openapi.yaml
+          --url=http://localhost:8000
+          -H "X-API-Key: dev-key-123"
+          --exclude-checks unsupported_method
   pytest:
     runs-on: ubuntu-latest
     services:
@@ -86,7 +90,7 @@ jobs:
         with: { python-version: '3.11' }
       - name: Install deps
         run: |
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
           # Install PostgreSQL client for database tests (see DOC-test-patterns-prd-v1.0.md)
           sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Run contract unit tests

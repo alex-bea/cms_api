@@ -10,30 +10,46 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'c056bb717c6e'
-down_revision = '98567c0bbfa8'
+revision = "c056bb717c6e"
+down_revision = "98567c0bbfa8"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
+    inspector = sa.inspect(op.get_bind())
+    if not inspector.has_table("locality_counties"):
+        op.execute(
+            """
+            DO $$
+            BEGIN
+                RAISE NOTICE 'Table locality_counties does not exist yet (fresh database) - skipping fee_schedule_area column resize';
+            END $$;
+        """
+        )
+        return
+
     # Increase fee_schedule_area column size to accommodate full locality descriptions
     # Source file field is 70 characters wide, so 128 provides adequate headroom
     op.alter_column(
-        'locality_counties',
-        'fee_schedule_area',
+        "locality_counties",
+        "fee_schedule_area",
         existing_type=sa.VARCHAR(length=10),
         type_=sa.String(length=128),
-        existing_nullable=True
+        existing_nullable=True,
     )
 
 
 def downgrade() -> None:
+    inspector = sa.inspect(op.get_bind())
+    if not inspector.has_table("locality_counties"):
+        return
+
     # Revert to original 10 character limit (WARNING: will truncate existing data)
     op.alter_column(
-        'locality_counties',
-        'fee_schedule_area',
+        "locality_counties",
+        "fee_schedule_area",
         existing_type=sa.String(length=128),
         type_=sa.VARCHAR(length=10),
-        existing_nullable=True
+        existing_nullable=True,
     )

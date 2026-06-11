@@ -24,8 +24,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = '004_gpci_v12_compat_view'
-down_revision = '003_gpci_v13_add_mac_to_nk'
+revision = "004_gpci_v12_compat_view"
+down_revision = "003_gpci_v13_add_mac_to_nk"
 branch_labels = None
 depends_on = None
 
@@ -33,13 +33,26 @@ depends_on = None
 def upgrade() -> None:
     """
     Create v1.2 backwards compatibility view.
-    
+
     Selects first MAC per (locality_id, effective_start) for ambiguous localities.
-    
+
     WARNING: This is NOT accurate for ambiguous localities (e.g., locality '00').
     Consumers should migrate to v1.3 queries that include MAC.
     """
-    op.execute("""
+    inspector = sa.inspect(op.get_bind())
+    if not inspector.has_table("gpci_indices"):
+        op.execute(
+            """
+            DO $$
+            BEGIN
+                RAISE NOTICE 'Table gpci_indices does not exist yet (fresh database) - skipping optional v1.2 compatibility view';
+            END $$;
+        """
+        )
+        return
+
+    op.execute(
+        """
         CREATE OR REPLACE VIEW gpci_indices_v12_compat AS
         SELECT DISTINCT ON (locality_id, effective_start)
             id,
@@ -57,10 +70,12 @@ def upgrade() -> None:
             row_num
         FROM gpci_indices
         ORDER BY locality_id, effective_start, mac;
-    """)
-    
+    """
+    )
+
     # Add comment explaining limitations
-    op.execute("""
+    op.execute(
+        """
         COMMENT ON VIEW gpci_indices_v12_compat IS 
         'GPCI v1.2 backwards compatibility view (DEPRECATED).
          
@@ -87,10 +102,12 @@ def upgrade() -> None:
          Migration date: 2025-10-21
          Sunset date: 2026-04-01 (expected)
          See: prds/SRC-gpci.md §6 for schema evolution details';
-    """)
-    
+    """
+    )
+
     # Log creation
-    op.execute("""
+    op.execute(
+        """
         DO $$ 
         BEGIN
             RAISE NOTICE '✅ Created GPCI v1.2 compatibility view';
@@ -98,17 +115,19 @@ def upgrade() -> None:
             RAISE NOTICE '   WARNING: Returns arbitrary MAC for ambiguous localities';
             RAISE NOTICE '   Recommend: Migrate consumers to v1.3 (include MAC in queries)';
         END $$;
-    """)
+    """
+    )
 
 
 def downgrade() -> None:
     """Drop v1.2 compatibility view."""
     op.execute("DROP VIEW IF EXISTS gpci_indices_v12_compat;")
-    
-    op.execute("""
+
+    op.execute(
+        """
         DO $$ 
         BEGIN
             RAISE NOTICE '✅ Dropped GPCI v1.2 compatibility view';
         END $$;
-    """)
-
+    """
+    )
