@@ -6,35 +6,29 @@ per PRD requirements.
 """
 
 import pytest
-import asyncio
-from datetime import date, datetime
-from unittest.mock import Mock, patch
-from sqlalchemy.orm import Session
+from datetime import date
 
 from cms_pricing.services.geography import GeographyService
 from cms_pricing.models.geography import Geography
-from cms_pricing.database import SessionLocal
-from cms_pricing.schemas.geography import GeographyResolveResponse, GeographyCandidate
 
 
-class TestGeographyResolver:
-    """Test suite for geography resolution service"""
-    
-    @pytest.fixture
-    def db_session(self):
-        """Create test database session"""
-        return SessionLocal()
-    
-    @pytest.fixture
-    def geography_service(self, db_session):
-        """Create geography service with test database"""
-        return GeographyService(db=db_session)
-    
-    @pytest.fixture
-    def sample_geography_data(self, db_session):
-        """Create sample geography data for testing"""
-        # Create test records
-        test_records = [
+@pytest.fixture
+def db_session(test_db_session):
+    """Use the shared migrated test database session."""
+    return test_db_session
+
+
+@pytest.fixture
+def geography_service(db_session):
+    """Create geography service with test database."""
+    return GeographyService(db=db_session)
+
+
+@pytest.fixture
+def sample_geography_data(db_session):
+    """Create sample geography data for testing."""
+    current_year = date.today().year
+    test_records = [
             # ZIP+4 records
             Geography(
                 zip5="01434", plus4="0001", has_plus4=1, state="MA", 
@@ -69,6 +63,22 @@ class TestGeographyResolver:
                 dataset_id="ZIP_LOCALITY", dataset_digest="test_digest_1",
                 created_at=date.today()
             ),
+            Geography(
+                zip5="02108", plus4=None, has_plus4=0, state="MA",
+                locality_id="05", locality_name="Boston",
+                carrier="10112", rural_flag=None,
+                effective_from=date(2025, 1, 1), effective_to=date(2025, 12, 31),
+                dataset_id="ZIP_LOCALITY", dataset_digest="test_digest_1",
+                created_at=date.today()
+            ),
+            Geography(
+                zip5="30303", plus4=None, has_plus4=0, state="GA",
+                locality_id="00", locality_name="Georgia",
+                carrier="10212", rural_flag=None,
+                effective_from=date(2025, 1, 1), effective_to=date(2025, 12, 31),
+                dataset_id="ZIP_LOCALITY", dataset_digest="test_digest_1",
+                created_at=date.today()
+            ),
             # Different effective period
             Geography(
                 zip5="10001", plus4=None, has_plus4=0, state="NY", 
@@ -79,18 +89,32 @@ class TestGeographyResolver:
                 created_at=date.today()
             ),
         ]
-        
-        # Add to database
-        for record in test_records:
-            db_session.add(record)
-        db_session.commit()
-        
-        yield test_records
-        
-        # Cleanup
-        for record in test_records:
-            db_session.delete(record)
-        db_session.commit()
+    test_records.append(
+        Geography(
+            zip5="94111", plus4=None, has_plus4=0, state="CA",
+            locality_id="5", locality_name="San Francisco",
+            carrier="01112", rural_flag=None,
+            effective_from=date(current_year, 1, 1),
+            effective_to=date(current_year, 12, 31),
+            dataset_id="ZIP_LOCALITY",
+            dataset_digest=f"test_digest_{current_year}",
+            created_at=date.today(),
+        )
+    )
+
+    for record in test_records:
+        db_session.add(record)
+    db_session.commit()
+
+    yield test_records
+
+    for record in test_records:
+        db_session.delete(record)
+    db_session.commit()
+
+
+class TestGeographyResolver:
+    """Test suite for geography resolution service"""
     
     @pytest.mark.asyncio
     async def test_zip4_exact_match(self, geography_service, sample_geography_data):
@@ -126,6 +150,29 @@ class TestGeographyResolver:
         assert result["match_level"] == "zip5"
         assert result["locality_id"] == "18"
         assert result["state"] == "CA"
+
+    @pytest.mark.asyncio
+    async def test_locality_id_preserves_leading_zero(self, geography_service, sample_geography_data):
+        """Test geography output preserves CMS-native locality strings like 05."""
+        result = await geography_service.resolve_zip(
+            zip5="02108", plus4=None, valuation_year=2025
+        )
+
+        assert result["match_level"] == "zip5"
+        assert result["locality_id"] == "05"
+        assert result["state"] == "MA"
+
+    @pytest.mark.asyncio
+    async def test_locality_zero_zero_is_not_normalized_to_benchmark(self, geography_service, sample_geography_data):
+        """Test CMS locality 00 is not normalized to benchmark locality 01."""
+        result = await geography_service.resolve_zip(
+            zip5="30303", plus4=None, valuation_year=2025
+        )
+
+        assert result["match_level"] == "zip5"
+        assert result["locality_id"] == "00"
+        assert result["locality_id"] != "01"
+        assert result["state"] == "GA"
     
     @pytest.mark.asyncio
     async def test_strict_mode_zip4_required(self, geography_service, sample_geography_data):
@@ -273,7 +320,7 @@ class TestGeographyResolver:
     @pytest.mark.asyncio
     async def test_default_valuation_year(self, geography_service, sample_geography_data):
         """Test default valuation year (current year)"""
-        result = await geography_service.resolve_zip(zip5="94110")
+        result = await geography_service.resolve_zip(zip5="94111")
         
         assert result["match_level"] == "zip5"
         assert result["locality_id"] == "5"
@@ -339,41 +386,34 @@ class TestGeographyInputNormalization:
 
 class TestGeographyAPI:
     """Test geography API endpoints"""
-    
-    @pytest.fixture
-    def client(self):
-        """Create test client"""
-        from fastapi.testclient import TestClient
-        from cms_pricing.main import app
-        return TestClient(app)
-    
-    def test_resolve_endpoint_basic(self, client):
+
+    def test_resolve_endpoint_basic(self, client, sample_geography_data):
         """Test basic geography resolve endpoint"""
-        response = client.get("/geo/resolve?zip=94110")
+        response = client.get("/geography/resolve?zip=94110")
         
         assert response.status_code == 200
         data = response.json()
         assert "locality_id" in data
         assert "match_level" in data
     
-    def test_resolve_endpoint_with_plus4(self, client):
+    def test_resolve_endpoint_with_plus4(self, client, sample_geography_data):
         """Test geography resolve with ZIP+4"""
-        response = client.get("/geo/resolve?zip=01434&plus4=0001")
+        response = client.get("/geography/resolve?zip=01434&plus4=0001&valuation_year=2025")
         
         assert response.status_code == 200
         data = response.json()
         assert data["match_level"] == "zip+4"
     
-    def test_resolve_endpoint_strict_mode(self, client):
+    def test_resolve_endpoint_strict_mode(self, client, sample_geography_data):
         """Test geography resolve with strict mode"""
-        response = client.get("/geo/resolve?zip=94110&plus4=9999&strict=true")
+        response = client.get("/geography/resolve?zip=94110&plus4=9999&strict=true")
         
         assert response.status_code == 400  # Should error in strict mode
     
-    def test_resolve_endpoint_parameters(self, client):
+    def test_resolve_endpoint_parameters(self, client, sample_geography_data):
         """Test geography resolve with all parameters"""
         response = client.get(
-            "/geo/resolve?"
+            "/geography/resolve?"
             "zip=94110&"
             "plus4=1234&"
             "valuation_year=2025&"
@@ -391,7 +431,7 @@ class TestGeographyAPI:
     
     def test_resolve_endpoint_invalid_zip(self, client):
         """Test geography resolve with invalid ZIP"""
-        response = client.get("/geo/resolve?zip=123")
+        response = client.get("/geography/resolve?zip=123")
         
         assert response.status_code == 400
 

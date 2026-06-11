@@ -5,10 +5,12 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy.orm import Session
 
 from cms_pricing.schemas.geography import GeographyResolveRequest, GeographyResolveResponse, GeographyCandidate
 from cms_pricing.schemas.geography_trace import GeographyTraceSummary
 from cms_pricing.auth import verify_api_key
+from cms_pricing.database import get_db
 from cms_pricing.services.geography import GeographyService
 from cms_pricing.services.geography_trace import GeographyTraceService
 from cms_pricing.services.geography_snapshot import GeographySnapshotService
@@ -30,7 +32,8 @@ async def resolve_geography(
     initial_radius_miles: int = Query(25, description="Initial radius for nearest ZIP search"),
     expand_step_miles: int = Query(10, description="Step size for radius expansion"),
     expose_carrier: bool = Query(False, description="Include carrier/MAC information in response"),
-    api_key: str = Depends(verify_api_key)
+    api_key: str = Depends(verify_api_key),
+    db: Session = Depends(get_db),
 ):
     """
     Resolve ZIP+4 to locality using ZIP+4-first hierarchy per PRD.
@@ -67,7 +70,7 @@ async def resolve_geography(
         )
     
     try:
-        geography_service = GeographyService()
+        geography_service = GeographyService(db)
         result = await geography_service.resolve_zip(
             zip5=zip,
             plus4=plus4,

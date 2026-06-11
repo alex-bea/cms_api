@@ -17,7 +17,7 @@ For **LOCALITY-SPECIFIC** anesthesia CFs (100+ rows), see `SRC-anes.md`.
 - **REF-parser-quality-guardrails-v1.0.md:** Validation and guardrails
 - **STD-qa-testing-prd-v1.0.md:** QA testing standards
 
-**Last Updated:** 2025-10-21  
+**Last Updated:** 2026-06-11
 **Verified Against CMS Release:** 2025 Physician Fee Schedule Final Rule
 
 ---
@@ -42,6 +42,13 @@ For **LOCALITY-SPECIFIC** anesthesia CFs (100+ rows), see `SRC-anes.md`.
 MPFS Payment = [Sum of (RVU × GPCI for each component)] × Conversion Factor
 Anesthesia Payment = Base Units × Anesthesia CF (national) × Locality Anesthesia CF
 ```
+
+**Runtime RVU-backed pricing note:**
+For the live RVU snapshot pricing path, the physician conversion factor is read
+from `rvu_items.conversion_factor` on the RVU row selected by valuation date.
+Pricing provenance must expose `CF:release:<rvu_release_id>` and
+`CF:source:rvu_items.conversion_factor` so the derived CF source is auditable
+without adding a separate public API field.
 
 **Key Distinction:**
 - **This dataset:** National baseline ($32-35 for physician, $20 for anesthesia)
@@ -802,4 +809,3 @@ CMS_KNOWN_VALUES = {
 ---
 
 **End of SRC-conversion-factor.md v1.0**
-

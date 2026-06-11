@@ -31,13 +31,31 @@ Snapshot selection now chooses `rvu_2026_C` and `gpci_2026_C` for valuation date
 `2026-07-01`, and a local pricing smoke returned a positive MPFS allowed amount
 with trace refs for RVU, GPCI, and conversion-factor source.
 
-Two correctness risks remain active before the RVU-backed pricing path should be
-treated as validated:
+The MPFS conversion-factor source is now formalized for the RVU-backed runtime
+path: pricing reads `rvu_items.conversion_factor` from the selected RVU release,
+reports `CF:release:<rvu_release_id>`, and reports
+`CF:source:rvu_items.conversion_factor`.
 
-- the MPFS conversion-factor source must be explicit, tested, and documented;
-- geography/locality resolution must map cleanly into loaded RVU/GPCI locality
-  keys without accidental loss of leading-zero semantics or undocumented `00`
-  to `01` normalization.
+The geography/locality code path now has focused tests proving that resolver
+outputs preserve leading-zero locality strings, `00` is not normalized to
+benchmark `01`, and MPFS pricing can bridge unpadded geography locality `5` to a
+loaded GPCI locality key `05`.
+
+Live ZIP-specific validation now passes after non-destructive local/dev seed
+work:
+
+- added `scripts/seed_post_rvu_load_local.py`, which non-destructively inserts
+  the public ZIP-locality row `94110 -> CA locality 05`, carrier `01112`,
+  effective `2026-01-01` through `2026-12-31`;
+- the same seed/register command registers missing local `dataset_snapshots`
+  rows for `rvu_2026_C` and `gpci_2026_C`, effective `2026-07-01`, from the
+  already-loaded RVU/GPCI tables;
+- added `scripts/post_rvu_load_api_smoke.py`, which checks health, readiness,
+  geography, pricing, positive allowed amount, release ID, and trace refs.
+
+The repeatable post-load smoke returned `allowed_cents=11758`,
+`release_id=rvu_2026_C`, geography locality `05`, and the expected RVU/GPCI/CF
+trace refs.
 
 ## Scope
 
@@ -70,16 +88,23 @@ Out of scope:
   source in tests and documentation.
 - Pricing results expose trace refs that distinguish RVU release, GPCI release,
   conversion-factor release, and conversion-factor source.
-- If `rvu_items.conversion_factor` remains the source, tests prove its release
-  and effective-date behavior for the RVU snapshot path.
-- If `rvu_items.conversion_factor` is insufficient, the task stops with a
-  documented decision to add a companion conversion-factor snapshot/load path.
+- `rvu_items.conversion_factor` is the canonical runtime MPFS CF source for the
+  selected RVU snapshot path unless a future CMS out-of-band CF artifact requires
+  an explicit override path.
+- Tests prove conversion-factor release and effective-date behavior for the RVU
+  snapshot path.
 - `normalize-rvu-locality-for-geography-resolution` proves whether ZIP `94110`
   resolves to locality keys that join to the loaded RVU/GPCI data.
 - Locality normalization preserves leading zeros where the source/domain
   requires them.
 - Any `00` versus `01` mapping is applied only when backed by an explicit CMS
   rule or source-table relationship.
+- If the local DB lacks the public ZIP-locality source row for `94110`, the task
+  stops at a data-load boundary rather than substituting benchmark locality `01`
+  as proof of California pricing.
+- `scripts/seed_post_rvu_load_local.py` prepares local/dev DB state
+  non-destructively, and `scripts/post_rvu_load_api_smoke.py` passes after RVU
+  and geography source rows are present.
 - Existing pricing and geography behavior outside this RVU path remains
   unchanged.
 
@@ -105,9 +130,9 @@ No new PRD is required before continuing the active task sequence.
 Update governed PRD/source docs before closing the epic if the implementation
 establishes a durable contract, including:
 
-- `prds/SRC-conversion-factor.md` or `prds/PRD-mpfs-prd-v1.0.md` if
-  `rvu_items.conversion_factor` becomes the canonical MPFS CF source for loaded
-  RVU pricing;
+- `prds/SRC-conversion-factor.md` records
+  `rvu_items.conversion_factor` as the canonical runtime MPFS CF source for
+  loaded RVU pricing;
 - `prds/SRC-locality.md`, `prds/SRC-gpci.md`, or
   `prds/PRD-rvu-gpci-prd-v0.1.md` if a formal locality normalization rule is
   adopted.
@@ -116,10 +141,14 @@ establishes a durable contract, including:
 
 - A local API smoke can return a positive amount while still using the wrong
   locality key.
-- `rvu_items.conversion_factor` may be adequate for current RVU rows but still
-  hide a future need for separate CF release provenance.
+- `rvu_items.conversion_factor` is adequate for the current RVU runtime path,
+  but future out-of-band CF artifacts may still require explicit override
+  provenance.
 - Normalizing locality IDs too aggressively can mask real CMS locality
-  distinctions.
+  distinctions. Focused tests now cover leading-zero and `00` preservation.
+- Local/dev validation depends on `dataset_snapshots` entries matching the
+  loaded RVU/GPCI rows; the smoke command fails clearly when those registry rows
+  are missing.
 - Current DB-backed tests may require a local Postgres service and can fail in a
   sandbox even when the code path is correct.
 - Legacy geography ingestion tests still skip when the old
@@ -157,19 +186,25 @@ establishes a durable contract, including:
    - Status: done.
    - Evidence: RVU/GPCI release trace refs in pricing results.
 4. Load or map MPFS conversion factor.
-   - Status: active.
+   - Status: done.
    - Tracker task: `state/work/tasks/load-or-map-mpfs-conversion-factor.yaml`.
-   - Validation: focused MPFS component pricing and provenance tests.
+   - Evidence: focused MPFS component pricing test proves selected RVU release
+     CF changes the calculated amount and reports `CF:release` plus `CF:source`.
 5. Normalize RVU locality for geography resolution.
-   - Status: queued behind conversion-factor source formalization.
+   - Status: done.
    - Tracker task:
      `state/work/tasks/normalize-rvu-locality-for-geography-resolution.yaml`.
-   - Validation: focused geography resolver tests.
+   - Evidence: focused geography resolver tests and MPFS component pricing tests
+     prove leading-zero preservation, `00` preservation, and `5` to `05` GPCI
+     join behavior; `scripts/seed_post_rvu_load_local.py` prepares local
+     geography data so ZIP `94110` resolves to CA locality `05`.
 6. Add post-RVU-load API smoke command.
-   - Status: queued.
+   - Status: done.
    - Tracker task: `state/work/tasks/add-post-rvu-load-api-smoke-command.yaml`.
-   - Validation: local smoke command checks health, geography, pricing,
-     positive allowed amount, and expected trace refs.
+   - Validation: `scripts/seed_post_rvu_load_local.py` followed by
+     `scripts/post_rvu_load_api_smoke.py` checks health, readiness, geography,
+     pricing, positive allowed amount, expected locality, expected release, and
+     expected trace refs.
 
 ## Deferred Slices
 

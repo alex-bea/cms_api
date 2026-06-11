@@ -76,6 +76,8 @@ class GeographyService:
         try:
             # Normalize input per PRD section 18
             zip5, plus4 = self._normalize_zip_input(zip5, plus4)
+            trace_inputs["zip5"] = zip5
+            trace_inputs["plus4"] = plus4
             
             # Determine effective date parameters
             effective_params = self.effective_date_selector.determine_effective_date(
@@ -185,11 +187,13 @@ class GeographyService:
         if '-' in zip5:
             # Format: 94110-1234
             parts = zip5.split('-')
-            if len(parts) == 2:
-                zip5_clean = ''.join(filter(str.isdigit, parts[0]))
-                plus4_clean = ''.join(filter(str.isdigit, parts[1]))
-                if len(zip5_clean) == 5 and len(plus4_clean) == 4:
-                    return zip5_clean, plus4_clean.zfill(4)
+            if len(parts) != 2:
+                raise ValueError(f"Invalid ZIP+4: {zip5}")
+            zip5_clean = ''.join(filter(str.isdigit, parts[0]))
+            plus4_clean = ''.join(filter(str.isdigit, parts[1]))
+            if len(zip5_clean) != 5 or len(plus4_clean) != 4:
+                raise ValueError(f"Invalid ZIP+4: {zip5}")
+            return zip5_clean, plus4_clean
         elif len(zip5) == 9 and zip5.isdigit():
             # Format: 941101234 (9 digits)
             zip5_clean = zip5[:5]
@@ -204,7 +208,6 @@ class GeographyService:
         # Handle separate plus4 parameter
         if plus4:
             plus4_clean = ''.join(filter(str.isdigit, plus4))
-            plus4_clean = plus4_clean.zfill(4)
             
             if len(plus4_clean) != 4:
                 raise ValueError(f"Invalid ZIP+4: {plus4}")

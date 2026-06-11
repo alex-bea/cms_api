@@ -31,14 +31,17 @@ def _row(**values):
     return row
 
 
-def _geography(locality_id: str = "01") -> GeographyResolveResponse:
+def _geography(
+    locality_id: str = "01",
+    state_code: str = "CA",
+) -> GeographyResolveResponse:
     candidate = GeographyCandidate(
         zip5="94110",
         locality_id=locality_id,
         locality_name="Test Locality",
         cbsa=None,
         county_fips=None,
-        state_code="CA",
+        state_code=state_code,
     )
     return GeographyResolveResponse(
         zip5="94110",
@@ -201,6 +204,14 @@ async def test_mpfs_component_modifier_overrides_component_flags():
     assert result.facility_allowed_cents == 2000
 
 
+@pytest.mark.unit
+def test_mpfs_locality_candidates_pad_single_digit_without_remapping_zero_zero():
+    assert MPSFEngine._locality_candidates("5") == ["5", "05"]
+    assert MPSFEngine._locality_candidates("05") == ["05"]
+    assert MPSFEngine._locality_candidates("00") == ["00"]
+    assert "01" not in MPSFEngine._locality_candidates("00")
+
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_mpfs_uses_rvu_snapshots_by_valuation_date(test_db_session):
@@ -297,7 +308,7 @@ async def test_mpfs_uses_rvu_snapshots_by_valuation_date(test_db_session):
             pe_rvu_nonfac=Decimal("4.0000"),
             pe_rvu_fac=Decimal("6.0000"),
             mp_rvu=Decimal("1.0000"),
-            conversion_factor=Decimal("10.0000"),
+            conversion_factor=Decimal("20.0000"),
             effective_start=date(2029, 7, 1),
         ),
     ]
@@ -341,6 +352,14 @@ async def test_mpfs_uses_rvu_snapshots_by_valuation_date(test_db_session):
         pos="11",
         valuation_date=date(2029, 6, 30),
     )
+    unpadded_geography = await engine.price_code(
+        code="99213",
+        zip="94110",
+        year=2029,
+        geography=_geography("5"),
+        pos="11",
+        valuation_date=date(2029, 6, 30),
+    )
     after_effective = await engine.price_code(
         code="99213",
         zip="94110",
@@ -354,9 +373,16 @@ async def test_mpfs_uses_rvu_snapshots_by_valuation_date(test_db_session):
     assert before_effective.allowed_cents == 3500
     assert "RVU:release:rvu_2029_B" in before_effective.trace_refs
     assert "GPCI:release:gpci_2029_B" in before_effective.trace_refs
+    assert "CF:release:rvu_2029_B" in before_effective.trace_refs
     assert "CF:source:rvu_items.conversion_factor" in before_effective.trace_refs
 
+    assert unpadded_geography.release_id == "rvu_2029_B"
+    assert unpadded_geography.allowed_cents == 3500
+    assert "GPCI:release:gpci_2029_B" in unpadded_geography.trace_refs
+
     assert after_effective.release_id == "rvu_2029_C"
-    assert after_effective.allowed_cents == 7000
+    assert after_effective.allowed_cents == 14000
     assert "RVU:release:rvu_2029_C" in after_effective.trace_refs
     assert "GPCI:release:gpci_2029_C" in after_effective.trace_refs
+    assert "CF:release:rvu_2029_C" in after_effective.trace_refs
+    assert "CF:source:rvu_items.conversion_factor" in after_effective.trace_refs

@@ -102,10 +102,20 @@ class GeographyTraceService:
             is_pobox=None  # TODO(alex, GH-427): Extract from result if available
         )
         
+        db_zip5 = trace_inputs.zip5
+        if len(db_zip5) > 5:
+            digits = "".join(filter(str.isdigit, db_zip5))
+            db_zip5 = digits[:5] if len(digits) >= 5 else db_zip5[:5]
+
+        db_plus4 = trace_inputs.plus4
+        if db_plus4 and len(db_plus4) > 4:
+            digits = "".join(filter(str.isdigit, db_plus4))
+            db_plus4 = digits[:4] if len(digits) >= 4 else db_plus4[:4]
+
         # Create trace record
         trace_record = GeographyResolutionTrace(
-            zip5=trace_inputs.zip5,
-            plus4=trace_inputs.plus4,
+            zip5=db_zip5,
+            plus4=db_plus4,
             valuation_year=str(trace_inputs.valuation_year) if trace_inputs.valuation_year else None,
             quarter=str(trace_inputs.quarter) if trace_inputs.quarter else None,
             valuation_date=trace_inputs.valuation_date,
@@ -231,5 +241,4 @@ class GeographyTraceService:
             "unique_zips": unique_zips,
             "unique_states": unique_states
         }
-
 

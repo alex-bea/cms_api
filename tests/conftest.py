@@ -34,6 +34,13 @@ SCHEDULER_AVAILABLE = importlib.util.find_spec(SCHEDULER_MODULE) is not None
 NEAREST_ZIP_AVAILABLE = importlib.util.find_spec(NEAREST_ZIP_MODULE) is not None
 ZIP9_AVAILABLE = importlib.util.find_spec(ZIP9_MODULE) is not None
 
+LEGACY_GEOGRAPHY_INGESTION_TESTS = (
+    "test_geography_ingestion.py",
+    "test_geography_automation.py",
+    "test_geography_integration.py",
+    "test_geography_gaps.py",
+)
+
 
 DOMAIN_MARKER_PATTERNS = {
     "prd_docs": ("tests/prd_docs", "doc_catalog", "doc_metadata", "doc_links", "doc_dependencies"),
@@ -250,7 +257,9 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         fspath = str(item.fspath)
 
-        if not GEOGRAPHY_AVAILABLE and 'geography' in fspath:
+        if not GEOGRAPHY_AVAILABLE and any(
+            test_file in fspath for test_file in LEGACY_GEOGRAPHY_INGESTION_TESTS
+        ):
             item.add_marker(pytest.mark.skip(reason='geography ingestion module unavailable'))
             continue
         if not SCHEDULER_AVAILABLE and 'scheduler' in fspath:
