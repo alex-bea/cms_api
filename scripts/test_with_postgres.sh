@@ -65,30 +65,39 @@ function wait_for_postgres() {
 import os
 import sys
 import time
-from urllib.parse import urlsplit
 
 import psycopg2
 from psycopg2 import OperationalError
+from sqlalchemy.engine import make_url
 
 database_url = os.environ["TEST_DATABASE_URL"]
 timeout = int(os.environ["PG_WAIT_TIMEOUT"])
 interval = float(os.environ["PG_WAIT_INTERVAL"])
+
+def candidate_urls(url):
+    yield url
+    parsed = make_url(url)
+    if parsed.drivername.startswith("postgresql") and parsed.database != "postgres":
+        yield parsed.set(database="postgres").render_as_string(hide_password=False)
 
 deadline = time.time() + timeout
 attempt = 0
 
 while True:
     attempt += 1
-    try:
-        conn = psycopg2.connect(database_url)
-        conn.close()
-        print(f"[wait] Postgres ready after {attempt} attempt(s)")
-        break
-    except OperationalError as exc:
-        if time.time() >= deadline:
-            print(f"[wait] Gave up waiting for Postgres: {exc}", file=sys.stderr)
-            sys.exit(1)
-        time.sleep(interval)
+    last_error = None
+    for url in candidate_urls(database_url):
+        try:
+            conn = psycopg2.connect(url)
+            conn.close()
+            print(f"[wait] Postgres ready after {attempt} attempt(s)")
+            sys.exit(0)
+        except OperationalError as exc:
+            last_error = exc
+    if time.time() >= deadline:
+        print(f"[wait] Gave up waiting for Postgres: {last_error}", file=sys.stderr)
+        sys.exit(1)
+    time.sleep(interval)
 PY
 }
 
@@ -99,12 +108,22 @@ import sys
 
 import psycopg2
 from psycopg2 import OperationalError
+from sqlalchemy.engine import make_url
 
-try:
-    conn = psycopg2.connect(os.environ["TEST_DATABASE_URL"])
-    conn.close()
-except OperationalError:
-    sys.exit(1)
+def candidate_urls(url):
+    yield url
+    parsed = make_url(url)
+    if parsed.drivername.startswith("postgresql") and parsed.database != "postgres":
+        yield parsed.set(database="postgres").render_as_string(hide_password=False)
+
+for url in candidate_urls(os.environ["TEST_DATABASE_URL"]):
+    try:
+        conn = psycopg2.connect(url)
+        conn.close()
+        sys.exit(0)
+    except OperationalError:
+        pass
+sys.exit(1)
 PY
 }
 
