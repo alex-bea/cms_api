@@ -1,0 +1,27 @@
+id: validate-geography-breadth-and-locality-joins
+parent_id: cms-geography-real-data-breadth
+title: Validate Geography Breadth And Locality Joins
+status: done
+rank: 3
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "build-repeatable-geography-real-data-loader"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+related_paths:
+  - "scripts/load_cms_geography_local.py"
+  - "cms_pricing/services/geography.py"
+  - "cms_pricing/engines/mpfs.py"
+  - "tests/geography/test_geography_resolver.py"
+  - "tests/services/test_mpfs_component_pricing.py"
+  - "scripts/post_rvu_load_api_smoke.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+summary: "Validated real loaded geography breadth, active-key uniqueness, locality preservation, and 2026 GPCI joins with explicit special-state mapping."
+current_task: "Closed after loading 1,118,970 real geography rows into local/dev, validating zero duplicate active keys, proving 94110 CA locality 05, and closing all 119 state/locality GPCI joins with MPFS special-state lookup mapping."
+next_action: "Proceed with the seedless post-RVU smoke/runbook slice."
+resume_from: "Evidence: ZIP_LOCALITY digest b14c414de73256ac9594d7cb0a58a75214ba04f4fe043468ffda507c3dd75c2e, active 2026-07-01 geography rows, 119/119 GPCI state/locality joins after mapping, and targeted MPFS mapping tests."

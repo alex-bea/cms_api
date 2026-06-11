@@ -1,0 +1,21 @@
+id: cms-geography-real-data-breadth
+parent_id: cms-data-pipeline
+title: CMS Geography Real Data Breadth
+status: done
+rank: 2
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+plan_path: "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+related_paths:
+  - "cms_pricing/ingestion/ingestors/cms_zip_locality_production_ingester.py"
+  - "cms_pricing/ingestion/ingestors/cms_zip9_ingester.py"
+  - "cms_pricing/ingestion/contracts/cms_zip_locality_v1.json"
+  - "cms_pricing/ingestion/contracts/cms_zip9_overrides_v1.json"
+  - "cms_pricing/models/geography.py"
+  - "cms_pricing/services/geography.py"
+  - "scripts/post_rvu_load_api_smoke.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+summary: "Loaded real public CMS ZIP-locality breadth into the runtime geography table, validated GPCI joins, and removed the RVU smoke dependency on a one-row local seed."

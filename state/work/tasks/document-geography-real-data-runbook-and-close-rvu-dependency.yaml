@@ -1,0 +1,30 @@
+id: document-geography-real-data-runbook-and-close-rvu-dependency
+parent_id: cms-geography-real-data-breadth
+title: Document Geography Real Data Runbook And Close RVU Dependency
+status: done
+rank: 5
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "replace-single-zip-seed-with-real-geography-smoke"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+related_paths:
+  - "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+  - "prds/PRD-geography-locality-mapping-prd-v1.0.md"
+  - "prds/REF-geography-source-map-prd-v1.0.md"
+  - "prds/REF-cms-pricing-source-map-prd-v1.0.md"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+  - "prds/PRD-geography-locality-mapping-prd-v1.0.md"
+  - "prds/REF-geography-source-map-prd-v1.0.md"
+  - "prds/REF-cms-pricing-source-map-prd-v1.0.md"
+summary: "Documented the real geography load and smoke sequence, then closed the RVU dependency on one-off geography seeding."
+current_task: "Closed after updating the epic brief, RVU local DB status, geography PRD, and source-map references with real-load commands and GPCI mapping semantics."
+next_action: "No remaining geography-breadth task in this epic; future work should promote the local/dev loader behavior into the production DIS ingesters."
+resume_from: "Final evidence is in docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md and docs/workbench/DOC-cms-rvu-local-db-load-status.md."

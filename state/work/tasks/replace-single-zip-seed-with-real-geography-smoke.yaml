@@ -1,0 +1,26 @@
+id: replace-single-zip-seed-with-real-geography-smoke
+parent_id: cms-geography-real-data-breadth
+title: Replace Single ZIP Seed With Real Geography Smoke
+status: done
+rank: 4
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "validate-geography-breadth-and-locality-joins"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+related_paths:
+  - "scripts/load_cms_geography_local.py"
+  - "scripts/seed_post_rvu_load_local.py"
+  - "scripts/post_rvu_load_api_smoke.py"
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+  - "docs/workbench/DOC-cms-rvu-ingestion-epic-brief.md"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+summary: "Replaced the post-RVU-load smoke dependency on the one-row 94110 seed with real loaded CMS geography data."
+current_task: "Closed after real geography load made 94110 resolve to CA locality 05 and post-RVU-load API smoke returned status=ok, allowed_cents=11758, release_id=rvu_2026_C."
+next_action: "Use scripts/load_cms_geography_local.py before post-RVU smoke; keep seed_post_rvu_load_local.py only as a legacy fallback for narrow local repair."
+resume_from: "Evidence: post_rvu_load_api_smoke.py passed for 94110 and for special source-state ZIP 66012 after MPFS GPCI state mapping."

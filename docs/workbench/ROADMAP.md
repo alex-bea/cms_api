@@ -17,6 +17,10 @@ _Generated from `state/work/` by `tools/work_tracker.py`. Do not edit by hand._
   Team: `data`
   Plan: [`docs/workbench/DOC-cms-rvu-ingestion-epic-brief.md`](DOC-cms-rvu-ingestion-epic-brief.md)
   Summary: Move live CMS RVU releases through real local/dev DB writes and ensure valuation-date snapshot lookup chooses the expected RVU and GPCI release.
+- [2] CMS Geography Real Data Breadth - `done` (5 done)
+  Team: `data`
+  Plan: [`docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md`](DOC-cms-geography-real-data-breadth-epic-brief.md)
+  Summary: Loaded real public CMS ZIP-locality breadth into the runtime geography table, validated GPCI joins, and removed the RVU smoke dependency on a one-row local seed.
 - [2] Epic Brief Driven Tracker Workflow - `done` (8 done)
   Team: `ops`
   Plan: [`docs/workbench/DOC-epic-brief-driven-workflow.md`](DOC-epic-brief-driven-workflow.md)

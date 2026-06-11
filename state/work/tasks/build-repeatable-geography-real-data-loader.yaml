@@ -1,0 +1,30 @@
+id: build-repeatable-geography-real-data-loader
+parent_id: cms-geography-real-data-breadth
+title: Build Repeatable Geography Real Data Loader
+status: done
+rank: 2
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "audit-geography-real-data-sources-and-gaps"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+related_paths:
+  - "scripts/load_cms_geography_local.py"
+  - "tests/scripts/test_load_cms_geography_local.py"
+  - "cms_pricing/ingestion/ingestors/cms_zip_locality_production_ingester.py"
+  - "cms_pricing/ingestion/ingestors/cms_zip9_ingester.py"
+  - "cms_pricing/ingestion/validators/cms_zip_locality_validator.py"
+  - "cms_pricing/models/geography.py"
+  - "scripts/ingest_real_cms.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+  - "scripts/load_cms_geography_local.py"
+  - "tests/scripts/test_load_cms_geography_local.py"
+summary: "Implemented the repeatable local/dev loader that parses real public CMS ZIP-locality rows and can write effective-dated runtime geography records with digest/provenance."
+current_task: "Closed after adding scripts/load_cms_geography_local.py, focused parser/source tests, and a real-source dry run over ZIP5_OCT2025 and ZIP9_OCT2025."
+next_action: "Use the loader in the validation slice to prove breadth, GPCI locality joins, and whether 2026 RVU smoke should use an explicit latest-effective/open-ended geography load or wait for a 2026 source package."
+resume_from: "Dry run reported 1,118,970 rows, 42,956 ZIP5 rows, 1,076,014 ZIP9 rows, zero rejects, zero duplicate source keys, 94110 -> CA/05/01112, and a stop condition for 2026-07-01 coverage under strict 2025Q4 effective dates."
