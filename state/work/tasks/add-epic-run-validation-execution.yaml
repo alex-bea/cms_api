@@ -1,0 +1,21 @@
+id: add-epic-run-validation-execution
+parent_id: epic-brief-driven-workflow
+title: Add Epic Run Validation Execution
+status: done
+rank: 6
+team: ops
+owner_mode: shared
+updated_at: 2026-06-11
+plan_path: "docs/workbench/DOC-epic-brief-driven-workflow.md"
+related_paths:
+  - "tools/work_tracker.py"
+  - "scripts/governance/check-work-tracker.py"
+  - "scripts/governance/build-work-tracker.py"
+  - "tests/tools/test_work_tracker.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-epic-brief-driven-workflow.md"
+summary: "Added run-epic --validate to execute allowlisted epic brief validation commands without a shell and stop on first command failure."
+current_task: "Completed. Validation execution runs Python/governance allowlisted commands from the epic brief and reports captured results."
+next_action: "Pilot the dry-run, apply-state, and validation modes on one real epic before generalizing the workflow."
+resume_from: "Continue from run_epic_command, build_epic_run_validation_payload, and tests/tools/test_work_tracker.py."

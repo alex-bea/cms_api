@@ -1,0 +1,19 @@
+id: add-codex-build-brief-planner-v0
+parent_id: epic-brief-driven-workflow
+title: Add Codex Build Brief Planner V0
+status: done
+rank: 1
+team: ops
+owner_mode: shared
+updated_at: "2026-06-11"
+plan_path: "docs/workbench/DOC-codex-build-brief-planner-v0.md"
+related_paths:
+  - "docs/workbench/DOC-codex-build-brief-planner-v0.md"
+  - "docs/workbench/DOC-epic-brief-driven-workflow.md"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-codex-build-brief-planner-v0.md"
+summary: "Defined the Codex v0 build brief planner prompt, approval gate, tracker mapping checklist, skill-layer order, and privacy/sanitization boundary before adding bigger harness automation."
+current_task: "Completed. Codex build brief planner v0 is documented as the first planning layer."
+next_action: "Use this prompt before broader epic-brief semantics so implementation starts from an approved plan and minimal tracker slices."
+resume_from: "See docs/workbench/DOC-codex-build-brief-planner-v0.md for the prompt, layer order, approval follow-up, and stop conditions."

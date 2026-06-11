@@ -1,0 +1,22 @@
+id: normalize-rvu-locality-for-geography-resolution
+parent_id: cms-rvu-ingestion
+title: Normalize RVU Locality For Geography Resolution
+status: active
+rank: 4
+team: data
+owner_mode: shared
+updated_at: 2026-06-11
+plan_path: "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+related_paths:
+  - "cms_pricing/services/geography.py"
+  - "cms_pricing/routers/geography.py"
+  - "cms_pricing/models/rvu.py"
+  - "cms_pricing/ingestion/datasets/rvu_loaders.py"
+  - "tests/geography/test_geography_resolver.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+summary: "Validate that ZIP/geography resolution maps cleanly into loaded RVU MAC, locality_code, and GPCI rows while preserving leading zeros and intentional 00 versus 01 locality normalization."
+current_task: "Compare geography resolution output for ZIP 94110 with loaded RVU locality/GPCI keys and identify any locality normalization mismatch."
+next_action: "Add tests for leading-zero preservation and 00 versus 01 behavior, then normalize joins only where CMS rules make the mapping explicit."
+resume_from: "Start from geography resolution, RVU locality/GPCI models, and rvu_loaders locality handling."

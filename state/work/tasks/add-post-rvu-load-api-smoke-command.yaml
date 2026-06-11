@@ -1,0 +1,22 @@
+id: add-post-rvu-load-api-smoke-command
+parent_id: cms-rvu-ingestion
+title: Add Post RVU Load API Smoke Command
+status: queued
+rank: 5
+team: ops
+owner_mode: shared
+updated_at: "2026-06-10"
+plan_path: "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+related_paths:
+  - "scripts/load_latest_cms_rvu_local.py"
+  - "cms_pricing/routers/health.py"
+  - "cms_pricing/routers/geography.py"
+  - "cms_pricing/routers/pricing.py"
+  - "tests/api/test_health.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+summary: "Add a repeatable command or script that runs after RVU load and asserts health, readiness, geography resolve, single-code MPFS pricing, positive allowed amount, and expected snapshot release IDs."
+current_task: "Design a local post-load API smoke command that can run after scripts/load_latest_cms_rvu_local.py and fail clearly on pricing data wiring errors."
+next_action: "Implement the narrow smoke command after the manual run-live-rvu-pricing-smoke task proves the exact request and expected trace fields."
+resume_from: "Start from the Docker Compose local validation flow, health/readiness routers, geography resolve, and the protected pricing endpoint."

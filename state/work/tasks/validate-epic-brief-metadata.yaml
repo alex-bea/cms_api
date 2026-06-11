@@ -1,0 +1,20 @@
+id: validate-epic-brief-metadata
+parent_id: epic-brief-driven-workflow
+title: Validate Epic Brief Metadata
+status: done
+rank: 3
+team: ops
+owner_mode: shared
+updated_at: "2026-06-11"
+plan_path: "docs/workbench/DOC-epic-brief-driven-workflow.md"
+related_paths:
+  - "docs/workbench/DOC-epic-brief-driven-workflow.md"
+  - "tools/work_tracker.py"
+  - "tests/tools/test_work_tracker.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-epic-brief-driven-workflow.md"
+summary: "Added minimal heading-level validation for tracker-linked epic briefs while keeping rich planning prose in Markdown and allowing existing non-brief plan/status docs to remain linked."
+current_task: "Completed. Tracker validation now checks required headings for Markdown docs that identify themselves as a specific epic brief."
+next_action: "Move to the read-only epic-run dry-run command that prints ordered queued slices and stop rules."
+resume_from: "See validate_epic_brief in tools/work_tracker.py, the epic brief validation tests in tests/tools/test_work_tracker.py, and docs/workbench/DOC-epic-brief-driven-workflow.md."

@@ -1,0 +1,22 @@
+id: run-live-rvu-pricing-smoke
+parent_id: cms-rvu-ingestion
+title: Run Live RVU Pricing Smoke
+status: done
+rank: 1
+team: api
+owner_mode: shared
+updated_at: "2026-06-10"
+plan_path: "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+related_paths:
+  - "scripts/load_latest_cms_rvu_local.py"
+  - "cms_pricing/routers/pricing.py"
+  - "cms_pricing/services/pricing.py"
+  - "cms_pricing/engines/mpfs.py"
+  - "cms_pricing/services/dataset_snapshot_service.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+summary: "Local API smoke priced HCPCS 99213 for ZIP 94110 at valuation date 2026-07-01 from the loaded rvu_2026_C snapshot path with positive allowed amount and RVU/GPCI/CF trace refs."
+current_task: "Completed. Smoke returned 200 OK with allowed_cents=10061, release_id=rvu_2026_C, RVU/GPCI/CF trace refs, and geography fallback locality 01."
+next_action: "Continue with locality normalization so ZIP 94110 resolves to the expected RVU/GPCI locality instead of benchmark locality 01."
+resume_from: "See docs/workbench/DOC-cms-rvu-local-db-load-status.md for local load evidence and the smoke result."

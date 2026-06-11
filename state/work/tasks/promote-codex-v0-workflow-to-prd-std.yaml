@@ -1,0 +1,24 @@
+id: promote-codex-v0-workflow-to-prd-std
+parent_id: epic-brief-driven-workflow
+title: Promote Codex V0 Workflow To PRD STD
+status: done
+rank: 3
+team: ops
+owner_mode: shared
+updated_at: "2026-06-11"
+plan_path: "docs/workbench/DOC-epic-brief-driven-workflow.md"
+related_paths:
+  - "prds/STD-codex-v0-build-workflow-prd-v1.0.md"
+  - "prds/STD-codex-v0-build-workflow-impl-v1.0.md"
+  - "prds/DOC-master-catalog-prd-v1.0.md"
+  - "docs/workbench/DOC-codex-build-brief-planner-v0.md"
+  - "docs/workbench/DOC-epic-brief-driven-workflow.md"
+linked_beads:
+linked_outputs:
+  - "prds/STD-codex-v0-build-workflow-prd-v1.0.md"
+  - "prds/STD-codex-v0-build-workflow-impl-v1.0.md"
+  - "docs/workbench/DOC-epic-brief-driven-workflow.md"
+summary: "Promoted the repeatable Codex v0 build workflow rules into a governed STD and moved copy/paste build brief and epic brief templates into the companion implementation guide."
+current_task: "Completed. Codex v0 workflow rules and templates now live in governed PRD docs."
+next_action: "Use workbench docs only as rollout notes and filled epic briefs; keep reusable workflow rules in prds."
+resume_from: "See prds/STD-codex-v0-build-workflow-prd-v1.0.md, prds/STD-codex-v0-build-workflow-impl-v1.0.md, and prds/DOC-master-catalog-prd-v1.0.md."

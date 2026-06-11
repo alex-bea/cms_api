@@ -116,42 +116,12 @@ def load_rvu_dataframes(
     db_session.add(release_record)
     db_session.flush()
 
-    natural_keys = {
-        "pprrvu": ["hcpcs_code", "modifier_key", "effective_start"],
-        "gpci": ["mac", "locality_id", "effective_start"],
-        "oppscap": ["hcpcs_code", "modifier", "mac", "locality_id", "effective_start"],
-        "anescf": ["mac", "locality_id", "effective_start"],
-        "localitycounty": ["mac", "locality_id", "state", "effective_start"],
-    }
-
     processed: Dict[str, pd.DataFrame] = {}
     for key, df in dataframes.items():
         if df is None or df.empty:
             processed[key] = df
             continue
-        df_copy = df.copy()
-        nk = natural_keys.get(key)
-        if nk:
-            subset = [col for col in nk if col in df_copy.columns]
-            if subset:
-                before = len(df_copy)
-                for col in subset:
-                    if df_copy[col].dtype == "O":
-                        df_copy[col] = df_copy[col].fillna("")
-                df_copy = (
-                    df_copy.sort_values(subset)
-                    .drop_duplicates(subset=subset, keep="first")
-                    .reset_index(drop=True)
-                )
-                after = len(df_copy)
-                if before != after:
-                    logger.info(
-                        "Dropped duplicate rows before DB load",
-                        dataset=key,
-                        duplicates_removed=before - after,
-                        natural_key=subset,
-                    )
-        processed[key] = df_copy
+        processed[key] = _dedupe_before_db_load(key, df)
 
     dataset_results: Dict[str, int] = {}
     total_records = 0
@@ -187,6 +157,54 @@ def load_rvu_dataframes(
         "datasets": dataset_results,
         "release_uuid": str(release_uuid),
     }
+
+
+DB_LOAD_NATURAL_KEYS = {
+    # These keys match parser/normalized DataFrame column names. Dedupe must not
+    # use post-loader aliases like locality_id/effective_start before they exist.
+    "pprrvu": ["hcpcs", "modifier", "status_code", "effective_from"],
+    "gpci": ["mac", "locality_code", "effective_from"],
+    "oppscap": ["hcpcs", "modifier", "mac", "locality_code"],
+    "anescf": ["mac", "locality_code", "effective_from"],
+    "localitycounty": ["mac", "locality_code"],
+}
+
+
+def _dedupe_before_db_load(dataset_key: str, df: pd.DataFrame) -> pd.DataFrame:
+    """Dedupe using the full parser natural key before database-specific loading."""
+    df_copy = df.copy()
+    natural_key = DB_LOAD_NATURAL_KEYS.get(dataset_key)
+    if not natural_key:
+        return df_copy
+
+    missing_keys = [col for col in natural_key if col not in df_copy.columns]
+    if missing_keys:
+        logger.debug(
+            "Skipping pre-DB dedupe because full natural key is unavailable",
+            dataset=dataset_key,
+            natural_key=natural_key,
+            missing_columns=missing_keys,
+        )
+        return df_copy
+
+    before = len(df_copy)
+    for col in natural_key:
+        if df_copy[col].dtype == "O":
+            df_copy[col] = df_copy[col].fillna("")
+    df_copy = (
+        df_copy.sort_values(natural_key)
+        .drop_duplicates(subset=natural_key, keep="first")
+        .reset_index(drop=True)
+    )
+    after = len(df_copy)
+    if before != after:
+        logger.info(
+            "Dropped duplicate rows before DB load",
+            dataset=dataset_key,
+            duplicates_removed=before - after,
+            natural_key=natural_key,
+        )
+    return df_copy
 
 
 def load_pprrvu_data(

@@ -1,0 +1,20 @@
+id: add-epic-run-dry-run
+parent_id: epic-brief-driven-workflow
+title: Add Epic Run Dry Run
+status: done
+rank: 4
+team: ops
+owner_mode: shared
+updated_at: "2026-06-11"
+plan_path: "docs/workbench/DOC-epic-brief-driven-workflow.md"
+related_paths:
+  - "tools/work_tracker.py"
+  - "scripts/governance/check-work-tracker.py"
+  - "tests/tools/test_work_tracker.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-epic-brief-driven-workflow.md"
+summary: "Added a read-only run-epic dry-run command that prints the ordered queued child tasks for an epic, expected validation commands, and stop conditions without mutating tracker state."
+current_task: "Completed. run-epic --dry-run reports the selected queued task sequence and never writes tracker state."
+next_action: "Move to apply-state mode, which should activate one queued child task at a time and rebuild views without exceeding WIP."
+resume_from: "See run_epic_command, build_epic_run_dry_run_payload, and dry-run tests in tools/work_tracker.py and tests/tools/test_work_tracker.py."
