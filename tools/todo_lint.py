@@ -11,10 +11,25 @@ from collections.abc import Iterable, Sequence
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TODO_PATTERN = re.compile(r"#\s*TODO\b", re.IGNORECASE)
-VALID_TODO_PATTERN = re.compile(r"#\s*TODO\(\s*[^,()]+,\s*GH-\d+\s*\)\s*:", re.IGNORECASE)
-SKIP_DIRS = {".git", ".venv", ".venv_gpci", "env", "__pycache__", "site-packages"}
+VALID_TODO_PATTERN = re.compile(
+    r"#\s*TODO\(\s*[^,()]+,\s*GH-\d+\s*\)\s*:", re.IGNORECASE
+)
+SKIP_DIRS = {
+    ".git",
+    ".venv",
+    ".venv_gpci",
+    "__pycache__",
+    "env",
+    "site-packages",
+}
 SKIP_FILES = {"tools/github_tasks_setup.py"}
 CODE_GLOBS = ("*.py",)
+ARG_DESCRIPTION = " ".join(
+    (
+        "Fail when TODO comments do not include an owner and",
+        "GH issue.",
+    )
+)
 
 
 def should_scan(path: pathlib.Path) -> bool:
@@ -56,18 +71,20 @@ def scan_files(paths: Iterable[pathlib.Path]) -> list[str]:
             path.read_text(encoding="utf-8", errors="ignore").splitlines(),
             start=1,
         ):
-            if TODO_PATTERN.search(line) and not VALID_TODO_PATTERN.search(line):
+            has_untracked_todo = TODO_PATTERN.search(
+                line
+            ) and not VALID_TODO_PATTERN.search(line)
+            if has_untracked_todo:
                 violations.append(
-                    f"{path}:{line_no}: naked TODO – use '# TODO(owner, GH-123): message'"
+                    f"{path}:{line_no}: naked TODO; use "
+                    "'# TODO(owner, GH-123): message'"
                 )
 
     return violations
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Fail when TODO comments do not include an owner and GH issue."
-    )
+    parser = argparse.ArgumentParser(description=ARG_DESCRIPTION)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
         "--staged",

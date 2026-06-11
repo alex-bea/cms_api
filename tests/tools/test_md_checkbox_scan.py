@@ -11,6 +11,7 @@ def test_staged_clean_markdown_passes(tmp_path, monkeypatch):
     clean.write_text("- [x] done\n", encoding="utf-8")
 
     monkeypatch.setattr(scanner, "ROOT", tmp_path)
+
     def fake_run(command, **kwargs):
         assert command == [
             "git",
@@ -45,7 +46,7 @@ def test_staged_unchecked_markdown_fails(tmp_path, monkeypatch):
     assert scanner.main(["--staged"]) == 1
 
 
-def test_unstaged_legacy_checkbox_does_not_block_staged_scan(tmp_path, monkeypatch):
+def test_unstaged_checkbox_does_not_block_staged_scan(tmp_path, monkeypatch):
     clean = tmp_path / "docs" / "clean.md"
     clean.parent.mkdir()
     clean.write_text("No checkbox here.\n", encoding="utf-8")
@@ -63,10 +64,13 @@ def test_unstaged_legacy_checkbox_does_not_block_staged_scan(tmp_path, monkeypat
     assert scanner.main(["--staged"]) == 0
 
 
-def test_template_allowlist_passes_with_unchecked_checkbox(tmp_path, monkeypatch):
+def test_template_allowlist_passes_with_checkbox(tmp_path, monkeypatch):
     template = tmp_path / "prds" / "_templates" / "SRC-TEMPLATE.md"
     template.parent.mkdir(parents=True)
-    template.write_text("- [ ] allowed template placeholder\n", encoding="utf-8")
+    template.write_text(
+        "- [ ] allowed template placeholder\n",
+        encoding="utf-8",
+    )
 
     monkeypatch.setattr(scanner, "ROOT", tmp_path)
     monkeypatch.setattr(

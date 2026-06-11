@@ -1,4 +1,4 @@
-"""Fail the build when unchecked Markdown checkboxes appear outside whitelisted directories."""
+"""Detect unchecked Markdown checkboxes outside whitelisted directories."""
 
 from __future__ import annotations
 
@@ -57,7 +57,9 @@ def scan_files(markdown_files: Iterable[pathlib.Path]) -> list[str]:
             start=1,
         ):
             if CHECKBOX_PATTERN.search(line):
-                violations.append(f"{md_file}:{line_no}: unchecked checkbox not allowed")
+                violations.append(
+                    f"{md_file}:{line_no}: unchecked checkbox not allowed"
+                )
                 break  # one hit per file is enough
 
     return violations
@@ -65,7 +67,10 @@ def scan_files(markdown_files: Iterable[pathlib.Path]) -> list[str]:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Fail when unchecked Markdown checkboxes appear outside allowed templates."
+        description=(
+            "Fail when unchecked Markdown checkboxes appear outside "
+            "allowed templates."
+        )
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -83,7 +88,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    markdown_files = iter_staged_markdown_files() if args.staged else iter_markdown_files()
+    markdown_files = (
+        iter_staged_markdown_files() if args.staged else iter_markdown_files()
+    )
     violations = scan_files(markdown_files)
 
     if violations:

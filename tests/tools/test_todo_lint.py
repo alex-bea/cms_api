@@ -41,7 +41,7 @@ def test_staged_naked_todo_fails(tmp_path, monkeypatch):
     assert todo_lint.main(["--staged"]) == 1
 
 
-def test_unstaged_legacy_todo_does_not_block_staged_scan(tmp_path, monkeypatch):
+def test_unstaged_todo_does_not_block_staged_scan(tmp_path, monkeypatch):
     clean = tmp_path / "app.py"
     clean.write_text("print('ok')\n", encoding="utf-8")
     legacy = tmp_path / "legacy.py"
