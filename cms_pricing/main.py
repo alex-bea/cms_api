@@ -3,25 +3,36 @@
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Dict, Any
+from typing import Any, Dict
 
 import structlog
-from fastapi import FastAPI, Request, Response, HTTPException, Depends
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from slowapi.util import get_remote_address
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response as StarletteResponse
 
+from cms_pricing.auth import verify_api_key
+from cms_pricing.cache import CacheManager
 from cms_pricing.config import settings
 from cms_pricing.middleware import LoggingMiddleware, SecurityMiddleware
-from cms_pricing.routers import plans, pricing, geography, trace, health, rvu, nearest_zip, mpfs, opps
+from cms_pricing.routers import (
+    geography,
+    health,
+    mpfs,
+    nearest_zip,
+    opps,
+    plans,
+    pricing,
+    rvu,
+    trace,
+)
 from cms_pricing.services.geography_health import router as geography_health_router
-from cms_pricing.cache import CacheManager
-from cms_pricing.auth import verify_api_key
 
 # Configure structured logging
 structlog.configure(
@@ -34,7 +45,9 @@ structlog.configure(
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
-        structlog.processors.JSONRenderer() if settings.log_format == "json" else structlog.dev.ConsoleRenderer(),
+        structlog.processors.JSONRenderer()
+        if settings.log_format == "json"
+        else structlog.dev.ConsoleRenderer(),
     ],
     context_class=dict,
     logger_factory=structlog.stdlib.LoggerFactory(),
@@ -47,32 +60,26 @@ logger = structlog.get_logger()
 # Rate limiting
 limiter = Limiter(
     key_func=get_remote_address,
-    default_limits=[f"{settings.rate_limit_per_minute}/minute"]
+    default_limits=[f"{settings.rate_limit_per_minute}/minute"],
 )
 
 # Prometheus metrics
 REQUEST_COUNT = Counter(
-    'http_requests_total', 
-    'Total HTTP requests', 
-    ['method', 'endpoint', 'status_code']
+    "http_requests_total", "Total HTTP requests", ["method", "endpoint", "status_code"]
 )
 REQUEST_DURATION = Histogram(
-    'http_request_duration_seconds', 
-    'HTTP request duration', 
-    ['method', 'endpoint']
+    "http_request_duration_seconds", "HTTP request duration", ["method", "endpoint"]
 )
 PRICING_LINES = Counter(
-    'pricing_lines_total', 
-    'Total pricing lines processed', 
-    ['source']
+    "pricing_lines_total", "Total pricing lines processed", ["source"]
 )
 DATASET_SELECTIONS = Counter(
-    'dataset_snapshot_selected_total', 
-    'Dataset snapshots selected', 
-    ['dataset_id', 'digest']
+    "dataset_snapshot_selected_total",
+    "Dataset snapshots selected",
+    ["dataset_id", "digest"],
 )
-CACHE_HITS = Counter('cache_hits_total', 'Cache hits', ['tier'])
-CACHE_MISSES = Counter('cache_misses_total', 'Cache misses', ['tier'])
+CACHE_HITS = Counter("cache_hits_total", "Cache hits", ["tier"])
+CACHE_MISSES = Counter("cache_misses_total", "Cache misses", ["tier"])
 
 # Global cache manager
 cache_manager = CacheManager()
@@ -86,17 +93,17 @@ async def lifespan(app: FastAPI):
 
     # Initialize cache
     await cache_manager.initialize()
-    
+
     # Warm caches if configured
     warm_slices = settings.get_warm_slices()
     if warm_slices:
         logger.info("Warming caches", slices=warm_slices)
         # TODO(alex, GH-430): Implement cache warming
-    
+
     logger.info("CMS Pricing API started successfully")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down CMS Pricing API")
     await cache_manager.close()
@@ -110,7 +117,7 @@ app = FastAPI(
     docs_url="/docs" if settings.debug else None,
     redoc_url="/redoc" if settings.debug else None,
     openapi_url="/openapi.json" if settings.debug else None,
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Add rate limiting
@@ -147,23 +154,22 @@ app.include_router(opps.router, prefix="/opps", tags=["opps"])
 async def metrics_middleware(request: Request, call_next):
     """Middleware to collect Prometheus metrics"""
     start_time = time.time()
-    
+
     # Process request
     response = await call_next(request)
-    
+
     # Record metrics
     duration = time.time() - start_time
-    REQUEST_DURATION.labels(
-        method=request.method,
-        endpoint=request.url.path
-    ).observe(duration)
-    
+    REQUEST_DURATION.labels(method=request.method, endpoint=request.url.path).observe(
+        duration
+    )
+
     REQUEST_COUNT.labels(
         method=request.method,
         endpoint=request.url.path,
-        status_code=response.status_code
+        status_code=response.status_code,
     ).inc()
-    
+
     return response
 
 
@@ -172,57 +178,58 @@ async def metrics():
     """Prometheus metrics endpoint"""
     # Verify API key for metrics endpoint
     # This will be implemented in the security middleware
-    return StarletteResponse(
-        generate_latest(),
-        media_type=CONTENT_TYPE_LATEST
-    )
+    return StarletteResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Global HTTP exception handler"""
-    run_id = getattr(request.state, 'run_id', str(uuid.uuid4()))
-    
+    run_id = getattr(request.state, "run_id", str(uuid.uuid4()))
+    message = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+
     logger.error(
         "HTTP exception",
         run_id=run_id,
         status_code=exc.status_code,
         detail=exc.detail,
         path=request.url.path,
-        method=request.method
+        method=request.method,
     )
-    
+
     return JSONResponse(
         status_code=exc.status_code,
         content={
             "error": exc.detail,
+            "message": message,
             "code": f"HTTP_{exc.status_code}",
-            "trace_id": run_id
-        }
+            "trace_id": run_id,
+        },
     )
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Global exception handler"""
-    run_id = getattr(request.state, 'run_id', str(uuid.uuid4()))
-    
+    run_id = getattr(request.state, "run_id", str(uuid.uuid4()))
+
     logger.error(
         "Unhandled exception",
         run_id=run_id,
         exception=str(exc),
         path=request.url.path,
         method=request.method,
-        exc_info=True
+        exc_info=True,
     )
-    
+
     return JSONResponse(
         status_code=500,
         content={
             "error": "Internal server error",
+            "message": "Internal server error",
             "code": "INTERNAL_ERROR",
-            "trace_id": run_id
-        }
+            "trace_id": run_id,
+        },
     )
 
 
@@ -240,10 +247,11 @@ def get_logger():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "cms_pricing.main:app",
         host="0.0.0.0",
         port=8000,
         reload=settings.debug,
-        log_level=settings.log_level.lower()
+        log_level=settings.log_level.lower(),
     )
