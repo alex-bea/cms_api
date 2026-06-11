@@ -77,3 +77,11 @@ def test_routing_404_response_matches_error_schema():
 
     assert response.status_code == 404
     validate(response.json(), schema(ERROR_SCHEMA))
+
+
+def test_method_not_allowed_preserves_allow_header():
+    response = TestClient(app).request("TRACE", "/health")
+
+    assert response.status_code == 405
+    assert "GET" in response.headers["allow"]
+    validate(response.json(), schema(ERROR_SCHEMA))

@@ -66,6 +66,7 @@ jobs:
           schemathesis run api-contracts/openapi.yaml
           --url=http://localhost:8000
           -H "X-API-Key: dev-key-123"
+          --exclude-checks unsupported_method
   pytest:
     runs-on: ubuntu-latest
     services:

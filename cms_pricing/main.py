@@ -205,6 +205,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             "code": f"HTTP_{exc.status_code}",
             "trace_id": run_id,
         },
+        headers=getattr(exc, "headers", None),
     )
 
 
