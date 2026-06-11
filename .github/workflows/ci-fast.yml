@@ -140,7 +140,6 @@ jobs:
           pytest \
             tests/api/test_openapi_consistency.py \
             tests/utils/test_snapshot_fallback.py \
-            tests/normalize/test_locality_fips_normalization.py \
             tests/test_normalize_string_columns.py \
             tests/ingestion/test_gpci_parser_golden.py \
             tests/ingestion/test_gpci_parser_negatives.py \

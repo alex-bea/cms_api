@@ -135,7 +135,7 @@ jobs:
 
       - name: Scan production image for vulnerabilities
         if: matrix.target == 'production'
-        uses: aquasecurity/trivy-action@v0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.image.outputs.primary_tag }}
           severity: HIGH,CRITICAL
