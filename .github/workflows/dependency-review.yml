@@ -24,14 +24,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Review dependency changes
-        id: dependency_review
-        continue-on-error: true
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
           retry-on-snapshot-warnings: true
-
-      - name: Report dependency review setup issue
-        if: steps.dependency_review.outcome == 'failure'
-        run: |
-          echo "::warning title=Dependency Review unavailable::Dependency Review could not run. Enable Dependency Graph in repository security settings to make this check enforce high-severity dependency changes."
