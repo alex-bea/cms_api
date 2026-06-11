@@ -5,8 +5,8 @@ status: active
 rank: 1
 team: data
 owner_mode: shared
-updated_at: "2026-06-10"
-plan_path: "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+updated_at: "2026-06-11"
+plan_path: "docs/workbench/DOC-cms-rvu-ingestion-epic-brief.md"
 related_paths:
   - "cms_pricing/ingestion/ingestors/rvu_ingestor.py"
   - "cms_pricing/ingestion/datasets/rvu_loaders.py"
@@ -14,5 +14,6 @@ related_paths:
   - "scripts/load_latest_cms_rvu_local.py"
 linked_beads:
 linked_outputs:
+  - "docs/workbench/DOC-cms-rvu-ingestion-epic-brief.md"
   - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
 summary: "Move live CMS RVU releases through real local/dev DB writes and ensure valuation-date snapshot lookup chooses the expected RVU and GPCI release."

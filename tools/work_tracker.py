@@ -34,8 +34,11 @@ STATUSES = {
 }
 OWNER_MODES = {"alex", "agent", "shared"}
 TEAMS = {"system", "data", "api", "ops", "shared"}
+PARALLEL_POLICIES = {"sequential", "read_only_parallel", "independent_write"}
+CODEX_MODES = {"local", "worktree", "cloud", "manual"}
 ACTIVE_TASK_LIMIT = 3
 RUN_EPIC_STOP_STATUSES = {"blocked", "queued_for_merge"}
+HARNESS_TASK_STATUSES = {"active", "queued"}
 VALIDATION_PYTHON_EXECUTABLES = {".venv/bin/python", "python", "python3"}
 VALIDATION_SCRIPT_PREFIXES = ("scripts/governance/",)
 VALIDATION_MODULES = {"pytest", "tools.audit_doc_catalog"}
@@ -308,6 +311,91 @@ def validate_ranks(
         ranks[rank] = str(record.get("_path"))
 
 
+def task_dependency_ids(task: dict[str, Any]) -> list[str]:
+    depends_on = task.get("depends_on", [])
+    return depends_on if isinstance(depends_on, list) else []
+
+
+def validate_task_harness_fields(
+    tasks: list[dict[str, Any]], errors: list[str]
+) -> None:
+    tasks_by_id = {str(task.get("id")): task for task in tasks}
+
+    for task in tasks:
+        label = str(task.get("_path", f"task:{task.get('id', '?')}"))
+        status = str(task.get("status", "")).strip()
+
+        if status in HARNESS_TASK_STATUSES:
+            for field in ("depends_on", "parallel_policy", "codex_mode"):
+                if field not in task:
+                    errors.append(
+                        f"{label}: {field} is required for active/queued tasks"
+                    )
+
+        if "depends_on" in task:
+            depends_on = task.get("depends_on")
+            if not isinstance(depends_on, list):
+                errors.append(f"{label}: 'depends_on' must be a list")
+            else:
+                for dependency_id in depends_on:
+                    dependency_id = str(dependency_id)
+                    if dependency_id == str(task.get("id")):
+                        errors.append(f"{label}: task cannot depend on itself")
+                    elif dependency_id not in tasks_by_id:
+                        errors.append(
+                            f"{label}: dependency task does not exist: {dependency_id}"
+                        )
+
+        if "parallel_policy" in task:
+            parallel_policy = str(task.get("parallel_policy", "")).strip()
+            if parallel_policy not in PARALLEL_POLICIES:
+                errors.append(
+                    f"{label}: invalid parallel_policy '{parallel_policy}'"
+                )
+
+        if "codex_mode" in task:
+            codex_mode = str(task.get("codex_mode", "")).strip()
+            if codex_mode not in CODEX_MODES:
+                errors.append(f"{label}: invalid codex_mode '{codex_mode}'")
+
+    cycle = find_task_dependency_cycle(tasks_by_id)
+    if cycle:
+        errors.append(f"state/work/tasks: task dependency cycle detected: {cycle}")
+
+
+def find_task_dependency_cycle(tasks_by_id: dict[str, dict[str, Any]]) -> str | None:
+    visiting: set[str] = set()
+    visited: set[str] = set()
+    stack: list[str] = []
+
+    def visit(task_id: str) -> list[str] | None:
+        if task_id in visited:
+            return None
+        if task_id in visiting:
+            start = stack.index(task_id)
+            return stack[start:] + [task_id]
+
+        visiting.add(task_id)
+        stack.append(task_id)
+        for dependency_id in task_dependency_ids(tasks_by_id[task_id]):
+            dependency_id = str(dependency_id)
+            if dependency_id not in tasks_by_id:
+                continue
+            cycle = visit(dependency_id)
+            if cycle:
+                return cycle
+        stack.pop()
+        visiting.remove(task_id)
+        visited.add(task_id)
+        return None
+
+    for task_id in sorted(tasks_by_id):
+        cycle = visit(task_id)
+        if cycle:
+            return " -> ".join(cycle)
+    return None
+
+
 def markdown_headings(text: str) -> set[str]:
     headings = set()
     for line in text.splitlines():
@@ -423,6 +511,8 @@ def validate_tracker(tracker: TrackerData) -> ValidationResult:
                     errors.append(
                         f"{task.get('_path')}: {field} is required for active/blocked/queued_for_merge tasks"
                     )
+
+    validate_task_harness_fields(tracker.tasks, errors)
 
     if (
         len([task for task in active_tasks if task.get("status") == "active"])
@@ -699,8 +789,21 @@ def build_command(root: Path) -> int:
     return 0
 
 
-def task_payload(task: dict[str, Any]) -> dict[str, Any]:
-    return {
+def task_parallel_policy(task: dict[str, Any]) -> str:
+    policy = str(task.get("parallel_policy", "sequential")).strip()
+    return policy if policy in PARALLEL_POLICIES else "sequential"
+
+
+def task_codex_mode(task: dict[str, Any]) -> str:
+    mode = str(task.get("codex_mode", "local")).strip()
+    return mode if mode in CODEX_MODES else "local"
+
+
+def task_payload(
+    task: dict[str, Any],
+    dependency_status: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = {
         "id": task.get("id"),
         "title": task.get("title"),
         "rank": task.get("rank"),
@@ -708,10 +811,184 @@ def task_payload(task: dict[str, Any]) -> dict[str, Any]:
         "team": task.get("team"),
         "owner_mode": task.get("owner_mode"),
         "plan_path": task.get("plan_path"),
+        "related_paths": task.get("related_paths", []) or [],
+        "depends_on": task_dependency_ids(task),
+        "parallel_policy": task_parallel_policy(task),
+        "codex_mode": task_codex_mode(task),
         "current_task": task.get("current_task"),
         "next_action": task.get("next_action"),
         "resume_from": task.get("resume_from"),
     }
+    if dependency_status is not None:
+        payload["dependency_status"] = dependency_status
+    return payload
+
+
+def dependency_status_for_task(
+    tasks_by_id: dict[str, dict[str, Any]], task: dict[str, Any]
+) -> dict[str, Any]:
+    dependencies = []
+    for dependency_id in task_dependency_ids(task):
+        dependency_id = str(dependency_id)
+        dependency = tasks_by_id.get(dependency_id)
+        status = dependency.get("status") if dependency else None
+        dependencies.append(
+            {
+                "id": dependency_id,
+                "status": status,
+                "satisfied": status == "done",
+            }
+        )
+    return {
+        "required": task_dependency_ids(task),
+        "satisfied": all(item["satisfied"] for item in dependencies),
+        "dependencies": dependencies,
+    }
+
+
+def dependency_block_reasons(dependency_status: dict[str, Any]) -> list[str]:
+    return [
+        f"dependency {item['id']} is {item['status'] or 'missing'}"
+        for item in dependency_status["dependencies"]
+        if not item["satisfied"]
+    ]
+
+
+def normalized_related_path(value: str) -> str:
+    return value.strip().strip("/")
+
+
+def related_paths_overlap(left: str, right: str) -> bool:
+    left = normalized_related_path(left)
+    right = normalized_related_path(right)
+    if not left or not right:
+        return False
+    return left == right or left.startswith(f"{right}/") or right.startswith(f"{left}/")
+
+
+def tasks_have_related_path_overlap(
+    left: dict[str, Any], right: dict[str, Any]
+) -> bool:
+    left_paths = [str(path) for path in left.get("related_paths", []) or []]
+    right_paths = [str(path) for path in right.get("related_paths", []) or []]
+    return any(
+        related_paths_overlap(left_path, right_path)
+        for left_path in left_paths
+        for right_path in right_paths
+    )
+
+
+def task_is_write_capable(task: dict[str, Any]) -> bool:
+    return task_parallel_policy(task) != "read_only_parallel"
+
+
+def parallel_block_reasons(
+    candidate: dict[str, Any], active_tasks: list[dict[str, Any]]
+) -> list[str]:
+    if task_parallel_policy(candidate) == "read_only_parallel":
+        return []
+
+    reasons: list[str] = []
+    candidate_policy = task_parallel_policy(candidate)
+    for active_task in active_tasks:
+        if active_task.get("id") == candidate.get("id"):
+            continue
+        if not task_is_write_capable(active_task):
+            continue
+        active_policy = task_parallel_policy(active_task)
+        if candidate_policy != "independent_write":
+            reasons.append(
+                f"same-epic active task {active_task.get('id')} blocks sequential write work"
+            )
+            continue
+        if active_policy != "independent_write":
+            reasons.append(
+                f"same-epic active task {active_task.get('id')} is not independent_write"
+            )
+            continue
+        if tasks_have_related_path_overlap(candidate, active_task):
+            reasons.append(
+                f"related_paths overlap with active task {active_task.get('id')}"
+            )
+    return reasons
+
+
+def runnable_reasons_for_task(
+    task: dict[str, Any],
+    tasks_by_id: dict[str, dict[str, Any]],
+    active_tasks: list[dict[str, Any]],
+) -> list[str]:
+    dependency_status = dependency_status_for_task(tasks_by_id, task)
+    reasons = dependency_block_reasons(dependency_status)
+    if task.get("status") == "queued":
+        reasons.extend(parallel_block_reasons(task, active_tasks))
+    return reasons
+
+
+def select_codex_harness_task(
+    tracker: TrackerData, epic_id: str
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]], dict[str, Any]]:
+    tasks_by_id = {str(task.get("id")): task for task in tracker.tasks}
+    epic_tasks = [
+        task
+        for task in tracker.tasks
+        if task.get("parent_id") == epic_id
+        and task.get("status") in HARNESS_TASK_STATUSES
+    ]
+    active_tasks = sort_by_rank(
+        [task for task in epic_tasks if task.get("status") == "active"]
+    )
+    queued_tasks = sort_by_rank(
+        [task for task in epic_tasks if task.get("status") == "queued"]
+    )
+    dependency_status = {
+        str(task.get("id")): dependency_status_for_task(tasks_by_id, task)
+        for task in epic_tasks
+    }
+
+    blocked_tasks: list[dict[str, Any]] = []
+    selected: dict[str, Any] | None = None
+
+    for task in active_tasks:
+        reasons = runnable_reasons_for_task(task, tasks_by_id, active_tasks)
+        if not reasons and selected is None:
+            selected = task
+        elif reasons:
+            blocked_tasks.append(
+                {
+                    "task": task_payload(task, dependency_status[str(task.get("id"))]),
+                    "reasons": reasons,
+                }
+            )
+
+    if selected is None:
+        for task in queued_tasks:
+            reasons = runnable_reasons_for_task(task, tasks_by_id, active_tasks)
+            if not reasons and selected is None:
+                selected = task
+            elif reasons:
+                blocked_tasks.append(
+                    {
+                        "task": task_payload(
+                            task, dependency_status[str(task.get("id"))]
+                        ),
+                        "reasons": reasons,
+                    }
+                )
+    else:
+        for task in queued_tasks:
+            reasons = runnable_reasons_for_task(task, tasks_by_id, active_tasks)
+            if reasons:
+                blocked_tasks.append(
+                    {
+                        "task": task_payload(
+                            task, dependency_status[str(task.get("id"))]
+                        ),
+                        "reasons": reasons,
+                    }
+                )
+
+    return selected, blocked_tasks, dependency_status
 
 
 def build_epic_run_dry_run_payload(
@@ -741,6 +1018,9 @@ def build_epic_run_dry_run_payload(
             stop_conditions = markdown_section_lines(text, "Stop Conditions")
 
     active_count = len([task for task in tracker.tasks if task.get("status") == "active"])
+    selected_task, blocked_tasks, dependency_status = select_codex_harness_task(
+        tracker, epic_id
+    )
     return {
         "dry_run": True,
         "epic": {
@@ -757,7 +1037,20 @@ def build_epic_run_dry_run_payload(
         "max_slices": max_slices,
         "total_queued_tasks": len(queued_tasks),
         "selected_task_count": len(selected_tasks),
-        "tasks": [task_payload(task) for task in selected_tasks],
+        "selected_task": (
+            task_payload(
+                selected_task,
+                dependency_status[str(selected_task.get("id"))],
+            )
+            if selected_task is not None
+            else None
+        ),
+        "blocked_tasks": blocked_tasks,
+        "dependency_status": dependency_status,
+        "tasks": [
+            task_payload(task, dependency_status.get(str(task.get("id"))))
+            for task in selected_tasks
+        ],
         "validation_commands": validation_commands,
         "stop_conditions": stop_conditions,
         "mutations": [],
@@ -918,6 +1211,31 @@ def build_epic_run_apply_state_payload(
             f"active task WIP is full: {active_count}/{ACTIVE_TASK_LIMIT}"
         )
 
+    queued_tasks = sort_by_rank(
+        [
+            task
+            for task in tracker.tasks
+            if task.get("parent_id") == epic_id and task.get("status") == "queued"
+        ]
+    )
+    if queued_tasks:
+        tasks_by_id = {str(task.get("id")): task for task in tracker.tasks}
+        active_epic_tasks = sort_by_rank(
+            [
+                task
+                for task in tracker.tasks
+                if task.get("parent_id") == epic_id
+                and task.get("status") == "active"
+            ]
+        )
+        candidate = queued_tasks[0]
+        reasons = runnable_reasons_for_task(candidate, tasks_by_id, active_epic_tasks)
+        if reasons:
+            raise EpicRunStateError(
+                "next queued task is not runnable: "
+                f"{candidate.get('id')}: {'; '.join(reasons)}"
+            )
+
     payload = build_epic_run_dry_run_payload(tracker, epic_id, max_slices=1)
     payload["dry_run"] = False
     payload["apply_state"] = True
@@ -973,8 +1291,44 @@ def render_epic_run_dry_run(payload: dict[str, Any]) -> str:
             f"{payload['selected_task_count']}/{payload['total_queued_tasks']}"
         ),
         "",
-        "Task sequence:",
+        "Codex harness target:",
     ]
+
+    selected_task = payload.get("selected_task")
+    if selected_task:
+        lines.append(
+            f"- [{selected_task['rank']}] {selected_task['id']} - {selected_task['title']}"
+        )
+        lines.append(f"  Status: {selected_task['status']}")
+        lines.append(f"  Parallel policy: {selected_task['parallel_policy']}")
+        lines.append(f"  Codex mode: {selected_task['codex_mode']}")
+        next_action = selected_task.get("next_action")
+        if next_action:
+            lines.append(f"  Next action: {next_action}")
+    else:
+        lines.append("- None.")
+
+    lines.extend(
+        [
+            "",
+            "Blocked harness candidates:",
+        ]
+    )
+    blocked_tasks = payload.get("blocked_tasks", [])
+    if blocked_tasks:
+        for blocked in blocked_tasks:
+            task = blocked["task"]
+            reasons = "; ".join(blocked["reasons"])
+            lines.append(f"- [{task['rank']}] {task['id']}: {reasons}")
+    else:
+        lines.append("- None.")
+
+    lines.extend(
+        [
+            "",
+            "Task sequence:",
+        ]
+    )
 
     tasks = payload["tasks"]
     if tasks:

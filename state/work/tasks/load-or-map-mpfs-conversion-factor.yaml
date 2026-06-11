@@ -5,15 +5,21 @@ status: active
 rank: 3
 team: data
 owner_mode: shared
-updated_at: "2026-06-10"
-plan_path: "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+updated_at: "2026-06-11"
+plan_path: "docs/workbench/DOC-cms-rvu-ingestion-epic-brief.md"
 related_paths:
   - "scripts/load_latest_cms_rvu_local.py"
   - "cms_pricing/ingestion/parsers/conversion_factor_parser.py"
   - "cms_pricing/models/mpfs/mpfs_conversion_factor.py"
   - "cms_pricing/engines/mpfs.py"
+depends_on:
+  - "load-latest-cms-rvu-local-db"
+  - "wire-pricing-to-rvu-snapshot-selection"
+parallel_policy: sequential
+codex_mode: local
 linked_beads:
 linked_outputs:
+  - "docs/workbench/DOC-cms-rvu-ingestion-epic-brief.md"
   - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
 summary: "Confirm and formalize the MPFS conversion-factor source used by the live RVU pricing path. The current smoke uses RVUItem.conversion_factor and traces CF:source:rvu_items.conversion_factor."
 current_task: "Decide whether RVUItem.conversion_factor is the intended live MPFS CF source for loaded RVU pricing, or whether a companion conversion-factor snapshot/load path is required."
