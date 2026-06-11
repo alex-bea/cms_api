@@ -1,12 +1,14 @@
 # CMS Geography Production Ingestion
 
-**Status:** Active
+**Status:** Active - Render approval gate
 **Updated:** 2026-06-11
 **Tracker link:** `state/work/epics/cms-geography-production-ingestion.yaml`
 
 ## Related Governance
 
 - `docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md`
+- `docs/workbench/DOC-cms-pricing-pipeline-production-readiness-epic-brief.md`
+- `docs/workbench/DOC-cms-pricing-pipeline-production-readiness-build-brief.md`
 - `docs/workbench/DOC-cms-rvu-local-db-load-status.md`
 - `prds/PRD-geography-locality-mapping-prd-v1.0.md`
 - `prds/REF-geography-source-map-prd-v1.0.md`
@@ -42,23 +44,52 @@ geography data is usable in local/dev:
 - MPFS pricing can join all active geography state/locality pairs to 2026 GPCI
   after the pricing-side special-state mapping.
 
-The production ingestion path is still not equivalent:
+PR #450 advanced the production ingestion path:
 
-- `CMSZipLocalityProductionIngester` downloads the CMS ZIP package but its
-  validation is mocked and normalization reads existing `cms_zip_locality`
-  rows instead of parsing the landed source package;
-- `CMSZipLocalityProductionIngester` publishes to `cms_zip_locality`, not to
+- `CMSZipLocalityProductionIngester` now parses the landed CMS ZIP-locality
+  package through `cms_pricing.ingestion.parsers.cms_geography`;
+- the production ZIP-locality ingester publishes source ZIP5 and ZIP9 rows into
   runtime `geography`;
-- `CMSZip9Ingester` parses ZIP9 rows but targets `zip9_overrides`, drops
-  carrier from the runtime projection, and does not publish the data needed by
-  the pricing resolver;
-- source discovery is hard-coded to the 2025-08-14 package and does not yet
-  select or validate newer CMS packages;
-- latest-effective semantics are explicit only in the local/dev loader
-  (`--open-ended-latest`) and are not yet a governed production policy;
-- production validation gates do not yet cover the proven real-data checks:
-  row counts, duplicate active keys, locality `00` preservation, 94110 probe,
-  state/locality GPCI join coverage, and post-RVU API smoke.
+- runtime publication is non-destructive by default and requires explicit scoped
+  replace behavior for overlapping rows;
+- `ZIP_LOCALITY` dataset snapshots are registered from the source digest and
+  effective window;
+- `CMSZip9Ingester` now discovers the same CMS ZIP-locality package and
+  delegates fixed-width ZIP9 parsing to the shared geography parser while
+  retaining its legacy `zip9_overrides` output strategy.
+
+After PR #450 merged, the local/dev seedless pipeline passed end to end:
+
+- the geography load reused the full `ZIP_LOCALITY` runtime geography snapshot:
+  `1,118,970` rows, zero rejects, zero duplicate source keys, and
+  `94110 -> CA/05/01112`;
+- the RVU loader selected and refreshed `rvu_2026_C`;
+- snapshot selection picked `rvu_items -> rvu_2026_C` and
+  `gpci_indices -> gpci_2026_C` for valuation date `2026-07-01`;
+- the post-RVU API smoke returned `status=ok`, `allowed_cents=11758`,
+  `release_id=rvu_2026_C`, and RVU/GPCI/CF trace refs.
+
+Production-readiness closure:
+
+- source discovery and effective-date policy are documented in
+  `docs/workbench/DOC-cms-zip-locality-source-discovery-effective-date-policy.md`;
+- dry-run-only production preflight is documented in
+  `docs/workbench/DOC-cms-pricing-production-preflight-runbook.md`;
+- local evidence is recorded in
+  `docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md`;
+- strict source-window mode correctly blocks `2026-07-01` for the pinned
+  `2025Q4` source, while explicit latest-active/open-ended local preflight
+  passes;
+- full local smoke passes for both `94110 -> CA/05/01112` and
+  `66012 -> EK/00/05202`, with `release_id=rvu_2026_C` and accepted
+  `proof_path=production_style_local_smoke`;
+- Docker Compose production-style smoke passes against isolated compose database
+  `cms_pricing_docker_smoke_20260611_01`;
+- Docker evidence is recorded in
+  `docs/workbench/DOC-cms-rvu-geography-docker-compose-production-style-smoke-evidence.md`;
+- the Render production execution runbook is drafted in
+  `docs/workbench/DOC-render-rvu-geography-production-execution-runbook.md`;
+- production mutation remains blocked until operator approval is recorded.
 
 ## Scope
 
@@ -197,7 +228,7 @@ update is required before the final production ingestion task is closed.
 ## Ordered Task Slices
 
 1. Audit production geography ingester contracts.
-   - Status: active.
+   - Status: done.
    - Tracker task:
      `state/work/tasks/audit-geography-production-ingester-contracts.yaml`.
    - Validation: gap matrix comparing local loader behavior, DIS contracts,
@@ -211,42 +242,138 @@ update is required before the final production ingestion task is closed.
      year/quarter mapping, leading zeros, locality `00`, rejects, and duplicate
      active keys.
 3. Publish CMS ZIP-locality ingestion to runtime geography.
-   - Status: active.
+   - Status: done.
    - Tracker task:
      `state/work/tasks/publish-cms-zip-locality-to-runtime-geography.yaml`.
    - Validation: production ingester can land, validate, normalize, and publish
      real rows into `geography` in a local/dev DB without the local loader.
 4. Consolidate ZIP9 ingestion and source discovery.
-   - Status: queued.
+   - Status: done.
    - Tracker task:
      `state/work/tasks/consolidate-cms-zip9-ingestion-and-source-discovery.yaml`.
    - Validation: ZIP9 rows no longer diverge between `zip9_overrides` and
      runtime `geography`, and source discovery reports the selected package.
 5. Add production geography validation gates.
-   - Status: queued.
+   - Status: done.
    - Tracker task:
      `state/work/tasks/add-production-geography-validation-gates.yaml`.
-   - Validation: gates fail on malformed rows, duplicate active keys, `00`
-     normalization, row-count regressions, GPCI join misses, and valuation-date
-     coverage mismatches.
+   - Validation: `cms_geography_readiness` gates fail on rejects, duplicate
+     active keys, `00` locality loss, row-count regressions, probe mismatch,
+     GPCI join misses, seed-helper proof paths, and valuation-date coverage
+     mismatches. The real local CMS ZIP package dry-run passed all readiness
+     gates with 1,118,970 rows and `94110 -> CA/05/01112`.
 6. Wire production ingestion smoke and runbook.
-   - Status: queued.
+   - Status: done.
    - Tracker task:
      `state/work/tasks/wire-production-geography-ingestion-smoke-and-runbook.yaml`.
-   - Validation: production-style geography ingestion plus RVU/GPCI load passes
-     post-RVU API smoke without the one-row seed helper.
-7. Promote geography production ingestion docs and close.
-   - Status: queued.
+   - Validation: `scripts/run_cms_pricing_local_smoke.py --dry-run-plan`
+     emits the production-style local/dev sequence for geography readiness,
+     RVU/GPCI load, default `94110` smoke, and special source-state `66012`
+     smoke without the one-row seed helper.
+   - Includes the inserted local DB isolation subtask: DB-backed resolver/MPFS
+     tests must be deterministic even when real CMS geography rows are present
+     in the shared local DB.
+7. Document CMS ZIP-locality source discovery and effective-date policy.
+   - Status: done.
+   - Tracker task:
+     `state/work/tasks/document-cms-zip-locality-source-discovery-effective-date-policy.yaml`.
+   - Output:
+     `docs/workbench/DOC-cms-zip-locality-source-discovery-effective-date-policy.md`.
+   - Validation: source package selection, digest expectations, strict quarter
+     coverage, explicit latest-active/open-ended behavior, and blocking stop
+     conditions are documented for production preflight.
+8. Write CMS pricing production preflight runbook.
+   - Status: done.
+   - Tracker task:
+     `state/work/tasks/write-cms-pricing-production-preflight-runbook.yaml`.
+   - Output:
+     `docs/workbench/DOC-cms-pricing-production-preflight-runbook.md`.
+   - Validation: dry-run-only production preflight steps, approvals, rollback
+     plan, scoped replace rules, readiness gates, and final smoke expectations
+     are documented before any production mutation.
+   - Completion benchmarks: strict-mode source-window block, latest-active pass,
+     `94110 -> CA/05/01112`, `66012 -> EK/00/05202`, zero rejects, zero
+     duplicate source keys, locality `00` preservation,
+     `proof_path=production_style_local_smoke`, and no seed-helper evidence.
+9. Execute RVU/geography local production preflight.
+   - Status: done.
+   - Tracker task:
+     `state/work/tasks/execute-rvu-geography-local-production-preflight.yaml`.
+   - Output:
+     `docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md`.
+   - Validation: local evidence commands are run and recorded against the
+     completion benchmarks from the runbook before final close-docs work.
+   - Stop if local DB smoke can only pass through
+     `scripts/seed_post_rvu_load_local.py`, if source readiness gates fail, or
+     if the optional full local smoke cannot prove `rvu_2026_C` selection.
+10. Promote geography production ingestion docs and close.
+   - Status: done.
    - Tracker task:
      `state/work/tasks/promote-geography-production-ingestion-docs-and-close.yaml`.
    - Validation: PRD/source-map/workbench docs and tracker state describe the
-     final production path, known limitations, and follow-up work.
+     final production path, source/effective-date policy, production preflight
+     runbook, local preflight evidence, known limitations, and follow-up work.
+11. Run Docker Compose RVU/geography production-style smoke.
+   - Status: done.
+   - Tracker task:
+     `state/work/tasks/run-docker-compose-rvu-geography-production-style-smoke.yaml`.
+   - Output:
+     `docs/workbench/DOC-cms-rvu-geography-docker-compose-production-style-smoke-evidence.md`.
+   - Validation: the full production-style sequence runs inside Docker Compose
+     against the compose Postgres database, proving the path is not dependent on
+     host-only venv or database state.
+   - Evidence: readiness gates passed, no seed helper was used, `94110` and
+     `66012` smoke passed with `release_id=rvu_2026_C` and positive pricing.
+12. Write Render RVU/geography production execution runbook.
+   - Status: done.
+   - Tracker task:
+     `state/work/tasks/write-render-rvu-geography-production-execution-runbook.yaml`.
+   - Output:
+     `docs/workbench/DOC-render-rvu-geography-production-execution-runbook.md`.
+   - Validation: runbook names Render target, source digest, RVU release,
+     deploy/migration checks, scoped load commands, backup/rollback path, live
+     smoke checks, and a pre-mutation approval checkpoint.
+13. Approve Render RVU/geography production execution runbook.
+   - Status: active.
+   - Tracker task:
+     `state/work/tasks/approve-render-rvu-geography-production-execution-runbook.yaml`.
+   - Output:
+     `docs/workbench/DOC-render-rvu-geography-production-approval-gate.md`.
+   - Validation: operator approval or blockers are recorded before any Render
+     production data mutation. Approval is required before a later execution
+     task can load production data.
+
+## Local Preflight Completion Benchmarks
+
+The RVU/geography production preflight is locally complete only when:
+
+- strict geography readiness dry run blocks `2026-07-01` under the pinned
+  `2025Q4` source window;
+- latest-active/open-ended readiness dry run passes and records
+  `open_ended_latest=true`;
+- source digest remains
+  `b14c414de73256ac9594d7cb0a58a75214ba04f4fe043468ffda507c3dd75c2e`;
+- source scan reports zero rejects and zero duplicate source keys;
+- locality `00` rows remain present and are not normalized to `01`;
+- `94110` resolves to `CA/05/01112`;
+- `66012` resolves to `EK/00/05202`;
+- smoke evidence uses `proof_path=production_style_local_smoke`;
+- post-RVU smoke does not depend on `scripts/seed_post_rvu_load_local.py`;
+- full local DB smoke, when local Postgres is available, selects
+  `rvu_2026_C` and returns positive pricing.
 
 ## Notes
 
 Use Codex v0 as the harness and advance sequentially. Do not perform production
 database writes in this epic without explicit user approval and a separate
 runbook.
+
+The next phase is execution readiness, not production execution. Sequence:
+
+1. Docker Compose smoke against compose Postgres. Done.
+2. Render production execution runbook. Done.
+3. Operator approval gate. Active.
+4. Separate production execution task only after approval.
 
 ## Parser Slice Result
 

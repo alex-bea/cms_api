@@ -71,14 +71,18 @@ def test_engine():
 
 @pytest.fixture(scope="function")
 def test_db_session(test_engine):
-    """Create a test database session"""
-    Session = sessionmaker(bind=test_engine)
+    """Create a rollback-isolated test database session."""
+    connection = test_engine.connect()
+    transaction = connection.begin()
+    Session = sessionmaker(bind=connection)
     session = Session()
-    
+
     try:
         yield session
     finally:
         session.close()
+        transaction.rollback()
+        connection.close()
 
 
 @pytest.fixture(scope="function")

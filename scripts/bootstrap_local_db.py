@@ -20,6 +20,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 
 LOGGER = logging.getLogger("bootstrap_local_db")
@@ -94,11 +95,32 @@ def assert_local_database_url(database_url: str, allow_remote: bool = False) -> 
 
 def configure_database_url(database_url: str) -> None:
     os.environ["DATABASE_URL"] = database_url
-    os.environ.setdefault("TEST_DATABASE_URL", database_url)
+    os.environ["TEST_DATABASE_URL"] = database_url
 
     project_root = str(_project_root())
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
+
+    config_module = sys.modules.get("cms_pricing.config")
+    settings = getattr(config_module, "settings", None)
+    if settings is not None:
+        settings.database_url = database_url
+        settings.test_database_url = database_url
+
+    database_module = sys.modules.get("cms_pricing.database")
+    if database_module is not None:
+        existing_engine = getattr(database_module, "engine", None)
+        if existing_engine is not None:
+            existing_engine.dispose()
+        debug = bool(getattr(settings, "debug", False)) if settings else False
+        new_engine = create_engine(
+            database_url,
+            poolclass=StaticPool,
+            pool_pre_ping=True,
+            echo=debug,
+        )
+        database_module.engine = new_engine
+        database_module.SessionLocal.configure(bind=new_engine)
 
 
 def create_model_schema(database_url: str) -> None:

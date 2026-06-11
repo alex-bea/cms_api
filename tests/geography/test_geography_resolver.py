@@ -12,9 +12,25 @@ from cms_pricing.services.geography import GeographyService
 from cms_pricing.models.geography import Geography
 
 
+GEOGRAPHY_RESOLVER_TEST_ZIPS = (
+    "01434",
+    "02108",
+    "10001",
+    "30303",
+    "90210",
+    "94110",
+    "94111",
+    "99999",
+)
+
+
 @pytest.fixture
 def db_session(test_db_session):
-    """Use the shared migrated test database session."""
+    """Use the shared migrated test database session with fixture ZIPs masked."""
+    test_db_session.query(Geography).filter(
+        Geography.zip5.in_(GEOGRAPHY_RESOLVER_TEST_ZIPS)
+    ).delete(synchronize_session=False)
+    test_db_session.commit()
     return test_db_session
 
 

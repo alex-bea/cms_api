@@ -55,6 +55,10 @@ from cms_pricing.ingestion.parsers.cms_geography import (  # noqa: E402
     scan_source_zip,
     source_zip_digest,
 )
+from cms_pricing.ingestion.validators.cms_geography_readiness import (  # noqa: E402
+    CMS_ZIP_LOCALITY_2025Q4_THRESHOLDS,
+    validate_source_readiness,
+)
 from cms_pricing.models.dataset_snapshots import DatasetSnapshot  # noqa: E402
 from cms_pricing.models.geography import Geography  # noqa: E402
 
@@ -86,6 +90,7 @@ class LoadConfig:
     valuation_date: date | None
     require_valuation_date_coverage: bool
     open_ended_latest: bool
+    production_readiness_gates: bool
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -144,6 +149,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "its source quarter."
         ),
     )
+    parser.add_argument(
+        "--production-readiness-gates",
+        action="store_true",
+        help=(
+            "Add the CMS ZIP-locality production-readiness gate report and "
+            "exit non-zero if any gate fails."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -184,6 +197,7 @@ def build_config(args: argparse.Namespace) -> LoadConfig:
         valuation_date=valuation_date,
         require_valuation_date_coverage=args.require_valuation_date_coverage,
         open_ended_latest=args.open_ended_latest,
+        production_readiness_gates=args.production_readiness_gates,
     )
 
 
@@ -193,7 +207,7 @@ def build_report(
     config: LoadConfig,
     load_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return build_source_report(
+    report = build_source_report(
         stats,
         source_url=config.manifest_url,
         release_id=config.release_id,
@@ -205,6 +219,20 @@ def build_report(
         require_valuation_date_coverage=config.require_valuation_date_coverage,
         load_result=load_result,
     )
+    if config.production_readiness_gates:
+        readiness = validate_source_readiness(
+            stats,
+            thresholds=CMS_ZIP_LOCALITY_2025Q4_THRESHOLDS,
+            valuation_date=config.valuation_date,
+            require_valuation_date_coverage=(
+                config.require_valuation_date_coverage
+            ),
+        )
+        report["production_readiness_gates"] = readiness
+        if readiness["status"] != "ok":
+            report["status"] = "blocked"
+            report["stop_condition"] = "production_readiness_gates_failed"
+    return report
 
 
 def overlapping_existing_filter(stats: SourceStats):

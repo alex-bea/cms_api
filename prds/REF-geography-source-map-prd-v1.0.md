@@ -33,7 +33,7 @@ Document the authoritative geography datasets used for ZIP resolution and locali
 | **NBER ZCTA Centroids (fallback)** | https://www.nber.org/research/data/zip-code-distance-database | Directory listing (e.g., `/2024/centroid/` CSVs) | `zcta5`, `lat`, `lon`. | Intended as fallback when Gazetteer rows missing. No automated ingest yet. |
 | **SimpleMaps US ZIPs (Free)** | https://simplemaps.com/data/us-zips | `uszips.csv` / `.xlsx` (gated download) | `zip`, `zcta`, `parent_zcta`, `military`, `population`, `timezone`, county/CBSA metadata. Target: `zip_metadata`. | Licensing requires attribution; ingestion flow TBD (currently manual uploads). |
 | **HUD–USPS ZIP Crosswalks** | https://www.huduser.gov/portal/datasets/usps_crosswalk.html | Quarterly CSV/XLSX by geography level | `ZIP`, geographic IDs, residential/business/other weights. | Optional QA input; no standard ingest defined. |
-| **CMS ZIP→Locality / ZIP9 Overrides** | https://www.cms.gov/medicare/payment/fee-schedules | Shared ZIP package listed in `REF-cms-pricing-source-map-prd-v1.0.md`. | Maintains state/locality context for resolver fallback. | Local/dev loader `scripts/load_cms_geography_local.py` parses the current ZIP5/ZIP9 package into runtime `geography`; production DIS ingester promotion remains follow-up. |
+| **CMS ZIP→Locality / ZIP9 Overrides** | https://www.cms.gov/medicare/payment/fee-schedules | Shared ZIP package listed in `REF-cms-pricing-source-map-prd-v1.0.md`. | Maintains state/locality context for resolver fallback. | Production-style ZIP-locality ingestion now shares the fixed-width parser and can publish ZIP5/ZIP9 rows into runtime `geography`; local preflight passed, while production mutation remains blocked pending an approved execution runbook. |
 
 ### 2A) Latest Discovery Snapshots (captured 2025-10-04)
 Explicit manifest coverage helps ensure the geography resolver references real landing assets. Rows capture the latest artifact observed for each dataset; gaps indicate discovery manifests still need to be wired up.
@@ -98,6 +98,11 @@ Latest local/dev validation captured on 2026-06-11:
   `b14c414de73256ac9594d7cb0a58a75214ba04f4fe043468ffda507c3dd75c2e`;
 - 2026 RVU local/dev smoke uses explicit latest-effective semantics via
   `scripts/load_cms_geography_local.py --open-ended-latest`.
+- production preflight evidence is recorded in
+  `docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md`;
+  strict `2025Q4` source-window mode blocks `2026-07-01`, explicit
+  latest-active mode passes, and local smoke resolves both `94110 -> CA/05/01112`
+  and `66012 -> EK/00/05202`.
 
 ### 2B) Discovery → Land → API Trace
 Tracing ensures resolver behavior lines up with manifest coverage.
@@ -142,3 +147,4 @@ Tracing ensures resolver behavior lines up with manifest coverage.
 | Date | Version | Author | Notes |
 |---|---|---|---|
 | 2025-10-04 | 1.0 | Pricing Platform Eng | Initial geography source mapping reference. |
+| 2026-06-11 | 1.1 | Pricing Platform Eng | Recorded CMS ZIP-locality production-style ingestion and local RVU/geography preflight evidence; production mutation remains blocked pending execution runbook approval. |

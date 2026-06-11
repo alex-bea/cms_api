@@ -55,6 +55,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-state", default="CA")
     parser.add_argument("--expected-carrier", default="01112")
     parser.add_argument("--expected-release", default="rvu_2026_C")
+    parser.add_argument(
+        "--proof-path",
+        default="post_rvu_load_api_smoke",
+        help=(
+            "Name the evidence path for this smoke. Values that depend on "
+            "scripts/seed_post_rvu_load_local.py are refused."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -70,6 +78,17 @@ def main() -> None:
     database_url = resolve_database_url(args.database_url)
     assert_local_database_url(database_url, allow_remote=args.allow_remote)
     configure_database_url(database_url)
+
+    from cms_pricing.ingestion.validators.cms_geography_readiness import (  # noqa: WPS433
+        validate_smoke_proof_path,
+    )
+
+    proof_path = validate_smoke_proof_path(args.proof_path)
+    require(
+        proof_path["status"] == "ok",
+        "Unacceptable post-RVU smoke proof path",
+        proof_path,
+    )
 
     from fastapi.testclient import TestClient  # noqa: WPS433
     from cms_pricing.main import app  # noqa: WPS433
@@ -166,6 +185,7 @@ def main() -> None:
                     "dataset_id": pricing_payload.get("dataset_id"),
                     "trace_refs": pricing_payload.get("trace_refs"),
                 },
+                "proof_path": proof_path,
             },
             sort_keys=True,
         )
