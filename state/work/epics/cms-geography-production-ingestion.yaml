@@ -8,6 +8,10 @@ owner_mode: shared
 updated_at: "2026-06-11"
 plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
 related_paths:
+  - "docker-compose.yml"
+  - "render.yaml"
+  - "docs/workbench/DOC-cms-pricing-production-preflight-runbook.md"
+  - "docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md"
   - "scripts/load_cms_geography_local.py"
   - "cms_pricing/ingestion/parsers/cms_geography.py"
   - "cms_pricing/ingestion/ingestors/cms_zip_locality_production_ingester.py"
@@ -19,6 +23,8 @@ related_paths:
 linked_beads:
 linked_outputs:
   - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-cms-pricing-production-preflight-runbook.md"
+  - "docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md"
   - "docs/workbench/DOC-cms-geography-production-ingester-contract-audit.md"
   - "cms_pricing/ingestion/parsers/cms_geography.py"
-summary: "Promote the proven local/dev CMS ZIP-locality loader into the production DIS ingestion path for runtime geography and RVU smoke readiness."
+summary: "Execution readiness is mostly complete: local and Docker RVU/geography production-style smoke passed, the Render execution runbook is drafted, and production mutation is now blocked on explicit operator approval."

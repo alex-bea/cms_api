@@ -1,0 +1,30 @@
+id: document-cms-zip-locality-source-discovery-effective-date-policy
+parent_id: cms-geography-production-ingestion
+title: Document CMS ZIP Locality Source Discovery Effective Date Policy
+status: done
+rank: 7
+team: data
+owner_mode: shared
+updated_at: 2026-06-11
+depends_on:
+  - "wire-production-geography-ingestion-smoke-and-runbook"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+related_paths:
+  - "docs/workbench/DOC-cms-zip-locality-source-discovery-effective-date-policy.md"
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-cms-pricing-pipeline-production-readiness-epic-brief.md"
+  - "docs/workbench/DOC-cms-pricing-pipeline-production-readiness-build-brief.md"
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+  - "scripts/load_cms_geography_local.py"
+  - "cms_pricing/ingestion/parsers/cms_geography.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-zip-locality-source-discovery-effective-date-policy.md"
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-cms-pricing-pipeline-production-readiness-epic-brief.md"
+summary: "Done: documented governed rules for selecting the CMS ZIP-locality source package and deciding strict quarter coverage versus explicit latest-active/open-ended behavior."
+current_task: "Closed after adding docs/workbench/DOC-cms-zip-locality-source-discovery-effective-date-policy.md and linking it from the geography and pricing readiness epics."
+next_action: "Proceed to the CMS pricing production preflight runbook task."
+resume_from: "Policy pins CMS source URL https://www.cms.gov/files/zip/zip-code-carrier-locality-file-revised-08/14/2025.zip, digest b14c414de73256ac9594d7cb0a58a75214ba04f4fe043468ffda507c3dd75c2e, release zip_locality_2025_Q4, source files ZIP5_OCT2025.txt and ZIP9_OCT2025.txt, strict window 2025-10-01 to 2025-12-31, and explicit latest-active/open-ended exception requirements for 2026-07-01 local/dev smoke."

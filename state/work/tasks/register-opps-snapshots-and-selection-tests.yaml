@@ -1,0 +1,27 @@
+id: register-opps-snapshots-and-selection-tests
+parent_id: cms-opps-production-readiness
+title: Register OPPS Snapshots And Selection Tests
+status: queued
+rank: 5
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "load-latest-cms-opps-local-db"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-opps-production-readiness-build-brief.md"
+related_paths:
+  - "cms_pricing/ingestion/ingestors/opps_ingestor.py"
+  - "cms_pricing/services/dataset_snapshot_service.py"
+  - "cms_pricing/models/opps/opps_apc_payment.py"
+  - "cms_pricing/models/opps/opps_hcpcs_crosswalk.py"
+  - "tests/ingestors/test_opps_ingestor_e2e.py"
+  - "tests/ingestors/test_opps_ingestor_services.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-opps-production-readiness-build-brief.md"
+summary: "Make OPPS dataset snapshot registration and valuation-date release selection explicit, tested, and tied to CMS effective dates."
+current_task: "Queued until local/dev OPPS rows can be loaded from the pinned source release."
+next_action: "Prove OPPS APC payment, HCPCS crosswalk, and SI lookup snapshots register with CMS effective dates and resolve by valuation date."
+resume_from: "Stop if snapshot selection uses ingestion run dates instead of CMS release/effective dates."

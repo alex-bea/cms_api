@@ -1,0 +1,24 @@
+id: write-render-opps-production-execution-runbook
+parent_id: cms-opps-production-readiness
+title: Write Render OPPS Production Execution Runbook
+status: queued
+rank: 10
+team: ops
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "run-docker-compose-opps-production-style-smoke"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+related_paths:
+  - "render.yaml"
+  - "prds/RUN-render-deployment-prd-v1.0.md"
+  - "prds/PRD-render-hosting-prd-v1.0.md"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+summary: "Write a Render-specific OPPS production execution runbook covering deploy, migration, backup, scoped load, rollback, and live smoke."
+current_task: "Queued until Docker Compose OPPS evidence exists."
+next_action: "Draft Render steps after Docker evidence proves the OPPS production-style path."
+resume_from: "Do not authorize production mutation in this task; it only writes the runbook and stop conditions."

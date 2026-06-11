@@ -1,7 +1,7 @@
 id: publish-cms-zip-locality-to-runtime-geography
 parent_id: cms-geography-production-ingestion
 title: Publish CMS ZIP Locality To Runtime Geography
-status: active
+status: done
 rank: 3
 team: data
 owner_mode: shared
@@ -20,7 +20,8 @@ related_paths:
 linked_beads:
 linked_outputs:
   - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
 summary: "Update the production ZIP-locality ingester so it parses landed CMS source rows and publishes ZIP5/ZIP9 rows into runtime geography with provenance."
-current_task: "Replace database replay normalization with source parsing and add runtime geography publication semantics without changing unrelated ZIP9/nearest-ZIP behavior."
-next_action: "Update CMSZipLocalityProductionIngester to parse landed CMS ZIP-locality source through cms_pricing.ingestion.parsers.cms_geography, publish ZIP5/ZIP9 rows to runtime geography with non-destructive default/scoped replace semantics, and register ZIP_LOCALITY snapshots."
-resume_from: "Target runtime table is cms_pricing.models.geography.Geography; do not use cms_zip_locality as the pricing resolver source of truth. Shared parser is tested and should be reused rather than duplicating fixed-width parsing."
+current_task: "Completed in PR #450: CMSZipLocalityProductionIngester parses landed CMS ZIP-locality source through the shared parser, publishes runtime geography rows, and registers ZIP_LOCALITY snapshots."
+next_action: "Use add-production-geography-validation-gates to promote the proven source report and seedless smoke checks into enforceable gates."
+resume_from: "Local/dev checkpoint after PR #450 reused 1,118,970 runtime geography rows for digest b14c414de73256ac9594d7cb0a58a75214ba04f4fe043468ffda507c3dd75c2e, covered 2026-07-01 with open-ended latest semantics, and resolved 94110 to CA locality 05 carrier 01112."

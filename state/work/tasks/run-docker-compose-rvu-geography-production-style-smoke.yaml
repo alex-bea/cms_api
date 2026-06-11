@@ -1,0 +1,32 @@
+id: run-docker-compose-rvu-geography-production-style-smoke
+parent_id: cms-geography-production-ingestion
+title: Run Docker Compose RVU Geography Production Style Smoke
+status: done
+rank: 11
+team: data
+owner_mode: shared
+updated_at: 2026-06-11
+depends_on:
+  - "promote-geography-production-ingestion-docs-and-close"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+related_paths:
+  - "docker-compose.yml"
+  - "Dockerfile"
+  - "scripts/run_cms_pricing_local_smoke.py"
+  - "scripts/load_cms_geography_local.py"
+  - "scripts/load_latest_cms_rvu_local.py"
+  - "scripts/post_rvu_load_api_smoke.py"
+  - "docs/workbench/DOC-cms-pricing-production-preflight-runbook.md"
+  - "docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md"
+  - "docs/workbench/DOC-cms-rvu-geography-docker-compose-production-style-smoke-evidence.md"
+  - "data/ingestion/local/reports/cms_pricing_docker_smoke_20260611_01.json"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-cms-rvu-geography-docker-compose-production-style-smoke-evidence.md"
+summary: "Run the full production-style RVU/geography smoke inside Docker Compose against the compose Postgres database before Render production planning."
+current_task: "Closed after the production-style RVU/geography sequence passed inside Docker Compose against isolated compose database cms_pricing_docker_smoke_20260611_01."
+next_action: "Proceed to write-render-rvu-geography-production-execution-runbook."
+resume_from: "Use the same completion benchmarks as the local preflight: geography readiness gates pass, no seed helper, 94110 -> CA/05/01112 with positive rvu_2026_C pricing, and 66012 -> EK/00/05202 with positive rvu_2026_C pricing. Stop if Docker cannot run the sequence without relying on host-only state."

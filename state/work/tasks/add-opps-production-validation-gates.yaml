@@ -1,0 +1,26 @@
+id: add-opps-production-validation-gates
+parent_id: cms-opps-production-readiness
+title: Add OPPS Production Validation Gates
+status: queued
+rank: 6
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "register-opps-snapshots-and-selection-tests"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+related_paths:
+  - "cms_pricing/ingestion/ingestors/opps_ingestor.py"
+  - "cms_pricing/ingestion/contracts/cms_opps_v1.0.json"
+  - "cms_pricing/ingestion/contracts/cms_opps_si_lookup_v1.0.json"
+  - "tests/ingestors/test_opps_ingestor_e2e.py"
+  - "tests/ingestors/test_opps_required_files.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+summary: "Add enforceable OPPS gates for required artifacts, row counts, natural keys, APC references, status indicators, money parsing, effective windows, and provenance."
+current_task: "Queued until local OPPS load evidence identifies exact row-count and join expectations."
+next_action: "Convert audit/load evidence into tests and fail-fast validation before any publish or Render load."
+resume_from: "Stop if unknown status indicators are treated as payable or Addendum B references missing APC rows without a CMS-documented exception."

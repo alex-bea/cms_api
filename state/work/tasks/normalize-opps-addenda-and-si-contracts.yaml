@@ -1,0 +1,29 @@
+id: normalize-opps-addenda-and-si-contracts
+parent_id: cms-opps-production-readiness
+title: Normalize OPPS Addenda And Status Indicator Contracts
+status: queued
+rank: 3
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "pin-latest-cms-opps-source-release"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-opps-production-readiness-build-brief.md"
+related_paths:
+  - "cms_pricing/ingestion/ingestors/opps_ingestor.py"
+  - "cms_pricing/ingestion/contracts/cms_opps_v1.0.json"
+  - "cms_pricing/ingestion/contracts/cms_opps_si_lookup_v1.0.json"
+  - "tests/ingestors/test_opps_ingestor_e2e.py"
+  - "tests/ingestors/test_opps_ingestor_services.py"
+  - "tests/ingestors/test_opps_required_files.py"
+  - "tests/fixtures/opps/manifest.yaml"
+  - "tests/fixtures/opps/golden_datasets.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-opps-production-readiness-build-brief.md"
+summary: "Parse and normalize the pinned OPPS Addendum A, Addendum B, and status-indicator source files into contract-backed frames without writing runtime tables."
+current_task: "Queued until the current public OPPS release is pinned."
+next_action: "Add the smallest parser/adapter fixes needed for Addendum A APC rates, Addendum B HCPCS/APC/SI rows, and SI lookup rows, with focused fixture tests."
+resume_from: "This task must not publish to production or compute context-sensitive packaged claim prices. It only proves source-to-contract normalization."

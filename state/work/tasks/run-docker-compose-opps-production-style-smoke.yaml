@@ -1,0 +1,24 @@
+id: run-docker-compose-opps-production-style-smoke
+parent_id: cms-opps-production-readiness
+title: Run Docker Compose OPPS Production Style Smoke
+status: queued
+rank: 9
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "wire-opps-runtime-pricing-smoke"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+related_paths:
+  - "docker-compose.yml"
+  - "cms_pricing/ingestion/ingestors/opps_ingestor.py"
+  - "cms_pricing/engines/opps.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+summary: "Run the OPPS production-style load and API smoke inside Docker Compose against compose Postgres."
+current_task: "Queued until local OPPS runtime smoke is reliable."
+next_action: "Reproduce source pinning, local load, validation gates, and OPPS API smoke in the compose stack."
+resume_from: "Evidence should name compose project/database, source digest, release ID, row counts, and smoke response."

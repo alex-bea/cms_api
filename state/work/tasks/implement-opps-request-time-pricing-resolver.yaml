@@ -1,0 +1,26 @@
+id: implement-opps-request-time-pricing-resolver
+parent_id: cms-opps-production-readiness
+title: Implement OPPS Request Time Pricing Resolver
+status: queued
+rank: 7
+team: api
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "add-opps-production-validation-gates"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-opps-production-readiness-build-brief.md"
+related_paths:
+  - "cms_pricing/engines/opps.py"
+  - "cms_pricing/routers/opps.py"
+  - "cms_pricing/schemas/pricing.py"
+  - "tests/api/test_openapi_consistency.py"
+  - "tests/api/test_golden.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-opps-production-readiness-build-brief.md"
+summary: "Implement the narrow request-time OPPS resolver needed for smoke tests: valuation date, HCPCS/APC/SI lookup, packaged/payable classification, amount, warnings, and trace refs."
+current_task: "Queued until OPPS source/load validation gates are reliable."
+next_action: "Use normalized OPPS tables to calculate the simplest representative API result on request without precomputing context-sensitive claim prices."
+resume_from: "Keep packaging behavior explicit and conservative. Stop if unknown status indicators or missing APC rates would be treated as payable by default."

@@ -1,0 +1,32 @@
+id: write-render-rvu-geography-production-execution-runbook
+parent_id: cms-geography-production-ingestion
+title: Write Render RVU Geography Production Execution Runbook
+status: done
+rank: 12
+team: data
+owner_mode: shared
+updated_at: 2026-06-11
+depends_on:
+  - "run-docker-compose-rvu-geography-production-style-smoke"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+related_paths:
+  - "render.yaml"
+  - "scripts/render_snapshot_postdeploy.sh"
+  - "scripts/load_rvu_to_production.py"
+  - "scripts/verify_gpci_loaded.py"
+  - "docs/workbench/DOC-cms-pricing-production-preflight-runbook.md"
+  - "docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md"
+  - "docs/workbench/DOC-cms-rvu-geography-docker-compose-production-style-smoke-evidence.md"
+  - "docs/workbench/DOC-render-rvu-geography-production-execution-runbook.md"
+  - "prds/RUN-render-deployment-prd-v1.0.md"
+  - "prds/PRD-render-hosting-prd-v1.0.md"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-render-rvu-geography-production-execution-runbook.md"
+summary: "Create the Render production execution runbook for loading the proven RVU/geography data path into the Render production database."
+current_task: "Closed after adding the Render execution runbook with target, evidence baseline, approval gate, deploy, migration, backup, scoped load, rollback, and live smoke steps."
+next_action: "Proceed to approve-render-rvu-geography-production-execution-runbook and record operator approval or blockers."
+resume_from: "The runbook must not approve mutation by itself. It must name source package/digest, rvu_2026_C release selection, exact Render target, required backup/rollback step, operator approval checkpoint, production load commands, and final live API queries for 94110 and 66012."
