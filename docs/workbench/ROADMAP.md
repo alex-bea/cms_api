@@ -13,11 +13,11 @@ _Generated from `state/work/` by `tools/work_tracker.py`. Do not edit by hand._
 
 ### Epics
 
-- [1] CMS RVU Ingestion And Snapshot Selection - `active` (2 active, 1 queued, 1 parked, 3 done)
+- [1] CMS RVU Ingestion And Snapshot Selection - `active` (1 active, 2 queued, 1 parked, 3 done)
   Team: `data`
-  Plan: [`docs/workbench/DOC-cms-rvu-local-db-load-status.md`](DOC-cms-rvu-local-db-load-status.md)
+  Plan: [`docs/workbench/DOC-cms-rvu-ingestion-epic-brief.md`](DOC-cms-rvu-ingestion-epic-brief.md)
   Summary: Move live CMS RVU releases through real local/dev DB writes and ensure valuation-date snapshot lookup chooses the expected RVU and GPCI release.
-  Current tasks: Load Or Map MPFS Conversion Factor, Normalize RVU Locality For Geography Resolution
+  Current tasks: Load Or Map MPFS Conversion Factor
 - [2] Epic Brief Driven Tracker Workflow - `done` (8 done)
   Team: `ops`
   Plan: [`docs/workbench/DOC-epic-brief-driven-workflow.md`](DOC-epic-brief-driven-workflow.md)
