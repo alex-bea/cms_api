@@ -6,7 +6,7 @@ if [[ -z "$(git diff --cached --name-only)" ]]; then
 fi
 
 echo "▶ Markdown checkbox scan"
-python3 tools/md_checkbox_scan.py
+python3 tools/md_checkbox_scan.py --staged
 
 echo "▶ TODO lint"
-python3 tools/todo_lint.py
+python3 tools/todo_lint.py --staged
