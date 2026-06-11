@@ -1,0 +1,25 @@
+id: add-production-geography-validation-gates
+parent_id: cms-geography-production-ingestion
+title: Add Production Geography Validation Gates
+status: queued
+rank: 5
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "consolidate-cms-zip9-ingestion-and-source-discovery"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+related_paths:
+  - "cms_pricing/ingestion/validators/cms_zip_locality_validator.py"
+  - "cms_pricing/ingestion/validators/zip9_overrides_validator.py"
+  - "cms_pricing/engines/mpfs.py"
+  - "tests/scripts/test_load_cms_geography_local.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+summary: "Add production gates for real-source row counts, schema/domain checks, duplicate active keys, locality preservation, valuation coverage, and GPCI joins."
+current_task: "Queued behind source discovery consolidation."
+next_action: "Promote dry-run report checks into ingester validation gates and add tests for rejects, row-count regressions, 00 preservation, 94110 probe, and 119/119 GPCI join coverage after mapping."
+resume_from: "Use the local/dev breadth metrics as baseline thresholds, but keep thresholds configurable for newer CMS packages."

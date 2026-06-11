@@ -1,0 +1,25 @@
+id: consolidate-cms-zip9-ingestion-and-source-discovery
+parent_id: cms-geography-production-ingestion
+title: Consolidate CMS ZIP9 Ingestion And Source Discovery
+status: queued
+rank: 4
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "publish-cms-zip-locality-to-runtime-geography"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+related_paths:
+  - "cms_pricing/ingestion/ingestors/cms_zip9_ingester.py"
+  - "cms_pricing/ingestion/ingestors/cms_zip_locality_production_ingester.py"
+  - "cms_pricing/ingestion/scrapers"
+  - "prds/REF-geography-source-map-prd-v1.0.md"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+summary: "Resolve overlap between ZIP-locality and ZIP9 ingesters and add source discovery/release selection so runtime geography uses one coherent CMS package path."
+current_task: "Queued behind runtime geography publish."
+next_action: "Decide whether ZIP9 remains a separate nearest-ZIP artifact, becomes a shared stage, or delegates to the ZIP-locality production ingester; add release discovery/reporting for selected CMS packages."
+resume_from: "ZIP5 and ZIP9 live in the same CMS ZIP package; avoid divergent parsing or effective-date policies between target tables."

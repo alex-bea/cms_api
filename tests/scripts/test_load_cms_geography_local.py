@@ -3,8 +3,9 @@ import zipfile
 
 import pytest
 
-from scripts.load_cms_geography_local import (
+from cms_pricing.ingestion.parsers.cms_geography import (
     GeographyLoadError,
+    build_source_report,
     parse_zip5_line,
     parse_zip9_line,
     quarter_window,
@@ -111,8 +112,12 @@ def test_scan_source_zip_reports_counts_probe_and_valuation_gap(tmp_path):
     _write_source_zip(
         source_zip,
         [
-            _fixed_line(state="CA", zip5="94110", carrier="01112", locality="05"),
-            _fixed_line(state="NY", zip5="10001", carrier="31102", locality="00"),
+            _fixed_line(
+                state="CA", zip5="94110", carrier="01112", locality="05"
+            ),
+            _fixed_line(
+                state="NY", zip5="10001", carrier="31102", locality="00"
+            ),
         ],
         [
             _fixed_line(
@@ -127,7 +132,9 @@ def test_scan_source_zip_reports_counts_probe_and_valuation_gap(tmp_path):
         ],
     )
 
-    stats = scan_source_zip(source_zip, dataset_digest="digest", probe_zip="94110")
+    stats = scan_source_zip(
+        source_zip, dataset_digest="digest", probe_zip="94110"
+    )
 
     assert stats.zip5_rows == 2
     assert stats.zip9_rows == 1
@@ -138,12 +145,39 @@ def test_scan_source_zip_reports_counts_probe_and_valuation_gap(tmp_path):
     assert stats.probe_rows[0].locality_id == "05"
     assert valuation_date_covered(stats, date(2026, 7, 1)) is False
 
+    report = build_source_report(
+        stats,
+        source_url="https://example.test/cms-geography.zip",
+        expected_probe_state="CA",
+        expected_probe_locality="05",
+        expected_probe_carrier="01112",
+        valuation_date=date(2026, 7, 1),
+        require_valuation_date_coverage=True,
+    )
+
+    assert report["status"] == "blocked"
+    assert (
+        report["stop_condition"]
+        == "source_effective_window_does_not_cover_valuation_date"
+    )
+    assert report["source"]["source_files"] == [
+        "ZIP5_OCT2025.txt",
+        "ZIP9_OCT2025.txt",
+    ]
+    assert report["counts"]["rows_total"] == 3
+    assert report["counts"]["locality_00_rows"] == 1
+    assert report["probe"]["expected_found"] is True
+
 
 def test_scan_source_zip_can_mark_latest_source_open_ended(tmp_path):
     source_zip = tmp_path / "zip-locality.zip"
     _write_source_zip(
         source_zip,
-        [_fixed_line(state="CA", zip5="94110", carrier="01112", locality="05")],
+        [
+            _fixed_line(
+                state="CA", zip5="94110", carrier="01112", locality="05"
+            )
+        ],
         [
             _fixed_line(
                 state="CA",
@@ -171,7 +205,9 @@ def test_scan_source_zip_can_mark_latest_source_open_ended(tmp_path):
 
 def test_scan_source_zip_fails_on_duplicate_active_keys(tmp_path):
     source_zip = tmp_path / "zip-locality.zip"
-    duplicate = _fixed_line(state="CA", zip5="94110", carrier="01112", locality="05")
+    duplicate = _fixed_line(
+        state="CA", zip5="94110", carrier="01112", locality="05"
+    )
     _write_source_zip(source_zip, [duplicate, duplicate], [])
 
     with pytest.raises(GeographyLoadError, match="duplicate source keys"):
