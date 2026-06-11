@@ -25,3 +25,8 @@ _Generated from `state/work/` by `tools/work_tracker.py`. Do not edit by hand._
   Team: `ops`
   Plan: [`docs/workbench/DOC-epic-brief-driven-workflow.md`](DOC-epic-brief-driven-workflow.md)
   Summary: Move tracker workflow toward Codex-v0 build briefs and epic briefs as the planning unit, with queued task slices under each epic and a staged harness that starts with approved plans and dry-run orchestration before mutating state.
+- [3] CMS Geography Production Ingestion - `active` (1 active, 4 queued, 2 done)
+  Team: `data`
+  Plan: [`docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md`](DOC-cms-geography-production-ingestion-epic-brief.md)
+  Summary: Promote the proven local/dev CMS ZIP-locality loader into the production DIS ingestion path for runtime geography and RVU smoke readiness.
+  Current tasks: Publish CMS ZIP Locality To Runtime Geography

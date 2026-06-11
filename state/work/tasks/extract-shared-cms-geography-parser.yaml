@@ -1,0 +1,28 @@
+id: extract-shared-cms-geography-parser
+parent_id: cms-geography-production-ingestion
+title: Extract Shared CMS Geography Parser
+status: done
+rank: 2
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "audit-geography-production-ingester-contracts"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+related_paths:
+  - "scripts/load_cms_geography_local.py"
+  - "tests/scripts/test_load_cms_geography_local.py"
+  - "cms_pricing/ingestion/parsers/cms_geography.py"
+  - "cms_pricing/ingestion/contracts/cms_zip_locality_v1.json"
+  - "cms_pricing/ingestion/contracts/cms_zip9_overrides_v1.json"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "cms_pricing/ingestion/parsers/cms_geography.py"
+  - "tests/scripts/test_load_cms_geography_local.py"
+summary: "Done: extracted ZIP5/ZIP9 fixed-width parsing, digesting, source scanning, reporting, and validation primitives into shared ingestion code used by local/dev and future production paths."
+current_task: "Closed after adding cms_pricing/ingestion/parsers/cms_geography.py, slimming scripts/load_cms_geography_local.py to CLI/database responsibilities, and moving focused parser tests to the shared module."
+next_action: "Activate publish-cms-zip-locality-to-runtime-geography."
+resume_from: "Shared parser contract lives in cms_pricing/ingestion/parsers/cms_geography.py. The local CLI delegates to it and still dry-runs the real CMS package with 1,118,970 rows, zero rejects, zero duplicate source keys, and 94110 -> CA/05/01112."

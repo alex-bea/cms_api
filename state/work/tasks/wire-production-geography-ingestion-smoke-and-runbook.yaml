@@ -1,0 +1,25 @@
+id: wire-production-geography-ingestion-smoke-and-runbook
+parent_id: cms-geography-production-ingestion
+title: Wire Production Geography Ingestion Smoke And Runbook
+status: queued
+rank: 6
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "add-production-geography-validation-gates"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+related_paths:
+  - "scripts/post_rvu_load_api_smoke.py"
+  - "scripts/load_latest_cms_rvu_local.py"
+  - "scripts/load_cms_geography_local.py"
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+summary: "Wire a repeatable production-style local/dev smoke that runs geography ingestion, RVU/GPCI load, and API pricing checks without the one-row seed helper."
+current_task: "Queued behind production validation gates."
+next_action: "Add or update smoke/runbook commands that use the production geography ingester path, verify 94110 and special-state probes, and explicitly refuse seed-helper dependency."
+resume_from: "The expected smoke outputs are allowed_cents=11758 for 94110 and positive pricing for special source-state ZIP 66012 in local/dev data."

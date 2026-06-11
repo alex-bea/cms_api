@@ -1,0 +1,29 @@
+id: audit-geography-production-ingester-contracts
+parent_id: cms-geography-production-ingestion
+title: Audit Geography Production Ingester Contracts
+status: done
+rank: 1
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+related_paths:
+  - "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+  - "scripts/load_cms_geography_local.py"
+  - "tests/scripts/test_load_cms_geography_local.py"
+  - "cms_pricing/ingestion/ingestors/cms_zip_locality_production_ingester.py"
+  - "cms_pricing/ingestion/ingestors/cms_zip9_ingester.py"
+  - "cms_pricing/ingestion/contracts/cms_zip_locality_v1.json"
+  - "cms_pricing/ingestion/contracts/cms_zip9_overrides_v1.json"
+  - "cms_pricing/models/geography.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-cms-geography-production-ingester-contract-audit.md"
+summary: "Done: compared the proven local/dev loader against production ZIP-locality and ZIP9 ingesters, contracts, target tables, provenance, and effective-date policy."
+current_task: "Closed after documenting the productionization gap matrix and choosing shared parser extraction as the smallest safe next implementation path."
+next_action: "Activate extract-shared-cms-geography-parser."
+resume_from: "See docs/workbench/DOC-cms-geography-production-ingester-contract-audit.md. Next slice should extract parser/reporting primitives only, leaving runtime geography publishing for the following task."

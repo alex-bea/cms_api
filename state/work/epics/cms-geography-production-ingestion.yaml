@@ -1,0 +1,24 @@
+id: cms-geography-production-ingestion
+parent_id: cms-data-pipeline
+title: CMS Geography Production Ingestion
+status: active
+rank: 3
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+related_paths:
+  - "scripts/load_cms_geography_local.py"
+  - "cms_pricing/ingestion/parsers/cms_geography.py"
+  - "cms_pricing/ingestion/ingestors/cms_zip_locality_production_ingester.py"
+  - "cms_pricing/ingestion/ingestors/cms_zip9_ingester.py"
+  - "cms_pricing/ingestion/contracts/cms_zip_locality_v1.json"
+  - "cms_pricing/ingestion/contracts/cms_zip9_overrides_v1.json"
+  - "cms_pricing/models/geography.py"
+  - "cms_pricing/services/geography.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-cms-geography-production-ingester-contract-audit.md"
+  - "cms_pricing/ingestion/parsers/cms_geography.py"
+summary: "Promote the proven local/dev CMS ZIP-locality loader into the production DIS ingestion path for runtime geography and RVU smoke readiness."

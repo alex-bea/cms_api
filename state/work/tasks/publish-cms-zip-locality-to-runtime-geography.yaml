@@ -1,0 +1,26 @@
+id: publish-cms-zip-locality-to-runtime-geography
+parent_id: cms-geography-production-ingestion
+title: Publish CMS ZIP Locality To Runtime Geography
+status: active
+rank: 3
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "extract-shared-cms-geography-parser"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+related_paths:
+  - "cms_pricing/ingestion/ingestors/cms_zip_locality_production_ingester.py"
+  - "cms_pricing/ingestion/parsers/cms_geography.py"
+  - "cms_pricing/models/geography.py"
+  - "cms_pricing/models/dataset_snapshots.py"
+  - "scripts/load_cms_geography_local.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+summary: "Update the production ZIP-locality ingester so it parses landed CMS source rows and publishes ZIP5/ZIP9 rows into runtime geography with provenance."
+current_task: "Replace database replay normalization with source parsing and add runtime geography publication semantics without changing unrelated ZIP9/nearest-ZIP behavior."
+next_action: "Update CMSZipLocalityProductionIngester to parse landed CMS ZIP-locality source through cms_pricing.ingestion.parsers.cms_geography, publish ZIP5/ZIP9 rows to runtime geography with non-destructive default/scoped replace semantics, and register ZIP_LOCALITY snapshots."
+resume_from: "Target runtime table is cms_pricing.models.geography.Geography; do not use cms_zip_locality as the pricing resolver source of truth. Shared parser is tested and should be reused rather than duplicating fixed-width parsing."
