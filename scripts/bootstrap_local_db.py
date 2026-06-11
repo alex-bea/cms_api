@@ -71,10 +71,16 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_database_url(database_url: str | None = None) -> str:
-    for value in (database_url, os.getenv("TEST_DATABASE_URL"), os.getenv("DATABASE_URL")):
+    for value in (
+        database_url,
+        os.getenv("TEST_DATABASE_URL"),
+        os.getenv("DATABASE_URL"),
+    ):
         if value:
             return value
-    raise SystemExit("Database URL not provided. Use --database-url or set TEST_DATABASE_URL/DATABASE_URL.")
+    raise SystemExit(
+        "Database URL not provided. Use --database-url or set TEST_DATABASE_URL/DATABASE_URL."
+    )
 
 
 def assert_local_database_url(database_url: str, allow_remote: bool = False) -> None:
@@ -173,7 +179,9 @@ def seed_smoke_data(database_url: str) -> None:
             )
         except ProgrammingError:
             session.rollback()
-            raise SystemExit("fee_mpfs table is missing. Run schema bootstrap before seeding.")
+            raise SystemExit(
+                "fee_mpfs table is missing. Run schema bootstrap before seeding."
+            )
 
         if not existing_mpfs:
             session.add(

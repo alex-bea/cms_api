@@ -21,7 +21,8 @@ from pathlib import Path
 from datetime import date
 from uuid import uuid4
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import ProgrammingError
 
@@ -68,7 +69,9 @@ def resolve_database_url(cmdline_url: str | None) -> str:
     for value in candidates:
         if value:
             return value
-    raise SystemExit("Database URL not provided. Use --database-url or set TEST_DATABASE_URL.")
+    raise SystemExit(
+        "Database URL not provided. Use --database-url or set TEST_DATABASE_URL."
+    )
 
 
 def run_migrations(database_url: str, alembic_ini: str, revision: str) -> None:
@@ -77,9 +80,48 @@ def run_migrations(database_url: str, alembic_ini: str, revision: str) -> None:
     if not ini_path.exists():
         raise SystemExit(f"Alembic config not found at {ini_path}")
 
+    configure_database_url(database_url)
+    ensure_database_exists(database_url)
+
     config = AlembicConfig(str(ini_path))
     config.set_main_option("sqlalchemy.url", database_url)
     command.upgrade(config, revision)
+
+
+def configure_database_url(database_url: str) -> None:
+    """Make the requested URL visible to Alembic env.py and app settings."""
+
+    os.environ["DATABASE_URL"] = database_url
+    os.environ["TEST_DATABASE_URL"] = database_url
+
+    config_module = sys.modules.get("cms_pricing.config")
+    settings = getattr(config_module, "settings", None)
+    if settings is not None:
+        settings.database_url = database_url
+        settings.test_database_url = database_url
+
+
+def ensure_database_exists(database_url: str) -> None:
+    """Create the target Postgres database when CI uses a run-specific name."""
+
+    url = make_url(database_url)
+    if url.get_backend_name() != "postgresql" or not url.database:
+        return
+
+    admin_url = url.set(database="postgres")
+    target_database = url.database
+    engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with engine.connect() as connection:
+        exists = connection.execute(
+            text("SELECT 1 FROM pg_database WHERE datname = :database_name"),
+            {"database_name": target_database},
+        ).scalar()
+        if exists:
+            return
+
+        quoted_database = target_database.replace('"', '""')
+        LOGGER.info("Creating test database: %s", target_database)
+        connection.execute(text(f'CREATE DATABASE "{quoted_database}"'))
 
 
 def seed_reference_data(database_url: str) -> None:
@@ -93,7 +135,7 @@ def seed_reference_data(database_url: str) -> None:
     engine = create_engine(database_url)
     with Session(engine) as session:
         try:
-            mpfs_count = session.execute("SELECT COUNT(*) FROM fee_mpfs").scalar()
+            mpfs_count = session.execute(text("SELECT COUNT(*) FROM fee_mpfs")).scalar()
         except ProgrammingError:
             # Tables may not exist yet (e.g., revision skipped) – rely on migrations
             session.rollback()
@@ -112,7 +154,8 @@ def seed_reference_data(database_url: str) -> None:
 
         # fee_mpfs
         session.execute(
-            """
+            text(
+                """
             INSERT INTO fee_mpfs (
                 id, year, revision, hcpcs, work_rvu, pe_nf_rvu, pe_fac_rvu, mp_rvu,
                 global_days, status_indicator, effective_from, release_id, batch_id
@@ -120,6 +163,7 @@ def seed_reference_data(database_url: str) -> None:
             VALUES (:id, :year, :revision, :hcpcs, :work_rvu, :pe_nf_rvu, :pe_fac_rvu, :mp_rvu,
                     :global_days, :status_indicator, :effective_from, :release_id, :batch_id)
             """,
+            ),
             {
                 "id": uuid4(),
                 "year": 2025,
@@ -139,7 +183,8 @@ def seed_reference_data(database_url: str) -> None:
 
         # gpci
         session.execute(
-            """
+            text(
+                """
             INSERT INTO gpci (
                 id, year, locality_id, locality_name,
                 gpci_work, gpci_pe, gpci_mp,
@@ -149,6 +194,7 @@ def seed_reference_data(database_url: str) -> None:
                     :gpci_work, :gpci_pe, :gpci_mp,
                     :effective_from, :release_id, :batch_id)
             """,
+            ),
             {
                 "id": uuid4(),
                 "year": 2025,
@@ -165,12 +211,14 @@ def seed_reference_data(database_url: str) -> None:
 
         # conversion_factors
         session.execute(
-            """
+            text(
+                """
             INSERT INTO conversion_factors (
                 id, year, cf, source, effective_from, release_id, batch_id
             )
             VALUES (:id, :year, :cf, :source, :effective_from, :release_id, :batch_id)
             """,
+            ),
             {
                 "id": uuid4(),
                 "year": 2025,
@@ -184,7 +232,8 @@ def seed_reference_data(database_url: str) -> None:
 
         # fee_opps
         session.execute(
-            """
+            text(
+                """
             INSERT INTO fee_opps (
                 id, year, quarter, hcpcs, status_indicator, apc, national_unadj_rate,
                 effective_from, release_id, batch_id
@@ -192,6 +241,7 @@ def seed_reference_data(database_url: str) -> None:
             VALUES (:id, :year, :quarter, :hcpcs, :status_indicator, :apc, :rate,
                     :effective_from, :release_id, :batch_id)
             """,
+            ),
             {
                 "id": uuid4(),
                 "year": 2025,
@@ -208,12 +258,14 @@ def seed_reference_data(database_url: str) -> None:
 
         # fee_asc
         session.execute(
-            """
+            text(
+                """
             INSERT INTO fee_asc (
                 id, year, quarter, hcpcs, asc_rate, effective_from, release_id, batch_id
             )
             VALUES (:id, :year, :quarter, :hcpcs, :asc_rate, :effective_from, :release_id, :batch_id)
             """,
+            ),
             {
                 "id": uuid4(),
                 "year": 2025,
@@ -228,12 +280,14 @@ def seed_reference_data(database_url: str) -> None:
 
         # fee_ipps
         session.execute(
-            """
+            text(
+                """
             INSERT INTO fee_ipps (
                 id, fy, drg, weight, effective_from, release_id, batch_id
             )
             VALUES (:id, :fy, :drg, :weight, :effective_from, :release_id, :batch_id)
             """,
+            ),
             {
                 "id": uuid4(),
                 "fy": 2025,
@@ -247,7 +301,8 @@ def seed_reference_data(database_url: str) -> None:
 
         # ipps_base_rates
         session.execute(
-            """
+            text(
+                """
             INSERT INTO ipps_base_rates (
                 id, fy, operating_base, capital_base,
                 effective_from, release_id, batch_id
@@ -255,6 +310,7 @@ def seed_reference_data(database_url: str) -> None:
             VALUES (:id, :fy, :operating_base, :capital_base,
                     :effective_from, :release_id, :batch_id)
             """,
+            ),
             {
                 "id": uuid4(),
                 "fy": 2025,
@@ -268,12 +324,14 @@ def seed_reference_data(database_url: str) -> None:
 
         # fee_clfs
         session.execute(
-            """
+            text(
+                """
             INSERT INTO fee_clfs (
                 id, year, quarter, hcpcs, fee, effective_from, release_id, batch_id
             )
             VALUES (:id, :year, :quarter, :hcpcs, :fee, :effective_from, :release_id, :batch_id)
             """,
+            ),
             {
                 "id": uuid4(),
                 "year": 2025,
@@ -288,7 +346,8 @@ def seed_reference_data(database_url: str) -> None:
 
         # fee_dmepos
         session.execute(
-            """
+            text(
+                """
             INSERT INTO fee_dmepos (
                 id, year, quarter, code, rural_flag, fee,
                 effective_from, release_id, batch_id
@@ -296,6 +355,7 @@ def seed_reference_data(database_url: str) -> None:
             VALUES (:id, :year, :quarter, :code, :rural_flag, :fee,
                     :effective_from, :release_id, :batch_id)
             """,
+            ),
             {
                 "id": uuid4(),
                 "year": 2025,
@@ -311,7 +371,8 @@ def seed_reference_data(database_url: str) -> None:
 
         # wage_index
         session.execute(
-            """
+            text(
+                """
             INSERT INTO wage_index (
                 id, year, quarter, cbsa, wage_index,
                 effective_from, release_id, batch_id
@@ -319,6 +380,7 @@ def seed_reference_data(database_url: str) -> None:
             VALUES (:id, :year, :quarter, :cbsa, :wage_index,
                     :effective_from, :release_id, :batch_id)
             """,
+            ),
             {
                 "id": uuid4(),
                 "year": 2025,

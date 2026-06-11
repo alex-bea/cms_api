@@ -120,18 +120,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--report-json", type=Path, default=None)
     parser.add_argument("--batch-size", type=int, default=10_000)
     parser.add_argument("--probe-zip", default=DEFAULT_PROBE_ZIP)
-    parser.add_argument(
-        "--expected-probe-state", default=DEFAULT_PROBE_EXPECTED_STATE
-    )
+    parser.add_argument("--expected-probe-state", default=DEFAULT_PROBE_EXPECTED_STATE)
     parser.add_argument(
         "--expected-probe-locality", default=DEFAULT_PROBE_EXPECTED_LOCALITY
     )
     parser.add_argument(
         "--expected-probe-carrier", default=DEFAULT_PROBE_EXPECTED_CARRIER
     )
-    parser.add_argument(
-        "--valuation-date", default=DEFAULT_VALUATION_DATE.isoformat()
-    )
+    parser.add_argument("--valuation-date", default=DEFAULT_VALUATION_DATE.isoformat())
     parser.add_argument(
         "--require-valuation-date-coverage",
         action="store_true",
@@ -224,9 +220,7 @@ def build_report(
             stats,
             thresholds=CMS_ZIP_LOCALITY_2025Q4_THRESHOLDS,
             valuation_date=config.valuation_date,
-            require_valuation_date_coverage=(
-                config.require_valuation_date_coverage
-            ),
+            require_valuation_date_coverage=(config.require_valuation_date_coverage),
         )
         report["production_readiness_gates"] = readiness
         if readiness["status"] != "ok":
@@ -397,18 +391,12 @@ def insert_geography_rows(
     return inserted
 
 
-def load_into_database(
-    config: LoadConfig, stats: SourceStats
-) -> dict[str, Any]:
+def load_into_database(config: LoadConfig, stats: SourceStats) -> dict[str, Any]:
     if config.database_url is None:
-        raise GeographyLoadError(
-            "Database URL is required unless --dry-run is used"
-        )
+        raise GeographyLoadError("Database URL is required unless --dry-run is used")
     engine = create_engine(config.database_url)
     with Session(engine) as session:
-        existing = inspect_existing_geography(
-            session, config=config, stats=stats
-        )
+        existing = inspect_existing_geography(session, config=config, stats=stats)
         deleted_rows = 0
         inserted_rows = 0
         if existing["action"] == "insert":
@@ -418,9 +406,7 @@ def load_into_database(
                     dataset_id=config.dataset_id,
                     stats=stats,
                 )
-            inserted_rows = insert_geography_rows(
-                session, config=config, stats=stats
-            )
+            inserted_rows = insert_geography_rows(session, config=config, stats=stats)
         snapshot = ensure_snapshot(session, config=config, stats=stats)
         session.commit()
 

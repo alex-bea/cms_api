@@ -43,7 +43,13 @@ LEGACY_GEOGRAPHY_INGESTION_TESTS = (
 
 
 DOMAIN_MARKER_PATTERNS = {
-    "prd_docs": ("tests/prd_docs", "doc_catalog", "doc_metadata", "doc_links", "doc_dependencies"),
+    "prd_docs": (
+        "tests/prd_docs",
+        "doc_catalog",
+        "doc_metadata",
+        "doc_links",
+        "doc_dependencies",
+    ),
     "scraper": ("tests/scrapers", "_scraper", "scraper_"),
     "ingestor": ("tests/ingestors", "ingestor", "ingestion_pipeline", "/ingestion/"),
     "geography": ("tests/geography", "geography", "nearest_zip", "zip9"),
@@ -56,16 +62,11 @@ def test_engine():
     """Create a test database engine with PostgreSQL compatibility"""
     # Use PostgreSQL test database (same as test_with_postgres.sh)
     database_url = settings.test_database_url
-    engine = create_engine(
-        database_url,
-        echo=False,
-        pool_size=5,
-        max_overflow=10
-    )
-    
+    engine = create_engine(database_url, echo=False, pool_size=5, max_overflow=10)
+
     # Tables are already created by Alembic migrations in bootstrap_test_db.py
     # No need to create them again
-    
+
     return engine
 
 
@@ -192,11 +193,11 @@ def test_data_dir():
 @pytest.fixture(scope="function")
 def db_requires_plans_table(test_db_session):
     """Check if the plans table exists, skip test if not.
-    
+
     This fixture provides graceful skipping for tests that require database tables
     that may not be set up yet. It checks for the 'plans' table as a proxy for
     whether the database has been migrated.
-    
+
     Usage:
         def test_something(db_requires_plans_table, client, ...):
             # Test will skip if plans table doesn't exist
@@ -217,7 +218,7 @@ def db_requires_plans_table(test_db_session):
 
 def require_db_table(test_db_session, table_name: str):
     """Helper function to check if a table exists, skip test if not.
-    
+
     Can be used in tests to check for specific tables:
         require_db_table(test_db_session, "plans")
     """
@@ -236,24 +237,12 @@ def require_db_table(test_db_session, table_name: str):
 # Pytest configuration
 def pytest_configure(config):
     """Configure pytest with custom markers"""
-    config.addinivalue_line(
-        "markers", "integration: mark test as integration test"
-    )
-    config.addinivalue_line(
-        "markers", "unit: mark test as unit test"
-    )
-    config.addinivalue_line(
-        "markers", "e2e: mark test as end-to-end test"
-    )
-    config.addinivalue_line(
-        "markers", "slow: mark test as slow running"
-    )
-    config.addinivalue_line(
-        "markers", "mpfs: mark test as MPFS scenario"
-    )
-    config.addinivalue_line(
-        "markers", "opps: mark test as OPPS scenario"
-    )
+    config.addinivalue_line("markers", "integration: mark test as integration test")
+    config.addinivalue_line("markers", "unit: mark test as unit test")
+    config.addinivalue_line("markers", "e2e: mark test as end-to-end test")
+    config.addinivalue_line("markers", "slow: mark test as slow running")
+    config.addinivalue_line("markers", "mpfs: mark test as MPFS scenario")
+    config.addinivalue_line("markers", "opps: mark test as OPPS scenario")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -264,26 +253,30 @@ def pytest_collection_modifyitems(config, items):
         if not GEOGRAPHY_AVAILABLE and any(
             test_file in fspath for test_file in LEGACY_GEOGRAPHY_INGESTION_TESTS
         ):
-            item.add_marker(pytest.mark.skip(reason='geography ingestion module unavailable'))
+            item.add_marker(
+                pytest.mark.skip(reason="geography ingestion module unavailable")
+            )
             continue
-        if not SCHEDULER_AVAILABLE and 'scheduler' in fspath:
-            item.add_marker(pytest.mark.skip(reason='ingestion scheduler unavailable'))
+        if not SCHEDULER_AVAILABLE and "scheduler" in fspath:
+            item.add_marker(pytest.mark.skip(reason="ingestion scheduler unavailable"))
             continue
-        if not NEAREST_ZIP_AVAILABLE and ('nearest_zip' in fspath or 'zip9' in fspath):
-            item.add_marker(pytest.mark.skip(reason='nearest zip ingestion modules unavailable'))
+        if not NEAREST_ZIP_AVAILABLE and ("nearest_zip" in fspath or "zip9" in fspath):
+            item.add_marker(
+                pytest.mark.skip(reason="nearest zip ingestion modules unavailable")
+            )
             continue
-        if not ZIP9_AVAILABLE and 'zip9' in fspath:
-            item.add_marker(pytest.mark.skip(reason='zip9 ingester unavailable'))
+        if not ZIP9_AVAILABLE and "zip9" in fspath:
+            item.add_marker(pytest.mark.skip(reason="zip9 ingester unavailable"))
             continue
 
-        if 'integration' in fspath:
+        if "integration" in fspath:
             item.add_marker(pytest.mark.integration)
-        elif 'unit' in fspath:
+        elif "unit" in fspath:
             item.add_marker(pytest.mark.unit)
-        elif 'e2e' in fspath:
+        elif "e2e" in fspath:
             item.add_marker(pytest.mark.e2e)
 
-        if 'performance' in fspath or 'load' in fspath:
+        if "performance" in fspath or "load" in fspath:
             item.add_marker(pytest.mark.slow)
 
         for marker_name, patterns in DOMAIN_MARKER_PATTERNS.items():

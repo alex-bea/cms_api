@@ -37,9 +37,7 @@ from scripts.bootstrap_local_db import (  # noqa: E402
 
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data" / "ingestion" / "local" / "rvu"
 DEFAULT_REPORT_DIR = PROJECT_ROOT / "data" / "ingestion" / "local" / "reports"
-DEFAULT_CONSOLIDATED_REPORT = (
-    DEFAULT_REPORT_DIR / "cms_pricing_local_smoke_latest.json"
-)
+DEFAULT_CONSOLIDATED_REPORT = DEFAULT_REPORT_DIR / "cms_pricing_local_smoke_latest.json"
 DEFAULT_GEOGRAPHY_REPORT = (
     DEFAULT_REPORT_DIR / "cms_geography_production_readiness_latest.json"
 )
@@ -263,7 +261,9 @@ def build_report(config: SmokeConfig, steps: list[dict[str, Any]]) -> dict[str, 
 
 def write_report(path: Path, report: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def run(config: SmokeConfig) -> dict[str, Any]:

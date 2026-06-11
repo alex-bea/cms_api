@@ -54,7 +54,9 @@ def test_build_step_plan_smokes_standard_and_special_state_zips(tmp_path):
     assert "--zip" not in standard_smoke
 
     assert special_state_smoke[special_state_smoke.index("--zip") + 1] == "66012"
-    assert special_state_smoke[special_state_smoke.index("--expected-state") + 1] == "EK"
+    assert (
+        special_state_smoke[special_state_smoke.index("--expected-state") + 1] == "EK"
+    )
     assert (
         special_state_smoke[special_state_smoke.index("--expected-locality") + 1]
         == "00"

@@ -98,8 +98,7 @@ def validate_source_readiness(
         expected_carrier=thresholds.expected_probe_carrier,
     )
     probe_pass = (
-        stats.probe_zip == thresholds.expected_probe_zip
-        and probe["expected_found"]
+        stats.probe_zip == thresholds.expected_probe_zip and probe["expected_found"]
     )
 
     coverage = valuation_date_covered(stats, valuation_date)
@@ -272,7 +271,5 @@ def validate_smoke_proof_path(proof_path: str) -> dict[str, Any]:
         "status": "blocked" if disallowed else "ok",
         "proof_path": normalized,
         "accepted": not disallowed,
-        "stop_condition": "seed_helper_proof_path_refused"
-        if disallowed
-        else None,
+        "stop_condition": "seed_helper_proof_path_refused" if disallowed else None,
     }
