@@ -11,29 +11,38 @@ on:
 permissions:
   contents: read
   packages: write
+  security-events: write
 
 jobs:
   snapshot-parity:
     name: Verify RVU ↔ GPCI parity
-    if: ${{ github.event_name != 'pull_request' && secrets.SNAPSHOT_DATABASE_URL != '' }}
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: ${{ secrets.SNAPSHOT_DATABASE_URL }}
     steps:
+      - name: Skip snapshot parity without database secret
+        if: ${{ env.DATABASE_URL == '' }}
+        run: echo "SNAPSHOT_DATABASE_URL is not configured; skipping snapshot parity."
+
       - name: Checkout repository
+        if: ${{ env.DATABASE_URL != '' }}
         uses: actions/checkout@v4
 
       - name: Set up Python
+        if: ${{ env.DATABASE_URL != '' }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install dependencies
+        if: ${{ env.DATABASE_URL != '' }}
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run snapshot parity check
+        if: ${{ env.DATABASE_URL != '' }}
         run: |
           python tools/check_snapshot_release_parity.py --pairs rvu_items:gpci_indices
 

@@ -14,7 +14,13 @@ on:
   schedule:
     - cron: '0 3 * * *'  # Daily at 3:00 UTC
   pull_request:
-    paths: ["api-contracts/openapi.yaml", "apps/**", "services/**"]
+    paths:
+      - "api-contracts/**"
+      - "cms_pricing/**"
+      - "tests/api/**"
+      - "tests/scripts/**"
+      - "requirements*.txt"
+      - ".github/workflows/contract-tests.yml"
   push:
     branches: [main]
 
@@ -87,4 +93,4 @@ jobs:
         run: |
           # Use PostgreSQL test harness for database-backed tests (see DOC-test-patterns-prd-v1.0.md)
           export TEST_DATABASE_URL="postgresql://cms_user:cms_password@localhost:5432/cms_pricing_ci_${{ github.run_id }}"
-          scripts/test_with_postgres.sh pytest tests/test_error_contract.py tests/test_openapi_consistency.py -q
+          scripts/test_with_postgres.sh pytest tests/api/test_error_contract.py tests/api/test_openapi_consistency.py -q
