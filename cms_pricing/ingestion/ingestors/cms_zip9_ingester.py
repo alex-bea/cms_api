@@ -15,6 +15,12 @@ from typing import Dict, List, Any, Optional, Tuple
 import structlog
 
 from cms_pricing.database import SessionLocal
+from cms_pricing.ingestion.parsers.cms_geography import (
+    CMS_SOURCE_URL,
+    ParsedGeographyRow,
+    iter_zip9_rows_from_bytes,
+    parse_zip9_line,
+)
 from cms_pricing.models.nearest_zip import ZIP9Overrides, CMSZipLocality
 from cms_pricing.ingestion.contracts.ingestor_spec import (
     BaseDISIngestor, SourceFile, ValidationSeverity, ReleaseCadence, DataClass, 
@@ -40,9 +46,9 @@ class CMSZip9Ingester(BaseDISIngestor):
         self.current_release_id: Optional[str] = None
         self.current_batch_id: Optional[str] = None
         
-        # Source configuration
-        # ZIP9 data is actually inside the same ZIP file as ZIP5 data
-        self.source_url = "https://www.cms.gov/files/zip/zip-code-carrier-locality-file-revised-08/14/2025.zip"
+        # Source configuration. ZIP5 and ZIP9 rows live in the same CMS package;
+        # keep discovery aligned with CMSZipLocalityProductionIngester.
+        self.source_url = CMS_SOURCE_URL
         self.source_name = "CMS ZIP9 Overrides"
         self.license = "CMS Public Domain"
         self.attribution_required = False
@@ -120,7 +126,7 @@ class CMSZip9Ingester(BaseDISIngestor):
         return [
             SourceFile(
                 url=self.source_url,
-                filename="zip_codes_requiring_4_extension.zip",
+                filename="zip_code_carrier_locality_file.zip",
                 content_type="application/zip",
                 expected_size_bytes=0,  # Will be updated during download
                 checksum="",  # Will be updated during download
@@ -128,6 +134,19 @@ class CMSZip9Ingester(BaseDISIngestor):
                 etag=None
             )
         ]
+
+    def source_package_report(self) -> Dict[str, Any]:
+        """Report how ZIP9 discovery relates to runtime geography ingestion."""
+        return {
+            "source_url": self.source_url,
+            "source_package": "cms_zip_locality",
+            "shared_parser": "cms_pricing.ingestion.parsers.cms_geography",
+            "members": {
+                "zip5": "ZIP5_*.txt",
+                "zip9": "ZIP9_*.txt",
+            },
+            "output_strategy": "legacy_zip9_overrides_table",
+        }
     
     async def ingest(self, release_id: str, batch_id: str) -> Dict[str, Any]:
         """Main ingestion method following DIS Land → Validate → Normalize → Enrich → Publish"""
@@ -184,7 +203,7 @@ class CMSZip9Ingester(BaseDISIngestor):
             # Create source file info
             source_file = SourceFile(
                 url=self.source_url,
-                filename="zip_code_carrier_locality_file_revised_08142025.zip",
+                filename="zip_code_carrier_locality_file.zip",
                 content_type="application/zip",
                 expected_size_bytes=len(content),
                 last_modified=datetime.now(),
@@ -373,72 +392,57 @@ class CMSZip9Ingester(BaseDISIngestor):
         }
     
     async def _parse_zip9_data(self, raw_content: bytes) -> pd.DataFrame:
-        """Parse ZIP9 data from raw ZIP content"""
-        import zipfile
-        import io
-        
-        # Extract ZIP9 file from ZIP archive
-        with zipfile.ZipFile(io.BytesIO(raw_content)) as zip_file:
-            zip9_files = [f for f in zip_file.namelist() if 'ZIP9' in f.upper()]
-            
-            if not zip9_files:
-                raise ValueError("No ZIP9 files found in archive")
-            
-            # Use the first ZIP9 file found
-            zip9_file = zip9_files[0]
-            content = zip_file.read(zip9_file)
-            
-            # Parse based on file extension
-            if zip9_file.endswith('.txt'):
-                return self._parse_fixed_width_zip9(content)
-            elif zip9_file.endswith('.csv'):
-                return pd.read_csv(io.BytesIO(content))
-            else:
-                raise ValueError(f"Unsupported file format: {zip9_file}")
-    
-    def _parse_fixed_width_zip9(self, content: bytes) -> pd.DataFrame:
-        """Parse fixed-width ZIP9 data based on CMS layout"""
-        lines = content.decode('utf-8').strip().split('\n')
-        
-        data = []
-        for line_num, line in enumerate(lines):
-            if len(line) < 80:  # Skip incomplete lines
-                continue
-                
-            try:
-                # Parse fixed-width fields based on CMS layout:
-                # State(1-2) + ZIP5(3-7) + Carrier(8-12) + Locality(13-14) + Rural(15) + PlusFourFlag(21) + PlusFour(22-25)
-                state = line[0:2].strip()
-                zip5 = line[2:7].strip()
-                carrier = line[7:12].strip()
-                locality = line[12:14].strip()
-                rural_flag = line[14:15].strip() if line[14:15].strip() else None
-                plus_four_flag = line[20:21].strip()
-                plus_four = line[21:25].strip()
-                
-                # Only process records that require +4 extension (PlusFourFlag = '1')
-                if plus_four_flag == '1' and plus_four and plus_four != '0000':
-                    # Create ZIP9 code
-                    zip9 = zip5 + plus_four
-                    
-                    # For ZIP9 overrides, we create a range from the specific ZIP9 to itself
-                    data.append({
-                        'zip9_low': zip9,
-                        'zip9_high': zip9,
-                        'state': state,
-                        'locality': locality,
-                        'rural_flag': rural_flag if rural_flag else None,
-                        'effective_from': '2025-08-14',  # From the file date
-                        'effective_to': None,  # Ongoing
-                        'vintage': '2025-08-14'
-                    })
-                    
-            except Exception as e:
-                logger.warning("Error parsing ZIP9 line", line_num=line_num, error=str(e))
-                continue
-        
+        """Parse ZIP9 data from the shared CMS ZIP-locality package."""
+        data = [
+            self._zip9_row_to_override_record(row)
+            for row in iter_zip9_rows_from_bytes(raw_content)
+        ]
         logger.info("Parsed ZIP9 data", record_count=len(data))
         return pd.DataFrame(data)
+    
+    def _parse_fixed_width_zip9(self, content: bytes) -> pd.DataFrame:
+        """Parse a ZIP9 fixed-width member with the shared CMS parser."""
+        lines = content.decode("latin-1").splitlines()
+        data = []
+        for line_num, line in enumerate(lines, start=1):
+            if not line.strip():
+                continue
+            try:
+                row = parse_zip9_line(
+                    line,
+                    source_file="ZIP9.txt",
+                    source_line=line_num,
+                )
+            except ValueError as e:
+                logger.warning(
+                    "Error parsing ZIP9 line",
+                    line_num=line_num,
+                    error=str(e),
+                )
+                continue
+            data.append(self._zip9_row_to_override_record(row))
+
+        logger.info("Parsed ZIP9 data", record_count=len(data))
+        return pd.DataFrame(data)
+
+    @staticmethod
+    def _zip9_row_to_override_record(
+        row: ParsedGeographyRow,
+    ) -> Dict[str, Any]:
+        """Adapt a shared parser ZIP9 row to the legacy override schema."""
+        zip9 = f"{row.zip5}{row.plus4}"
+        return {
+            "zip9_low": zip9,
+            "zip9_high": zip9,
+            "state": row.state,
+            "locality": row.locality_id,
+            "rural_flag": row.rural_flag,
+            "effective_from": row.effective_from,
+            "effective_to": row.effective_to,
+            "vintage": row.year_quarter,
+            "source_filename": row.source_file,
+            "carrier": row.carrier,
+        }
     
     def _normalize_zip9_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """Normalize ZIP9 data"""
@@ -447,10 +451,13 @@ class CMSZip9Ingester(BaseDISIngestor):
         df['zip9_high'] = df['zip9_high'].astype(str).str.strip()
         df['state'] = df['state'].astype(str).str.strip().str.upper()
         df['locality'] = df['locality'].astype(str).str.strip()
-        df['rural_flag'] = df['rural_flag'].map({'A': True, 'B': True, None: None})
+        df['rural_flag'] = df['rural_flag'].map(
+            {'A': True, 'B': True, 'R': True, '': None, None: None}
+        )
         
         # Add metadata
-        df['source_filename'] = 'zip_codes_requiring_4_extension.zip'
+        if 'source_filename' not in df:
+            df['source_filename'] = 'zip_code_carrier_locality_file.zip'
         df['ingest_run_id'] = self.current_batch_id
         
         return df
