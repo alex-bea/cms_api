@@ -40,6 +40,7 @@ Geography ingestion or resolver updates must reconcile against **REF-geography-s
 
 - **2025-09-26**: Initial draft of Geography PRD with **ZIP+4-first mandate**, effective-dating rules, schema, ingestion steps, QA, and trace requirements.
 - **2025-09-26**: Clarifications applied — non-strict default with explicit fallback policy; **nearest fallback constrained to same state**; carrier exposure optional; locality-name dictionary loader added; annual-as-quarter fallback allowed; ZIP+4 normalization; cache strategy clarified (digest-aware by default, TTL optional); conversational strict-mode errors; per-request radius override; daily gap report methodology.
+- **2026-06-11**: Local/dev real CMS ZIP-locality loader added for `ZIP5_OCT2025.txt` and `ZIP9_OCT2025.txt`; MPFS GPCI lookup now preserves source geography state while applying a narrow pricing-side crosswalk for CMS special source-state codes (`AS/FM/GU/MH/MP/PW -> HI`, `EK/WK -> KS`, `EM/WM -> MO`, `VA 01 -> DC`).
 
 ---
 
@@ -141,6 +142,7 @@ Define how we ingest and use CMS geography mapping to resolve a service **ZIP(+4
 - **Fallback (rare):** If a record is missing a state (or for additional QA), consult an auxiliary **ZIP→State** crosswalk (e.g., ZIP→county→state or ZCTA→state) to validate. Use only for validation or as a last‑resort fill; do not override a present ZIP9 state.
 - **Nearest‑ZIP fallback policy:** Enforce **same‑state constraint** using `geography.state` (from ZIP9). Nearest fallback must **not** cross state lines.
 - **Edge cases:** Preserve leading zeros in ZIP+4; handle territories (PR, VI, GU, AS, MP) explicitly—return a friendly error if unsupported; APO/FPO/DPO may not map to standard localities and should be rejected with an actionable message.
+- **MPFS GPCI lookup:** Preserve `geography.state` exactly as supplied by CMS ZIP-locality files. Pricing engines may apply a scoped GPCI-state lookup crosswalk only when joining to GPCI rows whose state differs from CMS ZIP-locality special source-state codes. Current mappings: `AS/FM/GU/MH/MP/PW -> HI`, `EK/WK -> KS`, `EM/WM -> MO`, and `VA` locality `01 -> DC`.
 
 
 1. **Download**: Use resilient downloader (ETag/Last-Modified, retries, checksum) to fetch CMS ZIP archives.

@@ -1,7 +1,7 @@
 # CMS RVU Local DB Load Status
 
 **Status:** Current
-**Updated:** 2026-06-10
+**Updated:** 2026-06-11
 **Tracker link:** `state/work/tasks/load-latest-cms-rvu-local-db.yaml`
 
 ## Completed
@@ -84,15 +84,44 @@ Result: `200 OK`, `allowed_cents=10061`, `release_id=rvu_2026_C`, and trace refs
 included `RVU:release:rvu_2026_C`, `GPCI:release:gpci_2026_C`,
 `CF:release:rvu_2026_C`, and `CF:source:rvu_items.conversion_factor`.
 
-The local/dev DB can now be prepared non-destructively with:
+## Geography Prerequisite
+
+The preferred local/dev geography prerequisite is now the real CMS geography
+load:
+
+```bash
+.venv/bin/python scripts/load_cms_geography_local.py \
+  --database-url postgresql://cms_user:cms_password@localhost:5432/cms_pricing \
+  --replace-existing \
+  --open-ended-latest \
+  --require-valuation-date-coverage
+```
+
+This replaces the previous one-row ZIP seed with the real public CMS
+ZIP-locality package:
+
+- source files: `ZIP5_OCT2025.txt` and `ZIP9_OCT2025.txt`
+- rows loaded: `1,118,970`
+- ZIP5 rows: `42,956`
+- ZIP9 rows: `1,076,014`
+- dataset digest:
+  `b14c414de73256ac9594d7cb0a58a75214ba04f4fe043468ffda507c3dd75c2e`
+- `94110` resolves to `CA` locality `05`, carrier `01112`
+
+The command uses `--open-ended-latest` because the current verified public CMS
+ZIP-locality package is `2025Q4`; this makes the latest public geography source
+active for the 2026 RVU smoke date until a newer ZIP-locality package is
+verified.
+
+The old local/dev seed command remains a narrow repair fallback:
 
 ```bash
 .venv/bin/python scripts/seed_post_rvu_load_local.py \
   --database-url postgresql://cms_user:cms_password@localhost:5432/cms_pricing
 ```
 
-This command seeds the public ZIP-locality row for `94110` when an active
-matching row is absent:
+It seeds the public ZIP-locality row for `94110` when an active matching row is
+absent:
 
 - `zip5=94110`
 - `state=CA`
@@ -106,7 +135,7 @@ It also registers the active `rvu_2026_C` and `gpci_2026_C`
 counts and `effective_from=2026-07-01` so the pricing engine selects the
 RVU-backed path.
 
-The repeatable smoke command now passes:
+The repeatable smoke command passes after the real geography load:
 
 ```bash
 .venv/bin/python scripts/post_rvu_load_api_smoke.py \

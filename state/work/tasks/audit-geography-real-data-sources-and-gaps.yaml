@@ -1,0 +1,27 @@
+id: audit-geography-real-data-sources-and-gaps
+parent_id: cms-geography-real-data-breadth
+title: Audit Geography Real Data Sources And Gaps
+status: done
+rank: 1
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+related_paths:
+  - "prds/PRD-geography-locality-mapping-prd-v1.0.md"
+  - "prds/REF-geography-source-map-prd-v1.0.md"
+  - "prds/REF-cms-pricing-source-map-prd-v1.0.md"
+  - "cms_pricing/ingestion/ingestors/cms_zip_locality_production_ingester.py"
+  - "cms_pricing/ingestion/ingestors/cms_zip9_ingester.py"
+  - "cms_pricing/ingestion/contracts/cms_zip_locality_v1.json"
+  - "cms_pricing/models/geography.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md"
+summary: "Done: audited the CMS ZIP-locality package, local ZIP5/ZIP9 source files, runtime geography schema, existing ingester gaps, and chose a narrow local/dev geography loader as the next implementation path."
+current_task: "Closed after confirming ZIP5_OCT2025 and ZIP9_OCT2025 row counts, layout fields, 94110 CA locality 05 source row, locality 00 preservation requirement, and current ingester target-table mismatch."
+next_action: "Activate build-repeatable-geography-real-data-loader."
+resume_from: "See Source Audit Result in docs/workbench/DOC-cms-geography-real-data-breadth-epic-brief.md."

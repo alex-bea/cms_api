@@ -33,7 +33,7 @@ Document the authoritative geography datasets used for ZIP resolution and locali
 | **NBER ZCTA Centroids (fallback)** | https://www.nber.org/research/data/zip-code-distance-database | Directory listing (e.g., `/2024/centroid/` CSVs) | `zcta5`, `lat`, `lon`. | Intended as fallback when Gazetteer rows missing. No automated ingest yet. |
 | **SimpleMaps US ZIPs (Free)** | https://simplemaps.com/data/us-zips | `uszips.csv` / `.xlsx` (gated download) | `zip`, `zcta`, `parent_zcta`, `military`, `population`, `timezone`, county/CBSA metadata. Target: `zip_metadata`. | Licensing requires attribution; ingestion flow TBD (currently manual uploads). |
 | **HUD–USPS ZIP Crosswalks** | https://www.huduser.gov/portal/datasets/usps_crosswalk.html | Quarterly CSV/XLSX by geography level | `ZIP`, geographic IDs, residential/business/other weights. | Optional QA input; no standard ingest defined. |
-| **CMS ZIP→Locality / ZIP9 Overrides** | https://www.cms.gov/medicare/payment/fee-schedules | Shared ZIP package listed in `REF-cms-pricing-source-map-prd-v1.0.md`. | Maintains state/locality context for resolver fallback. | Geography consumers must ensure CMS pricing ingesters are green. |
+| **CMS ZIP→Locality / ZIP9 Overrides** | https://www.cms.gov/medicare/payment/fee-schedules | Shared ZIP package listed in `REF-cms-pricing-source-map-prd-v1.0.md`. | Maintains state/locality context for resolver fallback. | Local/dev loader `scripts/load_cms_geography_local.py` parses the current ZIP5/ZIP9 package into runtime `geography`; production DIS ingester promotion remains follow-up. |
 
 ### 2A) Latest Discovery Snapshots (captured 2025-10-04)
 Explicit manifest coverage helps ensure the geography resolver references real landing assets. Rows capture the latest artifact observed for each dataset; gaps indicate discovery manifests still need to be wired up.
@@ -89,6 +89,15 @@ Explicit manifest coverage helps ensure the geography resolver references real l
 | Filename | Landing URL | Content Type | Vintage | Notes |
 |---|---|---|---|---|
 | `zip_code_carrier_locality.zip` | https://www.cms.gov/files/zip/zip-code-carrier-locality-file-revised-08/14/2025.zip | application/zip | 2025-08-14 | Provides ZIP5 + ZIP9 overrides powering geography resolver fallback. |
+
+Latest local/dev validation captured on 2026-06-11:
+
+- package files: `ZIP5_OCT2025.txt`, `ZIP9_OCT2025.txt`;
+- loaded rows: 1,118,970 total, 42,956 ZIP5, 1,076,014 ZIP9;
+- dataset digest:
+  `b14c414de73256ac9594d7cb0a58a75214ba04f4fe043468ffda507c3dd75c2e`;
+- 2026 RVU local/dev smoke uses explicit latest-effective semantics via
+  `scripts/load_cms_geography_local.py --open-ended-latest`.
 
 ### 2B) Discovery → Land → API Trace
 Tracing ensures resolver behavior lines up with manifest coverage.

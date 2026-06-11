@@ -212,6 +212,18 @@ def test_mpfs_locality_candidates_pad_single_digit_without_remapping_zero_zero()
     assert "01" not in MPSFEngine._locality_candidates("00")
 
 
+@pytest.mark.unit
+def test_mpfs_gpci_state_candidates_cover_cms_zip_locality_special_codes():
+    assert MPSFEngine._gpci_state_candidates("CA", "05") == ["CA"]
+    assert MPSFEngine._gpci_state_candidates("EK", "00") == ["EK", "KS"]
+    assert MPSFEngine._gpci_state_candidates("WK", "00") == ["WK", "KS"]
+    assert MPSFEngine._gpci_state_candidates("EM", "99") == ["EM", "MO"]
+    assert MPSFEngine._gpci_state_candidates("WM", "02") == ["WM", "MO"]
+    assert MPSFEngine._gpci_state_candidates("GU", "01") == ["GU", "HI"]
+    assert MPSFEngine._gpci_state_candidates("VA", "01") == ["VA", "DC"]
+    assert MPSFEngine._gpci_state_candidates("VA", "00") == ["VA"]
+
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_mpfs_uses_rvu_snapshots_by_valuation_date(test_db_session):

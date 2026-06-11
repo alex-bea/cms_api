@@ -21,6 +21,26 @@ logger = structlog.get_logger()
 # Dataset identifier constant (Phase 2.5)
 DATASET_ID = "MPFS"
 
+GPCI_STATE_OVERRIDES = {
+    # CMS ZIP-locality source uses special pseudo-state codes for some carrier
+    # territories. GPCI rows store the pricing locality under the fee schedule
+    # state used by the RVU/GPCI release.
+    "AS": "HI",
+    "FM": "HI",
+    "GU": "HI",
+    "MH": "HI",
+    "MP": "HI",
+    "PW": "HI",
+    "EK": "KS",
+    "WK": "KS",
+    "EM": "MO",
+    "WM": "MO",
+}
+
+GPCI_STATE_LOCALITY_OVERRIDES = {
+    ("VA", "01"): "DC",
+}
+
 
 class MPSFEngine(BasePricingEngine):
     """Medicare Physician Fee Schedule pricing engine"""
@@ -569,20 +589,38 @@ class MPSFEngine(BasePricingEngine):
         if geography and geography.selected_candidate:
             state_code = geography.selected_candidate.state_code
 
-        query = self.db.query(
-            GPCIIndex.work_gpci,
-            GPCIIndex.pe_gpci,
-            GPCIIndex.mp_gpci,
-        ).filter(
-            GPCIIndex.release_id == release_id,
-            GPCIIndex.locality_id.in_(locality_candidates),
-        )
-        if state_code:
-            query = query.filter(GPCIIndex.state == state_code)
+        for gpci_state in self._gpci_state_candidates(state_code, locality_id):
+            row = (
+                self.db.query(
+                    GPCIIndex.work_gpci,
+                    GPCIIndex.pe_gpci,
+                    GPCIIndex.mp_gpci,
+                )
+                .filter(
+                    GPCIIndex.release_id == release_id,
+                    GPCIIndex.locality_id.in_(locality_candidates),
+                    GPCIIndex.state == gpci_state,
+                )
+                .order_by(GPCIIndex.locality_id.asc())
+                .first()
+            )
+            if row:
+                return row
 
-        row = query.order_by(GPCIIndex.locality_id.asc()).first()
-        if row or not state_code:
-            return row
+        if not state_code:
+            return (
+                self.db.query(
+                    GPCIIndex.work_gpci,
+                    GPCIIndex.pe_gpci,
+                    GPCIIndex.mp_gpci,
+                )
+                .filter(
+                    GPCIIndex.release_id == release_id,
+                    GPCIIndex.locality_id.in_(locality_candidates),
+                )
+                .order_by(GPCIIndex.locality_id.asc())
+                .first()
+            )
 
         return (
             self.db.query(
@@ -597,6 +635,20 @@ class MPSFEngine(BasePricingEngine):
             .order_by(GPCIIndex.locality_id.asc())
             .first()
         )
+
+    @staticmethod
+    def _gpci_state_candidates(state_code: Optional[str], locality_id: str) -> List[str]:
+        raw_state = str(state_code or "").strip().upper()
+        raw_locality = str(locality_id or "").strip()
+        candidates = [raw_state] if raw_state else []
+
+        mapped_state = GPCI_STATE_LOCALITY_OVERRIDES.get((raw_state, raw_locality))
+        if mapped_state is None:
+            mapped_state = GPCI_STATE_OVERRIDES.get(raw_state)
+        if mapped_state:
+            candidates.append(mapped_state)
+
+        return list(dict.fromkeys(candidate for candidate in candidates if candidate))
 
     @staticmethod
     def _locality_candidates(locality_id: str) -> List[str]:
