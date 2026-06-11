@@ -5,8 +5,13 @@ from typing import Dict, Any, List, Optional
 from datetime import date, datetime
 
 from cms_pricing.schemas.pricing import (
-    PricingRequest, PricingResponse, ComparisonRequest, ComparisonResponse,
-    LineItemResponse, GeographyResponse, ComparisonDelta
+    PricingRequest,
+    PricingResponse,
+    ComparisonRequest,
+    ComparisonResponse,
+    LineItemResponse,
+    GeographyResponse,
+    ComparisonDelta,
 )
 from cms_pricing.schemas.geography import GeographyCandidate, GeographyResolveResponse
 from cms_pricing.services.geography import GeographyService
@@ -23,6 +28,7 @@ from cms_pricing.engines.ipps import IPPSEngine
 from cms_pricing.engines.clfs import CLFSEngine
 from cms_pricing.engines.dmepos import DMEPOSEngine
 from cms_pricing.engines.drugs import DrugEngine
+from cms_pricing.services.dataset_snapshot_service import DatasetSnapshotService
 import structlog
 
 logger = structlog.get_logger()
@@ -30,7 +36,7 @@ logger = structlog.get_logger()
 
 class PricingService:
     """Main pricing service"""
-    
+
     def __init__(self, db: Session = None):
         self.db = db
         self.geography_service = GeographyService(db)
@@ -38,13 +44,13 @@ class PricingService:
         self._plan_name_cache: Dict[Any, str] = {}
         # Pass db session to engines for connection reuse (optimization)
         self.engines = {
-            'MPFS': MPSFEngine(db=db),
-            'OPPS': OPPSEngine(db=db),
-            'ASC': ASCEngine(db=db),
-            'IPPS': IPPSEngine(db=db),
-            'CLFS': CLFSEngine(db=db),
-            'DMEPOS': DMEPOSEngine(db=db),
-            'DRUGS': DrugEngine(db=db)
+            "MPFS": MPSFEngine(db=db),
+            "OPPS": OPPSEngine(db=db),
+            "ASC": ASCEngine(db=db),
+            "IPPS": IPPSEngine(db=db),
+            "CLFS": CLFSEngine(db=db),
+            "DMEPOS": DMEPOSEngine(db=db),
+            "DRUGS": DrugEngine(db=db),
         }
 
     def _candidate_from_mapping(
@@ -77,7 +83,9 @@ class PricingService:
             return result
 
         if not isinstance(result, dict):
-            raise TypeError(f"Unsupported geography result type: {type(result).__name__}")
+            raise TypeError(
+                f"Unsupported geography result type: {type(result).__name__}"
+            )
 
         normalized_zip = result.get("zip5") or zip5
 
@@ -85,7 +93,9 @@ class PricingService:
         if isinstance(selected_candidate, GeographyCandidate):
             selected = selected_candidate
         elif isinstance(selected_candidate, dict):
-            selected = self._candidate_from_mapping(normalized_zip, selected_candidate, used=True)
+            selected = self._candidate_from_mapping(
+                normalized_zip, selected_candidate, used=True
+            )
         else:
             selected = None
 
@@ -111,10 +121,14 @@ class PricingService:
         return GeographyResolveResponse(
             zip5=normalized_zip,
             candidates=candidates,
-            requires_resolution=bool(result.get("requires_resolution", selected is None)),
+            requires_resolution=bool(
+                result.get("requires_resolution", selected is None)
+            ),
             ambiguity_threshold=float(result.get("ambiguity_threshold", 0.2)),
             selected_candidate=selected,
-            resolution_method=result.get("resolution_method") or result.get("match_level") or "unknown",
+            resolution_method=result.get("resolution_method")
+            or result.get("match_level")
+            or "unknown",
             warnings=list(result.get("warnings") or []),
         )
 
@@ -136,7 +150,7 @@ class PricingService:
             resolution_method=geography_result.resolution_method,
             candidates=geography_result.candidates,
         )
-    
+
     async def price_single_code(
         self,
         zip: str,
@@ -144,49 +158,64 @@ class PricingService:
         setting: str,
         year: int,
         quarter: Optional[str] = None,
+        valuation_date: Optional[date] = None,
         ccn: Optional[str] = None,
         payer: Optional[str] = None,
-        plan: Optional[str] = None
+        plan: Optional[str] = None,
+        pos: Optional[str] = None,
     ) -> "CodePricingItemWithGeography":
         """Price a single code/component (returns CodePricingItemWithGeography)"""
-        
+
         from cms_pricing.schemas.pricing import CodePricingItemWithGeography
-        
+
         run_id = str(uuid.uuid4())
-        
+
         try:
+            selected_valuation_date = self._valuation_date_from_inputs(
+                year=year,
+                quarter=quarter,
+                valuation_date=valuation_date,
+            )
             # Resolve geography
             geography_result = self._normalize_geography_result(
                 zip,
-                await self.geography_service.resolve_zip(zip),
+                await self.geography_service.resolve_zip(
+                    zip,
+                    valuation_year=year,
+                    quarter=int(quarter) if quarter else None,
+                    valuation_date=valuation_date,
+                ),
             )
-            
+
             # Get appropriate engine
             engine = self.engines.get(setting)
             if not engine:
                 raise ValueError(f"Unknown setting: {setting}")
-            
+
             # Price the code (returns CodePricingItem)
-            result = await engine.price_code(
-                code=code,
-                zip=zip,
-                year=year,
-                quarter=quarter,
-                geography=geography_result,
-                ccn=ccn,
-                payer=payer,
-                plan=plan
-            )
-            
+            price_kwargs = {
+                "code": code,
+                "zip": zip,
+                "year": year,
+                "quarter": quarter,
+                "geography": geography_result,
+                "ccn": ccn,
+                "payer": payer,
+                "plan": plan,
+                "pos": pos,
+            }
+            if setting == "MPFS":
+                price_kwargs["valuation_date"] = selected_valuation_date
+
+            result = await engine.price_code(**price_kwargs)
+
             geography_response = self._build_geography_response(geography_result)
-            
+
             # Return CodePricingItemWithGeography (Quick Win #2)
             return CodePricingItemWithGeography(
-                **result.model_dump(),
-                geography=geography_response,
-                run_id=run_id
+                **result.model_dump(), geography=geography_response, run_id=run_id
             )
-            
+
         except Exception as e:
             logger.error(
                 "Single code pricing failed",
@@ -195,22 +224,32 @@ class PricingService:
                 code=code,
                 setting=setting,
                 error=str(e),
-                exc_info=True
+                exc_info=True,
             )
             raise
-    
+
     async def price_plan(self, request: PricingRequest) -> PricingResponse:
         """Price a complete treatment plan"""
-        
+
         run_id = str(uuid.uuid4())
-        
+
         try:
+            valuation_date = self._valuation_date_from_inputs(
+                year=request.year,
+                quarter=request.quarter,
+                valuation_date=request.valuation_date,
+            )
             # Resolve geography
             geography_result = self._normalize_geography_result(
                 request.zip,
-                await self.geography_service.resolve_zip(request.zip),
+                await self.geography_service.resolve_zip(
+                    request.zip,
+                    valuation_year=request.year,
+                    quarter=int(request.quarter) if request.quarter else None,
+                    valuation_date=request.valuation_date,
+                ),
             )
-            
+
             # Get plan components
             if request.plan_id:
                 # Load from database
@@ -220,10 +259,10 @@ class PricingService:
                 # Use ad-hoc plan
                 ad_hoc_plan = request.ad_hoc_plan or {}
                 components = self._normalize_ad_hoc_components(
-                    ad_hoc_plan.get('components', [])
+                    ad_hoc_plan.get("components", [])
                 )
-                plan_name = ad_hoc_plan.get('name', 'Ad-hoc Plan')
-            
+                plan_name = ad_hoc_plan.get("name", "Ad-hoc Plan")
+
             # Price each component
             line_items = []
             total_allowed_cents = 0
@@ -232,37 +271,41 @@ class PricingService:
             total_beneficiary_cents = 0
             total_program_payment_cents = 0
             datasets_seen = set()  # Track unique datasets used
-            
+
             for i, component in enumerate(components):
                 # Get appropriate engine
-                engine = self.engines.get(component['setting'])
+                engine = self.engines.get(component["setting"])
                 if not engine:
                     logger.warning(
                         "Unknown setting for component",
                         run_id=run_id,
-                        code=component['code'],
-                        setting=component['setting']
+                        code=component["code"],
+                        setting=component["setting"],
                     )
                     continue
-                
+
                 # Price the component (returns CodePricingItem)
-                result = await engine.price_code(
-                    code=component['code'],
-                    zip=request.zip,
-                    year=request.year,
-                    quarter=request.quarter,
-                    geography=geography_result,
-                    ccn=request.ccn,
-                    payer=request.payer,
-                    plan=request.plan,
-                    units=component['units'],
-                    utilization_weight=component['utilization_weight'],
-                    professional_component=component['professional_component'],
-                    facility_component=component['facility_component'],
-                    modifiers=component['modifiers'],
-                    pos=component['pos'],
-                    ndc11=component['ndc11']
-                )
+                price_kwargs = {
+                    "code": component["code"],
+                    "zip": request.zip,
+                    "year": request.year,
+                    "quarter": request.quarter,
+                    "geography": geography_result,
+                    "ccn": request.ccn,
+                    "payer": request.payer,
+                    "plan": request.plan,
+                    "units": component["units"],
+                    "utilization_weight": component["utilization_weight"],
+                    "professional_component": component["professional_component"],
+                    "facility_component": component["facility_component"],
+                    "modifiers": component["modifiers"],
+                    "pos": component["pos"],
+                    "ndc11": component["ndc11"],
+                }
+                if component["setting"] == "MPFS":
+                    price_kwargs["valuation_date"] = valuation_date
+
+                result = await engine.price_code(**price_kwargs)
 
                 # Track dataset used from authoritative CodePricingItem.dataset_id (Quick Win #2)
                 if result.dataset_id:
@@ -272,28 +315,33 @@ class PricingService:
                 line_item = LineItemResponse.from_code_pricing_item(
                     item=result,
                     sequence=i + 1,
-                    utilization_weight=component['utilization_weight']
+                    utilization_weight=component["utilization_weight"],
                 )
-                
+
                 line_items.append(line_item)
-                
+
                 # Accumulate totals using CodePricingItem attributes
                 total_allowed_cents += result.allowed_cents
-                total_beneficiary_deductible_cents += result.beneficiary_deductible_cents
-                total_beneficiary_coinsurance_cents += result.beneficiary_coinsurance_cents
+                total_beneficiary_deductible_cents += (
+                    result.beneficiary_deductible_cents
+                )
+                total_beneficiary_coinsurance_cents += (
+                    result.beneficiary_coinsurance_cents
+                )
                 total_beneficiary_cents += result.beneficiary_total_cents
                 total_program_payment_cents += result.program_payment_cents
-            
+
             geography_response = self._build_geography_response(geography_result)
-            
+
             # Collect dataset snapshots for provenance (Phase 2.6)
             datasets_used = self._collect_datasets_used(
                 datasets_seen=datasets_seen,
                 valuation_year=request.year,
                 valuation_quarter=request.quarter,
-                line_items=line_items
+                valuation_date=valuation_date,
+                line_items=line_items,
             )
-            
+
             # Create response
             response = PricingResponse(
                 run_id=run_id,
@@ -309,31 +357,33 @@ class PricingService:
                 remaining_part_b_deductible_cents=0,  # TODO(alex, GH-424): Calculate remaining deductible
                 post_acute_included=request.include_home_health or request.include_snf,
                 sequestration_applied=request.apply_sequestration,
-                facility_specific_used=any(item.facility_specific for item in line_items),
+                facility_specific_used=any(
+                    item.facility_specific for item in line_items
+                ),
                 datasets_used=datasets_used,
-                warnings=geography_result.warnings
+                warnings=geography_result.warnings,
             )
-            
+
             # Store trace
             await self.trace_service.store_run(
                 run_id=run_id,
                 endpoint="/pricing/price",
                 request_data=request.dict(),
                 response_data=response.dict(),
-                status="success"
+                status="success",
             )
-            
+
             return response
-            
+
         except Exception as e:
             logger.error(
                 "Plan pricing failed",
                 run_id=run_id,
                 request=request.dict(),
                 error=str(e),
-                exc_info=True
+                exc_info=True,
             )
-            
+
             # Store error trace
             await self.trace_service.store_run(
                 run_id=run_id,
@@ -341,16 +391,16 @@ class PricingService:
                 request_data=request.dict(),
                 response_data=None,
                 status="error",
-                error_message=str(e)
+                error_message=str(e),
             )
-            
+
             raise
-    
+
     async def compare_locations(self, request: ComparisonRequest) -> ComparisonResponse:
         """Compare pricing between two locations"""
-        
+
         run_id = str(uuid.uuid4())
-        
+
         try:
             # Price location A
             request_a = PricingRequest(
@@ -358,6 +408,7 @@ class PricingService:
                 plan_id=request.plan_id,
                 year=request.year,
                 quarter=request.quarter,
+                valuation_date=request.valuation_date,
                 ccn=request.ccn_a,
                 payer=request.payer,
                 plan=request.plan,
@@ -366,17 +417,18 @@ class PricingService:
                 apply_sequestration=request.apply_sequestration,
                 sequestration_rate=request.sequestration_rate,
                 format=request.format,
-                ad_hoc_plan=request.ad_hoc_plan
+                ad_hoc_plan=request.ad_hoc_plan,
             )
-            
+
             result_a = await self.price_plan(request_a)
-            
+
             # Price location B
             request_b = PricingRequest(
                 zip=request.zip_b,
                 plan_id=request.plan_id,
                 year=request.year,
                 quarter=request.quarter,
+                valuation_date=request.valuation_date,
                 ccn=request.ccn_b,
                 payer=request.payer,
                 plan=request.plan,
@@ -385,17 +437,19 @@ class PricingService:
                 apply_sequestration=request.apply_sequestration,
                 sequestration_rate=request.sequestration_rate,
                 format=request.format,
-                ad_hoc_plan=request.ad_hoc_plan
+                ad_hoc_plan=request.ad_hoc_plan,
             )
-            
+
             result_b = await self.price_plan(request_b)
-            
+
             # Validate parity
-            parity_report = self._validate_parity(request_a, request_b, result_a, result_b)
-            
+            parity_report = self._validate_parity(
+                request_a, request_b, result_a, result_b
+            )
+
             # Calculate deltas
             deltas = self._calculate_deltas(result_a, result_b)
-            
+
             # Create comparison response
             response = ComparisonResponse(
                 run_id=run_id,
@@ -405,33 +459,33 @@ class PricingService:
                 location_b=result_b,
                 deltas=deltas,
                 parity_report=parity_report,
-                total_delta_cents=result_b.total_allowed_cents - result_a.total_allowed_cents,
+                total_delta_cents=result_b.total_allowed_cents
+                - result_a.total_allowed_cents,
                 total_delta_percent=self._calculate_percentage_delta(
-                    result_a.total_allowed_cents,
-                    result_b.total_allowed_cents
-                )
+                    result_a.total_allowed_cents, result_b.total_allowed_cents
+                ),
             )
-            
+
             # Store trace
             await self.trace_service.store_run(
                 run_id=run_id,
                 endpoint="/pricing/compare",
                 request_data=request.dict(),
                 response_data=response.dict(),
-                status="success"
+                status="success",
             )
-            
+
             return response
-            
+
         except Exception as e:
             logger.error(
                 "Location comparison failed",
                 run_id=run_id,
                 request=request.dict(),
                 error=str(e),
-                exc_info=True
+                exc_info=True,
             )
-            
+
             # Store error trace
             await self.trace_service.store_run(
                 run_id=run_id,
@@ -439,93 +493,128 @@ class PricingService:
                 request_data=request.dict(),
                 response_data=None,
                 status="error",
-                error_message=str(e)
+                error_message=str(e),
             )
-            
+
             raise
-    
+
     def _validate_parity(
         self,
         request_a: PricingRequest,
         request_b: PricingRequest,
         result_a: PricingResponse,
-        result_b: PricingResponse
+        result_b: PricingResponse,
     ) -> Dict[str, Any]:
         """Validate parity between two pricing requests"""
-        
+
         parity_report = {
             "valid": True,
             "violations": [],
             "snapshots_match": True,
             "benefits_match": True,
             "toggles_match": True,
-            "plan_match": True
+            "plan_match": True,
         }
-        
+
         # Check snapshot parity
         if result_a.datasets_used != result_b.datasets_used:
             parity_report["valid"] = False
             parity_report["violations"].append("Dataset snapshots differ")
             parity_report["snapshots_match"] = False
-        
+
         # Check benefit parity
-        if (request_a.include_home_health != request_b.include_home_health or
-            request_a.include_snf != request_b.include_snf):
+        if (
+            request_a.include_home_health != request_b.include_home_health
+            or request_a.include_snf != request_b.include_snf
+        ):
             parity_report["valid"] = False
             parity_report["violations"].append("Post-acute settings differ")
             parity_report["benefits_match"] = False
-        
+
         # Check toggle parity
-        if (request_a.apply_sequestration != request_b.apply_sequestration or
-            request_a.sequestration_rate != request_b.sequestration_rate):
+        if (
+            request_a.apply_sequestration != request_b.apply_sequestration
+            or request_a.sequestration_rate != request_b.sequestration_rate
+        ):
             parity_report["valid"] = False
             parity_report["violations"].append("Policy toggles differ")
             parity_report["toggles_match"] = False
-        
+
         # Check plan parity
         if request_a.plan_id != request_b.plan_id:
             parity_report["valid"] = False
             parity_report["violations"].append("Plan IDs differ")
             parity_report["plan_match"] = False
-        
+
         return parity_report
-    
-    def _calculate_deltas(self, result_a: PricingResponse, result_b: PricingResponse) -> List[ComparisonDelta]:
+
+    def _calculate_deltas(
+        self, result_a: PricingResponse, result_b: PricingResponse
+    ) -> List[ComparisonDelta]:
         """Calculate deltas between two pricing results"""
-        
+
         deltas = []
-        
+
         # Total deltas
-        deltas.append(ComparisonDelta(
-            field="total_allowed",
-            location_a=result_a.total_allowed_cents,
-            location_b=result_b.total_allowed_cents,
-            delta_cents=result_b.total_allowed_cents - result_a.total_allowed_cents,
-            delta_percent=self._calculate_percentage_delta(
-                result_a.total_allowed_cents,
-                result_b.total_allowed_cents
+        deltas.append(
+            ComparisonDelta(
+                field="total_allowed",
+                location_a=result_a.total_allowed_cents,
+                location_b=result_b.total_allowed_cents,
+                delta_cents=result_b.total_allowed_cents - result_a.total_allowed_cents,
+                delta_percent=self._calculate_percentage_delta(
+                    result_a.total_allowed_cents, result_b.total_allowed_cents
+                ),
             )
-        ))
-        
-        deltas.append(ComparisonDelta(
-            field="total_beneficiary",
-            location_a=result_a.total_beneficiary_cents,
-            location_b=result_b.total_beneficiary_cents,
-            delta_cents=result_b.total_beneficiary_cents - result_a.total_beneficiary_cents,
-            delta_percent=self._calculate_percentage_delta(
-                result_a.total_beneficiary_cents,
-                result_b.total_beneficiary_cents
+        )
+
+        deltas.append(
+            ComparisonDelta(
+                field="total_beneficiary",
+                location_a=result_a.total_beneficiary_cents,
+                location_b=result_b.total_beneficiary_cents,
+                delta_cents=result_b.total_beneficiary_cents
+                - result_a.total_beneficiary_cents,
+                delta_percent=self._calculate_percentage_delta(
+                    result_a.total_beneficiary_cents, result_b.total_beneficiary_cents
+                ),
             )
-        ))
-        
+        )
+
         return deltas
-    
+
     def _calculate_percentage_delta(self, value_a: int, value_b: int) -> float:
         """Calculate percentage delta between two values"""
         if value_a == 0:
-            return 0.0 if value_b == 0 else float('inf')
+            return 0.0 if value_b == 0 else float("inf")
         return ((value_b - value_a) / value_a) * 100
-    
+
+    @staticmethod
+    def _valuation_date_from_inputs(
+        *,
+        year: int,
+        quarter: Optional[str],
+        valuation_date: Optional[date],
+    ) -> date:
+        if valuation_date is not None:
+            if valuation_date.year != year:
+                raise ValueError(
+                    f"valuation_date year {valuation_date.year} does not match year {year}"
+                )
+            return valuation_date
+
+        if quarter:
+            quarter_starts = {
+                "1": (1, 1),
+                "2": (4, 1),
+                "3": (7, 1),
+                "4": (10, 1),
+            }
+            month, day = quarter_starts[str(quarter)]
+            return date(year, month, day)
+
+        return date(year, 12, 31)
+
     async def _load_plan_components(self, plan_id) -> List[Dict[str, Any]]:
         """Load plan components from database"""
         if not self.db:
@@ -570,7 +659,7 @@ class PricingService:
 
         # Already ordered via query; no additional sort required
         return normalized_components
-    
+
     async def _get_plan_name(self, plan_id) -> str:
         """Get plan name from database, using cached value when available"""
         if plan_id in self._plan_name_cache:
@@ -586,7 +675,9 @@ class PricingService:
         self._plan_name_cache[plan_id] = plan.name
         return plan.name
 
-    def _normalize_ad_hoc_components(self, components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _normalize_ad_hoc_components(
+        self, components: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """Normalize ad-hoc plan components to match stored plan structure"""
         if not components:
             return []
@@ -594,14 +685,16 @@ class PricingService:
         normalized: List[Dict[str, Any]] = []
         for idx, raw_component in enumerate(components):
             # Use explicit sequence if provided, otherwise fallback to index ordering
-            provided_sequence = raw_component.get('sequence')
-            fallback_sequence = provided_sequence if provided_sequence is not None else idx + 1
+            provided_sequence = raw_component.get("sequence")
+            fallback_sequence = (
+                provided_sequence if provided_sequence is not None else idx + 1
+            )
             normalized.append(
                 self._apply_component_defaults(raw_component, fallback_sequence)
             )
 
         # Preserve explicit sequencing
-        normalized.sort(key=lambda component: component['sequence'])
+        normalized.sort(key=lambda component: component["sequence"])
         return normalized
 
     def _apply_component_defaults(
@@ -611,19 +704,23 @@ class PricingService:
     ) -> Dict[str, Any]:
         """Apply default values and type normalization for plan components"""
 
-        code = raw_component.get('code')
-        setting = raw_component.get('setting')
+        code = raw_component.get("code")
+        setting = raw_component.get("setting")
         if not code or not setting:
             raise ValueError("Plan components must include both 'code' and 'setting'")
 
         # Normalize modifiers
-        modifiers_value = raw_component.get('modifiers')
+        modifiers_value = raw_component.get("modifiers")
         if modifiers_value is None:
             modifiers: List[str] = []
         elif isinstance(modifiers_value, list):
-            modifiers = [str(mod).strip() for mod in modifiers_value if str(mod).strip()]
+            modifiers = [
+                str(mod).strip() for mod in modifiers_value if str(mod).strip()
+            ]
         elif isinstance(modifiers_value, str):
-            modifiers = [part.strip() for part in modifiers_value.split(',') if part.strip()]
+            modifiers = [
+                part.strip() for part in modifiers_value.split(",") if part.strip()
+            ]
         else:
             modifiers = [str(modifiers_value).strip()]
 
@@ -636,7 +733,7 @@ class PricingService:
                 return default
 
         fallback_sequence_int = _to_int(fallback_sequence, 1)
-        sequence_value = raw_component.get('sequence')
+        sequence_value = raw_component.get("sequence")
         sequence = _to_int(sequence_value, fallback_sequence_int)
 
         def _to_bool(value: Any, default: bool) -> bool:
@@ -664,44 +761,59 @@ class PricingService:
         normalized_component = {
             "code": str(code).strip(),
             "setting": str(setting).strip().upper(),
-            "units": _to_float(raw_component.get('units'), 1.0),
-            "utilization_weight": _to_float(raw_component.get('utilization_weight'), 1.0),
-            "professional_component": _to_bool(raw_component.get('professional_component'), True),
-            "facility_component": _to_bool(raw_component.get('facility_component'), True),
+            "units": _to_float(raw_component.get("units"), 1.0),
+            "utilization_weight": _to_float(
+                raw_component.get("utilization_weight"), 1.0
+            ),
+            "professional_component": _to_bool(
+                raw_component.get("professional_component"), True
+            ),
+            "facility_component": _to_bool(
+                raw_component.get("facility_component"), True
+            ),
             "modifiers": modifiers,
-            "pos": str(raw_component.get('pos')).strip() if raw_component.get('pos') is not None else None,
-            "ndc11": str(raw_component.get('ndc11')).strip() if raw_component.get('ndc11') is not None else None,
-            "wastage_units": _to_float(raw_component.get('wastage_units'), 0.0),
+            "pos": str(raw_component.get("pos")).strip()
+            if raw_component.get("pos") is not None
+            else None,
+            "ndc11": str(raw_component.get("ndc11")).strip()
+            if raw_component.get("ndc11") is not None
+            else None,
+            "wastage_units": _to_float(raw_component.get("wastage_units"), 0.0),
             "sequence": sequence,
         }
 
         return normalized_component
-    
+
     def _collect_datasets_used(
         self,
         datasets_seen: set,
         valuation_year: int,
         valuation_quarter: Optional[str] = None,
-        line_items: Optional[List[LineItemResponse]] = None
+        valuation_date: Optional[date] = None,
+        line_items: Optional[List[LineItemResponse]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Collect active dataset snapshot information for provenance.
-        
+
         Enhanced to include release_id/batch_id from engine results when available (Phase 2.6).
-        
+
         Args:
             datasets_seen: Set of dataset IDs (e.g., {'MPFS', 'OPPS'})
             valuation_year: Year for which data is being queried
             valuation_quarter: Optional quarter (1-4)
             line_items: Optional list of line items to extract provenance from trace_refs
-            
+
         Returns:
             List of dataset metadata dictionaries with snapshot information including release_id/batch_id
         """
         if not self.db:
             # If no DB, extract provenance from line_items if available
-            release_map = self._extract_provenance_from_line_items(line_items, datasets_seen) if line_items else {}
-            
+            release_map = (
+                self._extract_provenance_from_line_items(line_items, datasets_seen)
+                if line_items
+                else {}
+            )
+
             return [
                 {
                     "dataset_id": ds,
@@ -710,176 +822,206 @@ class PricingService:
                     "effective_to": None,
                     "source_url": None,
                     "release_id": release_map.get(ds, {}).get("release_id"),
-                    "batch_id": release_map.get(ds, {}).get("batch_id")
+                    "batch_id": release_map.get(ds, {}).get("batch_id"),
                 }
                 for ds in sorted(datasets_seen)
             ]
-        
+
         datasets_used = []
-        valuation_date = date(valuation_year, 12, 31)  # Use end of year as valuation date
-        
+        selected_valuation_date = self._valuation_date_from_inputs(
+            year=valuation_year,
+            quarter=valuation_quarter,
+            valuation_date=valuation_date,
+        )
+
         # Extract release_id/batch_id from line items if available (Phase 2.6)
-        release_map = self._extract_provenance_from_line_items(line_items, datasets_seen) if line_items else {}
-        
+        release_map = (
+            self._extract_provenance_from_line_items(line_items, datasets_seen)
+            if line_items
+            else {}
+        )
+
         for dataset_id in sorted(datasets_seen):
             try:
                 # Try DatasetSnapshot first (Quick Win #1)
-                snapshot = self.db.query(DatasetSnapshot).filter(
-                    and_(
-                        DatasetSnapshot.dataset_id == dataset_id,
-                        DatasetSnapshot.effective_from <= valuation_date,
-                        or_(
-                            DatasetSnapshot.effective_to.is_(None),
-                            DatasetSnapshot.effective_to >= date(valuation_year, 1, 1)
-                        )
-                    )
-                ).order_by(
-                    DatasetSnapshot.effective_from.desc(),
-                    DatasetSnapshot.created_at.desc()
-                ).first()
-                
+                snapshot = DatasetSnapshotService(self.db).select_snapshot(
+                    dataset_id,
+                    valuation_date=selected_valuation_date,
+                )
+
                 # Fallback to legacy Snapshot model if DatasetSnapshot not available
                 if not snapshot:
-                    snapshot = self.db.query(Snapshot).filter(
-                        and_(
-                            Snapshot.dataset_id == dataset_id,
-                            Snapshot.effective_from <= valuation_date,
-                            or_(
-                                Snapshot.effective_to.is_(None),
-                                Snapshot.effective_to >= date(valuation_year, 1, 1)
+                    snapshot = (
+                        self.db.query(Snapshot)
+                        .filter(
+                            and_(
+                                Snapshot.dataset_id == dataset_id,
+                                Snapshot.effective_from <= selected_valuation_date,
+                                or_(
+                                    Snapshot.effective_to.is_(None),
+                                    Snapshot.effective_to >= selected_valuation_date,
+                                ),
                             )
                         )
-                    ).order_by(
-                        Snapshot.effective_from.desc(),
-                        Snapshot.created_at.desc()
-                    ).first()
-                
+                        .order_by(
+                            Snapshot.effective_from.desc(), Snapshot.created_at.desc()
+                        )
+                        .first()
+                    )
+
                 # Get release info if available from engine results
                 release_info = release_map.get(dataset_id, {})
-                
+
                 if snapshot:
                     # Handle both DatasetSnapshot and legacy Snapshot models
                     if isinstance(snapshot, DatasetSnapshot):
-                        datasets_used.append({
-                            "dataset_id": snapshot.dataset_id,
-                            "digest": snapshot.digest,
-                            "effective_from": snapshot.effective_from.isoformat() if snapshot.effective_from else None,
-                            "effective_to": snapshot.effective_to.isoformat() if snapshot.effective_to else None,
-                            "source_url": snapshot.manifest_url,  # DatasetSnapshot uses manifest_url
-                            "release_id": snapshot.release_id or release_info.get("release_id"),  # Use snapshot's release_id if available
-                            "batch_id": release_info.get("batch_id")
-                        })
+                        datasets_used.append(
+                            {
+                                "dataset_id": snapshot.dataset_id,
+                                "digest": snapshot.digest,
+                                "effective_from": snapshot.effective_from.isoformat()
+                                if snapshot.effective_from
+                                else None,
+                                "effective_to": snapshot.effective_to.isoformat()
+                                if snapshot.effective_to
+                                else None,
+                                "source_url": snapshot.manifest_url,  # DatasetSnapshot uses manifest_url
+                                "release_id": snapshot.release_id
+                                or release_info.get(
+                                    "release_id"
+                                ),  # Use snapshot's release_id if available
+                                "batch_id": release_info.get("batch_id"),
+                            }
+                        )
                     else:
                         # Legacy Snapshot model
-                        datasets_used.append({
-                            "dataset_id": snapshot.dataset_id,
-                            "digest": snapshot.digest,
-                            "effective_from": snapshot.effective_from.isoformat() if snapshot.effective_from else None,
-                            "effective_to": snapshot.effective_to.isoformat() if snapshot.effective_to else None,
-                            "source_url": snapshot.source_url,
-                            # NEW: Include release provenance (Phase 2.6)
-                            "release_id": release_info.get("release_id"),
-                            "batch_id": release_info.get("batch_id")
-                        })
+                        datasets_used.append(
+                            {
+                                "dataset_id": snapshot.dataset_id,
+                                "digest": snapshot.digest,
+                                "effective_from": snapshot.effective_from.isoformat()
+                                if snapshot.effective_from
+                                else None,
+                                "effective_to": snapshot.effective_to.isoformat()
+                                if snapshot.effective_to
+                                else None,
+                                "source_url": snapshot.source_url,
+                                # NEW: Include release provenance (Phase 2.6)
+                                "release_id": release_info.get("release_id"),
+                                "batch_id": release_info.get("batch_id"),
+                            }
+                        )
                 else:
                     # No snapshot found - include dataset ID but no provenance
                     logger.debug(
                         "No snapshot found for dataset",
                         dataset_id=dataset_id,
                         valuation_year=valuation_year,
-                        valuation_quarter=valuation_quarter
+                        valuation_quarter=valuation_quarter,
                     )
-                    datasets_used.append({
-                        "dataset_id": dataset_id,
-                        "digest": None,
-                        "effective_from": None,
-                        "effective_to": None,
-                        "source_url": None,
-                        # Include release info if available from engines
-                        "release_id": release_info.get("release_id"),
-                        "batch_id": release_info.get("batch_id")
-                    })
-                    
+                    datasets_used.append(
+                        {
+                            "dataset_id": dataset_id,
+                            "digest": None,
+                            "effective_from": None,
+                            "effective_to": None,
+                            "source_url": None,
+                            # Include release info if available from engines
+                            "release_id": release_info.get("release_id"),
+                            "batch_id": release_info.get("batch_id"),
+                        }
+                    )
+
             except Exception as e:
                 logger.warning(
                     "Failed to query snapshot for dataset",
                     dataset_id=dataset_id,
                     error=str(e),
-                    exc_info=True
+                    exc_info=True,
                 )
                 # Still include the dataset even if snapshot lookup failed
                 release_info = release_map.get(dataset_id, {})
-                datasets_used.append({
-                    "dataset_id": dataset_id,
-                    "digest": None,
-                    "effective_from": None,
-                    "effective_to": None,
-                    "source_url": None,
-                    "release_id": release_info.get("release_id"),
-                    "batch_id": release_info.get("batch_id")
-                })
-        
+                datasets_used.append(
+                    {
+                        "dataset_id": dataset_id,
+                        "digest": None,
+                        "effective_from": None,
+                        "effective_to": None,
+                        "source_url": None,
+                        "release_id": release_info.get("release_id"),
+                        "batch_id": release_info.get("batch_id"),
+                    }
+                )
+
         return datasets_used
-    
+
     def _extract_provenance_from_line_items(
         self,
         line_items: Optional[List[LineItemResponse]],
         datasets_seen: set,
-        include_supporting_datasets: bool = False
+        include_supporting_datasets: bool = False,
     ) -> Dict[str, Dict[str, Optional[str]]]:
         """
         Extract release_id and batch_id from line items' trace_refs.
-        
+
         Parses standardized trace_refs format: {dataset_id}:release:{release_id} or {dataset_id}:batch:{batch_id}
-        
+
         Args:
             line_items: List of line items with trace_refs
             datasets_seen: Set of primary dataset IDs to filter for (e.g., {'MPFS', 'OPPS'})
             include_supporting_datasets: If True, also extract provenance for supporting datasets
                                          (GPCI, WageIndex, CF, IPPSBaseRate). Default False.
-            
+
         Returns:
             Dictionary mapping dataset_id to {release_id, batch_id}
         """
         if not line_items:
             return {}
-        
+
         release_map: Dict[str, Dict[str, Optional[str]]] = {}
-        
+
         # Known supporting datasets that may appear in trace_refs
-        supporting_datasets = {"GPCI", "CF", "ConversionFactor", "WageIndex", "IPPSBaseRate"}
-        
+        supporting_datasets = {
+            "GPCI",
+            "CF",
+            "ConversionFactor",
+            "WageIndex",
+            "IPPSBaseRate",
+        }
+
         # Build expanded dataset set if including supporting datasets
         datasets_to_extract = set(datasets_seen)
         if include_supporting_datasets:
             datasets_to_extract.update(supporting_datasets)
-        
+
         for item in line_items:
             if not item.trace_refs:
                 continue
-            
+
             # Extract provenance for all datasets found in trace_refs (primary and supporting)
             for ref in item.trace_refs:
-                if not ref or ':' not in ref:
+                if not ref or ":" not in ref:
                     continue
-                
-                parts = ref.split(':')
+
+                parts = ref.split(":")
                 if len(parts) == 3:
                     dataset, provenance_type, value = parts
-                    
+
                     # Only extract if dataset is in our target set
                     if dataset not in datasets_to_extract:
                         continue
-                    
+
                     # Initialize if needed (allow both release_id and batch_id to be extracted)
                     if dataset not in release_map:
                         release_map[dataset] = {"release_id": None, "batch_id": None}
-                    
+
                     # Extract provenance value (accumulate both release and batch)
-                    if provenance_type == 'release':
+                    if provenance_type == "release":
                         release_map[dataset]["release_id"] = value
-                    elif provenance_type == 'batch':
+                    elif provenance_type == "batch":
                         release_map[dataset]["batch_id"] = value
-        
+
         # Remove entries with no provenance (cleanup)
-        return {k: v for k, v in release_map.items() if v["release_id"] or v["batch_id"]}
+        return {
+            k: v for k, v in release_map.items() if v["release_id"] or v["batch_id"]
+        }

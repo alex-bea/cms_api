@@ -1,9 +1,9 @@
 # Source Descriptor: CMS Locality-County Crosswalk (SRC-locality)
 
-**Version:** 1.2  
+**Version:** 1.3
 **Status:** Active  
 **Type:** Source Descriptor (SRC-)  
-**Date:** 2025-10-18  
+**Date:** 2026-06-11
 **Owners:** Data Platform Engineering  
 
 **Cross-References:**
@@ -136,12 +136,23 @@ The publish loader (`_load_locality_data`) writes to legacy columns expected by 
 
 | Parser column   | Loader column        | Notes |
 |-----------------|----------------------|-------|
-| `locality_code` | `locality_id`        | Copied prior to zero-padding |
+| `locality_code` | `locality_id`        | Copied as the CMS-native string; no implicit padding or `00` to `01` remapping |
 | `state_name`    | `state`              | Uppercased; rows lacking state are dropped |
 | `fee_area`      | `fee_schedule_area`  | String truncated to 128 chars if necessary |
 | `county_names`  | `county_name`        | Combined county list retained |
 
 Rows missing `state` or `county_name` are filtered out so database NOT NULL constraints remain satisfied.
+
+### 2.6 Runtime Locality Join Policy
+
+Geography resolution returns the stored `locality_id` string without normalizing
+source values such as `05` or `00`. Runtime MPFS pricing may query both an
+unpadded numeric locality and its two-character padded form when bridging older
+ZIP-locality rows to loaded GPCI rows, for example `5` → `5`, `05`.
+
+`00` is a valid CMS locality key in some source tables and must never be treated
+as benchmark/default locality `01`. The benchmark `01` value is reserved for the
+resolver's no-data fallback path, not for normalizing source-backed `00` rows.
 
 ---
 

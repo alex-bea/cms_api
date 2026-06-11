@@ -1,5 +1,6 @@
 """Pricing endpoints"""
 
+from datetime import date
 from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -8,8 +9,13 @@ from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from cms_pricing.schemas.pricing import (
-    PricingRequest, PricingResponse, ComparisonRequest, ComparisonResponse,
-    CodePricingItem, CodePricingItemWithGeography, GeographyResponse
+    PricingRequest,
+    PricingResponse,
+    ComparisonRequest,
+    ComparisonResponse,
+    CodePricingItem,
+    CodePricingItemWithGeography,
+    GeographyResponse,
 )
 from cms_pricing.auth import verify_api_key
 from cms_pricing.services.pricing import PricingService
@@ -27,27 +33,29 @@ async def price_single_code(
     setting: str,
     year: int,
     quarter: Optional[str] = None,
+    valuation_date: Optional[date] = None,
     ccn: Optional[str] = None,
     payer: Optional[str] = None,
     plan: Optional[str] = None,
+    pos: Optional[str] = None,
     db: Session = Depends(get_db),
-    api_key: str = Depends(verify_api_key)
+    api_key: str = Depends(verify_api_key),
 ):
     """
     Price a single code/component.
-    
+
     **Response Format (Quick Win #2):**
     Returns CodePricingItemWithGeography, which extends CodePricingItem with geography and run_id metadata.
     The core pricing data follows CodePricingItem structure for consistency across all datasets.
-    
+
     **Response Fields:**
     - All fields from CodePricingItem (code, setting, allowed_cents, dataset_id, etc.)
     - **geography**: GeographyResponse object with ZIP resolution details (locality_id, CBSA, etc.)
     - **run_id**: Unique identifier for this pricing request
-    
+
     **Provenance Metadata (Phase 2):**
     The response includes provenance information to trace pricing results back to specific CMS data versions:
-    
+
     - **dataset_id**: Dataset identifier (MPFS, OPPS, ASC, etc.)
     - **release_id**: CMS release identifier (Phase 2 provenance, may be None for legacy data)
     - **batch_id**: Batch identifier from ingestion (Phase 2 provenance, may be None for legacy data)
@@ -55,30 +63,32 @@ async def price_single_code(
       - Format: `{dataset_id}:release:{release_id}` or `{dataset_id}:batch:{batch_id}`
       - Examples: 'MPFS:release:mpfs_2025_annual_20250115', 'OPPS:batch:batch_abc123'
       - Automatically deduplicated
-    
+
     **Backward Compatibility:**
     Legacy data (ingested before Phase 2) will have None values for release_id and batch_id.
     """
-    
+
     # Validate inputs
     if not zip.isdigit() or len(zip) != 5:
         raise HTTPException(status_code=400, detail="ZIP must be exactly 5 digits")
-    
+
     if not code or len(code) > 5:
         raise HTTPException(status_code=400, detail="Code must be 1-5 characters")
-    
-    if setting not in ['MPFS', 'OPPS', 'ASC', 'IPPS', 'CLFS', 'DMEPOS']:
+
+    if setting not in ["MPFS", "OPPS", "ASC", "IPPS", "CLFS", "DMEPOS"]:
         raise HTTPException(status_code=400, detail="Invalid setting")
-    
+
     if year < 2020 or year > 2030:
-        raise HTTPException(status_code=400, detail="Year must be between 2020 and 2030")
-    
-    if quarter and quarter not in ['1', '2', '3', '4']:
+        raise HTTPException(
+            status_code=400, detail="Year must be between 2020 and 2030"
+        )
+
+    if quarter and quarter not in ["1", "2", "3", "4"]:
         raise HTTPException(status_code=400, detail="Quarter must be 1-4")
-    
+
     if ccn and (not ccn.isdigit() or len(ccn) != 6):
         raise HTTPException(status_code=400, detail="CCN must be exactly 6 digits")
-    
+
     try:
         pricing_service = PricingService(db)
         result = await pricing_service.price_single_code(
@@ -87,16 +97,15 @@ async def price_single_code(
             setting=setting,
             year=year,
             quarter=quarter,
+            valuation_date=valuation_date,
             ccn=ccn,
             payer=payer,
-            plan=plan
+            plan=plan,
+            pos=pos,
         )
         return result
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Pricing failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Pricing failed: {str(e)}")
 
 
 @router.post("/price", response_model=PricingResponse)
@@ -104,37 +113,34 @@ async def price_plan(
     request: Request,
     pricing_request: PricingRequest,
     db: Session = Depends(get_db),
-    api_key: str = Depends(verify_api_key)
+    api_key: str = Depends(verify_api_key),
 ):
     """
     Price a complete treatment plan.
-    
+
     **Provenance Metadata (Phase 2):**
     The response includes provenance information in two places:
-    
+
     1. **datasets_used** (response.datasets_used): List of datasets with release_id and batch_id
        - May contain None values for legacy data ingested before Phase 2
        - Enables traceability to specific CMS data versions
-    
+
     2. **trace_refs** (line_items[].trace_refs): Trace references in standardized format
        - Format: `{dataset_id}:release:{release_id}` or `{dataset_id}:batch:{batch_id}`
        - Examples: 'MPFS:release:mpfs_2025_annual_20250115', 'OPPS:batch:batch_abc123'
        - Automatically deduplicated
-    
+
     **Backward Compatibility:**
     Legacy data (ingested before Phase 2) will have None values for release_id and batch_id.
     The API structure remains consistent; consumers should handle optional provenance gracefully.
     """
-    
+
     try:
         pricing_service = PricingService(db)
         result = await pricing_service.price_plan(pricing_request)
         return result
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Plan pricing failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Plan pricing failed: {str(e)}")
 
 
 @router.post("/compare", response_model=ComparisonResponse)
@@ -142,29 +148,26 @@ async def compare_locations(
     request: Request,
     comparison_request: ComparisonRequest,
     db: Session = Depends(get_db),
-    api_key: str = Depends(verify_api_key)
+    api_key: str = Depends(verify_api_key),
 ):
     """
     Compare pricing between two locations.
-    
+
     **Provenance Metadata (Phase 2):**
     Both location_a and location_b responses include provenance information:
-    
+
     - **datasets_used**: List of datasets with release_id and batch_id for each location
     - **trace_refs**: Trace references in standardized format (see /price endpoint documentation)
-    
+
     The parity_report validates that both locations use the same dataset snapshots.
-    
+
     **Backward Compatibility:**
     Legacy data (ingested before Phase 2) will have None values for release_id and batch_id.
     """
-    
+
     try:
         pricing_service = PricingService(db)
         result = await pricing_service.compare_locations(comparison_request)
         return result
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Comparison failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Comparison failed: {str(e)}")

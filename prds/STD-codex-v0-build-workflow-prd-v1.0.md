@@ -141,6 +141,34 @@ Keep work inside the current task body or epic brief checklist when it is only:
 Queued child tasks may exceed three. The active-task limit is a concurrency guard,
 not a cap on how many ordered task slices an epic may contain.
 
+### Codex Sequencing And Parallelism
+
+Same-epic implementation tasks are sequential by default. Codex should run one
+write-capable task per epic unless tracker metadata explicitly marks the next
+task as parallel-safe.
+
+Tracker task records use these harness fields for active and queued tasks:
+
+- `depends_on`: prerequisite task IDs that must be `done` before the task is
+  runnable.
+- `parallel_policy`: one of `sequential`, `read_only_parallel`, or
+  `independent_write`.
+- `codex_mode`: one of `local`, `worktree`, `cloud`, or `manual`.
+
+`rank` remains the human-readable order, but `depends_on` is the harness-grade
+dependency source. If a dependency edge and rank disagree, Codex should stop and
+ask for tracker cleanup before implementation.
+
+Use `read_only_parallel` only for read-heavy exploration, test runs, triage,
+summarization, or other non-mutating work. Subagents may be used for these
+read-only activities inside a task. They must not perform parallel write-heavy
+implementation unless the task is explicitly marked for safe parallel work.
+
+Use `independent_write` only when two implementation tasks can safely run at the
+same time. The tasks must have completed dependencies and must not share exact,
+parent, or child `related_paths`. Worktrees may isolate filesystem changes, but
+they do not replace dependency ordering or path-conflict checks.
+
 ## 8. Stop Conditions
 
 Stop before implementation, or before continuing to another queued slice, when:
@@ -173,4 +201,5 @@ requires broader validation.
 
 | Version | Date | Summary |
 |---|---|---|
+| 1.1 | 2026-06-11 | Added Codex sequencing fields and same-epic parallelism rules for tracker-driven harness execution. |
 | 1.0 | 2026-06-11 | Initial Codex v0 build workflow standard with approval gate, epic brief semantics, task sizing, and stop conditions. |

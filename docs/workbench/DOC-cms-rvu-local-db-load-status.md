@@ -84,7 +84,37 @@ Result: `200 OK`, `allowed_cents=10061`, `release_id=rvu_2026_C`, and trace refs
 included `RVU:release:rvu_2026_C`, `GPCI:release:gpci_2026_C`,
 `CF:release:rvu_2026_C`, and `CF:source:rvu_items.conversion_factor`.
 
-The geography resolver still falls back to benchmark locality `01` for ZIP
-`94110` in the local DB, so locality normalization remains the next pricing
-correctness risk to resolve before treating ZIP-specific California pricing as
-validated.
+The local/dev DB can now be prepared non-destructively with:
+
+```bash
+.venv/bin/python scripts/seed_post_rvu_load_local.py \
+  --database-url postgresql://cms_user:cms_password@localhost:5432/cms_pricing
+```
+
+This command seeds the public ZIP-locality row for `94110` when an active
+matching row is absent:
+
+- `zip5=94110`
+- `state=CA`
+- `locality_id=05`
+- `carrier=01112`
+- `effective_from=2026-01-01`
+- `effective_to=2026-12-31`
+
+It also registers the active `rvu_2026_C` and `gpci_2026_C`
+`dataset_snapshots` rows when missing, using the already-loaded RVU/GPCI table
+counts and `effective_from=2026-07-01` so the pricing engine selects the
+RVU-backed path.
+
+The repeatable smoke command now passes:
+
+```bash
+.venv/bin/python scripts/post_rvu_load_api_smoke.py \
+  --database-url postgresql://cms_user:cms_password@localhost:5432/cms_pricing
+```
+
+Result: `status=ok`, geography `locality_id=05`, `state=CA`,
+`carrier=01112`, pricing `allowed_cents=11758`, `release_id=rvu_2026_C`, and
+trace refs include `RVU:release:rvu_2026_C`,
+`GPCI:release:gpci_2026_C`, `CF:release:rvu_2026_C`, and
+`CF:source:rvu_items.conversion_factor`.

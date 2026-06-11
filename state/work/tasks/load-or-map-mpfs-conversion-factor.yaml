@@ -1,21 +1,27 @@
 id: load-or-map-mpfs-conversion-factor
 parent_id: cms-rvu-ingestion
 title: Load Or Map MPFS Conversion Factor
-status: active
+status: done
 rank: 3
 team: data
 owner_mode: shared
-updated_at: "2026-06-10"
-plan_path: "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+updated_at: "2026-06-11"
+plan_path: "docs/workbench/DOC-cms-rvu-ingestion-epic-brief.md"
 related_paths:
   - "scripts/load_latest_cms_rvu_local.py"
   - "cms_pricing/ingestion/parsers/conversion_factor_parser.py"
   - "cms_pricing/models/mpfs/mpfs_conversion_factor.py"
   - "cms_pricing/engines/mpfs.py"
+depends_on:
+  - "load-latest-cms-rvu-local-db"
+  - "wire-pricing-to-rvu-snapshot-selection"
+parallel_policy: sequential
+codex_mode: local
 linked_beads:
 linked_outputs:
+  - "docs/workbench/DOC-cms-rvu-ingestion-epic-brief.md"
   - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
-summary: "Confirm and formalize the MPFS conversion-factor source used by the live RVU pricing path. The current smoke uses RVUItem.conversion_factor and traces CF:source:rvu_items.conversion_factor."
-current_task: "Decide whether RVUItem.conversion_factor is the intended live MPFS CF source for loaded RVU pricing, or whether a companion conversion-factor snapshot/load path is required."
-next_action: "Add explicit tests/documentation for CF source selection, effective date, release ID, and trace refs; do not leave CF provenance implicit in RVU row pricing."
-resume_from: "Start from cms_pricing/engines/mpfs.py trace refs, scripts/load_latest_cms_rvu_local.py, and cms_pricing/ingestion/parsers/conversion_factor_parser.py."
+summary: "Done: the live RVU pricing path uses RVUItem.conversion_factor from the selected RVU snapshot as the canonical runtime MPFS conversion-factor source."
+current_task: "Closed after focused tests proved valuation-date snapshot selection changes the CF-backed amount and trace refs include CF:release plus CF:source."
+next_action: "Continue with normalize-rvu-locality-for-geography-resolution."
+resume_from: "See tests/services/test_mpfs_component_pricing.py and prds/SRC-conversion-factor.md for the runtime CF source contract."

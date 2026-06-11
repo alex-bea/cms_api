@@ -10,74 +10,109 @@ from .geography import GeographyCandidate
 
 class PricingRequest(BaseModel):
     """Request schema for pricing a plan"""
+
     zip: str = Field(..., min_length=5, max_length=5, description="5-digit ZIP code")
     plan_id: Optional[UUID] = Field(None, description="Plan ID (if using stored plan)")
     year: int = Field(..., ge=2020, le=2030, description="Valuation year")
-    quarter: Optional[str] = Field(None, pattern=r'^[1-4]$', description="Quarter (1-4)")
-    ccn: Optional[str] = Field(None, max_length=6, description="CMS Certification Number")
+    quarter: Optional[str] = Field(
+        None, pattern=r"^[1-4]$", description="Quarter (1-4)"
+    )
+    valuation_date: Optional[date] = Field(
+        None,
+        description="Exact valuation date; overrides quarter for snapshot selection",
+    )
+    ccn: Optional[str] = Field(
+        None, max_length=6, description="CMS Certification Number"
+    )
     payer: Optional[str] = Field(None, description="Payer name filter")
     plan: Optional[str] = Field(None, description="Plan name filter")
     include_home_health: bool = Field(default=False, description="Include home health")
     include_snf: bool = Field(default=False, description="Include SNF")
     apply_sequestration: bool = Field(default=False, description="Apply sequestration")
-    sequestration_rate: float = Field(default=0.02, ge=0, le=0.1, description="Sequestration rate")
-    format: str = Field(default="cents", pattern=r'^(cents|decimal)$', description="Money format")
-    
+    sequestration_rate: float = Field(
+        default=0.02, ge=0, le=0.1, description="Sequestration rate"
+    )
+    format: str = Field(
+        default="cents", pattern=r"^(cents|decimal)$", description="Money format"
+    )
+
     # Ad-hoc plan (alternative to plan_id)
-    ad_hoc_plan: Optional[Dict[str, Any]] = Field(None, description="Ad-hoc plan definition")
-    
-    @field_validator('zip')
+    ad_hoc_plan: Optional[Dict[str, Any]] = Field(
+        None, description="Ad-hoc plan definition"
+    )
+
+    @field_validator("zip")
     @classmethod
     def validate_zip(cls, v):
         if not v.isdigit():
-            raise ValueError('ZIP must contain only digits')
+            raise ValueError("ZIP must contain only digits")
         return v
-    
-    @field_validator('ccn')
+
+    @field_validator("ccn")
     @classmethod
     def validate_ccn(cls, v):
         if v is not None and (not v.isdigit() or len(v) != 6):
-            raise ValueError('CCN must be exactly 6 digits')
+            raise ValueError("CCN must be exactly 6 digits")
         return v
-    
-    @field_validator('quarter')
+
+    @field_validator("quarter")
     @classmethod
     def validate_quarter(cls, v):
-        if v is not None and v not in ['1', '2', '3', '4']:
-            raise ValueError('Quarter must be 1, 2, 3, or 4')
+        if v is not None and v not in ["1", "2", "3", "4"]:
+            raise ValueError("Quarter must be 1, 2, 3, or 4")
         return v
 
 
 class CodePricingItem(BaseModel):
     """Unified pricing item response across all datasets
-    
+
     This schema provides a consistent structure for single-code pricing results
     returned by all pricing engines. It includes pricing amounts, component
     breakdowns, provenance metadata, and source information.
-    
+
     Part of Quick Win #2: Unified CodePricingItem Schema
     """
-    
+
     # Identity
     code: str = Field(..., description="HCPCS/CPT code")
-    setting: str = Field(..., description="Payment setting (MPFS, OPPS, ASC, IPPS, CLFS, DMEPOS)")
-    modifier: Optional[str] = Field(None, description="Modifier code (e.g., 25, 59, TC)")
-    
+    setting: str = Field(
+        ..., description="Payment setting (MPFS, OPPS, ASC, IPPS, CLFS, DMEPOS)"
+    )
+    modifier: Optional[str] = Field(
+        None, description="Modifier code (e.g., 25, 59, TC)"
+    )
+
     # Pricing results (all amounts in cents)
     allowed_cents: int = Field(..., description="Medicare allowed amount in cents")
-    beneficiary_deductible_cents: int = Field(..., description="Beneficiary deductible in cents")
-    beneficiary_coinsurance_cents: int = Field(..., description="Beneficiary coinsurance in cents")
-    beneficiary_total_cents: int = Field(..., description="Total beneficiary cost in cents")
+    beneficiary_deductible_cents: int = Field(
+        ..., description="Beneficiary deductible in cents"
+    )
+    beneficiary_coinsurance_cents: int = Field(
+        ..., description="Beneficiary coinsurance in cents"
+    )
+    beneficiary_total_cents: int = Field(
+        ..., description="Total beneficiary cost in cents"
+    )
     program_payment_cents: int = Field(..., description="Program payment in cents")
-    
+
     # Component breakdown
-    professional_allowed_cents: Optional[int] = Field(None, description="Professional component allowed amount in cents")
-    facility_allowed_cents: Optional[int] = Field(None, description="Facility component allowed amount in cents")
-    
+    professional_allowed_cents: Optional[int] = Field(
+        None, description="Professional component allowed amount in cents"
+    )
+    facility_allowed_cents: Optional[int] = Field(
+        None, description="Facility component allowed amount in cents"
+    )
+
     # Provenance (Phase 2)
-    dataset_id: str = Field(..., description="Dataset identifier (e.g., MPFS, OPPS, ASC)")
-    release_id: Optional[str] = Field(None, description="CMS release identifier (Phase 2 provenance)")
-    batch_id: Optional[str] = Field(None, description="Batch identifier from ingestion (Phase 2 provenance)")
+    dataset_id: str = Field(
+        ..., description="Dataset identifier (e.g., MPFS, OPPS, ASC)"
+    )
+    release_id: Optional[str] = Field(
+        None, description="CMS release identifier (Phase 2 provenance)"
+    )
+    batch_id: Optional[str] = Field(
+        None, description="Batch identifier from ingestion (Phase 2 provenance)"
+    )
     trace_refs: List[str] = Field(
         default_factory=list,
         description="""Trace reference IDs for debugging and audit purposes.
@@ -87,90 +122,127 @@ class CodePricingItem(BaseModel):
         - Provenance references (Phase 2): '{dataset_id}:release:{release_id}' or '{dataset_id}:batch:{batch_id}'
           Examples: 'MPFS:release:mpfs_2025_annual_20250115', 'MPFS:batch:batch_abc123'
         
-        Duplicates are automatically removed to keep logs clean."""
+        Duplicates are automatically removed to keep logs clean.""",
     )
-    
+
     # Source information
     source: str = Field(..., description="Data source (benchmark, mrf, tic)")
-    facility_specific: bool = Field(default=False, description="Whether facility-specific rate was used")
-    packaged: bool = Field(default=False, description="Whether item is packaged (OPPS-specific)")
-    
+    facility_specific: bool = Field(
+        default=False, description="Whether facility-specific rate was used"
+    )
+    packaged: bool = Field(
+        default=False, description="Whether item is packaged (OPPS-specific)"
+    )
+
     # Drug-specific fields (optional)
-    reference_price_cents: Optional[int] = Field(None, description="NADAC reference price in cents (drugs only)")
-    unit_conversion: Optional[Dict[str, Any]] = Field(None, description="Unit conversion details (drugs only)")
-    
+    reference_price_cents: Optional[int] = Field(
+        None, description="NADAC reference price in cents (drugs only)"
+    )
+    unit_conversion: Optional[Dict[str, Any]] = Field(
+        None, description="Unit conversion details (drugs only)"
+    )
+
     # Metadata
-    units: float = Field(default=1.0, description="Number of units (default 1.0 for single-code pricing)")
-    
+    units: float = Field(
+        default=1.0, description="Number of units (default 1.0 for single-code pricing)"
+    )
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], setting: str, code: str, modifier: Optional[str] = None) -> "CodePricingItem":
+    def from_dict(
+        cls,
+        data: Dict[str, Any],
+        setting: str,
+        code: str,
+        modifier: Optional[str] = None,
+    ) -> "CodePricingItem":
         """Create CodePricingItem from engine result dict (backward compatibility)"""
         return cls(
             code=code,
             setting=setting,
             modifier=modifier,
-            allowed_cents=data.get('allowed_cents', 0),
-            beneficiary_deductible_cents=data.get('beneficiary_deductible_cents', 0),
-            beneficiary_coinsurance_cents=data.get('beneficiary_coinsurance_cents', 0),
-            beneficiary_total_cents=data.get('beneficiary_total_cents', 0),
-            program_payment_cents=data.get('program_payment_cents', 0),
-            professional_allowed_cents=data.get('professional_allowed_cents'),
-            facility_allowed_cents=data.get('facility_allowed_cents'),
-            dataset_id=data.get('dataset_id', setting),
-            release_id=data.get('release_id'),
-            batch_id=data.get('batch_id'),
-            trace_refs=data.get('trace_refs', []),
-            source=data.get('source', 'benchmark'),
-            facility_specific=data.get('facility_specific', False),
-            packaged=data.get('packaged', False),
-            reference_price_cents=data.get('reference_price_cents'),
-            unit_conversion=data.get('unit_conversion'),
-            units=data.get('units', 1.0)
+            allowed_cents=data.get("allowed_cents", 0),
+            beneficiary_deductible_cents=data.get("beneficiary_deductible_cents", 0),
+            beneficiary_coinsurance_cents=data.get("beneficiary_coinsurance_cents", 0),
+            beneficiary_total_cents=data.get("beneficiary_total_cents", 0),
+            program_payment_cents=data.get("program_payment_cents", 0),
+            professional_allowed_cents=data.get("professional_allowed_cents"),
+            facility_allowed_cents=data.get("facility_allowed_cents"),
+            dataset_id=data.get("dataset_id", setting),
+            release_id=data.get("release_id"),
+            batch_id=data.get("batch_id"),
+            trace_refs=data.get("trace_refs", []),
+            source=data.get("source", "benchmark"),
+            facility_specific=data.get("facility_specific", False),
+            packaged=data.get("packaged", False),
+            reference_price_cents=data.get("reference_price_cents"),
+            unit_conversion=data.get("unit_conversion"),
+            units=data.get("units", 1.0),
         )
 
 
 class CodePricingItemWithGeography(CodePricingItem):
     """CodePricingItem with geography metadata (response model for /pricing/codes/price)
-    
+
     Extends CodePricingItem to include geography resolution information and run_id
     for single-code pricing endpoint responses.
-    
+
     Part of Quick Win #2: Unified CodePricingItem Schema
     """
-    
+
     # Additional metadata for single-code endpoint
-    geography: "GeographyResponse" = Field(..., description="Geography resolution information")
-    run_id: str = Field(..., description="Unique run identifier for this pricing request")
+    geography: "GeographyResponse" = Field(
+        ..., description="Geography resolution information"
+    )
+    run_id: str = Field(
+        ..., description="Unique run identifier for this pricing request"
+    )
 
 
 class LineItemResponse(BaseModel):
     """Response schema for a pricing line item"""
+
     sequence: int = Field(..., description="Line sequence number")
     code: str = Field(..., description="HCPCS/CPT code")
     setting: str = Field(..., description="Payment setting")
     units: float = Field(..., description="Number of units")
     utilization_weight: float = Field(..., description="Utilization weight")
-    
+
     # Pricing results
     allowed_cents: int = Field(..., description="Medicare allowed amount in cents")
-    beneficiary_deductible_cents: int = Field(..., description="Beneficiary deductible in cents")
-    beneficiary_coinsurance_cents: int = Field(..., description="Beneficiary coinsurance in cents")
-    beneficiary_total_cents: int = Field(..., description="Total beneficiary cost in cents")
+    beneficiary_deductible_cents: int = Field(
+        ..., description="Beneficiary deductible in cents"
+    )
+    beneficiary_coinsurance_cents: int = Field(
+        ..., description="Beneficiary coinsurance in cents"
+    )
+    beneficiary_total_cents: int = Field(
+        ..., description="Total beneficiary cost in cents"
+    )
     program_payment_cents: int = Field(..., description="Program payment in cents")
-    
+
     # Component breakdown
-    professional_allowed_cents: Optional[int] = Field(None, description="Professional component allowed")
-    facility_allowed_cents: Optional[int] = Field(None, description="Facility component allowed")
-    
+    professional_allowed_cents: Optional[int] = Field(
+        None, description="Professional component allowed"
+    )
+    facility_allowed_cents: Optional[int] = Field(
+        None, description="Facility component allowed"
+    )
+
     # Source information
     source: str = Field(..., description="Data source (benchmark, mrf, tic)")
-    facility_specific: bool = Field(default=False, description="Whether facility-specific rate was used")
+    facility_specific: bool = Field(
+        default=False, description="Whether facility-specific rate was used"
+    )
     packaged: bool = Field(default=False, description="Whether item is packaged")
-    
+
     # Drug-specific fields
-    reference_price_cents: Optional[int] = Field(None, description="NADAC reference price")
-    unit_conversion: Optional[Dict[str, Any]] = Field(None, description="Unit conversion details")
-    
+    reference_price_cents: Optional[int] = Field(
+        None, description="NADAC reference price"
+    )
+    unit_conversion: Optional[Dict[str, Any]] = Field(
+        None, description="Unit conversion details"
+    )
+
     # Trace references
     trace_refs: List[str] = Field(
         default_factory=list,
@@ -181,15 +253,12 @@ class LineItemResponse(BaseModel):
     - Provenance references (Phase 2): '{dataset_id}:release:{release_id}' or '{dataset_id}:batch:{batch_id}'
       Examples: 'MPFS:release:mpfs_2025_annual_20250115', 'MPFS:batch:batch_abc123'
     
-    Duplicates are automatically removed to keep logs clean."""
+    Duplicates are automatically removed to keep logs clean.""",
     )
-    
+
     @classmethod
     def from_code_pricing_item(
-        cls,
-        item: "CodePricingItem",
-        sequence: int,
-        utilization_weight: float = 1.0
+        cls, item: "CodePricingItem", sequence: int, utilization_weight: float = 1.0
     ) -> "LineItemResponse":
         """Create LineItemResponse from CodePricingItem (Quick Win #2 compatibility adapter)"""
         return cls(
@@ -210,12 +279,13 @@ class LineItemResponse(BaseModel):
             packaged=item.packaged,
             reference_price_cents=item.reference_price_cents,
             unit_conversion=item.unit_conversion,
-            trace_refs=item.trace_refs
+            trace_refs=item.trace_refs,
         )
 
 
 class GeographyResponse(BaseModel):
     """Geography information in pricing response"""
+
     zip5: str = Field(..., description="5-digit ZIP code")
     locality_id: Optional[str] = Field(None, description="Selected MPFS locality")
     locality_name: Optional[str] = Field(None, description="Locality name")
@@ -223,36 +293,53 @@ class GeographyResponse(BaseModel):
     cbsa_name: Optional[str] = Field(None, description="CBSA name")
     county_fips: Optional[str] = Field(None, description="County FIPS")
     state_code: Optional[str] = Field(None, description="State code")
-    rural_flag: Optional[str] = Field(default=None, description="Rural indicator (R, B, or blank) per PRD")
+    rural_flag: Optional[str] = Field(
+        default=None, description="Rural indicator (R, B, or blank) per PRD"
+    )
     resolution_method: str = Field(..., description="Resolution method used")
-    candidates: List[GeographyCandidate] = Field(..., description="All candidates considered")
+    candidates: List[GeographyCandidate] = Field(
+        ..., description="All candidates considered"
+    )
 
 
 class PricingResponse(BaseModel):
     """Response schema for pricing a plan"""
+
     run_id: str = Field(..., description="Unique run identifier")
     plan_id: Optional[UUID] = Field(None, description="Plan ID")
     plan_name: Optional[str] = Field(None, description="Plan name")
-    
+
     # Geography
     geography: GeographyResponse = Field(..., description="Geography information")
-    
+
     # Line items
     line_items: List[LineItemResponse] = Field(..., description="Pricing line items")
-    
+
     # Totals
     total_allowed_cents: int = Field(..., description="Total Medicare allowed")
-    total_beneficiary_deductible_cents: int = Field(..., description="Total beneficiary deductible")
-    total_beneficiary_coinsurance_cents: int = Field(..., description="Total beneficiary coinsurance")
+    total_beneficiary_deductible_cents: int = Field(
+        ..., description="Total beneficiary deductible"
+    )
+    total_beneficiary_coinsurance_cents: int = Field(
+        ..., description="Total beneficiary coinsurance"
+    )
     total_beneficiary_cents: int = Field(..., description="Total beneficiary cost")
     total_program_payment_cents: int = Field(..., description="Total program payment")
-    remaining_part_b_deductible_cents: int = Field(..., description="Remaining Part B deductible")
-    
+    remaining_part_b_deductible_cents: int = Field(
+        ..., description="Remaining Part B deductible"
+    )
+
     # Flags and metadata
-    post_acute_included: bool = Field(default=False, description="Post-acute care included")
-    sequestration_applied: bool = Field(default=False, description="Sequestration applied")
-    facility_specific_used: bool = Field(default=False, description="Facility-specific rates used")
-    
+    post_acute_included: bool = Field(
+        default=False, description="Post-acute care included"
+    )
+    sequestration_applied: bool = Field(
+        default=False, description="Sequestration applied"
+    )
+    facility_specific_used: bool = Field(
+        default=False, description="Facility-specific rates used"
+    )
+
     # Dataset information
     datasets_used: List[Dict[str, Any]] = Field(
         ...,
@@ -277,20 +364,29 @@ class PricingResponse(BaseModel):
             "effective_from": "2025-01-01",
             "effective_to": None
         }
-    ]"""
+    ]""",
     )
-    
+
     # Warnings
     warnings: List[str] = Field(default_factory=list, description="Pricing warnings")
 
 
 class ComparisonRequest(BaseModel):
     """Request schema for comparing two locations"""
-    zip_a: str = Field(..., min_length=5, max_length=5, description="Location A ZIP code")
-    zip_b: str = Field(..., min_length=5, max_length=5, description="Location B ZIP code")
+
+    zip_a: str = Field(
+        ..., min_length=5, max_length=5, description="Location A ZIP code"
+    )
+    zip_b: str = Field(
+        ..., min_length=5, max_length=5, description="Location B ZIP code"
+    )
     plan_id: Optional[UUID] = Field(None, description="Plan ID")
     year: int = Field(..., ge=2020, le=2030, description="Valuation year")
-    quarter: Optional[str] = Field(None, pattern=r'^[1-4]$', description="Quarter")
+    quarter: Optional[str] = Field(None, pattern=r"^[1-4]$", description="Quarter")
+    valuation_date: Optional[date] = Field(
+        None,
+        description="Exact valuation date; overrides quarter for snapshot selection",
+    )
     ccn_a: Optional[str] = Field(None, max_length=6, description="Location A CCN")
     ccn_b: Optional[str] = Field(None, max_length=6, description="Location B CCN")
     payer: Optional[str] = Field(None, description="Payer name filter")
@@ -298,36 +394,43 @@ class ComparisonRequest(BaseModel):
     include_home_health: bool = Field(default=False, description="Include home health")
     include_snf: bool = Field(default=False, description="Include SNF")
     apply_sequestration: bool = Field(default=False, description="Apply sequestration")
-    sequestration_rate: float = Field(default=0.02, ge=0, le=0.1, description="Sequestration rate")
-    format: str = Field(default="cents", pattern=r'^(cents|decimal)$', description="Money format")
-    
+    sequestration_rate: float = Field(
+        default=0.02, ge=0, le=0.1, description="Sequestration rate"
+    )
+    format: str = Field(
+        default="cents", pattern=r"^(cents|decimal)$", description="Money format"
+    )
+
     # Ad-hoc plan (alternative to plan_id)
-    ad_hoc_plan: Optional[Dict[str, Any]] = Field(None, description="Ad-hoc plan definition")
-    
-    @field_validator('zip_a', 'zip_b')
+    ad_hoc_plan: Optional[Dict[str, Any]] = Field(
+        None, description="Ad-hoc plan definition"
+    )
+
+    @field_validator("zip_a", "zip_b")
     @classmethod
     def validate_zip(cls, v):
         if not v.isdigit():
-            raise ValueError('ZIP must contain only digits')
+            raise ValueError("ZIP must contain only digits")
         return v
-    
-    @field_validator('ccn_a', 'ccn_b')
+
+    @field_validator("ccn_a", "ccn_b")
     @classmethod
     def validate_ccn(cls, v):
         if v is not None and (not v.isdigit() or len(v) != 6):
-            raise ValueError('CCN must be exactly 6 digits')
+            raise ValueError("CCN must be exactly 6 digits")
         return v
-    
-    @field_validator('quarter')
+
+    @field_validator("quarter")
     @classmethod
     def validate_quarter(cls, v):
-        if v is not None and v not in ['1', '2', '3', '4']:
-            raise ValueError('Quarter must be 1, 2, 3, or 4')
+        if v is not None and v not in ["1", "2", "3", "4"]:
+            raise ValueError("Quarter must be 1, 2, 3, or 4")
         return v
 
 
 class ComparisonDelta(BaseModel):
     """Delta between two pricing results"""
+
     field: str = Field(..., description="Field name")
     location_a: int = Field(..., description="Value for location A (cents)")
     location_b: int = Field(..., description="Value for location B (cents)")
@@ -337,22 +440,23 @@ class ComparisonDelta(BaseModel):
 
 class ComparisonResponse(BaseModel):
     """Response schema for comparing two locations"""
+
     run_id: str = Field(..., description="Unique run identifier")
     plan_id: Optional[UUID] = Field(None, description="Plan ID")
     plan_name: Optional[str] = Field(None, description="Plan name")
-    
+
     # Location A results
     location_a: PricingResponse = Field(..., description="Location A pricing results")
-    
+
     # Location B results
     location_b: PricingResponse = Field(..., description="Location B pricing results")
-    
+
     # Comparison deltas
     deltas: List[ComparisonDelta] = Field(..., description="Field-by-field differences")
-    
+
     # Parity report
     parity_report: Dict[str, Any] = Field(..., description="Parity validation report")
-    
+
     # Summary
     total_delta_cents: int = Field(..., description="Total allowed difference")
     total_delta_percent: float = Field(..., description="Total percentage difference")

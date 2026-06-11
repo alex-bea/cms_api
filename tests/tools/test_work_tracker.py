@@ -75,6 +75,9 @@ def _seed_minimal_tracker(root: Path) -> None:
         plan_path: "docs/workbench/DOC-status.md"
         related_paths:
           - "cms_pricing/ingestion"
+        depends_on:
+        parallel_policy: sequential
+        codex_mode: local
         linked_beads:
         linked_outputs:
           - "docs/workbench/DOC-status.md"
@@ -107,6 +110,9 @@ def _write_task(
         plan_path: "docs/workbench/DOC-status.md"
         related_paths:
           - "cms_pricing/ingestion"
+        depends_on:
+        parallel_policy: sequential
+        codex_mode: local
         linked_beads:
         linked_outputs:
           - "docs/workbench/DOC-status.md"
@@ -298,6 +304,97 @@ def test_epic_brief_with_required_headings_is_valid(tmp_path):
     assert result.errors == []
 
 
+def test_task_dependencies_validate_ids_self_dependencies_and_cycles(tmp_path):
+    _seed_minimal_tracker(tmp_path)
+    _set_task_status(tmp_path, "use-rvu", "done")
+    _write(
+        tmp_path / "state/work/tasks/next.yaml",
+        """
+        id: next
+        parent_id: rvu
+        title: Next
+        status: queued
+        rank: 2
+        team: data
+        owner_mode: shared
+        updated_at: "2026-06-10"
+        plan_path: "docs/workbench/DOC-status.md"
+        related_paths:
+          - "cms_pricing/ingestion"
+        depends_on:
+          - "use-rvu"
+        parallel_policy: sequential
+        codex_mode: local
+        linked_beads:
+        linked_outputs:
+          - "docs/workbench/DOC-status.md"
+        current_task: "Next task."
+        next_action: "Do next."
+        resume_from: "Start next."
+        """,
+    )
+
+    assert validate_tracker(load_tracker(tmp_path)).errors == []
+
+    _write(
+        tmp_path / "state/work/tasks/bad.yaml",
+        """
+        id: bad
+        parent_id: rvu
+        title: Bad
+        status: queued
+        rank: 3
+        team: data
+        owner_mode: shared
+        updated_at: "2026-06-10"
+        plan_path: "docs/workbench/DOC-status.md"
+        related_paths:
+          - "cms_pricing/ingestion"
+        depends_on:
+          - "missing"
+        parallel_policy: sequential
+        codex_mode: local
+        linked_beads:
+        linked_outputs:
+          - "docs/workbench/DOC-status.md"
+        current_task: "Bad task."
+        next_action: "Do bad."
+        resume_from: "Start bad."
+        """,
+    )
+    result = validate_tracker(load_tracker(tmp_path))
+    assert any("dependency task does not exist: missing" in error for error in result.errors)
+
+    bad_path = tmp_path / "state/work/tasks/bad.yaml"
+    bad_path.write_text(
+        bad_path.read_text(encoding="utf-8").replace(
+            '- "missing"',
+            '- "bad"',
+        ),
+        encoding="utf-8",
+    )
+    result = validate_tracker(load_tracker(tmp_path))
+    assert any("task cannot depend on itself" in error for error in result.errors)
+
+    bad_path.write_text(
+        bad_path.read_text(encoding="utf-8").replace(
+            '- "bad"',
+            '- "next"',
+        ),
+        encoding="utf-8",
+    )
+    next_path = tmp_path / "state/work/tasks/next.yaml"
+    next_path.write_text(
+        next_path.read_text(encoding="utf-8").replace(
+            '- "use-rvu"',
+            '- "bad"',
+        ),
+        encoding="utf-8",
+    )
+    result = validate_tracker(load_tracker(tmp_path))
+    assert any("task dependency cycle detected" in error for error in result.errors)
+
+
 def test_run_epic_dry_run_payload_orders_and_limits_queued_tasks(tmp_path):
     _seed_minimal_tracker(tmp_path)
     _write(
@@ -314,6 +411,9 @@ def test_run_epic_dry_run_payload_orders_and_limits_queued_tasks(tmp_path):
         plan_path: "docs/workbench/DOC-status.md"
         related_paths:
           - "cms_pricing/ingestion"
+        depends_on:
+        parallel_policy: sequential
+        codex_mode: local
         linked_beads:
         linked_outputs:
           - "docs/workbench/DOC-status.md"
@@ -336,6 +436,9 @@ def test_run_epic_dry_run_payload_orders_and_limits_queued_tasks(tmp_path):
         plan_path: "docs/workbench/DOC-status.md"
         related_paths:
           - "cms_pricing/ingestion"
+        depends_on:
+        parallel_policy: sequential
+        codex_mode: local
         linked_beads:
         linked_outputs:
           - "docs/workbench/DOC-status.md"
@@ -352,7 +455,12 @@ def test_run_epic_dry_run_payload_orders_and_limits_queued_tasks(tmp_path):
     assert payload["mutations"] == []
     assert payload["total_queued_tasks"] == 2
     assert payload["selected_task_count"] == 1
+    assert payload["selected_task"]["id"] == "use-rvu"
     assert [task["id"] for task in payload["tasks"]] == ["second"]
+    assert [task["task"]["id"] for task in payload["blocked_tasks"]] == [
+        "second",
+        "third",
+    ]
 
 
 def test_run_epic_dry_run_json_output(tmp_path, capsys):
@@ -371,6 +479,9 @@ def test_run_epic_dry_run_json_output(tmp_path, capsys):
         plan_path: "docs/workbench/DOC-status.md"
         related_paths:
           - "cms_pricing/ingestion"
+        depends_on:
+        parallel_policy: sequential
+        codex_mode: local
         linked_beads:
         linked_outputs:
           - "docs/workbench/DOC-status.md"
@@ -391,7 +502,9 @@ def test_run_epic_dry_run_json_output(tmp_path, capsys):
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["epic"]["id"] == "rvu"
+    assert payload["selected_task"]["id"] == "use-rvu"
     assert payload["tasks"][0]["id"] == "next"
+    assert payload["blocked_tasks"][0]["task"]["id"] == "next"
     assert payload["mutations"] == []
 
 
@@ -422,6 +535,142 @@ def test_run_epic_apply_state_activates_next_task_and_rebuilds_views(
     )
     assert (tmp_path / "docs/workbench/ROADMAP.md").exists()
     assert validate_tracker(load_tracker(tmp_path)).errors == []
+
+
+def test_run_epic_apply_state_refuses_same_epic_active_sequential_task(
+    tmp_path, capsys
+):
+    _seed_minimal_tracker(tmp_path)
+    _write_task(tmp_path, "next", "rvu", "Next", "queued", 2)
+
+    exit_code = run_epic_command(
+        tmp_path,
+        epic_id="rvu",
+        dry_run=False,
+        max_slices=None,
+        json_output=False,
+        apply_state=True,
+    )
+
+    assert exit_code == 1
+    assert "same-epic active task use-rvu blocks sequential write work" in (
+        capsys.readouterr().err
+    )
+    assert "status: queued" in (
+        tmp_path / "state/work/tasks/next.yaml"
+    ).read_text(encoding="utf-8")
+
+
+def test_run_epic_apply_state_allows_independent_write_without_path_overlap(
+    tmp_path, capsys
+):
+    _seed_minimal_tracker(tmp_path)
+    _write(tmp_path / "cms_pricing/alpha/.keep", "")
+    _write(tmp_path / "cms_pricing/beta/.keep", "")
+    use_rvu_path = tmp_path / "state/work/tasks/use-rvu.yaml"
+    use_rvu_path.write_text(
+        use_rvu_path.read_text(encoding="utf-8")
+        .replace('  - "cms_pricing/ingestion"', '  - "cms_pricing/alpha"')
+        .replace("parallel_policy: sequential", "parallel_policy: independent_write"),
+        encoding="utf-8",
+    )
+    _write_task(tmp_path, "next", "rvu", "Next", "queued", 2)
+    next_path = tmp_path / "state/work/tasks/next.yaml"
+    next_path.write_text(
+        next_path.read_text(encoding="utf-8")
+        .replace('  - "cms_pricing/ingestion"', '  - "cms_pricing/beta"')
+        .replace("parallel_policy: sequential", "parallel_policy: independent_write"),
+        encoding="utf-8",
+    )
+
+    exit_code = run_epic_command(
+        tmp_path,
+        epic_id="rvu",
+        dry_run=False,
+        max_slices=None,
+        json_output=False,
+        apply_state=True,
+    )
+
+    assert exit_code == 0
+    assert "Activated task:" in capsys.readouterr().out
+    assert "status: active" in next_path.read_text(encoding="utf-8")
+
+
+def test_run_epic_apply_state_blocks_independent_write_unmet_dependency(
+    tmp_path, capsys
+):
+    _seed_minimal_tracker(tmp_path)
+    _write(tmp_path / "cms_pricing/alpha/.keep", "")
+    _write(tmp_path / "cms_pricing/beta/.keep", "")
+    use_rvu_path = tmp_path / "state/work/tasks/use-rvu.yaml"
+    use_rvu_path.write_text(
+        use_rvu_path.read_text(encoding="utf-8")
+        .replace('  - "cms_pricing/ingestion"', '  - "cms_pricing/alpha"')
+        .replace("parallel_policy: sequential", "parallel_policy: independent_write"),
+        encoding="utf-8",
+    )
+    _write_task(tmp_path, "next", "rvu", "Next", "queued", 2)
+    next_path = tmp_path / "state/work/tasks/next.yaml"
+    next_path.write_text(
+        next_path.read_text(encoding="utf-8")
+        .replace('  - "cms_pricing/ingestion"', '  - "cms_pricing/beta"')
+        .replace("depends_on:", 'depends_on:\n  - "use-rvu"')
+        .replace("parallel_policy: sequential", "parallel_policy: independent_write"),
+        encoding="utf-8",
+    )
+
+    exit_code = run_epic_command(
+        tmp_path,
+        epic_id="rvu",
+        dry_run=False,
+        max_slices=None,
+        json_output=False,
+        apply_state=True,
+    )
+
+    assert exit_code == 1
+    assert "dependency use-rvu is active" in capsys.readouterr().err
+    assert "status: queued" in next_path.read_text(encoding="utf-8")
+
+
+def test_run_epic_apply_state_blocks_independent_write_path_overlap(
+    tmp_path, capsys
+):
+    _seed_minimal_tracker(tmp_path)
+    _write(tmp_path / "cms_pricing/ingestion/subsystem/.keep", "")
+    use_rvu_path = tmp_path / "state/work/tasks/use-rvu.yaml"
+    use_rvu_path.write_text(
+        use_rvu_path.read_text(encoding="utf-8").replace(
+            "parallel_policy: sequential",
+            "parallel_policy: independent_write",
+        ),
+        encoding="utf-8",
+    )
+    _write_task(tmp_path, "next", "rvu", "Next", "queued", 2)
+    next_path = tmp_path / "state/work/tasks/next.yaml"
+    next_path.write_text(
+        next_path.read_text(encoding="utf-8")
+        .replace(
+            '  - "cms_pricing/ingestion"',
+            '  - "cms_pricing/ingestion/subsystem"',
+        )
+        .replace("parallel_policy: sequential", "parallel_policy: independent_write"),
+        encoding="utf-8",
+    )
+
+    exit_code = run_epic_command(
+        tmp_path,
+        epic_id="rvu",
+        dry_run=False,
+        max_slices=None,
+        json_output=False,
+        apply_state=True,
+    )
+
+    assert exit_code == 1
+    assert "related_paths overlap with active task use-rvu" in capsys.readouterr().err
+    assert "status: queued" in next_path.read_text(encoding="utf-8")
 
 
 def test_run_epic_apply_state_refuses_full_active_wip(tmp_path, capsys):
