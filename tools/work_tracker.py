@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
+import shlex
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import date
@@ -32,6 +35,11 @@ STATUSES = {
 OWNER_MODES = {"alex", "agent", "shared"}
 TEAMS = {"system", "data", "api", "ops", "shared"}
 ACTIVE_TASK_LIMIT = 3
+RUN_EPIC_STOP_STATUSES = {"blocked", "queued_for_merge"}
+VALIDATION_PYTHON_EXECUTABLES = {".venv/bin/python", "python", "python3"}
+VALIDATION_SCRIPT_PREFIXES = ("scripts/governance/",)
+VALIDATION_MODULES = {"pytest", "tools.audit_doc_catalog"}
+VALIDATION_PATH_PREFIXES = ("tests/",)
 STATUS_ORDER = {
     "active": 0,
     "blocked": 1,
@@ -43,6 +51,20 @@ STATUS_ORDER = {
 }
 KIND_ORDER = ("roadmaps", "epics", "tasks")
 SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+EPIC_BRIEF_REQUIRED_HEADINGS = (
+    "Related Governance",
+    "Goal",
+    "Current State",
+    "Scope",
+    "Acceptance Criteria",
+    "Validation",
+    "Privacy / Data Boundaries",
+    "PRD / STD Impact",
+    "Known Risks",
+    "Stop Conditions",
+    "Ordered Task Slices",
+)
+HEADING_PATTERN = re.compile(r"^#{2,6}\s+(.+?)\s*$")
 
 
 @dataclass
@@ -65,6 +87,10 @@ class TrackerData:
     @property
     def epics_by_id(self) -> dict[str, dict[str, Any]]:
         return {record["id"]: record for record in self.epics}
+
+
+class EpicRunStateError(ValueError):
+    """Raised when run-epic state cannot be safely advanced."""
 
 
 def parse_scalar(raw: str) -> Any:
@@ -139,6 +165,42 @@ def resolve_repo_path(root: Path, value: str | None) -> Path | None:
         return None
     path = Path(value)
     return path if path.is_absolute() else root / path
+
+
+def relative_repo_path(root: Path, path: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def render_tracker_scalar(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, int):
+        return str(value)
+    text = str(value)
+    if re.match(r"^[A-Za-z0-9_-]+$", text):
+        return text
+    escaped = text.replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def update_tracker_fields(path: Path, fields: dict[str, Any]) -> None:
+    pending = dict(fields)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    updated_lines: list[str] = []
+    for line in lines:
+        key = line.split(":", 1)[0].strip() if ":" in line and line[:1] != " " else None
+        if key in pending:
+            updated_lines.append(f"{key}: {render_tracker_scalar(pending.pop(key))}")
+        else:
+            updated_lines.append(line)
+
+    for key, value in pending.items():
+        updated_lines.append(f"{key}: {render_tracker_scalar(value)}")
+
+    path.write_text("\n".join(updated_lines).rstrip() + "\n", encoding="utf-8")
 
 
 def path_link(root: Path, view_path: Path, target: str | None) -> str:
@@ -246,6 +308,78 @@ def validate_ranks(
         ranks[rank] = str(record.get("_path"))
 
 
+def markdown_headings(text: str) -> set[str]:
+    headings = set()
+    for line in text.splitlines():
+        match = HEADING_PATTERN.match(line)
+        if match:
+            headings.add(match.group(1).strip())
+    return headings
+
+
+def markdown_section_lines(text: str, heading: str) -> list[str]:
+    lines = text.splitlines()
+    collected: list[str] = []
+    in_section = False
+    for line in lines:
+        match = HEADING_PATTERN.match(line)
+        if match:
+            current_heading = match.group(1).strip()
+            if in_section and current_heading != heading:
+                break
+            in_section = current_heading == heading
+            continue
+        if not in_section:
+            continue
+
+        stripped = line.strip()
+        if not stripped or stripped == "```":
+            continue
+        if stripped.startswith(("- ", "* ")):
+            stripped = stripped[2:].strip()
+            collected.append(stripped)
+        elif re.match(r"^\d+\.\s+", stripped):
+            stripped = re.sub(r"^\d+\.\s+", "", stripped).strip()
+            collected.append(stripped)
+        elif collected:
+            collected[-1] = f"{collected[-1]} {stripped}"
+        else:
+            collected.append(stripped)
+    return collected
+
+
+def is_epic_brief(text: str, epic_id: str) -> bool:
+    return f"state/work/epics/{epic_id}.yaml" in text
+
+
+def validate_epic_brief(
+    root: Path, epic: dict[str, Any], errors: list[str]
+) -> None:
+    plan_path = epic.get("plan_path")
+    if not plan_path:
+        return
+    resolved = resolve_repo_path(root, str(plan_path))
+    if resolved is None or not resolved.exists() or resolved.suffix.lower() != ".md":
+        return
+
+    text = resolved.read_text(encoding="utf-8")
+    epic_id = str(epic.get("id", "")).strip()
+    if not epic_id or not is_epic_brief(text, epic_id):
+        return
+
+    headings = markdown_headings(text)
+    missing = [
+        heading
+        for heading in EPIC_BRIEF_REQUIRED_HEADINGS
+        if heading not in headings
+    ]
+    if missing:
+        errors.append(
+            f"{epic.get('_path')}: epic brief {plan_path} missing required heading(s): "
+            f"{', '.join(missing)}"
+        )
+
+
 def validate_tracker(tracker: TrackerData) -> ValidationResult:
     errors: list[str] = []
     warnings: list[str] = []
@@ -268,6 +402,7 @@ def validate_tracker(tracker: TrackerData) -> ValidationResult:
             errors.append(
                 f"{epic.get('_path')}: parent roadmap '{parent_id}' does not exist"
             )
+        validate_epic_brief(tracker.root, epic, errors)
         epics_by_roadmap.setdefault(parent_id, []).append(epic)
 
     active_tasks = []
@@ -564,14 +699,493 @@ def build_command(root: Path) -> int:
     return 0
 
 
+def task_payload(task: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": task.get("id"),
+        "title": task.get("title"),
+        "rank": task.get("rank"),
+        "status": task.get("status"),
+        "team": task.get("team"),
+        "owner_mode": task.get("owner_mode"),
+        "plan_path": task.get("plan_path"),
+        "current_task": task.get("current_task"),
+        "next_action": task.get("next_action"),
+        "resume_from": task.get("resume_from"),
+    }
+
+
+def build_epic_run_dry_run_payload(
+    tracker: TrackerData, epic_id: str, max_slices: int | None = None
+) -> dict[str, Any]:
+    epic = tracker.epics_by_id.get(epic_id)
+    if epic is None:
+        raise KeyError(epic_id)
+
+    queued_tasks = sort_by_rank(
+        [
+            task
+            for task in tracker.tasks
+            if task.get("parent_id") == epic_id and task.get("status") == "queued"
+        ]
+    )
+    selected_tasks = queued_tasks[:max_slices] if max_slices is not None else queued_tasks
+
+    validation_commands: list[str] = []
+    stop_conditions: list[str] = []
+    plan_path = epic.get("plan_path")
+    if plan_path:
+        resolved = resolve_repo_path(tracker.root, str(plan_path))
+        if resolved is not None and resolved.exists() and resolved.suffix.lower() == ".md":
+            text = resolved.read_text(encoding="utf-8")
+            validation_commands = markdown_section_lines(text, "Validation")
+            stop_conditions = markdown_section_lines(text, "Stop Conditions")
+
+    active_count = len([task for task in tracker.tasks if task.get("status") == "active"])
+    return {
+        "dry_run": True,
+        "epic": {
+            "id": epic.get("id"),
+            "title": epic.get("title"),
+            "status": epic.get("status"),
+            "rank": epic.get("rank"),
+            "plan_path": plan_path,
+        },
+        "active_task_wip": {
+            "current": active_count,
+            "limit": ACTIVE_TASK_LIMIT,
+        },
+        "max_slices": max_slices,
+        "total_queued_tasks": len(queued_tasks),
+        "selected_task_count": len(selected_tasks),
+        "tasks": [task_payload(task) for task in selected_tasks],
+        "validation_commands": validation_commands,
+        "stop_conditions": stop_conditions,
+        "mutations": [],
+    }
+
+
+def blocking_epic_run_tasks(tracker: TrackerData, epic_id: str) -> list[dict[str, Any]]:
+    return sort_by_rank(
+        [
+            task
+            for task in tracker.tasks
+            if task.get("parent_id") == epic_id
+            and task.get("status") in RUN_EPIC_STOP_STATUSES
+        ]
+    )
+
+
+def validation_commands_for_epic(tracker: TrackerData, epic: dict[str, Any]) -> list[str]:
+    plan_path = epic.get("plan_path")
+    if not plan_path:
+        return []
+    resolved = resolve_repo_path(tracker.root, str(plan_path))
+    if resolved is None or not resolved.exists() or resolved.suffix.lower() != ".md":
+        return []
+    commands = markdown_section_lines(
+        resolved.read_text(encoding="utf-8"), "Validation"
+    )
+    return [
+        command[1:-1].strip()
+        if command.startswith("`") and command.endswith("`")
+        else command
+        for command in commands
+    ]
+
+
+def validate_validation_command(root: Path, command: str) -> list[str]:
+    try:
+        args = shlex.split(command)
+    except ValueError as exc:
+        raise EpicRunStateError(f"invalid validation command syntax: {command}") from exc
+
+    if not args:
+        raise EpicRunStateError("validation command is empty")
+
+    executable = args[0]
+    if executable not in VALIDATION_PYTHON_EXECUTABLES:
+        raise EpicRunStateError(
+            f"validation command executable is not allowlisted: {executable}"
+        )
+
+    if len(args) < 2:
+        raise EpicRunStateError(f"validation command has no target: {command}")
+
+    if args[1] == "-m":
+        if len(args) < 3 or args[2] not in VALIDATION_MODULES:
+            module = args[2] if len(args) >= 3 else ""
+            raise EpicRunStateError(
+                f"validation module is not allowlisted: {module}"
+            )
+        for arg in args[3:]:
+            if arg.startswith("-"):
+                continue
+            if arg.startswith(VALIDATION_PATH_PREFIXES):
+                resolved = resolve_repo_path(root, arg)
+                if resolved is None or not resolved.exists():
+                    raise EpicRunStateError(
+                        f"validation path does not exist: {arg}"
+                    )
+                continue
+            if re.match(r"^[A-Za-z0-9_.:-]+$", arg):
+                continue
+            raise EpicRunStateError(
+                f"validation argument is not allowlisted: {arg}"
+            )
+        return args
+
+    target = args[1]
+    if not target.startswith(VALIDATION_SCRIPT_PREFIXES):
+        raise EpicRunStateError(
+            f"validation script is not allowlisted: {target}"
+        )
+    resolved_target = resolve_repo_path(root, target)
+    if resolved_target is None or not resolved_target.exists():
+        raise EpicRunStateError(f"validation script does not exist: {target}")
+    for arg in args[2:]:
+        if not re.match(r"^[-A-Za-z0-9_./:=]+$", arg):
+            raise EpicRunStateError(
+                f"validation argument is not allowlisted: {arg}"
+            )
+    return args
+
+
+def run_validation_command(root: Path, command: str) -> dict[str, Any]:
+    args = validate_validation_command(root, command)
+    completed = subprocess.run(
+        args,
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return {
+        "command": command,
+        "return_code": completed.returncode,
+        "stdout": completed.stdout,
+        "stderr": completed.stderr,
+    }
+
+
+def build_epic_run_validation_payload(root: Path, epic_id: str) -> dict[str, Any]:
+    tracker = load_tracker(root)
+    result = validate_tracker(tracker)
+    if result.errors:
+        raise EpicRunStateError("; ".join(result.errors))
+
+    epic = tracker.epics_by_id.get(epic_id)
+    if epic is None:
+        raise KeyError(epic_id)
+
+    payload = build_epic_run_dry_run_payload(tracker, epic_id)
+    payload["dry_run"] = False
+    payload["validate"] = True
+    payload["results"] = []
+    payload["success"] = True
+
+    for command in validation_commands_for_epic(tracker, epic):
+        command_result = run_validation_command(root, command)
+        payload["results"].append(command_result)
+        if command_result["return_code"] != 0:
+            payload["success"] = False
+            break
+
+    return payload
+
+
+def build_epic_run_apply_state_payload(
+    root: Path, epic_id: str, today: date | None = None
+) -> dict[str, Any]:
+    tracker = load_tracker(root)
+    result = validate_tracker(tracker)
+    if result.errors:
+        raise EpicRunStateError("; ".join(result.errors))
+    if epic_id not in tracker.epics_by_id:
+        raise KeyError(epic_id)
+
+    blocking_tasks = blocking_epic_run_tasks(tracker, epic_id)
+    if blocking_tasks:
+        blocked = ", ".join(
+            f"{task.get('id')} ({task.get('status')})" for task in blocking_tasks
+        )
+        raise EpicRunStateError(
+            f"epic has blocked or merge-boundary task(s): {blocked}"
+        )
+
+    active_count = len([task for task in tracker.tasks if task.get("status") == "active"])
+    if active_count >= ACTIVE_TASK_LIMIT:
+        raise EpicRunStateError(
+            f"active task WIP is full: {active_count}/{ACTIVE_TASK_LIMIT}"
+        )
+
+    payload = build_epic_run_dry_run_payload(tracker, epic_id, max_slices=1)
+    payload["dry_run"] = False
+    payload["apply_state"] = True
+    payload["mutations"] = []
+    payload["written_views"] = []
+
+    if not payload["tasks"]:
+        payload["message"] = "No queued child tasks to activate."
+        return payload
+
+    selected = payload["tasks"][0]
+    task = next(task for task in tracker.tasks if task.get("id") == selected["id"])
+    task_path = Path(task["_path"])
+    updated_at = (today or date.today()).isoformat()
+    update_tracker_fields(task_path, {"status": "active", "updated_at": updated_at})
+
+    tracker_after = load_tracker(root)
+    result_after = validate_tracker(tracker_after)
+    if result_after.errors:
+        raise EpicRunStateError("; ".join(result_after.errors))
+
+    written = write_views(tracker_after, warnings=result_after.warnings)
+    payload["tasks"][0]["status"] = "active"
+    payload["tasks"][0]["updated_at"] = updated_at
+    payload["active_task_wip"]["current"] = active_count + 1
+    payload["mutations"] = [
+        {
+            "path": relative_repo_path(root, task_path),
+            "field": "status",
+            "from": "queued",
+            "to": "active",
+        },
+        {
+            "path": relative_repo_path(root, task_path),
+            "field": "updated_at",
+            "to": updated_at,
+        },
+    ]
+    payload["written_views"] = [relative_repo_path(root, path) for path in written]
+    return payload
+
+
+def render_epic_run_dry_run(payload: dict[str, Any]) -> str:
+    epic = payload["epic"]
+    wip = payload["active_task_wip"]
+    lines = [
+        f"Epic run dry run: {epic['title']} ({epic['id']})",
+        f"Status: {epic['status']}",
+        f"Plan: {epic.get('plan_path') or 'None'}",
+        f"Active task WIP: {wip['current']}/{wip['limit']}",
+        (
+            "Queued child tasks selected: "
+            f"{payload['selected_task_count']}/{payload['total_queued_tasks']}"
+        ),
+        "",
+        "Task sequence:",
+    ]
+
+    tasks = payload["tasks"]
+    if tasks:
+        for index, task in enumerate(tasks, start=1):
+            lines.append(
+                f"{index}. [{task['rank']}] {task['id']} - {task['title']}"
+            )
+            next_action = task.get("next_action")
+            if next_action:
+                lines.append(f"   Next action: {next_action}")
+    else:
+        lines.append("- None.")
+
+    lines.extend(["", "Validation commands:"])
+    if payload["validation_commands"]:
+        lines.extend(f"- {command}" for command in payload["validation_commands"])
+    else:
+        lines.append("- None.")
+
+    lines.extend(["", "Stop conditions:"])
+    if payload["stop_conditions"]:
+        lines.extend(f"- {condition}" for condition in payload["stop_conditions"])
+    else:
+        lines.append("- None.")
+
+    lines.extend(["", "Mutations: none."])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_epic_run_apply_state(payload: dict[str, Any]) -> str:
+    epic = payload["epic"]
+    wip = payload["active_task_wip"]
+    lines = [
+        f"Epic run apply-state: {epic['title']} ({epic['id']})",
+        f"Status: {epic['status']}",
+        f"Plan: {epic.get('plan_path') or 'None'}",
+        f"Active task WIP: {wip['current']}/{wip['limit']}",
+        "",
+    ]
+
+    tasks = payload["tasks"]
+    if tasks:
+        task = tasks[0]
+        lines.extend(
+            [
+                "Activated task:",
+                f"- [{task['rank']}] {task['id']} - {task['title']}",
+            ]
+        )
+        next_action = task.get("next_action")
+        if next_action:
+            lines.append(f"  Next action: {next_action}")
+    else:
+        lines.append(payload.get("message", "No queued child tasks to activate."))
+
+    lines.extend(["", "Mutations:"])
+    if payload["mutations"]:
+        for mutation in payload["mutations"]:
+            if "from" in mutation:
+                lines.append(
+                    f"- {mutation['path']}: {mutation['field']} "
+                    f"{mutation['from']} -> {mutation['to']}"
+                )
+            else:
+                lines.append(
+                    f"- {mutation['path']}: {mutation['field']} -> {mutation['to']}"
+                )
+    else:
+        lines.append("- None.")
+
+    lines.extend(["", "Generated views:"])
+    if payload["written_views"]:
+        lines.extend(f"- {path}" for path in payload["written_views"])
+    else:
+        lines.append("- None.")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_command_output(label: str, text: str) -> list[str]:
+    stripped = text.strip()
+    if not stripped:
+        return []
+    lines = [f"  {label}:"]
+    for line in stripped.splitlines():
+        lines.append(f"    {line}")
+    return lines
+
+
+def render_epic_run_validation(payload: dict[str, Any]) -> str:
+    epic = payload["epic"]
+    lines = [
+        f"Epic run validation: {epic['title']} ({epic['id']})",
+        f"Status: {epic['status']}",
+        f"Plan: {epic.get('plan_path') or 'None'}",
+        "",
+        "Validation results:",
+    ]
+
+    results = payload["results"]
+    if not results:
+        lines.append("- None.")
+    for index, result in enumerate(results, start=1):
+        lines.append(
+            f"{index}. {result['command']} -> exit {result['return_code']}"
+        )
+        lines.extend(render_command_output("stdout", result.get("stdout", "")))
+        lines.extend(render_command_output("stderr", result.get("stderr", "")))
+        if result["return_code"] != 0:
+            lines.append("  Stopped after failure.")
+            break
+
+    lines.append("")
+    lines.append(f"Success: {str(payload['success']).lower()}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def run_epic_command(
+    root: Path,
+    epic_id: str | None,
+    dry_run: bool,
+    max_slices: int | None,
+    json_output: bool,
+    apply_state: bool = False,
+    validate: bool = False,
+) -> int:
+    if int(dry_run) + int(apply_state) + int(validate) != 1:
+        print(
+            "ERROR: run-epic requires exactly one of --dry-run, --apply-state, or --validate.",
+            file=sys.stderr,
+        )
+        return 2
+    if not epic_id:
+        print("ERROR: run-epic requires --epic-id.", file=sys.stderr)
+        return 2
+    if max_slices is not None and max_slices < 1:
+        print("ERROR: --max-slices must be a positive integer.", file=sys.stderr)
+        return 2
+    if apply_state and max_slices is not None:
+        print("ERROR: --max-slices is only valid with --dry-run.", file=sys.stderr)
+        return 2
+    if validate and max_slices is not None:
+        print("ERROR: --max-slices is only valid with --dry-run.", file=sys.stderr)
+        return 2
+
+    tracker = load_tracker(root)
+    result = validate_tracker(tracker)
+    for error in result.errors:
+        print(f"ERROR: {error}", file=sys.stderr)
+    if result.errors:
+        return 1
+
+    try:
+        if validate:
+            payload = build_epic_run_validation_payload(root, epic_id=epic_id)
+        elif apply_state:
+            payload = build_epic_run_apply_state_payload(root, epic_id=epic_id)
+        else:
+            payload = build_epic_run_dry_run_payload(
+                tracker, epic_id=epic_id, max_slices=max_slices
+            )
+    except KeyError:
+        print(f"ERROR: epic does not exist: {epic_id}", file=sys.stderr)
+        return 1
+    except EpicRunStateError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    if json_output:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    elif validate:
+        print(render_epic_run_validation(payload), end="")
+    elif apply_state:
+        print(render_epic_run_apply_state(payload), end="")
+    else:
+        print(render_epic_run_dry_run(payload), end="")
+    if validate and not payload["success"]:
+        return 1
+    return 0
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=("check", "build", "check-views"),
-        help="Validate tracker state or rebuild generated views.",
+        choices=("check", "build", "check-views", "run-epic"),
+        help="Validate tracker state, rebuild generated views, or inspect an epic run.",
     )
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
+    parser.add_argument("--epic-id", help="Epic id for run-epic.")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print run-epic sequence without mutating tracker state.",
+    )
+    parser.add_argument(
+        "--apply-state",
+        action="store_true",
+        help="Activate the next queued child task and rebuild generated views.",
+    )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Run allowlisted validation commands from the epic brief.",
+    )
+    parser.add_argument(
+        "--max-slices",
+        type=int,
+        help="Limit the number of queued child tasks shown for run-epic.",
+    )
+    parser.add_argument("--json", action="store_true", help="Emit JSON output.")
     return parser.parse_args(argv)
 
 
@@ -584,6 +1198,16 @@ def main(argv: list[str] | None = None) -> int:
         return build_command(root)
     if args.command == "check-views":
         return check_views_command(root)
+    if args.command == "run-epic":
+        return run_epic_command(
+            root,
+            epic_id=args.epic_id,
+            dry_run=args.dry_run,
+            max_slices=args.max_slices,
+            json_output=args.json,
+            apply_state=args.apply_state,
+            validate=args.validate,
+        )
     raise AssertionError(args.command)
 
 

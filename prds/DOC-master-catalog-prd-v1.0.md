@@ -35,6 +35,8 @@
 | `STD-api-docs-prd-v1.0.md` | Draft v1.0 | Platform Engineering (API Enablement) | 2025-10-22 | API documentation standard (OpenAPI source-of-truth, linting, accessibility). Companion runbook: `prds/RUN-openapi-docs-maintenance-v1.0.md` |
 | `STD-ingestor-config-prd-v1.0.md` | Draft v1.0 | Data Platform Engineering | 2025-11-06 | Canonical artifact/profile configuration standard for DIS ingestors |
 | `STD-metadata-governance-prd-v1.0.md` | Draft v1.0 | Platform & Data Engineering | 2025-11-06 | Defines discovery, land, and publish metadata artifacts plus governance extensions |
+| `STD-codex-v0-build-workflow-prd-v1.0.md` | Draft v1.0 | Platform/Product Operations | 2026-06-11 | Codex v0 build workflow standard: plan-first workflow, approval gate, epic brief semantics, task sizing, and stop conditions |
+| `STD-codex-v0-build-workflow-impl-v1.0.md` | Draft v1.0 | Platform/Product Operations | 2026-06-11 | Implementation guide and templates for Codex build briefs and epic briefs |
 
 ---
 

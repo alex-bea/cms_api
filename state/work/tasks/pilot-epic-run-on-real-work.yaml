@@ -1,0 +1,21 @@
+id: pilot-epic-run-on-real-work
+parent_id: epic-brief-driven-workflow
+title: Pilot Epic Run On Real Work
+status: done
+rank: 7
+team: shared
+owner_mode: shared
+updated_at: 2026-06-11
+plan_path: "docs/workbench/DOC-epic-brief-driven-workflow.md"
+related_paths:
+  - "docs/workbench/DOC-epic-brief-driven-workflow.md"
+  - "docs/workbench/CURRENT.md"
+  - "docs/workbench/ROADMAP.md"
+  - "tools/work_tracker.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-epic-brief-driven-workflow.md"
+summary: "Piloted dry-run, apply-state, validate, and WIP-stop behavior on the CMS RVU ingestion epic, then captured rollout findings in the workflow epic brief."
+current_task: "Completed. The pilot activated normalize-rvu-locality-for-geography-resolution as the next real RVU task and confirmed the WIP gate blocks additional activation at 3/3."
+next_action: "Use epic-run as an opt-in Codex v0 tracker workflow; require epic briefs with Validation and Stop Conditions before making it the default for arbitrary epics."
+resume_from: "Continue with the now-active normalize-rvu-locality-for-geography-resolution task or create a follow-up if default adoption needs more policy."

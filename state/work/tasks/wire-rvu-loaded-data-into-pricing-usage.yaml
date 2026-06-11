@@ -1,8 +1,8 @@
 id: wire-rvu-loaded-data-into-pricing-usage
 parent_id: cms-rvu-ingestion
 title: Wire RVU Loaded Data Into Pricing Usage
-status: active
-rank: 1
+status: parked
+rank: 6
 team: data
 owner_mode: shared
 updated_at: "2026-06-10"
@@ -15,7 +15,7 @@ related_paths:
 linked_beads:
 linked_outputs:
   - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
-summary: "Make the loaded RVU and GPCI release usable by local pricing smoke flows, not just ingestion verification."
-current_task: "Confirm the API pricing path can use the live-loaded RVU and GPCI snapshots for valuation-date selection."
-next_action: "Run local API pricing smoke calls against the loaded rvu_2026_C data, then add a repeatable post-load smoke command if one is missing."
-resume_from: "Start from scripts/load_latest_cms_rvu_local.py, DatasetSnapshotService.select_snapshot, and the MPFS pricing service path."
+summary: "Broad placeholder for making loaded RVU and GPCI data usable from pricing. Parked because the work has been split into concrete tracker tasks."
+current_task: "Split into run-live-rvu-pricing-smoke, wire-pricing-to-rvu-snapshot-selection, load-or-map-mpfs-conversion-factor, normalize-rvu-locality-for-geography-resolution, and add-post-rvu-load-api-smoke-command."
+next_action: "Resume one of the split concrete tasks instead of this umbrella task."
+resume_from: "Use this only as context for the cms-rvu-ingestion task split."

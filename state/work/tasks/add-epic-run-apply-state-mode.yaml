@@ -1,0 +1,20 @@
+id: add-epic-run-apply-state-mode
+parent_id: epic-brief-driven-workflow
+title: Add Epic Run Apply State Mode
+status: done
+rank: 5
+team: ops
+owner_mode: shared
+updated_at: 2026-06-11
+plan_path: "docs/workbench/DOC-epic-brief-driven-workflow.md"
+related_paths:
+  - "tools/work_tracker.py"
+  - "scripts/governance/build-work-tracker.py"
+  - "tests/tools/test_work_tracker.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-epic-brief-driven-workflow.md"
+summary: "Added run-epic --apply-state to activate the next queued child task, rebuild generated views, and refuse full-WIP or blocked/merge-boundary epic states."
+current_task: "Completed. run-epic --apply-state activates one queued child task and writes generated tracker views after validation."
+next_action: "Move to validation execution only after the apply-state command remains covered by focused tests."
+resume_from: "Continue from run_epic_command, build_epic_run_apply_state_payload, and tests/tools/test_work_tracker.py."

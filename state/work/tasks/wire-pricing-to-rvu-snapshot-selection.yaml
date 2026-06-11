@@ -1,0 +1,22 @@
+id: wire-pricing-to-rvu-snapshot-selection
+parent_id: cms-rvu-ingestion
+title: Wire Pricing To RVU Snapshot Selection
+status: done
+rank: 2
+team: api
+owner_mode: shared
+updated_at: "2026-06-10"
+plan_path: "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+related_paths:
+  - "cms_pricing/services/dataset_snapshot_service.py"
+  - "cms_pricing/services/pricing.py"
+  - "cms_pricing/engines/mpfs.py"
+  - "tests/services/test_dataset_snapshot_service.py"
+  - "tests/services/test_pricing_provenance.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+summary: "MPFS pricing now selects rvu_items and gpci_indices snapshots with DatasetSnapshotService.select_snapshot by exact valuation date before pricing from live RVU/GPCI rows, with legacy MPFS fallback only when no RVU snapshots are registered."
+current_task: "Completed. Added valuation_date threading and an MPFS regression test covering pre/post effective-date snapshot selection."
+next_action: "Keep using valuation_date for RVU/GPCI release selection; move to conversion-factor source formalization next."
+resume_from: "See cms_pricing/engines/mpfs.py, cms_pricing/services/pricing.py, and tests/services/test_mpfs_component_pricing.py."

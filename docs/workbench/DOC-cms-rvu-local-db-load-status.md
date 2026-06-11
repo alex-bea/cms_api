@@ -71,7 +71,20 @@ Result: `24 passed, 1 skipped`.
 
 ## Next
 
-The next useful task is to make the loaded RVU and GPCI data usable from the
-pricing workflow itself. Start by running local API pricing smoke calls against
-the loaded `rvu_2026_C` release and add a repeatable post-load smoke command if
-one is missing.
+The loaded RVU and GPCI data are now usable from the MPFS pricing workflow when
+`dataset_snapshots` rows are present. The local API smoke below ran against the
+rebuilt Docker Compose API:
+
+```bash
+curl -H 'X-API-Key: dev-key-123' \
+  'http://127.0.0.1:8000/pricing/codes/price?zip=94110&code=99213&setting=MPFS&year=2026&valuation_date=2026-07-01&pos=11'
+```
+
+Result: `200 OK`, `allowed_cents=10061`, `release_id=rvu_2026_C`, and trace refs
+included `RVU:release:rvu_2026_C`, `GPCI:release:gpci_2026_C`,
+`CF:release:rvu_2026_C`, and `CF:source:rvu_items.conversion_factor`.
+
+The geography resolver still falls back to benchmark locality `01` for ZIP
+`94110` in the local DB, so locality normalization remains the next pricing
+correctness risk to resolve before treating ZIP-specific California pricing as
+validated.
