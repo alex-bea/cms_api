@@ -319,13 +319,16 @@ def _select_member(
     return matches[0]
 
 
-def source_members(source_zip: Path) -> tuple[str, str]:
-    with zipfile.ZipFile(source_zip) as archive:
-        names = archive.namelist()
+def source_members_from_names(names: Sequence[str]) -> tuple[str, str]:
     return (
         _select_member(names, ZIP5_MEMBER_PATTERN, "ZIP5"),
         _select_member(names, ZIP9_MEMBER_PATTERN, "ZIP9"),
     )
+
+
+def source_members(source_zip: Path) -> tuple[str, str]:
+    with zipfile.ZipFile(source_zip) as archive:
+        return source_members_from_names(archive.namelist())
 
 
 def _iter_member_lines(
@@ -340,27 +343,60 @@ def _iter_member_lines(
                 yield line_number, line
 
 
+def iter_source_rows_from_archive(
+    archive: zipfile.ZipFile,
+    *,
+    open_ended_latest: bool = False,
+) -> Iterator[ParsedGeographyRow]:
+    zip5_member, zip9_member = source_members_from_names(archive.namelist())
+    for line_number, line in _iter_member_lines(archive, zip5_member):
+        yield parse_zip5_line(
+            line,
+            source_file=zip5_member,
+            source_line=line_number,
+            open_ended_latest=open_ended_latest,
+        )
+    for line_number, line in _iter_member_lines(archive, zip9_member):
+        yield parse_zip9_line(
+            line,
+            source_file=zip9_member,
+            source_line=line_number,
+            open_ended_latest=open_ended_latest,
+        )
+
+
+def iter_source_rows_from_bytes(
+    raw_content: bytes,
+    *,
+    open_ended_latest: bool = False,
+) -> Iterator[ParsedGeographyRow]:
+    with zipfile.ZipFile(io.BytesIO(raw_content)) as archive:
+        yield from iter_source_rows_from_archive(
+            archive, open_ended_latest=open_ended_latest
+        )
+
+
 def iter_source_rows(
     source_zip: Path,
     *,
     open_ended_latest: bool = False,
 ) -> Iterator[ParsedGeographyRow]:
-    zip5_member, zip9_member = source_members(source_zip)
     with zipfile.ZipFile(source_zip) as archive:
-        for line_number, line in _iter_member_lines(archive, zip5_member):
-            yield parse_zip5_line(
-                line,
-                source_file=zip5_member,
-                source_line=line_number,
-                open_ended_latest=open_ended_latest,
-            )
-        for line_number, line in _iter_member_lines(archive, zip9_member):
-            yield parse_zip9_line(
-                line,
-                source_file=zip9_member,
-                source_line=line_number,
-                open_ended_latest=open_ended_latest,
-            )
+        yield from iter_source_rows_from_archive(
+            archive, open_ended_latest=open_ended_latest
+        )
+
+
+def iter_zip9_rows_from_bytes(
+    raw_content: bytes,
+    *,
+    open_ended_latest: bool = False,
+) -> Iterator[ParsedGeographyRow]:
+    for row in iter_source_rows_from_bytes(
+        raw_content, open_ended_latest=open_ended_latest
+    ):
+        if row.has_plus4:
+            yield row
 
 
 def scan_source_zip(

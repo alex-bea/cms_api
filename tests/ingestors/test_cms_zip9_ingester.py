@@ -10,14 +10,60 @@ Dependencies: cms_pricing.ingestion.ingestors.cms_zip9_ingester
 
 import pytest
 import pandas as pd
+import asyncio
 from datetime import datetime, date
 from unittest.mock import Mock, patch, AsyncMock
 from pathlib import Path
 import json
+import zipfile
 
 from cms_pricing.ingestion.ingestors.cms_zip9_ingester import CMSZip9Ingester
 from cms_pricing.ingestion.contracts.ingestor_spec import ValidationSeverity
 from cms_pricing.models.nearest_zip import ZIP9Overrides
+
+
+def _fixed_line(
+    *,
+    state: str = "CA",
+    zip5: str = "94110",
+    carrier: str = "01112",
+    locality: str = "05",
+    rural: str = " ",
+    plus_four_flag: str = "0",
+    plus4: str = "    ",
+    year_quarter: str = "20254",
+    zip9: bool = False,
+) -> str:
+    chars = [" "] * 80
+    chars[0:2] = list(state)
+    chars[2:7] = list(zip5)
+    chars[7:12] = list(carrier)
+    chars[12:14] = list(locality)
+    chars[14:15] = list(rural)
+    chars[20:21] = list(plus_four_flag)
+    if zip9:
+        chars[21:25] = list(plus4)
+        chars[31:32] = list("A")
+    else:
+        chars[22:23] = list("A")
+    chars[75:80] = list(year_quarter)
+    return "".join(chars)
+
+
+def _source_zip_bytes(tmp_path):
+    source_zip = tmp_path / "zip-locality.zip"
+    with zipfile.ZipFile(source_zip, "w") as archive:
+        archive.writestr("ZIP5_OCT2025.txt", _fixed_line() + "\n")
+        archive.writestr(
+            "ZIP9_OCT2025.txt",
+            _fixed_line(
+                plus_four_flag="1",
+                plus4="0007",
+                zip9=True,
+            )
+            + "\n",
+        )
+    return source_zip.read_bytes()
 
 
 class TestCMSZip9Ingester:
@@ -74,9 +120,31 @@ class TestCMSZip9Ingester:
         
         assert len(source_files) == 1
         source_file = source_files[0]
-        assert "ZIP9" in source_file.filename
+        assert source_file.filename == "zip_code_carrier_locality_file.zip"
         assert source_file.content_type == "application/zip"
         assert "cms.gov" in source_file.url
+
+        report = ingester.source_package_report()
+        assert report["source_package"] == "cms_zip_locality"
+        assert report["output_strategy"] == "legacy_zip9_overrides_table"
+        assert report["members"]["zip9"] == "ZIP9_*.txt"
+
+    def test_parse_zip9_data_uses_shared_cms_source_package(
+        self, ingester, tmp_path
+    ):
+        """Test QA-ZIP9-UNIT-0002B: ZIP9 parsing delegates to shared package parser"""
+        df = asyncio.run(ingester._parse_zip9_data(_source_zip_bytes(tmp_path)))
+
+        assert len(df) == 1
+        row = df.iloc[0]
+        assert row["zip9_low"] == "941100007"
+        assert row["zip9_high"] == "941100007"
+        assert row["state"] == "CA"
+        assert row["locality"] == "05"
+        assert row["effective_from"] == date(2025, 10, 1)
+        assert row["effective_to"] == date(2025, 12, 31)
+        assert row["vintage"] == "20254"
+        assert row["source_filename"] == "ZIP9_OCT2025.txt"
     
     def test_zip9_format_validation(self, ingester, sample_zip9_data):
         """Test QA-ZIP9-UNIT-0003: ZIP9 format validation works correctly"""
