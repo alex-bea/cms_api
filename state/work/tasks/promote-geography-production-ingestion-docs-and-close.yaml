@@ -1,26 +1,34 @@
 id: promote-geography-production-ingestion-docs-and-close
 parent_id: cms-geography-production-ingestion
 title: Promote Geography Production Ingestion Docs And Close
-status: queued
-rank: 7
+status: done
+rank: 10
 team: data
 owner_mode: shared
-updated_at: "2026-06-11"
+updated_at: 2026-06-11
 depends_on:
-  - "wire-production-geography-ingestion-smoke-and-runbook"
+  - "execute-rvu-geography-local-production-preflight"
 parallel_policy: sequential
 codex_mode: local
 plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
 related_paths:
   - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-cms-pricing-pipeline-production-readiness-epic-brief.md"
   - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+  - "docs/workbench/DOC-cms-pricing-production-preflight-runbook.md"
+  - "docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md"
   - "prds/PRD-geography-locality-mapping-prd-v1.0.md"
   - "prds/REF-geography-source-map-prd-v1.0.md"
   - "prds/REF-cms-pricing-source-map-prd-v1.0.md"
 linked_beads:
 linked_outputs:
   - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
-summary: "Update governed docs and tracker state after the production geography ingestion path is implemented and validated."
-current_task: "Queued behind production ingestion smoke."
-next_action: "Document final production commands, source discovery, effective-date policy, validation gates, limitations, and follow-up work; then close the epic."
-resume_from: "Use implementation evidence from prior productionization tasks and keep local/dev loader documented as a fallback, not the primary production path."
+  - "docs/workbench/DOC-cms-pricing-pipeline-production-readiness-epic-brief.md"
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+  - "prds/PRD-geography-locality-mapping-prd-v1.0.md"
+  - "prds/REF-geography-source-map-prd-v1.0.md"
+  - "prds/REF-cms-pricing-source-map-prd-v1.0.md"
+summary: "Done: updated governed docs and tracker state after the production geography ingestion path was implemented and validated locally."
+current_task: "Closed after final production-readiness docs, PRD/source-map updates, runbook, local evidence, and tracker state were updated."
+next_action: "Production mutation remains deferred until a separate execution runbook receives operator approval."
+resume_from: "Epic is locally complete. Use docs/workbench/DOC-cms-pricing-production-preflight-runbook.md and docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md for the next production execution planning step. Keep production mutation blocked without explicit approval."

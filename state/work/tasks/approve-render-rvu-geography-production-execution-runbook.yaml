@@ -1,0 +1,31 @@
+id: approve-render-rvu-geography-production-execution-runbook
+parent_id: cms-geography-production-ingestion
+title: Approve Render RVU Geography Production Execution Runbook
+status: active
+rank: 13
+team: data
+owner_mode: shared
+updated_at: 2026-06-11
+depends_on:
+  - "write-render-rvu-geography-production-execution-runbook"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+related_paths:
+  - "render.yaml"
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-cms-pricing-production-preflight-runbook.md"
+  - "docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md"
+  - "docs/workbench/DOC-cms-rvu-geography-docker-compose-production-style-smoke-evidence.md"
+  - "docs/workbench/DOC-render-rvu-geography-production-execution-runbook.md"
+  - "docs/workbench/DOC-render-rvu-geography-production-approval-gate.md"
+  - "prds/RUN-render-deployment-prd-v1.0.md"
+  - "prds/PRD-render-hosting-prd-v1.0.md"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-render-rvu-geography-production-approval-gate.md"
+summary: "Record operator approval or blockers for the Render RVU/geography production execution runbook before any production mutation."
+current_task: "Active approval gate. The runbook exists, but production mutation remains blocked because operator approval has not been granted."
+next_action: "Operator must approve or reject the Render execution runbook, target service/database, backup/rollback path, image SHA/digest, source digest, RVU release, latest-active geography behavior, and live smoke checklist."
+resume_from: "This task is the gate before production mutation. Do not run Render production load commands until approval is recorded. If approved, the next separate execution task can deploy/load/smoke the live API."

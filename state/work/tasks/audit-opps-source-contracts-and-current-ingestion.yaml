@@ -1,0 +1,31 @@
+id: audit-opps-source-contracts-and-current-ingestion
+parent_id: cms-opps-production-readiness
+title: Audit OPPS Source Contracts And Current Ingestion
+status: active
+rank: 1
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-opps-production-readiness-build-brief.md"
+related_paths:
+  - "prds/SRC-opps.md"
+  - "prds/PRD-opps-prd-v1.0.md"
+  - "cms_pricing/ingestion/scrapers/cms_opps_scraper.py"
+  - "cms_pricing/ingestion/ingestors/opps_ingestor.py"
+  - "cms_pricing/ingestion/contracts/cms_opps_v1.0.json"
+  - "cms_pricing/ingestion/contracts/cms_opps_si_lookup_v1.0.json"
+  - "cms_pricing/models/opps/opps_apc_payment.py"
+  - "cms_pricing/models/opps/opps_hcpcs_crosswalk.py"
+  - "cms_pricing/engines/opps.py"
+  - "cms_pricing/routers/opps.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+  - "docs/workbench/DOC-cms-opps-production-readiness-build-brief.md"
+summary: "Audit current OPPS docs, source discovery, contracts, ingester, models, engine, router, tests, and sandbox evidence before implementing new OPPS production-readiness changes."
+current_task: "Start by reading the existing OPPS PRDs/source docs and code paths, then write a gap report into the epic brief or a dedicated workbench doc."
+next_action: "Identify the smallest safe OPPS path that mirrors RVU/geography: source pinning, local load, validation gates, smoke, Docker, and Render runbook."
+resume_from: "The epic defines that stable OPPS source tables should be prepared ahead of time, while quarter selection, packaging decisions, wage/facility context, final amount, and trace refs should happen on request."

@@ -1,0 +1,28 @@
+id: cms-opps-production-readiness
+parent_id: cms-data-pipeline
+title: CMS OPPS Production Readiness
+status: active
+rank: 4
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+plan_path: "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+related_paths:
+  - "cms_pricing/ingestion/scrapers/cms_opps_scraper.py"
+  - "cms_pricing/ingestion/ingestors/opps_ingestor.py"
+  - "cms_pricing/ingestion/contracts/cms_opps_v1.0.json"
+  - "cms_pricing/ingestion/contracts/cms_opps_si_lookup_v1.0.json"
+  - "cms_pricing/models/opps/opps_apc_payment.py"
+  - "cms_pricing/models/opps/opps_hcpcs_crosswalk.py"
+  - "cms_pricing/models/opps/ref_si_lookup.py"
+  - "cms_pricing/engines/opps.py"
+  - "cms_pricing/routers/opps.py"
+  - "scripts/dry_run_opps.py"
+  - "scripts/run_opps_sandbox.sh"
+  - "prds/SRC-opps.md"
+  - "prds/PRD-opps-prd-v1.0.md"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+  - "docs/workbench/DOC-cms-opps-production-readiness-build-brief.md"
+summary: "Bring public CMS OPPS Addendum A/B and status-indicator data to the RVU/geography readiness bar with source pinning, validation gates, local/Docker smoke, request-time calculation boundaries, and a Render approval gate."

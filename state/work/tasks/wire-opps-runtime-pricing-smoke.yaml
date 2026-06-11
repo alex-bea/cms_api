@@ -1,0 +1,24 @@
+id: wire-opps-runtime-pricing-smoke
+parent_id: cms-opps-production-readiness
+title: Wire OPPS Runtime Pricing Smoke
+status: queued
+rank: 8
+team: api
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "implement-opps-request-time-pricing-resolver"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+related_paths:
+  - "cms_pricing/engines/opps.py"
+  - "cms_pricing/routers/opps.py"
+  - "cms_pricing/schemas/pricing.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+summary: "Add a post-load API smoke that proves OPPS request-time release selection, calculation, packaging signals, and trace refs."
+current_task: "Queued until the narrow request-time OPPS resolver exists."
+next_action: "Choose representative HCPCS/APC examples and prove the API result is calculated on request from normalized source tables."
+resume_from: "Runtime calculation should include quarter selection, HCPCS/APC lookup, packaging decisions, wage/facility context when available, final allowed amount, warnings, and trace refs."

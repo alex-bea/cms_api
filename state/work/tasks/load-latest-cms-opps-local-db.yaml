@@ -1,0 +1,27 @@
+id: load-latest-cms-opps-local-db
+parent_id: cms-opps-production-readiness
+title: Load Latest CMS OPPS Local DB
+status: queued
+rank: 4
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "normalize-opps-addenda-and-si-contracts"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+related_paths:
+  - "cms_pricing/ingestion/ingestors/opps_ingestor.py"
+  - "scripts/dry_run_opps.py"
+  - "scripts/run_opps_sandbox.sh"
+  - "cms_pricing/models/opps/opps_apc_payment.py"
+  - "cms_pricing/models/opps/opps_hcpcs_crosswalk.py"
+  - "cms_pricing/models/opps/ref_si_lookup.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+summary: "Load the normalized pinned OPPS release into local/dev Postgres and emit row-count, reject-count, digest, and effective-window evidence."
+current_task: "Queued until Addendum A/B and status-indicator normalization is contract-backed."
+next_action: "Run a local/dev OPPS load that emits row counts, reject counts, source digest, and effective windows before snapshot selection is treated as proven."
+resume_from: "The load must prepare normalized OPPS lookup tables ahead of time but not precompute context-sensitive packaged claim prices."

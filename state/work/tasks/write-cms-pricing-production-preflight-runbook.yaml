@@ -1,0 +1,31 @@
+id: write-cms-pricing-production-preflight-runbook
+parent_id: cms-geography-production-ingestion
+title: Write CMS Pricing Production Preflight Runbook
+status: done
+rank: 8
+team: data
+owner_mode: shared
+updated_at: 2026-06-11
+depends_on:
+  - "document-cms-zip-locality-source-discovery-effective-date-policy"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+related_paths:
+  - "docs/workbench/DOC-cms-pricing-production-preflight-runbook.md"
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-cms-pricing-pipeline-production-readiness-epic-brief.md"
+  - "docs/workbench/DOC-cms-zip-locality-source-discovery-effective-date-policy.md"
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+  - "scripts/load_cms_geography_local.py"
+  - "scripts/load_latest_cms_rvu_local.py"
+  - "scripts/post_rvu_load_api_smoke.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-pricing-production-preflight-runbook.md"
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-cms-pricing-pipeline-production-readiness-epic-brief.md"
+summary: "Done: wrote a dry-run-only production preflight runbook with approvals, rollback plan, scoped replace rules, readiness gates, final smoke expectations, and explicit local completion benchmarks."
+current_task: "Closed after adding docs/workbench/DOC-cms-pricing-production-preflight-runbook.md."
+next_action: "Proceed to the local RVU/geography production preflight evidence task."
+resume_from: "Runbook evidence contract: strict geography readiness must block 2026-07-01; open-ended/latest readiness must pass; 94110 must resolve to CA/05/01112; 66012 must resolve to EK/00/05202; source scan must have zero rejects, zero duplicate source keys, and locality 00 preservation; smoke evidence must use proof_path=production_style_local_smoke and no seed helper evidence."

@@ -1,0 +1,33 @@
+id: execute-rvu-geography-local-production-preflight
+parent_id: cms-geography-production-ingestion
+title: Execute RVU Geography Local Production Preflight
+status: done
+rank: 9
+team: data
+owner_mode: shared
+updated_at: 2026-06-11
+depends_on:
+  - "write-cms-pricing-production-preflight-runbook"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+related_paths:
+  - "docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md"
+  - "docs/workbench/DOC-cms-pricing-production-preflight-runbook.md"
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-cms-pricing-pipeline-production-readiness-epic-brief.md"
+  - "docs/workbench/DOC-cms-zip-locality-source-discovery-effective-date-policy.md"
+  - "docs/workbench/DOC-cms-rvu-local-db-load-status.md"
+  - "scripts/load_cms_geography_local.py"
+  - "scripts/load_latest_cms_rvu_local.py"
+  - "scripts/run_cms_pricing_local_smoke.py"
+  - "scripts/post_rvu_load_api_smoke.py"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md"
+  - "docs/workbench/DOC-cms-geography-production-ingestion-epic-brief.md"
+  - "docs/workbench/DOC-cms-pricing-pipeline-production-readiness-epic-brief.md"
+summary: "Done: ran and recorded the local RVU/geography production preflight evidence after the dry-run-only production preflight runbook."
+current_task: "Closed after strict readiness block, latest-active readiness pass, smoke plan pass, and full local DB smoke pass were recorded in docs/workbench/DOC-cms-rvu-geography-local-production-preflight-evidence.md."
+next_action: "Proceed to final PRD/source-map/workbench documentation closure."
+resume_from: "Completion evidence: strict geography readiness dry run blocked 2026-07-01 as expected; open-ended/latest readiness passed with digest b14c414de73256ac9594d7cb0a58a75214ba04f4fe043468ffda507c3dd75c2e, zero rejects, zero duplicate source keys, locality 00 preserved, and 94110 -> CA/05/01112; production-style smoke plan used proof_path=production_style_local_smoke and did not invoke seed_post_rvu_load_local.py; full local DB smoke passed with 94110 -> CA/05/01112 allowed_cents=11758 and 66012 -> EK/00/05202 allowed_cents=8902, both release_id=rvu_2026_C."

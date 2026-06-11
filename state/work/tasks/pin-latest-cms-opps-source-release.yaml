@@ -1,0 +1,24 @@
+id: pin-latest-cms-opps-source-release
+parent_id: cms-opps-production-readiness
+title: Pin Latest CMS OPPS Source Release
+status: queued
+rank: 2
+team: data
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "audit-opps-source-contracts-and-current-ingestion"
+parallel_policy: sequential
+codex_mode: local
+plan_path: "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+related_paths:
+  - "cms_pricing/ingestion/scrapers/cms_opps_scraper.py"
+  - "cms_pricing/ingestion/config/opps_addenda.yml"
+  - "prds/SRC-opps.md"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+summary: "Pin a current public CMS OPPS release with source URL, quarter, release ID, artifact names, digest, effective window, and expected row-count evidence."
+current_task: "Queued until the OPPS audit identifies the safest source discovery path."
+next_action: "Use the official CMS OPPS quarterly addenda source and record digest-pinned artifact evidence before local DB loads."
+resume_from: "Stop if the source cannot be tied to an official CMS release, quarter, digest, and effective window."

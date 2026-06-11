@@ -1,0 +1,23 @@
+id: approve-render-opps-production-execution-runbook
+parent_id: cms-opps-production-readiness
+title: Approve Render OPPS Production Execution Runbook
+status: queued
+rank: 11
+team: ops
+owner_mode: shared
+updated_at: "2026-06-11"
+depends_on:
+  - "write-render-opps-production-execution-runbook"
+parallel_policy: sequential
+codex_mode: manual
+plan_path: "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+related_paths:
+  - "render.yaml"
+  - "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+linked_beads:
+linked_outputs:
+  - "docs/workbench/DOC-cms-opps-production-readiness-epic-brief.md"
+summary: "Record operator approval or blockers for the Render OPPS production execution runbook before any production mutation."
+current_task: "Queued approval gate."
+next_action: "Operator must approve or reject target service/database, image SHA or digest, source digest, release, backup/rollback path, and live smoke checklist."
+resume_from: "This is the gate before production OPPS mutation. Do not run Render OPPS load commands until approval is recorded."
