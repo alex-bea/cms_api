@@ -63,6 +63,26 @@ def iter_staged_code_files() -> Iterable[pathlib.Path]:
             yield path
 
 
+def iter_changed_code_files(base_ref: str) -> Iterable[pathlib.Path]:
+    result = subprocess.run(
+        [
+            "git",
+            "diff",
+            "--name-only",
+            "--diff-filter=ACMR",
+            f"{base_ref}...HEAD",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    for rel_path in result.stdout.splitlines():
+        path = ROOT / rel_path
+        if path.suffix == ".py" and path.is_file() and should_scan(path):
+            yield path
+
+
 def scan_files(paths: Iterable[pathlib.Path]) -> list[str]:
     violations: list[str] = []
 
@@ -96,12 +116,22 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Run a full-repository TODO audit.",
     )
+    mode.add_argument(
+        "--changed-from",
+        metavar="BASE_REF",
+        help="Scan Python files changed from BASE_REF to HEAD.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    paths = iter_staged_code_files() if args.staged else iter_code_files()
+    if args.staged:
+        paths = iter_staged_code_files()
+    elif args.changed_from:
+        paths = iter_changed_code_files(args.changed_from)
+    else:
+        paths = iter_code_files()
     violations = scan_files(paths)
 
     if violations:
