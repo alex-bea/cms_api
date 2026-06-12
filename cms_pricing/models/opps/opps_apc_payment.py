@@ -12,10 +12,9 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import Column, Integer, String, Date, Numeric, Boolean, Index
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, Integer, String, Date, Numeric, Index
 
-Base = declarative_base()
+from cms_pricing.database import Base
 
 
 class OPPSAPCPayment(Base):
@@ -43,13 +42,13 @@ class OPPSAPCPayment(Base):
     
     # Payment information
     payment_rate_usd = Column(
-        Numeric(10, 2), 
-        nullable=False, 
+        Numeric(12, 3),
+        nullable=True,
         comment="Payment rate in USD"
     )
     relative_weight = Column(
-        Numeric(8, 4), 
-        nullable=False, 
+        Numeric(8, 4),
+        nullable=True,
         comment="Relative weight"
     )
     
@@ -96,8 +95,8 @@ class OPPSAPCPayment(Base):
             'effective_to': self.effective_to.isoformat() if self.effective_to else None,
             'apc_code': self.apc_code,
             'apc_description': self.apc_description,
-            'payment_rate_usd': float(self.payment_rate_usd) if self.payment_rate_usd else None,
-            'relative_weight': float(self.relative_weight) if self.relative_weight else None,
+            'payment_rate_usd': str(self.payment_rate_usd) if self.payment_rate_usd is not None else None,
+            'relative_weight': str(self.relative_weight) if self.relative_weight is not None else None,
             'packaging_flag': self.packaging_flag,
             'release_id': self.release_id,
             'batch_id': self.batch_id,

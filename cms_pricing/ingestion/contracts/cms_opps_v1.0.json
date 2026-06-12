@@ -57,9 +57,9 @@
         },
         "payment_rate_usd": {
           "type": "decimal",
-          "precision": 10,
-          "scale": 2,
-          "nullable": false,
+          "precision": 12,
+          "scale": 3,
+          "nullable": true,
           "description": "Payment rate in USD",
           "domain": "currency_usd",
           "validation": {
@@ -71,7 +71,7 @@
           "type": "decimal",
           "precision": 8,
           "scale": 4,
-          "nullable": false,
+          "nullable": true,
           "description": "Relative weight",
           "domain": "decimal_weight",
           "validation": {
@@ -133,8 +133,8 @@
       ],
       "business_rules": {
         "payment_rate_usd": {
-          "description": "Payment rates must be non-negative",
-          "rule": "payment_rate_usd >= 0"
+          "description": "Payment rates must be non-negative when present; blank values are allowed only for non-separately payable APCs",
+          "rule": "payment_rate_usd is null only when referenced status indicators do not require a separate APC payment rate"
         },
         "relative_weight": {
           "description": "Relative weights must be non-negative",
@@ -201,24 +201,36 @@
           "description": "Status indicator",
           "domain": "status_indicator",
           "validation": {
+            "max_length": 2,
             "enum": [
               "A",
               "B",
               "C",
               "D",
               "E",
+              "E1",
+              "E2",
               "F",
               "G",
               "H",
+              "H1",
               "J",
+              "J1",
+              "J2",
               "K",
+              "K1",
               "L",
               "M",
               "N",
               "P",
               "Q",
+              "Q1",
+              "Q2",
+              "Q3",
+              "Q4",
               "R",
               "S",
+              "S1",
               "T",
               "U",
               "V",
@@ -375,8 +387,8 @@
         },
         "payment_rate_usd": {
           "type": "decimal",
-          "precision": 10,
-          "scale": 2,
+          "precision": 12,
+          "scale": 3,
           "nullable": false,
           "description": "Base payment rate in USD",
           "domain": "currency_usd",
@@ -387,8 +399,8 @@
         },
         "wage_adjusted_rate_usd": {
           "type": "decimal",
-          "precision": 10,
-          "scale": 2,
+          "precision": 12,
+          "scale": 3,
           "nullable": true,
           "description": "Wage-adjusted payment rate in USD",
           "domain": "currency_usd",

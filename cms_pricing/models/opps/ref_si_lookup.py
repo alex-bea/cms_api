@@ -12,9 +12,7 @@ from datetime import date
 from typing import Optional
 
 from sqlalchemy import Column, Integer, String, Date, Index
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from cms_pricing.database import Base
 
 
 class RefSILookup(Base):
@@ -31,7 +29,7 @@ class RefSILookup(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     
     # Status indicator
-    status_indicator = Column(String(1), nullable=False, comment="Status indicator code")
+    status_indicator = Column(String(2), nullable=False, comment="Status indicator code")
     
     # Description and categorization
     description = Column(String(500), nullable=False, comment="Status indicator description")

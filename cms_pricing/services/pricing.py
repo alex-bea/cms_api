@@ -204,7 +204,7 @@ class PricingService:
                 "plan": plan,
                 "pos": pos,
             }
-            if setting == "MPFS":
+            if setting in {"MPFS", "OPPS"}:
                 price_kwargs["valuation_date"] = selected_valuation_date
 
             result = await engine.price_code(**price_kwargs)
@@ -302,7 +302,7 @@ class PricingService:
                     "pos": component["pos"],
                     "ndc11": component["ndc11"],
                 }
-                if component["setting"] == "MPFS":
+                if component["setting"] in {"MPFS", "OPPS"}:
                     price_kwargs["valuation_date"] = valuation_date
 
                 result = await engine.price_code(**price_kwargs)

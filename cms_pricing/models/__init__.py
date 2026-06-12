@@ -22,6 +22,7 @@ from .nearest_zip import (
     ZCTACoords, ZipToZCTA, CMSZipLocality, ZIP9Overrides,
     ZCTADistances, NBERCentroids, ZipMetadata, IngestRun, NearestZipTrace
 )
+from .opps import OPPSAPCPayment, OPPSHCPCSCrosswalk, OPPSRatesEnriched, RefSILookup
 
 __all__ = [
     "Geography", "ZipGeometry", "GeographyResolutionTrace",
@@ -36,6 +37,7 @@ __all__ = [
     "Run", "RunInput", "RunOutput", "RunTrace",
     "HospitalMRFRate",
     "Release", "RVUItem", "GPCIIndex", "OPPSCap", "AnesCF", "LocalityCounty",
+    "OPPSAPCPayment", "OPPSHCPCSCrosswalk", "OPPSRatesEnriched", "RefSILookup",
     "ZCTACoords", "ZipToZCTA", "CMSZipLocality", "ZIP9Overrides",
     "ZCTADistances", "NBERCentroids", "ZipMetadata", "IngestRun", "NearestZipTrace",
 ]

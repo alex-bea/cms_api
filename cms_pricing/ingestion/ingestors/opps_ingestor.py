@@ -18,7 +18,10 @@ import hashlib
 import os
 import json
 import logging
+import re
+import zipfile
 from datetime import datetime, date
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
@@ -39,8 +42,14 @@ from ..quarantine.dis_quarantine import QuarantineManager
 from ..observability.dis_observability import DISObservabilityCollector
 from ..scrapers.cms_opps_scraper import CMSOPPSScraper, ScrapedFileInfo
 from ..services.ingestor_artifact_profile import IngestorArtifactProfileService
+from ...models.opps import OPPSAPCPayment, OPPSHCPCSCrosswalk, RefSILookup
+from ...services.dataset_snapshot_service import DatasetSnapshotService
 
 logger = structlog.get_logger()
+
+TABLE_OPPS_APC_PAYMENT = "opps_apc_payment"
+TABLE_OPPS_HCPCS_CROSSWALK = "opps_hcpcs_crosswalk"
+TABLE_OPPS_RATES_ENRICHED = "opps_rates_enriched"
 
 
 class OPPSFileType(Enum):
@@ -209,8 +218,8 @@ class OPPSIngestor(BaseDISIngestor):
                         "quarter": {"type": "integer", "nullable": False},
                         "apc_code": {"type": "string", "nullable": False},
                         "apc_description": {"type": "string", "nullable": True},
-                        "payment_rate_usd": {"type": "decimal", "precision": 10, "scale": 2, "nullable": False},
-                        "relative_weight": {"type": "decimal", "precision": 8, "scale": 4, "nullable": False},
+                        "payment_rate_usd": {"type": "decimal", "precision": 12, "scale": 3, "nullable": False},
+                        "relative_weight": {"type": "decimal", "precision": 8, "scale": 4, "nullable": True},
                         "packaging_flag": {"type": "string", "nullable": True},
                         "effective_from": {"type": "date", "nullable": False},
                         "effective_to": {"type": "date", "nullable": True},
@@ -247,8 +256,8 @@ class OPPSIngestor(BaseDISIngestor):
                         "ccn": {"type": "string", "nullable": True},
                         "cbsa_code": {"type": "string", "nullable": True},
                         "wage_index": {"type": "decimal", "precision": 6, "scale": 3, "nullable": True},
-                        "payment_rate_usd": {"type": "decimal", "precision": 10, "scale": 2, "nullable": False},
-                        "wage_adjusted_rate_usd": {"type": "decimal", "precision": 10, "scale": 2, "nullable": True},
+                        "payment_rate_usd": {"type": "decimal", "precision": 12, "scale": 3, "nullable": False},
+                        "wage_adjusted_rate_usd": {"type": "decimal", "precision": 12, "scale": 3, "nullable": True},
                         "effective_from": {"type": "date", "nullable": False},
                         "effective_to": {"type": "date", "nullable": True},
                         "release_id": {"type": "string", "nullable": False},
@@ -264,7 +273,7 @@ class OPPSIngestor(BaseDISIngestor):
                 "wage_index": {"min_value": 0.3, "max_value": 2.0},
                 "hcpcs_code": {"pattern": "^[A-Z0-9]{5}$"},
                 "apc_code": {"pattern": "^[0-9]{4}$"},
-                "status_indicator": {"enum": ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]}
+                "status_indicator": {"enum": ["A", "B", "C", "D", "E", "E1", "E2", "F", "G", "H", "H1", "J", "J1", "J2", "K", "K1", "L", "M", "N", "P", "Q", "Q1", "Q2", "Q3", "Q4", "R", "S", "S1", "T", "U", "V", "W", "X", "Y", "Z"]}
             }
         }
     
@@ -440,6 +449,20 @@ class OPPSIngestor(BaseDISIngestor):
             
             # Stage 3: Normalize - Canonicalize data
             normalized_data = await self._normalize_stage(batch_info)
+            normalized_validation = self.validate_normalized_opps_data(normalized_data)
+            if not normalized_validation["passed"]:
+                logger.error(
+                    "Normalized OPPS validation failed",
+                    batch_id=batch_id,
+                    results=normalized_validation,
+                )
+                return {
+                    "status": "failed",
+                    "stage": "normalize_validate",
+                    "batch_id": batch_id,
+                    "validation_results": normalized_validation,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
             
             # Stage 4: Enrich - Join with reference data
             enriched_data = await self._enrich_stage(normalized_data, batch_info)
@@ -592,10 +615,10 @@ class OPPSIngestor(BaseDISIngestor):
                 # Read file based on type
                 if file_info.file_type == "addendum_a":
                     df = await self._parse_addendum_a(file_info)
-                    normalized_data["apc_payment"] = df
+                    normalized_data[TABLE_OPPS_APC_PAYMENT] = df
                 elif file_info.file_type == "addendum_b":
                     df = await self._parse_addendum_b(file_info)
-                    normalized_data["hcpcs_crosswalk"] = df
+                    normalized_data[TABLE_OPPS_HCPCS_CROSSWALK] = df
                 elif file_info.file_type == "addendum_zip":
                     # Handle ZIP files containing multiple addenda
                     zip_data = await self._parse_zip_file(file_info)
@@ -635,15 +658,15 @@ class OPPSIngestor(BaseDISIngestor):
             si_lookup_data = await self._load_si_lookup_data()
             
             # Enrich APC payment data with wage index
-            if "apc_payment" in enriched_data:
-                enriched_data["opps_rates_enriched"] = await self._enrich_with_wage_index(
-                    enriched_data["apc_payment"], wage_index_data
+            if TABLE_OPPS_APC_PAYMENT in enriched_data:
+                enriched_data[TABLE_OPPS_RATES_ENRICHED] = await self._enrich_with_wage_index(
+                    enriched_data[TABLE_OPPS_APC_PAYMENT], wage_index_data
                 )
             
             # Enrich HCPCS crosswalk with SI descriptions
-            if "hcpcs_crosswalk" in enriched_data:
-                enriched_data["hcpcs_crosswalk"] = await self._enrich_with_si_lookup(
-                    enriched_data["hcpcs_crosswalk"], si_lookup_data
+            if TABLE_OPPS_HCPCS_CROSSWALK in enriched_data:
+                enriched_data[TABLE_OPPS_HCPCS_CROSSWALK] = await self._enrich_with_si_lookup(
+                    enriched_data[TABLE_OPPS_HCPCS_CROSSWALK], si_lookup_data
                 )
             
             logger.info("Enrich stage completed", batch_id=batch_info.batch_id)
@@ -711,6 +734,276 @@ class OPPSIngestor(BaseDISIngestor):
             raise
         
         return publish_results
+
+    def validate_normalized_opps_data(
+        self,
+        normalized_data: Dict[str, pd.DataFrame],
+        *,
+        min_apc_rows: int = 1,
+        min_hcpcs_rows: int = 1,
+    ) -> Dict[str, Any]:
+        """Run production-readiness validation gates over normalized OPPS frames."""
+        errors: List[str] = []
+        warnings: List[str] = []
+
+        apc_df = normalized_data.get(TABLE_OPPS_APC_PAYMENT)
+        hcpcs_df = normalized_data.get(TABLE_OPPS_HCPCS_CROSSWALK)
+
+        if apc_df is None or apc_df.empty:
+            errors.append("opps_apc_payment is missing or empty")
+        elif len(apc_df) < min_apc_rows:
+            errors.append(f"opps_apc_payment row count {len(apc_df)} is below floor {min_apc_rows}")
+
+        if hcpcs_df is None or hcpcs_df.empty:
+            errors.append("opps_hcpcs_crosswalk is missing or empty")
+        elif len(hcpcs_df) < min_hcpcs_rows:
+            errors.append(f"opps_hcpcs_crosswalk row count {len(hcpcs_df)} is below floor {min_hcpcs_rows}")
+
+        if apc_df is not None and not apc_df.empty:
+            self._validate_required_frame_columns(
+                apc_df,
+                TABLE_OPPS_APC_PAYMENT,
+                {"apc_code", "payment_rate_usd"},
+                errors,
+            )
+            if "apc_code" in apc_df:
+                bad_apc = apc_df[~apc_df["apc_code"].astype(str).str.match(r"^\d{4}$", na=False)]
+                if not bad_apc.empty:
+                    errors.append(f"opps_apc_payment has {len(bad_apc)} invalid APC codes")
+                duplicates = apc_df["apc_code"].duplicated().sum()
+                if duplicates:
+                    errors.append(f"opps_apc_payment has {duplicates} duplicate APC natural keys")
+            if "payment_rate_usd" in apc_df:
+                missing_rate_rows = apc_df[apc_df["payment_rate_usd"].isna()]
+                if not missing_rate_rows.empty:
+                    missing_apcs = set(missing_rate_rows["apc_code"].dropna().astype(str))
+                    separately_payable_missing_apcs = set()
+                    if (
+                        hcpcs_df is not None
+                        and not hcpcs_df.empty
+                        and {"apc_code", "status_indicator"}.issubset(hcpcs_df.columns)
+                    ):
+                        refs = hcpcs_df[hcpcs_df["apc_code"].astype(str).isin(missing_apcs)]
+                        separately_payable_missing_apcs = set(
+                            refs[
+                                refs["status_indicator"].map(
+                                    lambda value: self._status_requires_apc_payment_rate(str(value))
+                                )
+                            ]["apc_code"].dropna().astype(str)
+                        )
+                    else:
+                        separately_payable_missing_apcs = missing_apcs
+
+                    if separately_payable_missing_apcs:
+                        errors.append(
+                            "opps_apc_payment has missing payment rates for separately payable APCs: "
+                            f"{sorted(separately_payable_missing_apcs)}"
+                        )
+                    else:
+                        warnings.append(
+                            "opps_apc_payment has blank payment rates only for non-separately payable APCs"
+                        )
+                negative_rates = apc_df["payment_rate_usd"].dropna().map(lambda value: Decimal(str(value)) < 0).sum()
+                if negative_rates:
+                    errors.append(f"opps_apc_payment has {negative_rates} negative payment rates")
+            if "relative_weight" in apc_df and apc_df["relative_weight"].isna().any():
+                warnings.append("opps_apc_payment has CMS rows with blank relative_weight; accepted for source fidelity")
+
+        if hcpcs_df is not None and not hcpcs_df.empty:
+            self._validate_required_frame_columns(
+                hcpcs_df,
+                TABLE_OPPS_HCPCS_CROSSWALK,
+                {"hcpcs_code", "status_indicator"},
+                errors,
+            )
+            if "hcpcs_code" in hcpcs_df:
+                bad_hcpcs = hcpcs_df[~hcpcs_df["hcpcs_code"].astype(str).str.match(r"^[A-Z0-9]{5}$", na=False)]
+                if not bad_hcpcs.empty:
+                    errors.append(f"opps_hcpcs_crosswalk has {len(bad_hcpcs)} invalid HCPCS codes")
+            if {"hcpcs_code", "modifier"}.issubset(hcpcs_df.columns):
+                duplicates = hcpcs_df[["hcpcs_code", "modifier"]].astype(str).duplicated().sum()
+                if duplicates:
+                    errors.append(f"opps_hcpcs_crosswalk has {duplicates} duplicate HCPCS/modifier natural keys")
+            if "status_indicator" in hcpcs_df:
+                allowed = self._status_indicator_domain()
+                unknown = sorted(set(hcpcs_df["status_indicator"].dropna().astype(str)) - allowed)
+                if unknown:
+                    errors.append(f"opps_hcpcs_crosswalk has unknown status indicators: {unknown}")
+            if "apc_code" in hcpcs_df and apc_df is not None and not apc_df.empty:
+                known_apcs = set(apc_df["apc_code"].dropna().astype(str))
+                referenced = set(hcpcs_df["apc_code"].dropna().astype(str))
+                missing = sorted(referenced - known_apcs)
+                if missing:
+                    errors.append(f"Addendum B references {len(missing)} APCs missing from Addendum A")
+
+        return {
+            "passed": not errors,
+            "errors": errors,
+            "warnings": warnings,
+            "row_counts": {
+                TABLE_OPPS_APC_PAYMENT: 0 if apc_df is None else int(len(apc_df)),
+                TABLE_OPPS_HCPCS_CROSSWALK: 0 if hcpcs_df is None else int(len(hcpcs_df)),
+            },
+        }
+
+    def persist_normalized_opps_data(
+        self,
+        session,
+        normalized_data: Dict[str, pd.DataFrame],
+        batch_info: OPPSBatchInfo,
+        *,
+        replace_existing: bool = True,
+    ) -> Dict[str, Any]:
+        """Persist normalized OPPS Addendum A/B rows and derived SI lookup rows."""
+        validation = self.validate_normalized_opps_data(normalized_data)
+        if not validation["passed"]:
+            raise ValueError(f"Normalized OPPS data failed validation: {validation['errors']}")
+
+        if replace_existing:
+            session.query(OPPSAPCPayment).filter(OPPSAPCPayment.release_id == batch_info.batch_id).delete()
+            session.query(OPPSHCPCSCrosswalk).filter(OPPSHCPCSCrosswalk.release_id == batch_info.batch_id).delete()
+            session.query(RefSILookup).filter(RefSILookup.effective_from == batch_info.effective_from).delete()
+            session.flush()
+
+        today = date.today()
+        apc_rows = []
+        for row in normalized_data[TABLE_OPPS_APC_PAYMENT].to_dict("records"):
+            apc_rows.append(OPPSAPCPayment(
+                year=batch_info.year,
+                quarter=batch_info.quarter,
+                effective_from=batch_info.effective_from,
+                effective_to=batch_info.effective_to,
+                apc_code=row["apc_code"],
+                apc_description=row.get("apc_description"),
+                payment_rate_usd=row["payment_rate_usd"],
+                relative_weight=row.get("relative_weight"),
+                packaging_flag=row.get("packaging_flag"),
+                release_id=batch_info.batch_id,
+                batch_id=batch_info.batch_id,
+                created_at=today,
+                updated_at=today,
+            ))
+
+        hcpcs_rows = []
+        for row in normalized_data[TABLE_OPPS_HCPCS_CROSSWALK].to_dict("records"):
+            hcpcs_rows.append(OPPSHCPCSCrosswalk(
+                year=batch_info.year,
+                quarter=batch_info.quarter,
+                effective_from=batch_info.effective_from,
+                effective_to=batch_info.effective_to,
+                hcpcs_code=row["hcpcs_code"],
+                modifier=row.get("modifier"),
+                status_indicator=row["status_indicator"],
+                apc_code=row.get("apc_code"),
+                payment_context=row.get("payment_context"),
+                release_id=batch_info.batch_id,
+                batch_id=batch_info.batch_id,
+                created_at=today,
+                updated_at=today,
+            ))
+
+        si_rows = self._build_si_lookup_rows(
+            normalized_data[TABLE_OPPS_HCPCS_CROSSWALK],
+            batch_info=batch_info,
+            today=today,
+        )
+
+        session.add_all(apc_rows + hcpcs_rows + si_rows)
+        session.flush()
+        return {
+            "tables_loaded": {
+                TABLE_OPPS_APC_PAYMENT: len(apc_rows),
+                TABLE_OPPS_HCPCS_CROSSWALK: len(hcpcs_rows),
+                "ref_si_lookup": len(si_rows),
+            },
+            "validation": validation,
+        }
+
+    def register_opps_snapshots(
+        self,
+        session,
+        batch_info: OPPSBatchInfo,
+        *,
+        manifest_url: Optional[str] = None,
+        source_digest: Optional[str] = None,
+        allow_overwrite: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Register OPPS aggregate and table-level snapshots using CMS effective dates."""
+        digest_seed = source_digest or batch_info.batch_id
+        snapshot_specs = {
+            "OPPS": digest_seed,
+            TABLE_OPPS_APC_PAYMENT: f"{digest_seed}:{TABLE_OPPS_APC_PAYMENT}",
+            TABLE_OPPS_HCPCS_CROSSWALK: f"{digest_seed}:{TABLE_OPPS_HCPCS_CROSSWALK}",
+            "ref_si_lookup": f"{digest_seed}:ref_si_lookup",
+        }
+        service = DatasetSnapshotService(session)
+        registered = []
+        for dataset_id, seed in snapshot_specs.items():
+            digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+            snapshot = service.register_snapshot(
+                dataset_id=dataset_id,
+                release_id=batch_info.batch_id,
+                digest=digest,
+                effective_from=batch_info.effective_from,
+                effective_to=batch_info.effective_to,
+                manifest_url=manifest_url,
+                allow_overwrite=allow_overwrite,
+                autocommit=False,
+            )
+            registered.append(snapshot.to_dict())
+        session.flush()
+        return registered
+
+    def _build_si_lookup_rows(
+        self,
+        hcpcs_df: pd.DataFrame,
+        *,
+        batch_info: OPPSBatchInfo,
+        today: date,
+    ) -> List[RefSILookup]:
+        rows = []
+        for status_indicator in sorted(hcpcs_df["status_indicator"].dropna().astype(str).unique()):
+            rows.append(RefSILookup(
+                status_indicator=status_indicator,
+                description=f"OPPS status indicator {status_indicator} observed in {batch_info.batch_id}",
+                payment_category=self._payment_category_for_status(status_indicator),
+                effective_from=batch_info.effective_from,
+                effective_to=batch_info.effective_to,
+                created_at=today,
+                updated_at=today,
+            ))
+        return rows
+
+    def _payment_category_for_status(self, status_indicator: str) -> str:
+        if status_indicator in {"B", "C", "F", "H", "H1", "K1", "L", "N", "Q1", "Q2", "Q3", "Q4", "J1", "J2"}:
+            return "Packaged"
+        if status_indicator in {"A", "S", "S1", "T", "V", "U", "K", "G", "P", "R"}:
+            return "Separately Payable"
+        if status_indicator in {"E1", "E2", "M", "Y"}:
+            return "Not Payable"
+        return "Other"
+
+    def _status_requires_apc_payment_rate(self, status_indicator: str) -> bool:
+        return status_indicator in {"A", "G", "K", "P", "R", "S", "S1", "T", "U", "V"}
+
+    def _status_indicator_domain(self) -> set[str]:
+        try:
+            return set(
+                self.opps_schema["tables"][TABLE_OPPS_HCPCS_CROSSWALK]["columns"]["status_indicator"]["validation"]["enum"]
+            )
+        except Exception:
+            return {"A", "B", "C", "E1", "E2", "F", "G", "H", "H1", "J1", "J2", "K", "K1", "L", "M", "N", "P", "Q1", "Q2", "Q3", "Q4", "R", "S", "S1", "T", "U", "V", "Y"}
+
+    def _validate_required_frame_columns(
+        self,
+        df: pd.DataFrame,
+        table_name: str,
+        required: set[str],
+        errors: List[str],
+    ) -> None:
+        missing = sorted(required - set(df.columns))
+        if missing:
+            errors.append(f"{table_name} missing required columns: {missing}")
     
     def _parse_batch_id(self, batch_id: str) -> Tuple[int, int, int]:
         """Parse batch ID to extract year, quarter, release number."""
@@ -929,30 +1222,214 @@ class OPPSIngestor(BaseDISIngestor):
             "errors": []
         }
     
-    # File parsing methods (placeholders for now)
     async def _parse_addendum_a(self, file_info: ScrapedFileInfo) -> pd.DataFrame:
         """Parse Addendum A file."""
-        # This would implement actual parsing logic
-        # For now, return empty DataFrame with expected columns
-        return pd.DataFrame(columns=[
-            'apc_code', 'apc_description', 'payment_rate_usd', 
-            'relative_weight', 'packaging_flag'
-        ])
+        path = self._require_local_path(file_info)
+        raw = self._read_opps_table(path, header_markers=("APC",))
+        df = self._canonicalize_addendum_a(raw)
+        logger.info("Parsed OPPS Addendum A", file=file_info.filename, rows=len(df))
+        return df
     
     async def _parse_addendum_b(self, file_info: ScrapedFileInfo) -> pd.DataFrame:
         """Parse Addendum B file."""
-        # This would implement actual parsing logic
-        # For now, return empty DataFrame with expected columns
-        return pd.DataFrame(columns=[
-            'hcpcs_code', 'modifier', 'status_indicator', 
-            'apc_code', 'payment_context'
-        ])
+        path = self._require_local_path(file_info)
+        raw = self._read_opps_table(path, header_markers=("HCPCS Code", "HCPCS"))
+        df = self._canonicalize_addendum_b(raw)
+        logger.info("Parsed OPPS Addendum B", file=file_info.filename, rows=len(df))
+        return df
     
     async def _parse_zip_file(self, file_info: ScrapedFileInfo) -> Dict[str, pd.DataFrame]:
         """Parse ZIP file containing multiple addenda."""
-        # This would implement actual ZIP parsing logic
-        # For now, return empty dictionary
-        return {}
+        path = self._require_local_path(file_info)
+        parsed: Dict[str, pd.DataFrame] = {}
+        extract_dir = self.stage_dir / "zip_extract" / path.stem
+        extract_dir.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(path) as archive:
+            names = [name for name in archive.namelist() if not name.endswith("/")]
+            for addendum, table_name, parser in (
+                ("addendum a", TABLE_OPPS_APC_PAYMENT, self._parse_addendum_a),
+                ("addendum b", TABLE_OPPS_HCPCS_CROSSWALK, self._parse_addendum_b),
+            ):
+                candidates = [
+                    name for name in names
+                    if addendum in Path(name).name.lower()
+                    and Path(name).suffix.lower() in {".csv", ".xlsx", ".xls"}
+                ]
+                if not candidates:
+                    continue
+                candidates.sort(key=lambda name: (Path(name).suffix.lower() != ".csv", name))
+                member = candidates[0]
+                target_path = extract_dir / Path(member).name
+                with archive.open(member) as source, open(target_path, "wb") as target:
+                    target.write(source.read())
+                nested_info = ScrapedFileInfo(
+                    url=file_info.url,
+                    filename=Path(member).name,
+                    file_type=addendum.replace(" ", "_"),
+                    batch_id=file_info.batch_id,
+                    discovered_at=file_info.discovered_at,
+                    source_page=file_info.source_page,
+                    metadata=file_info.metadata,
+                    local_path=target_path,
+                    checksum=None,
+                    downloaded_at=file_info.downloaded_at,
+                )
+                parsed[table_name] = await parser(nested_info)
+
+        if not parsed:
+            raise ValueError(f"No supported Addendum A/B files found in ZIP: {path}")
+        return parsed
+
+    def _require_local_path(self, file_info: ScrapedFileInfo) -> Path:
+        if not file_info.local_path:
+            raise ValueError(f"Missing local path for {file_info.filename}")
+        path = Path(file_info.local_path)
+        if not path.exists():
+            raise FileNotFoundError(f"OPPS source file does not exist: {path}")
+        return path
+
+    def _read_opps_table(self, path: Path, header_markers: Tuple[str, ...]) -> pd.DataFrame:
+        suffix = path.suffix.lower()
+        if suffix == ".csv":
+            preview, encoding = self._read_csv_with_encoding(path, header=None, nrows=40)
+            header_index = self._find_header_index(preview, header_markers)
+            df, _ = self._read_csv_with_encoding(path, header=header_index, encoding=encoding)
+        elif suffix in {".xlsx", ".xls"}:
+            preview = pd.read_excel(path, header=None, dtype=str, nrows=40)
+            header_index = self._find_header_index(preview, header_markers)
+            df = pd.read_excel(path, header=header_index, dtype=str)
+        else:
+            raise ValueError(f"Unsupported OPPS file format: {path.suffix}")
+
+        df = df.dropna(axis=1, how="all")
+        df = df.rename(columns=lambda value: self._clean_header(value))
+        df = df.loc[:, [column for column in df.columns if column]]
+        return df.dropna(how="all")
+
+    def _read_csv_with_encoding(
+        self,
+        path: Path,
+        header: Optional[int],
+        nrows: Optional[int] = None,
+        encoding: Optional[str] = None,
+    ) -> Tuple[pd.DataFrame, str]:
+        encodings = [encoding] if encoding else ["utf-8-sig", "cp1252", "latin1"]
+        last_error: Optional[Exception] = None
+        for candidate in encodings:
+            if not candidate:
+                continue
+            try:
+                return (
+                    pd.read_csv(
+                        path,
+                        header=header,
+                        dtype=str,
+                        nrows=nrows,
+                        engine="python",
+                        encoding=candidate,
+                    ),
+                    candidate,
+                )
+            except UnicodeDecodeError as exc:
+                last_error = exc
+                if encoding:
+                    for fallback in ("cp1252", "latin1"):
+                        if fallback not in encodings:
+                            encodings.append(fallback)
+        if last_error:
+            raise last_error
+        raise ValueError(f"No CSV encoding candidates configured for {path}")
+
+    def _find_header_index(self, preview: pd.DataFrame, header_markers: Tuple[str, ...]) -> int:
+        markers = {self._clean_header(marker) for marker in header_markers}
+        for index, row in preview.iterrows():
+            values = {self._clean_header(value) for value in row.tolist()}
+            if markers & values:
+                return int(index)
+        raise ValueError(f"Could not find OPPS header row containing {sorted(markers)}")
+
+    def _canonicalize_addendum_a(self, df: pd.DataFrame) -> pd.DataFrame:
+        source = self._rename_known_columns(df, {
+            "APC": "apc_code",
+            "Group Title": "apc_description",
+            "Relative Weight": "relative_weight",
+            "Payment Rate": "payment_rate_usd",
+            "SI": "status_indicator",
+        })
+        required = {"apc_code", "payment_rate_usd"}
+        self._require_columns(source, required, "Addendum A")
+
+        result = pd.DataFrame()
+        result["apc_code"] = source["apc_code"].map(self._clean_code).str.zfill(4)
+        result["apc_description"] = source.get("apc_description", pd.Series(index=source.index, dtype=object)).map(self._clean_optional_text)
+        result["payment_rate_usd"] = source["payment_rate_usd"].map(self._parse_decimal)
+        result["relative_weight"] = source.get("relative_weight", pd.Series(index=source.index, dtype=object)).map(self._parse_decimal)
+        result["packaging_flag"] = None
+        return result[result["apc_code"].str.match(r"^\d{4}$", na=False)].reset_index(drop=True)
+
+    def _canonicalize_addendum_b(self, df: pd.DataFrame) -> pd.DataFrame:
+        source = self._rename_known_columns(df, {
+            "HCPCS Code": "hcpcs_code",
+            "HCPCS": "hcpcs_code",
+            "Short Descriptor": "payment_context",
+            "SI": "status_indicator",
+            "APC": "apc_code",
+        })
+        required = {"hcpcs_code", "status_indicator"}
+        self._require_columns(source, required, "Addendum B")
+
+        result = pd.DataFrame()
+        result["hcpcs_code"] = source["hcpcs_code"].map(self._clean_code).str.upper()
+        result["modifier"] = None
+        result["status_indicator"] = source["status_indicator"].map(self._clean_code).str.upper()
+        apc_source = source.get("apc_code", pd.Series(index=source.index, dtype=object))
+        result["apc_code"] = apc_source.map(self._clean_optional_apc)
+        context = source.get("payment_context", pd.Series(index=source.index, dtype=object))
+        result["payment_context"] = context.map(self._clean_optional_text)
+        return result[result["hcpcs_code"].str.match(r"^[A-Z0-9]{5}$", na=False)].reset_index(drop=True)
+
+    def _rename_known_columns(self, df: pd.DataFrame, mapping: Dict[str, str]) -> pd.DataFrame:
+        normalized = {self._clean_header(key): value for key, value in mapping.items()}
+        return df.rename(columns={column: normalized.get(self._clean_header(column), column) for column in df.columns})
+
+    def _require_columns(self, df: pd.DataFrame, required: set[str], source_name: str) -> None:
+        missing = sorted(required - set(df.columns))
+        if missing:
+            raise ValueError(f"Missing required columns in {source_name}: {missing}")
+
+    def _clean_header(self, value: Any) -> str:
+        if value is None or pd.isna(value):
+            return ""
+        return re.sub(r"\s+", " ", str(value).replace("\ufeff", "").strip())
+
+    def _clean_code(self, value: Any) -> Optional[str]:
+        text = self._clean_optional_text(value)
+        return text.replace(" ", "") if text else None
+
+    def _clean_optional_apc(self, value: Any) -> Optional[str]:
+        text = self._clean_code(value)
+        if not text or text in {".", "N/A"}:
+            return None
+        return text.zfill(4) if text.isdigit() else text
+
+    def _clean_optional_text(self, value: Any) -> Optional[str]:
+        if value is None or pd.isna(value):
+            return None
+        text = re.sub(r"\s+", " ", str(value).strip())
+        return text or None
+
+    def _parse_decimal(self, value: Any) -> Optional[Decimal]:
+        text = self._clean_optional_text(value)
+        if not text or text in {".", "-", "N/A"}:
+            return None
+        cleaned = re.sub(r"[^0-9.\-]", "", text)
+        if not cleaned or cleaned in {".", "-"}:
+            return None
+        try:
+            return Decimal(cleaned)
+        except InvalidOperation as exc:
+            raise ValueError(f"Invalid OPPS decimal value: {value!r}") from exc
     
     # Enrichment methods
     async def _load_wage_index_data(self) -> pd.DataFrame:

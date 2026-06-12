@@ -13,9 +13,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import Column, Integer, String, Date, Numeric, Index
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from cms_pricing.database import Base
 
 
 class OPPSRatesEnriched(Base):
@@ -47,19 +45,19 @@ class OPPSRatesEnriched(Base):
     # Wage index data
     wage_index = Column(
         Numeric(6, 3), 
-        nullable=True, 
+        nullable=True,
         comment="Wage index for facility"
     )
     
     # Payment rates
     payment_rate_usd = Column(
-        Numeric(10, 2), 
-        nullable=False, 
+        Numeric(12, 3),
+        nullable=False,
         comment="Base payment rate in USD"
     )
     wage_adjusted_rate_usd = Column(
-        Numeric(10, 2), 
-        nullable=True, 
+        Numeric(12, 3),
+        nullable=True,
         comment="Wage-adjusted payment rate in USD"
     )
     
@@ -108,9 +106,9 @@ class OPPSRatesEnriched(Base):
             'apc_code': self.apc_code,
             'ccn': self.ccn,
             'cbsa_code': self.cbsa_code,
-            'wage_index': float(self.wage_index) if self.wage_index else None,
-            'payment_rate_usd': float(self.payment_rate_usd) if self.payment_rate_usd else None,
-            'wage_adjusted_rate_usd': float(self.wage_adjusted_rate_usd) if self.wage_adjusted_rate_usd else None,
+            'wage_index': str(self.wage_index) if self.wage_index is not None else None,
+            'payment_rate_usd': str(self.payment_rate_usd) if self.payment_rate_usd is not None else None,
+            'wage_adjusted_rate_usd': str(self.wage_adjusted_rate_usd) if self.wage_adjusted_rate_usd is not None else None,
             'release_id': self.release_id,
             'batch_id': self.batch_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,

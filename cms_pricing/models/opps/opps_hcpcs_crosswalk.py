@@ -12,9 +12,7 @@ from datetime import date
 from typing import Optional
 
 from sqlalchemy import Column, Integer, String, Date, Index
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from cms_pricing.database import Base
 
 
 class OPPSHCPCSCrosswalk(Base):
@@ -41,7 +39,7 @@ class OPPSHCPCSCrosswalk(Base):
     modifier = Column(String(2), nullable=True, comment="Modifier code")
     
     # Status and mapping
-    status_indicator = Column(String(1), nullable=False, comment="Status indicator")
+    status_indicator = Column(String(2), nullable=False, comment="Status indicator")
     apc_code = Column(String(4), nullable=True, comment="APC code (4 digits)")
     payment_context = Column(String(100), nullable=True, comment="Payment context")
     
