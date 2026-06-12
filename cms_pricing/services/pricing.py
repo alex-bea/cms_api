@@ -20,6 +20,7 @@ from cms_pricing.models.plans import Plan, PlanComponent
 from cms_pricing.models.snapshots import Snapshot
 from cms_pricing.schemas.geography import GeographyCandidate, GeographyResolveResponse
 from cms_pricing.schemas.pricing import (
+    CodePricingItemWithGeography,
     ComparisonDelta,
     ComparisonRequest,
     ComparisonResponse,
@@ -166,8 +167,6 @@ class PricingService:
         pos: Optional[str] = None,
     ) -> "CodePricingItemWithGeography":
         """Price a single code/component (returns CodePricingItemWithGeography)"""
-
-        from cms_pricing.schemas.pricing import CodePricingItemWithGeography
 
         run_id = str(uuid.uuid4())
 
