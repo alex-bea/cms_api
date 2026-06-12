@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 
 from cms_pricing.ingestion.ingestors.opps_ingestor import (
-    OPPSIngestor,
     TABLE_OPPS_APC_PAYMENT,
     TABLE_OPPS_HCPCS_CROSSWALK,
+    OPPSIngestor,
 )
 from cms_pricing.ingestion.scrapers.cms_opps_scraper import ScrapedFileInfo
 

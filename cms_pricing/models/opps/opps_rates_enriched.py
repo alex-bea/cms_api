@@ -12,7 +12,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import Column, Integer, String, Date, Numeric, Index
+from sqlalchemy import Column, Date, Index, Integer, Numeric, String
+
 from cms_pricing.database import Base
 
 

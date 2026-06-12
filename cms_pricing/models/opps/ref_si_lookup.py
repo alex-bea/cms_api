@@ -11,7 +11,8 @@ Version: 1.0.0
 from datetime import date
 from typing import Optional
 
-from sqlalchemy import Column, Integer, String, Date, Index
+from sqlalchemy import Column, Date, Index, Integer, String
+
 from cms_pricing.database import Base
 
 
