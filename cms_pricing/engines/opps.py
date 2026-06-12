@@ -23,18 +23,18 @@ DATASET_ID = "OPPS"
 
 class OPPSEngine(BasePricingEngine):
     """Outpatient Prospective Payment System pricing engine"""
-    
+
     def __init__(self, db: Optional[Session] = None):
         """
         Initialize OPPS engine with optional database session.
-        
+
         Args:
             db: Optional SQLAlchemy session. If None, creates a new session.
                 Session will be closed when engine is destroyed.
         """
         self.db = db if db is not None else SessionLocal()
         self._owns_session = db is None
-    
+
     @staticmethod
     def _build_opps_filter(year: int, quarter: str, code: str):
         """Build reusable filter expression for OPPS queries"""
@@ -44,20 +44,17 @@ class OPPSEngine(BasePricingEngine):
             FeeOPPS.hcpcs == code,
             FeeOPPS.effective_from <= f"{year}-12-31",
             or_(
-                FeeOPPS.effective_to.is_(None),
-                FeeOPPS.effective_to >= f"{year}-01-01"
-            )
+                FeeOPPS.effective_to.is_(None), FeeOPPS.effective_to >= f"{year}-01-01"
+            ),
         )
-    
+
     @staticmethod
     def _build_wage_index_filter(year: int, quarter: str, cbsa: str):
         """Build reusable filter expression for wage index queries"""
         return and_(
-            WageIndex.year == year,
-            WageIndex.quarter == quarter,
-            WageIndex.cbsa == cbsa
+            WageIndex.year == year, WageIndex.quarter == quarter, WageIndex.cbsa == cbsa
         )
-    
+
     async def price_code(
         self,
         code: str,
@@ -78,7 +75,7 @@ class OPPSEngine(BasePricingEngine):
         valuation_date: Optional[date] = None,
     ) -> CodePricingItem:
         """Price a code using OPPS (Quick Win #2: Returns unified CodePricingItem)"""
-        
+
         try:
             source_result = await self._price_code_from_source_tables(
                 code=code,
@@ -97,101 +94,117 @@ class OPPSEngine(BasePricingEngine):
             cbsa = None
             if geography and geography.selected_candidate:
                 cbsa = geography.selected_candidate.cbsa
-            
+
             if not cbsa:
                 raise ValueError("No CBSA found for ZIP code")
-            
+
             # Coalesce quarter to default to "1" if None
             quarter_value = quarter if quarter is not None else "1"
-            
+
             # Pre-compute trace ref base (optimization)
             trace_refs = [
                 f"opps_{year}_{quarter_value}_{code}",
-                f"wage_index_{year}_{quarter_value}_{cbsa}"
+                f"wage_index_{year}_{quarter_value}_{cbsa}",
             ]
             dataset_id = DATASET_ID
-            
+
             # Query only necessary columns using with_entities (optimization)
-            opps_result = self.db.query(
-                FeeOPPS.national_unadj_rate,
-                FeeOPPS.status_indicator,
-                FeeOPPS.release_id,
-                FeeOPPS.batch_id
-            ).filter(
-                self._build_opps_filter(year, quarter_value, code)
-            ).first()
-            
+            opps_result = (
+                self.db.query(
+                    FeeOPPS.national_unadj_rate,
+                    FeeOPPS.status_indicator,
+                    FeeOPPS.release_id,
+                    FeeOPPS.batch_id,
+                )
+                .filter(self._build_opps_filter(year, quarter_value, code))
+                .first()
+            )
+
             if not opps_result:
                 raise ValueError(f"No OPPS data found for code {code}")
-            
+
             # Query wage index with column selection
-            wage_index_result = self.db.query(
-                WageIndex.wage_index,
-                WageIndex.release_id,
-                WageIndex.batch_id
-            ).filter(
-                self._build_wage_index_filter(year, quarter_value, cbsa)
-            ).first()
-            
+            wage_index_result = (
+                self.db.query(
+                    WageIndex.wage_index, WageIndex.release_id, WageIndex.batch_id
+                )
+                .filter(self._build_wage_index_filter(year, quarter_value, cbsa))
+                .first()
+            )
+
             if not wage_index_result:
                 raise ValueError(f"No wage index found for CBSA {cbsa}")
-            
+
             # Extract values from Row results
-            base_rate = opps_result.national_unadj_rate if opps_result.national_unadj_rate else 0
+            base_rate = (
+                opps_result.national_unadj_rate
+                if opps_result.national_unadj_rate
+                else 0
+            )
             opps_release_id = opps_result.release_id
             opps_batch_id = opps_result.batch_id
             status_indicator = opps_result.status_indicator
-            
+
             wage_index = wage_index_result.wage_index
             wage_release_id = wage_index_result.release_id
             wage_batch_id = wage_index_result.batch_id
-            
+
             # Calculate base rate
             # Apply wage index
             wage_adjusted_rate = base_rate * wage_index
-            
+
             # Check packaging status
             packaged = self._is_packaged(status_indicator)
-            
+
             if packaged:
                 # Packaged items have $0 separate payment
                 allowed_amount = 0
             else:
                 # Apply modifiers
                 if modifiers:
-                    wage_adjusted_rate = self._apply_modifiers(wage_adjusted_rate, modifiers)
-                
+                    wage_adjusted_rate = self._apply_modifiers(
+                        wage_adjusted_rate, modifiers
+                    )
+
                 # Apply units and utilization weight
                 allowed_amount = wage_adjusted_rate * units * utilization_weight
-            
+
             # Calculate beneficiary cost sharing
             cost_sharing = self._calculate_beneficiary_cost_sharing(allowed_amount)
-            
+
             # Convert to cents
             allowed_cents = int(allowed_amount * 100)
-            beneficiary_deductible_cents = int(cost_sharing["beneficiary_deductible"] * 100)
-            beneficiary_coinsurance_cents = int(cost_sharing["beneficiary_coinsurance"] * 100)
+            beneficiary_deductible_cents = int(
+                cost_sharing["beneficiary_deductible"] * 100
+            )
+            beneficiary_coinsurance_cents = int(
+                cost_sharing["beneficiary_coinsurance"] * 100
+            )
             beneficiary_total_cents = int(cost_sharing["beneficiary_total"] * 100)
             program_payment_cents = int(cost_sharing["program_payment"] * 100)
-            
+
             # Add OPPS provenance (standardized format)
             if opps_release_id:
                 trace_refs.append(f"{dataset_id}:release:{opps_release_id}")
             if opps_batch_id:
                 trace_refs.append(f"{dataset_id}:batch:{opps_batch_id}")
-            
+
             # Add wage index provenance if available
             if wage_release_id:
                 trace_refs.append(f"WageIndex:release:{wage_release_id}")
             if wage_batch_id:
                 trace_refs.append(f"WageIndex:batch:{wage_batch_id}")
-            
+
             # Filter out None values and deduplicate while preserving order
-            trace_refs = list(dict.fromkeys([ref for ref in trace_refs if ref is not None]))
-            
+            trace_refs = list(
+                dict.fromkeys([ref for ref in trace_refs if ref is not None])
+            )
+
             # Extract primary modifier (if multiple, use first)
-            primary_modifier = modifiers[0] if modifiers and len(modifiers) > 0 else None
-            
+            primary_modifier = (
+                modifiers[0] if modifiers and len(modifiers) > 0 else None
+            )
+
             return CodePricingItem(
                 code=code,
                 setting="OPPS",
@@ -210,9 +223,9 @@ class OPPSEngine(BasePricingEngine):
                 source="benchmark",
                 facility_specific=False,
                 packaged=packaged,
-                units=units
+                units=units,
             )
-            
+
         except Exception as e:
             logger.error(
                 "OPPS pricing failed",
@@ -222,7 +235,7 @@ class OPPSEngine(BasePricingEngine):
                 quarter=quarter,
                 cbsa=cbsa,
                 error=str(e),
-                exc_info=True
+                exc_info=True,
             )
             raise
 
@@ -252,10 +265,16 @@ class OPPSEngine(BasePricingEngine):
             query_year = selected_snapshot.effective_from.year
             query_quarter = self._quarter_for_date(selected_snapshot.effective_from)
         else:
-            effective_date = valuation_date or self._date_for_year_quarter(year, quarter)
+            effective_date = valuation_date or self._date_for_year_quarter(
+                year, quarter
+            )
             release_id = None
             query_year = year
-            query_quarter = int(quarter) if quarter is not None else self._quarter_for_date(effective_date)
+            query_quarter = (
+                int(quarter)
+                if quarter is not None
+                else self._quarter_for_date(effective_date)
+            )
 
         modifier_values = [
             self._normalize_modifier_code(modifier)
@@ -278,7 +297,10 @@ class OPPSEngine(BasePricingEngine):
                 query = query.filter(OPPSHCPCSCrosswalk.release_id == release_id)
             candidates = query.all()
         except Exception as exc:
-            logger.debug("OPPS source table lookup unavailable; falling back to legacy table", error=str(exc))
+            logger.debug(
+                "OPPS source table lookup unavailable; falling back to legacy table",
+                error=str(exc),
+            )
             return None
 
         if not candidates:
@@ -286,12 +308,16 @@ class OPPSEngine(BasePricingEngine):
 
         crosswalk = self._select_crosswalk_candidate(candidates, modifier_values)
         if crosswalk is None:
-            raise ValueError(f"No OPPS Addendum B row found for code {code} and modifiers {modifier_values}")
+            raise ValueError(
+                f"No OPPS Addendum B row found for code {code} and modifiers {modifier_values}"
+            )
 
         status_indicator = crosswalk.status_indicator
         treatment = self._payment_treatment(status_indicator)
         if treatment == "unknown":
-            raise ValueError(f"Unknown OPPS status indicator {status_indicator} for code {code}")
+            raise ValueError(
+                f"Unknown OPPS status indicator {status_indicator} for code {code}"
+            )
 
         trace_refs = [
             f"OPPS:hcpcs:{code}",
@@ -319,7 +345,9 @@ class OPPSEngine(BasePricingEngine):
                 apc_query = apc_query.filter(OPPSAPCPayment.release_id == release_id)
             apc_payment = apc_query.first()
             if not apc_payment:
-                raise ValueError(f"No OPPS Addendum A APC rate found for APC {crosswalk.apc_code}")
+                raise ValueError(
+                    f"No OPPS Addendum A APC rate found for APC {crosswalk.apc_code}"
+                )
             allowed_amount = Decimal(str(apc_payment.payment_rate_usd))
             allowed_amount *= Decimal(str(units)) * Decimal(str(utilization_weight))
             trace_refs.append(f"OPPS:apc:{crosswalk.apc_code}")
@@ -335,10 +363,18 @@ class OPPSEngine(BasePricingEngine):
             setting="OPPS",
             modifier=primary_modifier,
             allowed_cents=allowed_cents,
-            beneficiary_deductible_cents=self._decimal_to_cents(cost_sharing["beneficiary_deductible"]),
-            beneficiary_coinsurance_cents=self._decimal_to_cents(cost_sharing["beneficiary_coinsurance"]),
-            beneficiary_total_cents=self._decimal_to_cents(cost_sharing["beneficiary_total"]),
-            program_payment_cents=self._decimal_to_cents(cost_sharing["program_payment"]),
+            beneficiary_deductible_cents=self._decimal_to_cents(
+                cost_sharing["beneficiary_deductible"]
+            ),
+            beneficiary_coinsurance_cents=self._decimal_to_cents(
+                cost_sharing["beneficiary_coinsurance"]
+            ),
+            beneficiary_total_cents=self._decimal_to_cents(
+                cost_sharing["beneficiary_total"]
+            ),
+            program_payment_cents=self._decimal_to_cents(
+                cost_sharing["program_payment"]
+            ),
             professional_allowed_cents=0,
             facility_allowed_cents=allowed_cents if facility_component else 0,
             dataset_id=DATASET_ID,
@@ -405,18 +441,27 @@ class OPPSEngine(BasePricingEngine):
 
     @staticmethod
     def _decimal_to_cents(amount: Decimal) -> int:
-        return int((amount * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-    
+        return int(
+            (amount * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+
     def _is_packaged(self, status_indicator: Optional[str]) -> bool:
         """Check if item is packaged based on status indicator"""
         if not status_indicator:
             return False
-        
-        return self._payment_treatment(status_indicator) in {"packaged", "context_required"}
-    
+
+        return self._payment_treatment(status_indicator) in {
+            "packaged",
+            "context_required",
+        }
+
     def __del__(self):
         """Clean up database session if we own it"""
-        if hasattr(self, '_owns_session') and self._owns_session and hasattr(self, 'db'):
+        if (
+            hasattr(self, "_owns_session")
+            and self._owns_session
+            and hasattr(self, "db")
+        ):
             try:
                 self.db.close()
             except Exception:

@@ -13,14 +13,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run Markdown checkbox scan
+        with:
+          fetch-depth: 0
+      - name: Run Markdown checkbox scan for changed PR files
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          python3 tools/md_checkbox_scan.py --changed-against "origin/${{ github.base_ref }}"
+      - name: Run full Markdown checkbox scan
+        if: github.event_name != 'pull_request'
         run: python3 tools/md_checkbox_scan.py
 
   todo-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run TODO linter
+        with:
+          fetch-depth: 0
+      - name: Run TODO linter for changed PR files
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          python3 tools/todo_lint.py --changed-against "origin/${{ github.base_ref }}"
+      - name: Run full TODO linter
+        if: github.event_name != 'pull_request'
         run: python3 tools/todo_lint.py
 
   docs-drift:

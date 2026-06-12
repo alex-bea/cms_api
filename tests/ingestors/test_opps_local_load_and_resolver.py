@@ -150,17 +150,24 @@ def test_opps_validation_gates_reject_unknown_si_and_missing_apc(tmp_path):
 
     assert validation["passed"] is False
     assert any("unknown status indicators" in error for error in validation["errors"])
-    assert any("APCs missing from Addendum A" in error for error in validation["errors"])
+    assert any(
+        "APCs missing from Addendum A" in error for error in validation["errors"]
+    )
 
 
-def test_opps_validation_allows_blank_packaged_apc_rate_but_rejects_payable_rate(tmp_path):
+def test_opps_validation_allows_blank_packaged_apc_rate_but_rejects_payable_rate(
+    tmp_path,
+):
     ingestor = OPPSIngestor(output_dir=tmp_path)
     normalized = _normalized_opps_frames()
 
     validation = ingestor.validate_normalized_opps_data(normalized)
 
     assert validation["passed"] is True
-    assert any("blank payment rates only for non-separately payable" in warning for warning in validation["warnings"])
+    assert any(
+        "blank payment rates only for non-separately payable" in warning
+        for warning in validation["warnings"]
+    )
 
     normalized[TABLE_OPPS_APC_PAYMENT].loc[
         normalized[TABLE_OPPS_APC_PAYMENT]["apc_code"] == "5115",
@@ -207,15 +214,17 @@ def test_opps_persist_registers_snapshots_and_prices_source_tables(
     assert selected.release_id == "opps_2026q2_r1"
 
     engine = OPPSEngine(db=opps_sqlite_session)
-    result = asyncio.run(engine.price_code(
-        code="C1600",
-        zip="94110",
-        year=2026,
-        quarter="2",
-        valuation_date=date(2026, 4, 15),
-        facility_component=True,
-        professional_component=False,
-    ))
+    result = asyncio.run(
+        engine.price_code(
+            code="C1600",
+            zip="94110",
+            year=2026,
+            quarter="2",
+            valuation_date=date(2026, 4, 15),
+            facility_component=True,
+            professional_component=False,
+        )
+    )
 
     assert result.allowed_cents == 12346
     assert result.beneficiary_coinsurance_cents == 2469
@@ -240,15 +249,17 @@ def test_opps_resolver_returns_zero_for_context_required_packaging(
     opps_sqlite_session.commit()
 
     engine = OPPSEngine(db=opps_sqlite_session)
-    result = asyncio.run(engine.price_code(
-        code="C1601",
-        zip="94110",
-        year=2026,
-        quarter="2",
-        valuation_date=date(2026, 4, 15),
-        facility_component=True,
-        professional_component=False,
-    ))
+    result = asyncio.run(
+        engine.price_code(
+            code="C1601",
+            zip="94110",
+            year=2026,
+            quarter="2",
+            valuation_date=date(2026, 4, 15),
+            facility_component=True,
+            professional_component=False,
+        )
+    )
 
     assert result.allowed_cents == 0
     assert result.facility_allowed_cents == 0
