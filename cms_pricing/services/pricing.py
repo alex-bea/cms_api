@@ -1,35 +1,37 @@
 """Pricing service for calculating Medicare rates"""
 
 import uuid
-from typing import Dict, Any, List, Optional
 from datetime import date, datetime
+from typing import Any, Dict, List, Optional
 
-from cms_pricing.schemas.pricing import (
-    PricingRequest,
-    PricingResponse,
-    ComparisonRequest,
-    ComparisonResponse,
-    LineItemResponse,
-    GeographyResponse,
-    ComparisonDelta,
-)
-from cms_pricing.schemas.geography import GeographyCandidate, GeographyResolveResponse
-from cms_pricing.services.geography import GeographyService
-from cms_pricing.services.trace import TraceService
-from sqlalchemy.orm import Session
+import structlog
 from sqlalchemy import and_, or_
-from cms_pricing.models.plans import Plan, PlanComponent
-from cms_pricing.models.snapshots import Snapshot
-from cms_pricing.models.dataset_snapshots import DatasetSnapshot
-from cms_pricing.engines.mpfs import MPSFEngine
-from cms_pricing.engines.opps import OPPSEngine
+from sqlalchemy.orm import Session
+
 from cms_pricing.engines.asc import ASCEngine
-from cms_pricing.engines.ipps import IPPSEngine
 from cms_pricing.engines.clfs import CLFSEngine
 from cms_pricing.engines.dmepos import DMEPOSEngine
 from cms_pricing.engines.drugs import DrugEngine
+from cms_pricing.engines.ipps import IPPSEngine
+from cms_pricing.engines.mpfs import MPSFEngine
+from cms_pricing.engines.opps import OPPSEngine
+from cms_pricing.models.dataset_snapshots import DatasetSnapshot
+from cms_pricing.models.plans import Plan, PlanComponent
+from cms_pricing.models.snapshots import Snapshot
+from cms_pricing.schemas.geography import GeographyCandidate, GeographyResolveResponse
+from cms_pricing.schemas.pricing import (
+    CodePricingItemWithGeography,
+    ComparisonDelta,
+    ComparisonRequest,
+    ComparisonResponse,
+    GeographyResponse,
+    LineItemResponse,
+    PricingRequest,
+    PricingResponse,
+)
 from cms_pricing.services.dataset_snapshot_service import DatasetSnapshotService
-import structlog
+from cms_pricing.services.geography import GeographyService
+from cms_pricing.services.trace import TraceService
 
 logger = structlog.get_logger()
 
@@ -166,8 +168,6 @@ class PricingService:
     ) -> "CodePricingItemWithGeography":
         """Price a single code/component (returns CodePricingItemWithGeography)"""
 
-        from cms_pricing.schemas.pricing import CodePricingItemWithGeography
-
         run_id = str(uuid.uuid4())
 
         try:
@@ -204,7 +204,7 @@ class PricingService:
                 "plan": plan,
                 "pos": pos,
             }
-            if setting == "MPFS":
+            if setting in {"MPFS", "OPPS"}:
                 price_kwargs["valuation_date"] = selected_valuation_date
 
             result = await engine.price_code(**price_kwargs)
@@ -302,7 +302,7 @@ class PricingService:
                     "pos": component["pos"],
                     "ndc11": component["ndc11"],
                 }
-                if component["setting"] == "MPFS":
+                if component["setting"] in {"MPFS", "OPPS"}:
                     price_kwargs["valuation_date"] = valuation_date
 
                 result = await engine.price_code(**price_kwargs)
