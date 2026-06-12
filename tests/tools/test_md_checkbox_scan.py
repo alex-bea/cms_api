@@ -46,6 +46,34 @@ def test_staged_unchecked_markdown_fails(tmp_path, monkeypatch):
     assert scanner.main(["--staged"]) == 1
 
 
+def test_changed_from_scans_only_changed_markdown(tmp_path, monkeypatch):
+    clean = tmp_path / "docs" / "clean.md"
+    clean.parent.mkdir()
+    clean.write_text("No checkbox here.\n", encoding="utf-8")
+    legacy = tmp_path / "docs" / "legacy.md"
+    legacy.write_text("- [ ] old unchecked item\n", encoding="utf-8")
+
+    monkeypatch.setattr(scanner, "ROOT", tmp_path)
+
+    def fake_run(command, **kwargs):
+        assert command == [
+            "git",
+            "diff",
+            "--name-only",
+            "--diff-filter=ACMR",
+            "origin/main...HEAD",
+        ]
+        assert kwargs["cwd"] == tmp_path
+        assert kwargs["check"] is True
+        assert kwargs["capture_output"] is True
+        assert kwargs["text"] is True
+        return SimpleNamespace(stdout="docs/clean.md\n")
+
+    monkeypatch.setattr(scanner.subprocess, "run", fake_run)
+
+    assert scanner.main(["--changed-from", "origin/main"]) == 0
+
+
 def test_unstaged_checkbox_does_not_block_staged_scan(tmp_path, monkeypatch):
     clean = tmp_path / "docs" / "clean.md"
     clean.parent.mkdir()

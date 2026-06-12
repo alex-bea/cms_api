@@ -45,6 +45,26 @@ def iter_staged_markdown_files() -> Iterable[pathlib.Path]:
             yield path
 
 
+def iter_changed_markdown_files(base_ref: str) -> Iterable[pathlib.Path]:
+    result = subprocess.run(
+        [
+            "git",
+            "diff",
+            "--name-only",
+            "--diff-filter=ACMR",
+            f"{base_ref}...HEAD",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    for rel_path in result.stdout.splitlines():
+        path = ROOT / rel_path
+        if path.suffix.lower() == ".md" and path.is_file():
+            yield path
+
+
 def scan_files(markdown_files: Iterable[pathlib.Path]) -> list[str]:
     violations: list[str] = []
 
@@ -83,14 +103,22 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Run a full-repository Markdown audit.",
     )
+    mode.add_argument(
+        "--changed-from",
+        metavar="BASE_REF",
+        help="Scan Markdown files changed from BASE_REF to HEAD.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    markdown_files = (
-        iter_staged_markdown_files() if args.staged else iter_markdown_files()
-    )
+    if args.staged:
+        markdown_files = iter_staged_markdown_files()
+    elif args.changed_from:
+        markdown_files = iter_changed_markdown_files(args.changed_from)
+    else:
+        markdown_files = iter_markdown_files()
     violations = scan_files(markdown_files)
 
     if violations:
