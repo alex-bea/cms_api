@@ -136,6 +136,7 @@ Record manifest path, release_id, batch_id, and audit output.
 ## 6. Troubleshooting
 | Symptom | Likely Cause | Resolution |
 |---------|--------------|------------|
+| `SchemaOutOfDateError: Database schema revision ...` | Postgres migrations behind Alembic head | Run `alembic upgrade head`, rerun preflight, and restart ingestion |
 | `ValueError: RVU snapshot not available` | Wrong release ID or snapshots missing | Run latest release without `--release-id` or ingest missing quarter first |
 | `manifest_path` still `.json` after run | File moved or deleted | Run repair script; ensure manifests are retained in backup |
 | Parser errors on download files | CMS changed schema or corrupted download | Inspect raw files under `$RVU_OUTPUT_DIR/raw`; update parser or re-download |

@@ -10,7 +10,9 @@ from typing import List, Optional
 
 import structlog
 
+from cms_pricing.database import SessionLocal
 from cms_pricing.ingestion.nearest_zip_ingestion import NearestZipIngestionPipeline
+from cms_pricing.ingestion.utils import assert_schema_is_current, SchemaOutOfDateError
 
 logger = structlog.get_logger()
 
@@ -43,7 +45,18 @@ async def run_ingestion(
         )
     
     logger.info("Starting data ingestion", sources=sources, dry_run=dry_run)
-    
+
+    try:
+        session = SessionLocal()
+        try:
+            assert_schema_is_current(session)
+        finally:
+            session.close()
+    except SchemaOutOfDateError as exc:
+        logger.error("Database schema check failed", error=str(exc))
+        print(f"\n❌ Ingestion aborted: {exc}")
+        return 1
+
     try:
         pipeline = NearestZipIngestionPipeline(output_dir)
         
